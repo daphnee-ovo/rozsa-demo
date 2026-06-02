@@ -1,0 +1,23 @@
+[package]
+name = "rozsa-model"
+version = "0.1.0"
+edition = "2024"
+description = "LLM model abstraction and provider implementations"
+license = "MIT"
+
+[dependencies]
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+futures-util = "0.3"
+
+[[test]]
+name = "unit_model_openai_completions"
+path = "../../tests/unit/model/openai_completions.rs"
+
+[[test]]
+name = "unit_model_protocol"
+path = "../../tests/unit/model/protocol.rs"

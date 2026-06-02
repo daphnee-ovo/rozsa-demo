@@ -1,0 +1,19 @@
+[package]
+name = "rozsa-cli"
+version = "0.1.0"
+edition = "2024"
+description = "CLI binary entry point"
+license = "MIT"
+
+[[bin]]
+name = "rozsa"
+path = "src/main.rs"
+
+[dependencies]
+rozsa-app = { path = "../rozsa-app" }
+rozsa-tui = { path = "../rozsa-tui" }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }

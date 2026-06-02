@@ -1,0 +1,47 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+*.tsbuildinfo
+# packages/*/node_modules/
+packages/*/dist/
+packages/*/dist-chrome/
+packages/*/dist-firefox/
+*.cpuprofile
+
+# Environment
+.env
+
+# Editor files
+.vscode/
+.zed/
+.idea/
+.claude/
+.crush/
+*.swp
+*.swo
+*~
+
+# Package specific
+.npm/
+coverage/
+.nyc_output/
+.rozsa_config/
+tui-debug.log
+compaction-results/
+.opencode/
+.rozsa-agent/
+syntax.jsonl
+out.jsonl
+rozsa-*.html
+out.html
+packages/coding-agent/binaries/
+packages/tui-rs/target/
+target/
+todo.md
+plans/
+.rozsa/hf-sessions/
+.rozsa/hf-sessions-backup/
+collect.sh
+tmp/
+temp/

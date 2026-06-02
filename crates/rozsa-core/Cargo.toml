@@ -1,0 +1,17 @@
+[package]
+name = "rozsa-core"
+version = "0.1.0"
+edition = "2024"
+description = "Agent loop engine — state machine, event stream, tool dispatch"
+license = "MIT"
+
+[dependencies]
+rozsa-model = { path = "../rozsa-model" }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
