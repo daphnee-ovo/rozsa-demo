@@ -164,6 +164,7 @@ fn parse_simple_options(value: &Value) -> Result<SimpleStreamOptions, String> {
         },
         reasoning: value
             .get("reasoning")
+            .or_else(|| value.get("reasoningEffort"))
             .and_then(Value::as_str)
             .map(parse_thinking_level),
         thinking_budgets: parse_thinking_budgets(value.get("thinkingBudgets")),
@@ -359,33 +360,65 @@ fn stream_event_to_value(event: StreamEvent) -> Value {
 
 /// Convert a Rust assistant message into the TypeScript assistant message shape.
 fn assistant_message_to_value(message: AssistantMessage) -> Value {
-    json!({
-        "role": "assistant",
-        "content": message.content.into_iter().map(content_block_to_value).collect::<Vec<_>>(),
-        "api": api_to_string(&message.api),
-        "provider": provider_to_string(&message.provider),
-        "model": message.model,
-        "responseModel": message.response_model,
-        "responseId": message.response_id,
-        "usage": usage_to_value(message.usage),
-        "stopReason": stop_reason_to_string(message.stop_reason),
-        "errorMessage": message.error_message,
-        "timestamp": message.timestamp,
-    })
+    let mut output = serde_json::Map::new();
+    output.insert("role".to_string(), json!("assistant"));
+    output.insert(
+        "content".to_string(),
+        Value::Array(
+            message
+                .content
+                .into_iter()
+                .map(content_block_to_value)
+                .collect(),
+        ),
+    );
+    output.insert("api".to_string(), json!(api_to_string(&message.api)));
+    output.insert(
+        "provider".to_string(),
+        json!(provider_to_string(&message.provider)),
+    );
+    output.insert("model".to_string(), json!(message.model));
+    if let Some(response_model) = message.response_model {
+        output.insert("responseModel".to_string(), json!(response_model));
+    }
+    if let Some(response_id) = message.response_id {
+        output.insert("responseId".to_string(), json!(response_id));
+    }
+    output.insert("usage".to_string(), usage_to_value(message.usage));
+    output.insert(
+        "stopReason".to_string(),
+        json!(stop_reason_to_string(message.stop_reason)),
+    );
+    if let Some(error_message) = message.error_message {
+        output.insert("errorMessage".to_string(), json!(error_message));
+    }
+    output.insert("timestamp".to_string(), json!(message.timestamp));
+    Value::Object(output)
 }
 
 /// Convert one Rust content block into the TypeScript content block shape.
 fn content_block_to_value(block: ContentBlock) -> Value {
     match block {
         ContentBlock::Text { text, signature } => {
-            json!({ "type": "text", "text": text, "textSignature": signature })
+            let mut value = json!({ "type": "text", "text": text });
+            if let Some(signature) = signature {
+                value["textSignature"] = json!(signature);
+            }
+            value
         }
         ContentBlock::Thinking {
             thinking,
             signature,
             redacted,
         } => {
-            json!({ "type": "thinking", "thinking": thinking, "thinkingSignature": signature, "redacted": redacted })
+            let mut value = json!({ "type": "thinking", "thinking": thinking });
+            if let Some(signature) = signature {
+                value["thinkingSignature"] = json!(signature);
+            }
+            if redacted {
+                value["redacted"] = json!(true);
+            }
+            value
         }
         ContentBlock::Image { data, mime_type } => {
             json!({ "type": "image", "data": data, "mimeType": mime_type })

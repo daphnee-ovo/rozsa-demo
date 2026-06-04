@@ -44,11 +44,12 @@ Compatibility rules already modeled:
 - incremental SSE parsing and bridge event forwarding
 - text, thinking, and tool-call stream event normalization
 - env-gated live smoke test entrypoint for real OpenAI-compatible providers
+- TS-vs-Rust parity test with a fake OpenAI-compatible server for payload, stream event, and final message equivalence
 
 Known current limits:
 
 - `onPayload`/`onResponse` are TypeScript callback functions. Requests using those hooks route through the TypeScript provider until the bridge protocol supports callback round-trips.
-- Network smoke tests are not part of the default unit tests; the live smoke test is ignored by default and requires explicit credentials.
+- Network smoke tests are not part of the default unit tests; the live smoke test is ignored by default and requires explicit credentials or a running local model endpoint.
 
 ## Scheduled
 
