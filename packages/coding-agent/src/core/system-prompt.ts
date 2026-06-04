@@ -1,9 +1,41 @@
 /**
- * System prompt construction and project context loading
+ * System prompt construction and project context loading.
+ *
+ * Core prompt text lives in resource/system-prompt.md.
  */
 
-import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { getDocsPath, getExamplesPath, getPackageDir, getReadmePath } from "../config.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
+
+function resolveSystemPromptTemplatePath(): string {
+	const packageResourcePath = join(getPackageDir(), "resource", "system-prompt.md");
+	const repoResourcePath = join(getPackageDir(), "..", "..", "resource", "system-prompt.md");
+
+	if (existsSync(packageResourcePath)) {
+		return packageResourcePath;
+	}
+
+	if (existsSync(repoResourcePath)) {
+		return repoResourcePath;
+	}
+
+	throw new Error(`Failed to load system prompt template from ${packageResourcePath} or ${repoResourcePath}`);
+}
+
+const SYSTEM_PROMPT_TEMPLATE_PATH = resolveSystemPromptTemplatePath();
+
+function loadSystemPromptTemplate(): string {
+	try {
+		return readFileSync(SYSTEM_PROMPT_TEMPLATE_PATH, "utf-8");
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`Failed to load system prompt template from ${SYSTEM_PROMPT_TEMPLATE_PATH}: ${message}`);
+	}
+}
+
+const SYSTEM_PROMPT_TEMPLATE = loadSystemPromptTemplate();
 
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
@@ -129,24 +161,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	let prompt = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
-
-Available tools:
-${toolsList}
-
-In addition to the tools above, you may have access to other custom tools depending on the project.
-
-Guidelines:
-${guidelines}
-
-Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
-- Main documentation: ${readmePath}
-- Additional docs: ${docsPath}
-- Examples: ${examplesPath} (extensions, custom tools, SDK)
-- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)
-- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
-- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
+	let prompt = SYSTEM_PROMPT_TEMPLATE.replaceAll("{{AVAILABLE_TOOLS}}", toolsList)
+		.replaceAll("{{GUIDELINES}}", guidelines)
+		.replaceAll("{{README_PATH}}", readmePath)
+		.replaceAll("{{DOCS_PATH}}", docsPath)
+		.replaceAll("{{EXAMPLES_PATH}}", examplesPath);
 
 	if (appendSection) {
 		prompt += appendSection;
