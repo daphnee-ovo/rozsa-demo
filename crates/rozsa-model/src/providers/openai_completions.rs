@@ -9,8 +9,10 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use futures_util::StreamExt;
+use serde::Deserialize;
 use serde_json::Value;
 
+use crate::env_keys::get_env_api_key;
 use crate::event_stream::{EventStream, EventStreamSender, create_event_stream};
 use crate::providers::common::{
     ProviderError, ProviderResult, build_http_client, calculate_cost, create_output, emit_error,
@@ -27,6 +29,35 @@ pub use payload::{
     convert_tools, resolve_compat,
 };
 pub use sse::{SseParser, parse_sse_chunks};
+
+/// Default NVIDIA API Catalog endpoint for OpenAI-compatible chat models.
+pub const NVIDIA_BASE_URL: &str = "https://integrate.api.nvidia.com/v1";
+const DEFAULT_DISCOVERED_CONTEXT_WINDOW: usize = 128_000;
+const DEFAULT_DISCOVERED_MAX_TOKENS: usize = 4_096;
+
+/// Minimal model metadata discovered from an OpenAI-compatible `/models` endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveredModel {
+    pub id: String,
+    pub name: String,
+    pub context_window: usize,
+    pub max_tokens: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelListResponse {
+    #[serde(default)]
+    data: Vec<ModelListEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelListEntry {
+    id: Option<String>,
+    root: Option<String>,
+    max_model_len: Option<usize>,
+    context_window: Option<usize>,
+    max_tokens: Option<usize>,
+}
 
 /// Provider for OpenAI Chat Completions and compatible HTTP/SSE APIs.
 pub struct OpenAICompletionsProvider {
@@ -112,6 +143,70 @@ pub async fn run_openai_chat_stream(
         events.push(event);
     }
     Ok(events)
+}
+
+/// List models from NVIDIA's OpenAI-compatible API Catalog endpoint.
+pub async fn list_nvidia_models(options: &StreamOptions) -> ProviderResult<Vec<DiscoveredModel>> {
+    list_openai_compatible_models(&Provider::Nvidia, NVIDIA_BASE_URL, options).await
+}
+
+/// List models from an OpenAI-compatible `/models` endpoint.
+pub async fn list_openai_compatible_models(
+    provider: &Provider,
+    base_url: &str,
+    options: &StreamOptions,
+) -> ProviderResult<Vec<DiscoveredModel>> {
+    let api_key = resolve_discovery_api_key(provider, options)?;
+    let client = build_http_client(options)?;
+    let url = join_url(base_url, "models")?;
+    let response = client
+        .get(url)
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .map_err(ProviderError::Http)?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(ProviderError::HttpStatus { status, body });
+    }
+    parse_openai_compatible_models_response(&response.text().await?)
+}
+
+/// Parse OpenAI-compatible `/models` response metadata into stable model entries.
+pub fn parse_openai_compatible_models_response(
+    input: &str,
+) -> ProviderResult<Vec<DiscoveredModel>> {
+    let response: ModelListResponse = serde_json::from_str(input)
+        .map_err(|error| ProviderError::Parse(format!("invalid model list response: {error}")))?;
+    Ok(response
+        .data
+        .into_iter()
+        .filter_map(|entry| {
+            let id = entry.id.or(entry.root)?;
+            Some(DiscoveredModel {
+                name: id.clone(),
+                id,
+                context_window: entry
+                    .max_model_len
+                    .or(entry.context_window)
+                    .unwrap_or(DEFAULT_DISCOVERED_CONTEXT_WINDOW),
+                max_tokens: entry.max_tokens.unwrap_or(DEFAULT_DISCOVERED_MAX_TOKENS),
+            })
+        })
+        .collect())
+}
+
+fn resolve_discovery_api_key(
+    provider: &Provider,
+    options: &StreamOptions,
+) -> ProviderResult<String> {
+    if let Some(api_key) = options.api_key.as_ref().filter(|value| !value.is_empty()) {
+        return Ok(api_key.clone());
+    }
+    get_env_api_key(provider).ok_or_else(|| ProviderError::MissingApiKey {
+        provider: crate::providers::common::provider_id(provider),
+    })
 }
 
 /// Execute one stream request and emit normalized events as chunks arrive.

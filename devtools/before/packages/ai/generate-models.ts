@@ -1946,6 +1946,8 @@ export const MODELS = {
 	// Write file
 	writeFileSync(join(packageRoot, "src/models.generated.ts"), output);
 	console.log("Generated src/models.generated.ts");
+	writeFileSync(join(packageRoot, "src/models.generated.json"), `${JSON.stringify(providers, null, 2)}\n`);
+	console.log("Generated src/models.generated.json");
 
 	// Print statistics
 	const totalModels = allModels.length;

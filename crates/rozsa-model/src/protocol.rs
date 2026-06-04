@@ -486,6 +486,7 @@ fn parse_provider(value: &str) -> Provider {
         "groq" => Provider::Groq,
         "cerebras" => Provider::Cerebras,
         "mistral" => Provider::Mistral,
+        "nvidia" => Provider::Nvidia,
         "zai" => Provider::Zai,
         "together" => Provider::Together,
         "moonshotai" => Provider::MoonshotAI,

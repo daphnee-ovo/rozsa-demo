@@ -34,6 +34,7 @@ import {
 	resolveConfigValueUncached,
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.ts";
+import { loadRustModelRegistryModels } from "./rust-model-registry.ts";
 
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({
@@ -411,8 +412,15 @@ export class ModelRegistry {
 			this.userConfiguredModelKeys.add(`${m.provider}/${m.id}`);
 		}
 
-		const builtInModels = this.loadBuiltInModels(overrides, modelOverrides);
-		let combined = this.mergeCustomModels(builtInModels, customModels);
+		const rustModels = loadRustModelRegistryModels(this.modelsJsonPath);
+		let combined = rustModels?.models;
+		if (!combined) {
+			const builtInModels = this.loadBuiltInModels(overrides, modelOverrides);
+			combined = this.mergeCustomModels(builtInModels, customModels);
+		}
+		if (rustModels?.errors.length) {
+			this.loadError = [this.loadError, ...rustModels.errors].filter(Boolean).join("\n");
+		}
 
 		// Let OAuth providers modify their models (e.g., update baseUrl)
 		for (const oauthProvider of this.authStorage.getOAuthProviders()) {

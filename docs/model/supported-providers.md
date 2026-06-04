@@ -24,6 +24,7 @@ Current compatible provider coverage:
 - OpenAI Chat Completions-compatible endpoints
 - local OpenAI-compatible servers such as Ollama, vLLM, LM Studio, and llama.cpp
 - provider endpoints that follow OpenAI Chat Completions streaming closely
+- NVIDIA NIM / API Catalog OpenAI-compatible chat endpoints through `Provider::Nvidia`, `NVIDIA_API_KEY`, and `base_url` values such as `https://integrate.api.nvidia.com/v1`
 
 Compatibility rules already modeled:
 
@@ -46,10 +47,17 @@ Compatibility rules already modeled:
 - env-gated live smoke test entrypoint for real OpenAI-compatible providers
 - TS-vs-Rust parity test with a fake OpenAI-compatible server for payload, stream event, and final message equivalence
 
+NVIDIA model discovery note:
+
+- NVIDIA NIM exposes `GET /v1/models` for models currently loaded and available on that endpoint. NVIDIA API Catalog uses the same OpenAI-compatible base URL shape, but available hosted models can vary by account and over time. `rozsa-model` therefore does not hardcode a NVIDIA model list.
+- `rozsa-app` owns the Rust `ModelRegistry`: it loads `packages/ai/src/models.generated.json`, merges optional `models.json`, and, when `NVIDIA_API_KEY` is set, merges live NVIDIA models from `GET https://integrate.api.nvidia.com/v1/models`.
+- The TypeScript `ModelRegistry` calls the Rust registry bridge by default in `ROZSA_MODEL_REGISTRY_BACKEND=auto` when the `rozsa-app` binary exists. `/model` then renders `getAvailable()` from this Rust-backed list, so NVIDIA shows only models discovered from the live endpoint unless the user explicitly configures custom models. Set `ROZSA_MODEL_REGISTRY_BACKEND=rust` to fail fast if the bridge is unavailable, or `ROZSA_MODEL_REGISTRY_BACKEND=ts` to force the old TypeScript registry.
+
 Known current limits:
 
 - `onPayload`/`onResponse` are TypeScript callback functions. Requests using those hooks route through the TypeScript provider until the bridge protocol supports callback round-trips.
 - Network smoke tests are not part of the default unit tests; the live smoke test is ignored by default and requires explicit credentials or a running local model endpoint.
+- In `auto` mode, a missing `rozsa-app` debug binary falls back to the TypeScript registry. `run.sh` builds `rozsa-app` and passes `ROZSA_APP_BINARY` to the TypeScript backend; standalone frontend runs should build `rozsa-app` or set `ROZSA_APP_BINARY` when validating Rust registry behavior.
 
 ## Scheduled
 

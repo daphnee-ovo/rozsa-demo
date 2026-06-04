@@ -343,6 +343,7 @@ fn detect_compat(model: &Model) -> OpenAICompletionsCompat {
         provider.contains("cloudflareaigateway") || base_url.contains("gateway.ai.cloudflare.com");
     let is_xai = provider.contains("xai") || base_url.contains("api.x.ai");
     let is_deepseek = provider.contains("deepseek") || base_url.contains("deepseek.com");
+    let is_nvidia = provider.contains("nvidia") || base_url.contains("integrate.api.nvidia.com");
     let cache_control_format =
         if provider.contains("openrouter") && model.id.starts_with("anthropic/") {
             Some(CacheControlFormat::Anthropic)
@@ -357,6 +358,7 @@ fn detect_compat(model: &Model) -> OpenAICompletionsCompat {
         || is_deepseek
         || is_zai
         || is_moonshot
+        || is_nvidia
         || provider.contains("opencode")
         || base_url.contains("opencode.ai")
         || is_cloudflare_workers
@@ -369,11 +371,13 @@ fn detect_compat(model: &Model) -> OpenAICompletionsCompat {
             || is_zai
             || is_moonshot
             || is_together
+            || is_nvidia
             || is_cloudflare_gateway),
         max_tokens_field: if base_url.contains("chutes.ai")
             || is_moonshot
             || is_cloudflare_gateway
             || is_together
+            || is_nvidia
         {
             MaxTokensField::MaxTokens
         } else {

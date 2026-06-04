@@ -123,3 +123,47 @@ fn serializes_rust_done_event_to_ts_shape() {
     );
     assert_eq!(event["message"]["usage"]["totalTokens"], Value::from(3));
 }
+
+#[test]
+fn parses_and_serializes_nvidia_provider_id() {
+    let line = json!({
+        "type": "request",
+        "id": "req_nvidia",
+        "method": "streamSimple",
+        "model": {
+            "id": "meta/llama-3.1-70b-instruct",
+            "name": "Llama 3.1 70B",
+            "api": "openai-completions",
+            "provider": "nvidia",
+            "baseUrl": "https://integrate.api.nvidia.com/v1"
+        },
+        "context": {
+            "messages": [{ "role": "user", "content": "hello" }]
+        }
+    })
+    .to_string();
+
+    let input = parse_input_line(&line).expect("bridge input should parse");
+    let request = provider_request(input)
+        .expect("provider request should convert")
+        .expect("request should not be cancel");
+
+    assert_eq!(request.model.provider, Provider::Nvidia);
+
+    let mut output = assistant_message();
+    output.provider = Provider::Nvidia;
+    let BridgeOutput::Event { event, .. } = event_to_bridge_output(
+        "req_nvidia",
+        StreamEvent::Done {
+            reason: StopReason::Stop,
+            message: output,
+        },
+    ) else {
+        panic!("expected event output");
+    };
+
+    assert_eq!(
+        event["message"]["provider"],
+        Value::String("nvidia".to_string())
+    );
+}
