@@ -658,31 +658,37 @@ fn finish_open_blocks(
     output: &mut AssistantMessage,
     events: &mut Vec<StreamEvent>,
 ) {
-    if let Some(index) = state.text_index {
-        if let Some(ContentBlock::Text { text, .. }) = output.content.get(index) {
-            events.push(StreamEvent::TextEnd {
-                content_index: index,
-                content: text.clone(),
-                partial: output.clone(),
-            });
-        }
-    }
-    if let Some(index) = state.thinking_index {
-        if let Some(ContentBlock::Thinking { thinking, .. }) = output.content.get(index) {
-            events.push(StreamEvent::ThinkingEnd {
-                content_index: index,
-                content: thinking.clone(),
-                partial: output.clone(),
-            });
-        }
-    }
-    for index in state.tool_call_indices.values() {
-        if let Some(ContentBlock::ToolCall(tool_call)) = output.content.get(*index) {
-            events.push(StreamEvent::ToolCallEnd {
-                content_index: *index,
-                tool_call: tool_call.clone(),
-                partial: output.clone(),
-            });
+    for index in 0..output.content.len() {
+        match output.content.get(index) {
+            Some(ContentBlock::Text { text, .. }) if state.text_index == Some(index) => {
+                events.push(StreamEvent::TextEnd {
+                    content_index: index,
+                    content: text.clone(),
+                    partial: output.clone(),
+                });
+            }
+            Some(ContentBlock::Thinking { thinking, .. })
+                if state.thinking_index == Some(index) =>
+            {
+                events.push(StreamEvent::ThinkingEnd {
+                    content_index: index,
+                    content: thinking.clone(),
+                    partial: output.clone(),
+                });
+            }
+            Some(ContentBlock::ToolCall(tool_call))
+                if state
+                    .tool_call_indices
+                    .values()
+                    .any(|value| *value == index) =>
+            {
+                events.push(StreamEvent::ToolCallEnd {
+                    content_index: index,
+                    tool_call: tool_call.clone(),
+                    partial: output.clone(),
+                });
+            }
+            _ => {}
         }
     }
 }
