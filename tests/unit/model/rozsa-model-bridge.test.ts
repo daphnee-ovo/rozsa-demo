@@ -2,12 +2,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	parseBridgeLine,
 	resolveRustModelBinaryArgs,
+	shouldUseRustModelProvider,
 	streamSimpleRustModel,
 } from "../../../packages/ai/src/providers/rozsa-model-bridge.ts";
+import { getApiProvider } from "../../../packages/ai/src/api-registry.ts";
+import { resetApiProviders } from "../../../packages/ai/src/providers/register-builtins.ts";
 import type { Context, Model } from "../../../packages/ai/src/types.ts";
 
 const originalBinary = process.env.ROZSA_MODEL_BINARY;
 const originalBinaryArgs = process.env.ROZSA_MODEL_BINARY_ARGS;
+const originalBackend = process.env.ROZSA_MODEL_BACKEND;
+const originalRustApis = process.env.ROZSA_MODEL_RUST_APIS;
 
 const model = {
 	id: "gpt-test",
@@ -37,6 +42,16 @@ afterEach(() => {
 	} else {
 		process.env.ROZSA_MODEL_BINARY_ARGS = originalBinaryArgs;
 	}
+	if (originalBackend === undefined) {
+		delete process.env.ROZSA_MODEL_BACKEND;
+	} else {
+		process.env.ROZSA_MODEL_BACKEND = originalBackend;
+	}
+	if (originalRustApis === undefined) {
+		delete process.env.ROZSA_MODEL_RUST_APIS;
+	} else {
+		process.env.ROZSA_MODEL_RUST_APIS = originalRustApis;
+	}
 });
 
 describe("rozsa-model bridge", () => {
@@ -47,6 +62,94 @@ describe("rozsa-model bridge", () => {
 			type: "error",
 			id: "req",
 			message: "failed",
+		});
+	});
+
+	describe("shouldUseRustModelProvider three-value backend semantics", () => {
+		it("backend=rust returns true for listed API without checking binary existence", () => {
+			process.env.ROZSA_MODEL_BACKEND = "rust";
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			process.env.ROZSA_MODEL_BINARY = "/nonexistent/path/rozsa-model";
+			expect(shouldUseRustModelProvider("openai-completions")).toBe(true);
+		});
+
+		it("backend=rust returns false for unlisted API", () => {
+			process.env.ROZSA_MODEL_BACKEND = "rust";
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			expect(shouldUseRustModelProvider("anthropic-messages")).toBe(false);
+		});
+
+		it("backend=auto returns false when binary does not exist", () => {
+			process.env.ROZSA_MODEL_BACKEND = "auto";
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			process.env.ROZSA_MODEL_BINARY = "/nonexistent/path/rozsa-model";
+			expect(shouldUseRustModelProvider("openai-completions")).toBe(false);
+		});
+
+		it("backend=auto returns true when binary exists", () => {
+			process.env.ROZSA_MODEL_BACKEND = "auto";
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			process.env.ROZSA_MODEL_BINARY = process.execPath;
+			expect(shouldUseRustModelProvider("openai-completions")).toBe(true);
+		});
+
+		it("backend=ts returns false regardless", () => {
+			process.env.ROZSA_MODEL_BACKEND = "ts";
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			expect(shouldUseRustModelProvider("openai-completions")).toBe(false);
+		});
+
+		it("backend unset returns false", () => {
+			delete process.env.ROZSA_MODEL_BACKEND;
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			expect(shouldUseRustModelProvider("openai-completions")).toBe(false);
+		});
+	});
+
+	describe("backend=rust strict mode rejects unmigrated APIs", () => {
+		it("unmigrated API returns error stream", async () => {
+			process.env.ROZSA_MODEL_BACKEND = "rust";
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			resetApiProviders();
+
+			const provider = getApiProvider("anthropic-messages");
+			expect(provider).toBeDefined();
+
+			const bedrockModel = {
+				id: "claude-test",
+				name: "Claude Test",
+				api: "anthropic-messages" as const,
+				provider: "anthropic",
+				baseUrl: "https://api.anthropic.com",
+				reasoning: false,
+				input: ["text" as const],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 200000,
+				maxTokens: 4096,
+			};
+			const stream = provider!.stream(bedrockModel, context);
+			const result = await stream.result();
+			expect(result.stopReason).toBe("error");
+			expect(result.errorMessage).toContain("not in ROZSA_MODEL_RUST_APIS");
+		});
+
+		it("migrated API is not blocked", () => {
+			process.env.ROZSA_MODEL_BACKEND = "rust";
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			resetApiProviders();
+
+			const provider = getApiProvider("openai-completions");
+			expect(provider).toBeDefined();
+			expect(provider!.stream).not.toBe(getApiProvider("anthropic-messages")!.stream);
+		});
+
+		it("backend=auto does not block unmigrated APIs", () => {
+			process.env.ROZSA_MODEL_BACKEND = "auto";
+			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+			resetApiProviders();
+
+			const provider = getApiProvider("anthropic-messages");
+			expect(provider).toBeDefined();
 		});
 	});
 
