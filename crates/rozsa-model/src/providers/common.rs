@@ -198,6 +198,7 @@ pub fn provider_id(provider: &crate::types::Provider) -> String {
         crate::types::Provider::Groq => "groq".to_string(),
         crate::types::Provider::Cerebras => "cerebras".to_string(),
         crate::types::Provider::Mistral => "mistral".to_string(),
+        crate::types::Provider::Nvidia => "nvidia".to_string(),
         crate::types::Provider::Zai => "zai".to_string(),
         crate::types::Provider::Together => "together".to_string(),
         crate::types::Provider::MoonshotAI => "moonshotai".to_string(),

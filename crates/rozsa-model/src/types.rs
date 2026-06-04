@@ -28,6 +28,7 @@ pub enum Provider {
     Groq,
     Cerebras,
     Mistral,
+    Nvidia,
     Zai,
     Together,
     MoonshotAI,

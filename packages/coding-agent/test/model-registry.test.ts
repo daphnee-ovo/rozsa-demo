@@ -57,6 +57,14 @@ describe("ModelRegistry", () => {
 		return registry.getAll().filter((m) => m.provider === provider);
 	}
 
+	function restoreEnv(key: string, value: string | undefined) {
+		if (value === undefined) {
+			delete process.env[key];
+		} else {
+			process.env[key] = value;
+		}
+	}
+
 	function toShPath(value: string): string {
 		return value.replace(/\\/g, "/").replace(/"/g, '\\"');
 	}
@@ -87,6 +95,66 @@ describe("ModelRegistry", () => {
 	const emptyContext: Context = {
 		messages: [],
 	};
+
+	test("loads available model metadata from the Rust registry bridge in auto mode", () => {
+		const bridgeScriptPath = join(tempDir, "fake-rozsa-app.mjs");
+		writeFileSync(
+			bridgeScriptPath,
+			`let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+	input += chunk;
+});
+process.stdin.on("end", () => {
+	const request = JSON.parse(input.trim());
+	process.stdout.write(JSON.stringify({
+		type: "models",
+		id: request.id,
+		models: [{
+			id: "nvidia/test-model",
+			name: "NVIDIA Test Model",
+			api: "openai-completions",
+			provider: "nvidia",
+			baseUrl: "https://integrate.api.nvidia.com/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 131072,
+			maxTokens: 4096,
+			compat: { maxTokensField: "max_tokens" }
+		}],
+		errors: ["rust registry warning"]
+	}) + "\\n");
+});
+`,
+		);
+
+		const originalBackend = process.env.ROZSA_MODEL_REGISTRY_BACKEND;
+		const originalBinary = process.env.ROZSA_APP_BINARY;
+		const originalBinaryArgs = process.env.ROZSA_APP_BINARY_ARGS;
+		const originalNvidiaKey = process.env.NVIDIA_API_KEY;
+
+		try {
+			delete process.env.ROZSA_MODEL_REGISTRY_BACKEND;
+			process.env.ROZSA_APP_BINARY = process.execPath;
+			process.env.ROZSA_APP_BINARY_ARGS = JSON.stringify([bridgeScriptPath]);
+			process.env.NVIDIA_API_KEY = "test-nvidia-key";
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = registry.find("nvidia", "nvidia/test-model");
+
+			expect(model?.baseUrl).toBe("https://integrate.api.nvidia.com/v1");
+			expect(registry.getAvailable().some((m) => m.provider === "nvidia" && m.id === "nvidia/test-model")).toBe(
+				true,
+			);
+			expect(registry.getError()).toBe("rust registry warning");
+		} finally {
+			restoreEnv("ROZSA_MODEL_REGISTRY_BACKEND", originalBackend);
+			restoreEnv("ROZSA_APP_BINARY", originalBinary);
+			restoreEnv("ROZSA_APP_BINARY_ARGS", originalBinaryArgs);
+			restoreEnv("NVIDIA_API_KEY", originalNvidiaKey);
+		}
+	});
 
 	describe("baseUrl override (no custom models)", () => {
 		test("overriding baseUrl keeps all built-in models", () => {

@@ -13,6 +13,7 @@ pub fn get_env_api_key(provider: &Provider) -> Option<String> {
         Provider::XAI => "XAI_API_KEY",
         Provider::Groq => "GROQ_API_KEY",
         Provider::Mistral => "MISTRAL_API_KEY",
+        Provider::Nvidia => "NVIDIA_API_KEY",
         Provider::OpenRouter => "OPENROUTER_API_KEY",
         Provider::AmazonBedrock => return std::env::var("AWS_ACCESS_KEY_ID").ok(),
         Provider::Cerebras => "CEREBRAS_API_KEY",

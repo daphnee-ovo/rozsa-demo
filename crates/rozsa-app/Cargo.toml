@@ -14,3 +14,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+
+[[test]]
+name = "unit_app_model_registry"
+path = "../../tests/unit/app/model_registry.rs"

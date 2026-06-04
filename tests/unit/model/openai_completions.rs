@@ -1,10 +1,11 @@
 use serde_json::json;
 
+use rozsa_model::env_keys::get_env_api_key;
 use rozsa_model::providers::common::create_output;
 use rozsa_model::providers::openai_completions::{
     MaxTokensField, OpenAICompletionsProvider, SseParser, ThinkingFormat,
-    build_chat_completions_payload, normalize_chat_chunks, parse_sse_chunks, request_headers,
-    resolve_compat, should_retry_status,
+    build_chat_completions_payload, normalize_chat_chunks, parse_openai_compatible_models_response,
+    parse_sse_chunks, request_headers, resolve_compat, should_retry_status,
 };
 use rozsa_model::registry::{ApiProvider, get_provider, register_provider};
 use rozsa_model::types::{
@@ -244,6 +245,73 @@ fn detects_non_standard_max_tokens_field() {
 
     assert_eq!(compat.max_tokens_field, MaxTokensField::MaxTokens);
     assert_eq!(compat.thinking_format, ThinkingFormat::Together);
+}
+
+#[test]
+fn nvidia_uses_nvidia_api_key_env_var() {
+    let original = std::env::var_os("NVIDIA_API_KEY");
+    unsafe {
+        std::env::set_var("NVIDIA_API_KEY", "test-nvidia-key");
+    }
+
+    assert_eq!(
+        get_env_api_key(&Provider::Nvidia).as_deref(),
+        Some("test-nvidia-key")
+    );
+
+    match original {
+        Some(value) => unsafe {
+            std::env::set_var("NVIDIA_API_KEY", value);
+        },
+        None => unsafe {
+            std::env::remove_var("NVIDIA_API_KEY");
+        },
+    }
+}
+
+#[test]
+fn detects_nvidia_chat_completions_compat() {
+    let mut model = test_model("https://integrate.api.nvidia.com/v1");
+    model.provider = Provider::Nvidia;
+
+    let compat = resolve_compat(&model);
+
+    assert!(!compat.supports_store);
+    assert!(!compat.supports_developer_role);
+    assert!(!compat.supports_reasoning_effort);
+    assert_eq!(compat.max_tokens_field, MaxTokensField::MaxTokens);
+}
+
+#[test]
+fn parses_openai_compatible_model_list_response() {
+    let models = parse_openai_compatible_models_response(
+        r#"{
+            "object": "list",
+            "data": [
+                {
+                    "id": "nvidia/nemotron-nano-12b-v2-vl",
+                    "object": "model",
+                    "max_model_len": 131072
+                },
+                {
+                    "root": "meta/llama-3.1-70b-instruct",
+                    "max_tokens": 2048
+                },
+                {
+                    "object": "model"
+                }
+            ]
+        }"#,
+    )
+    .unwrap();
+
+    assert_eq!(models.len(), 2);
+    assert_eq!(models[0].id, "nvidia/nemotron-nano-12b-v2-vl");
+    assert_eq!(models[0].context_window, 131_072);
+    assert_eq!(models[0].max_tokens, 4_096);
+    assert_eq!(models[1].id, "meta/llama-3.1-70b-instruct");
+    assert_eq!(models[1].context_window, 128_000);
+    assert_eq!(models[1].max_tokens, 2_048);
 }
 
 #[tokio::test]
