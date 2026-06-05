@@ -449,6 +449,17 @@ export class NativeMode {
 				listSessions: (scope) => {
 					void this.handleListSessions(scope);
 				},
+				listModels: () => {
+					this.session.modelRegistry.refresh();
+					const models = this.session.modelRegistry.getAvailable();
+					const currentModel = this.session.model;
+					const entries = models.map((m) => ({
+						id: m.id,
+						provider: m.provider,
+						is_current: currentModel ? m.id === currentModel.id && m.provider === currentModel.provider : false,
+					}));
+					this.send({ type: "models", entries });
+				},
 				setInput: (nextText) => {
 					this.editorText = nextText;
 					this.send({ type: "set_input", text: nextText });

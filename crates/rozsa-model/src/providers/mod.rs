@@ -1,6 +1,7 @@
 //! Built-in provider modules and registration helpers.
 
 pub mod anthropic;
+pub mod bedrock;
 pub mod common;
 pub mod faux;
 pub mod openai_completions;
@@ -12,4 +13,5 @@ pub fn register_builtin_providers() {
     register_provider(Box::new(
         openai_completions::OpenAICompletionsProvider::new(),
     ));
+    register_provider(Box::new(bedrock::BedrockProvider::new()));
 }

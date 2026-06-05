@@ -3,6 +3,7 @@ import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../core/http-dispatcher.ts";
 import type { SessionTreeNode } from "../../core/session-manager.ts";
+import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { NativeKeybindings } from "./native-keybindings.ts";
 import {
@@ -24,6 +25,7 @@ export interface NativeBuiltinContext {
 	notify(message: string, level?: "info" | "warning" | "error"): void;
 	select(title: string, options: string[], selectedIndex?: number): Promise<string | undefined>;
 	listSessions(scope: "current" | "all"): void;
+	listModels(): void;
 	setInput(text: string): void;
 	setActiveSubagent(id: string | undefined): void;
 	activeSubagentId(): string | undefined;
@@ -186,15 +188,19 @@ function handleName(arg: string, ctx: NativeBuiltinContext): void {
 }
 
 async function handleModel(arg: string, ctx: NativeBuiltinContext): Promise<void> {
+	if (!arg) {
+		ctx.listModels();
+		return;
+	}
 	ctx.session.modelRegistry.refresh();
 	const models = ctx.session.modelRegistry.getAvailable();
-	const selected = arg ? findModel(models, arg) : await selectModel(models, ctx);
+	const selected = findModel(models, arg);
 	if (!selected) {
-		ctx.notify(arg ? `Model not found: ${arg}` : "Model selection cancelled", arg ? "warning" : "info");
+		ctx.notify(`Model not found: ${arg}`, "warning");
 		return;
 	}
 	await ctx.session.setModel(selected);
-	ctx.notify(`Model: ${selected.provider}/${selected.id}`);
+	ctx.notify(`Model: [${providerDisplayName(selected.provider)}] ${selected.id}`);
 }
 
 async function handleScopedModels(ctx: NativeBuiltinContext): Promise<void> {
@@ -349,10 +355,8 @@ function buildSettingsActions(ctx: NativeBuiltinContext): Array<{ label: string;
 	];
 }
 
-async function selectModel(models: Model<Api>[], ctx: NativeBuiltinContext): Promise<Model<Api> | undefined> {
-	const options = models.map((model) => `${model.provider}/${model.id}`);
-	const selected = await ctx.select("Select model", options);
-	return selected ? findModel(models, selected) : undefined;
+function providerDisplayName(provider: string): string {
+	return BUILT_IN_PROVIDER_DISPLAY_NAMES[provider] ?? provider;
 }
 
 function findModel(models: Model<Api>[], reference: string): Model<Api> | undefined {

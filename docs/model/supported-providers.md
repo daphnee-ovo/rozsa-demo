@@ -53,17 +53,58 @@ NVIDIA model discovery note:
 - `rozsa-app` owns the Rust `ModelRegistry`: it loads `packages/ai/src/models.generated.json`, merges optional `models.json`, and, when `NVIDIA_API_KEY` is set, merges live NVIDIA models from `GET https://integrate.api.nvidia.com/v1/models`.
 - The TypeScript `ModelRegistry` calls the Rust registry bridge by default in `ROZSA_MODEL_REGISTRY_BACKEND=auto` when the `rozsa-app` binary exists. `/model` then renders `getAvailable()` from this Rust-backed list, so NVIDIA shows only models discovered from the live endpoint unless the user explicitly configures custom models. Set `ROZSA_MODEL_REGISTRY_BACKEND=rust` to fail fast if the bridge is unavailable, or `ROZSA_MODEL_REGISTRY_BACKEND=ts` to force the old TypeScript registry.
 
+Provider availability (auth check):
+
+- Rust `ModelRegistry::provider_available()` checks whether each provider has configured credentials via environment variables (using `env_keys::get_env_api_key`) or via `models.json` `apiKey` field (literal value, env var reference, or `!command` marker).
+- The bridge response includes `providerAvailable: Record<provider, {configured, source}>` alongside the full model list.
+- TypeScript `ModelRegistry.hasConfiguredAuth()` uses the Rust-provided `providerAvailable` for API key auth, and separately checks TS-managed OAuth tokens (`AuthStorage`). A model is available if either path reports configured.
+- When `ROZSA_MODEL_REGISTRY_BACKEND=ts`, Rust is not invoked and the TS side falls back to its original env var + models.json check logic.
+- OAuth credential management (token storage, refresh, login flow) remains in TypeScript because it requires interactive browser flows and persistent encrypted storage that the Rust bridge cannot access.
+
 Known current limits:
 
 - `onPayload`/`onResponse` are TypeScript callback functions. Requests using those hooks route through the TypeScript provider until the bridge protocol supports callback round-trips.
 - Network smoke tests are not part of the default unit tests; the live smoke test is ignored by default and requires explicit credentials or a running local model endpoint.
 - In `auto` mode, a missing `rozsa-app` debug binary falls back to the TypeScript registry. `run.sh` builds `rozsa-app` and passes `ROZSA_APP_BINARY` to the TypeScript backend; standalone frontend runs should build `rozsa-app` or set `ROZSA_APP_BINARY` when validating Rust registry behavior.
 
+| AWS Bedrock Converse Stream | Supported | `BedrockProvider` implements `ApiProvider` for `Api::BedrockConverseStream`. It uses the official `aws-sdk-bedrockruntime` crate, sends ConverseStream requests, incrementally parses SDK event stream events, forwards normalized stream events through the JSONL bridge, reports usage/cost, and can be registered with `register_provider` or `register_builtin_providers`. |
+
+Current Bedrock provider coverage:
+
+- AWS Bedrock ConverseStream API for all Bedrock-hosted models
+- Credential resolution via `aws-config` default chain (env vars, profiles, IMDS, ECS task role)
+- Bearer token auth (`AWS_BEARER_TOKEN_BEDROCK`)
+- Skip auth mode (`AWS_BEDROCK_SKIP_AUTH=1`) for unauthenticated proxies
+- Region resolution via aws-config default chain, fallback to `us-east-1`
+
+Bedrock compatibility rules already modeled:
+
+- Prompt cache points (system prompt + last user message) for Claude 3.5 Haiku / 3.7 Sonnet / 4.x
+- `CacheRetention::Long` → `CacheTtl::OneHour`
+- Adaptive thinking (Claude Opus 4.6+, Sonnet 4.6) with effort level mapping
+- Budget-based thinking (Claude 3.7 Sonnet) with configurable budgets per level
+- `thinkingDisplay: "summarized"` default (omitted for GovCloud)
+- Interleaved thinking beta for non-adaptive Claude models
+- Thinking signature passthrough for Claude models
+- Tool call JSON incremental parsing
+- Text, thinking, and tool-call stream event normalization
+- Content block start/delta/stop → unified StreamEvent mapping
+- TokenUsage → Usage + cost calculation
+- Bedrock StopReason → normalized StopReason mapping
+- Image content (JPEG, PNG, GIF, WebP) via base64 decode
+- Consecutive tool results merged into single user message (Bedrock requirement)
+
+Bedrock known current limits:
+
+- No HTTP proxy support (first version)
+- No custom endpoint override
+- No `onPayload`/`onResponse` callbacks
+- No GovCloud FIPS endpoint detection (thinking display is omitted for GovCloud model IDs)
+
 ## Scheduled
 
 | Provider/API | Planned order | Notes |
 | --- | ---: | --- |
-| AWS Bedrock Converse Stream | 2 | Use the official Rust AWS SDK. Preserve region, endpoint override, credential sources, Converse Stream parsing, and Claude cache points. |
 | Anthropic Messages | 3 | Implement direct HTTP/SSE. Preserve cache-control placement, thinking, fine-grained tool streaming, OAuth headers, Copilot headers, and Anthropic-compatible providers. |
 | OpenAI Responses | 4 | Preserve Responses input conversion, reasoning signatures, tool-call IDs, prompt cache retention, and service tier behavior. |
 | Azure OpenAI Responses | 5 | Build on Responses support. Preserve deployment mapping, endpoint normalization, and `api-version`. |
