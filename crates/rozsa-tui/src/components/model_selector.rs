@@ -80,7 +80,7 @@ impl ModelSelectorState {
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
-                let haystack = format!("{}/{}", entry.provider, entry.id).to_lowercase();
+                let haystack = format_model_display(&entry.provider, &entry.id).to_lowercase();
                 if fuzzy_match(&filter_lower, &haystack) {
                     Some(index)
                 } else {
@@ -90,6 +90,36 @@ impl ModelSelectorState {
             .collect();
         self.selected = self.selected.min(self.filtered_indices.len().saturating_sub(1));
     }
+}
+
+/// 将 provider ID 转换为展示名称（首字母大写或特殊品牌名）
+fn provider_display_name(id: &str) -> &str {
+    match id {
+        "anthropic" => "Anthropic",
+        "openai" => "OpenAI",
+        "amazon-bedrock" => "Bedrock",
+        "google" => "Google",
+        "google-vertex" => "Vertex",
+        "deepseek" => "DeepSeek",
+        "openrouter" => "OpenRouter",
+        "xai" => "xAI",
+        "groq" => "Groq",
+        "cerebras" => "Cerebras",
+        "mistral" => "Mistral",
+        "nvidia" => "Nvidia",
+        "zai" => "Zai",
+        "together" => "Together",
+        "moonshotai" | "moonshotai-cn" => "MoonshotAI",
+        "huggingface" => "HuggingFace",
+        "cloudflare-workers-ai" | "cloudflare-ai-gateway" => "Cloudflare",
+        "xiaomi" | "xiaomi-token-plan-cn" | "xiaomi-token-plan-ams" | "xiaomi-token-plan-sgp" => "Xiaomi",
+        other => other,
+    }
+}
+
+/// 格式化模型展示文本：[Provider]model_id
+fn format_model_display(provider: &str, id: &str) -> String {
+    format!("[{}] {}", provider_display_name(provider), id)
 }
 
 /// 模糊匹配：filter 的每个字符按顺序出现在 haystack 中
@@ -199,7 +229,7 @@ pub fn render_model_selector(
         let w = chunks[1].width.saturating_sub(2) as usize;
         let current_mark = if entry.is_current { "*" } else { " " };
         let cursor_mark = if selected { ">" } else { " " };
-        let display = format!("{}/{}", entry.provider, entry.id);
+        let display = format_model_display(&entry.provider, &entry.id);
         let line_text = format!(
             "{} {} {}",
             cursor_mark,
