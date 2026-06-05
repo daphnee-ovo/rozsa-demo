@@ -9,7 +9,7 @@ import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, ImagesApi, ImagesModel, Model } from "@earendil-works/pi-ai";
 
 const RUST_APP_BINARY_NAME = process.platform === "win32" ? "rozsa-app.exe" : "rozsa-app";
 const SOURCE_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -32,6 +32,13 @@ interface RustModelsLine {
 	errors?: string[];
 }
 
+interface RustImageModelsLine {
+	type: "image_models";
+	id: string;
+	imageModels: ImagesModel<ImagesApi>[];
+	providerAvailable?: Record<string, ProviderAvailableEntry>;
+}
+
 interface RustErrorLine {
 	type: "error";
 	id: string;
@@ -40,6 +47,7 @@ interface RustErrorLine {
 }
 
 type RustRegistryLine = RustModelsLine | RustErrorLine;
+type RustImageRegistryLine = RustImageModelsLine | RustErrorLine;
 
 export interface RustRegistryResult {
 	models: Model<Api>[];
@@ -47,15 +55,20 @@ export interface RustRegistryResult {
 	errors: string[];
 }
 
+export interface RustImageRegistryResult {
+	imageModels: ImagesModel<ImagesApi>[];
+	providerAvailable?: Record<string, ProviderAvailableEntry>;
+}
+
 export function loadRustModelRegistryModels(modelsJsonPath: string | undefined): RustRegistryResult | undefined {
-	const backend = process.env.ROZSA_MODEL_REGISTRY_BACKEND ?? "auto";
+	const backend = process.env.ROZSA_MODEL_REGISTRY_BACKEND ?? "rust";
 	if (backend === "ts") {
 		return undefined;
 	}
-	const binary = resolveRustAppBinary();
-	if (backend === "auto" && !existsSync(binary)) {
-		return undefined;
+	if (backend !== "rust") {
+		throw new Error('ROZSA_MODEL_REGISTRY_BACKEND must be "ts" or "rust".');
 	}
+	const binary = resolveRustAppBinary();
 
 	const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 	const request = {
@@ -70,7 +83,31 @@ export function loadRustModelRegistryModels(modelsJsonPath: string | undefined):
 		maxBuffer: 16 * 1024 * 1024,
 	});
 
-	return parseRustRegistryResult(result, requestId);
+	return parseRustRegistryResult(result, requestId, backend);
+}
+
+export function loadRustImageModelRegistryModels(): RustImageRegistryResult | undefined {
+	const backend = process.env.ROZSA_MODEL_REGISTRY_BACKEND ?? "rust";
+	if (backend === "ts") {
+		return undefined;
+	}
+	if (backend !== "rust") {
+		throw new Error('ROZSA_MODEL_REGISTRY_BACKEND must be "ts" or "rust".');
+	}
+	const binary = resolveRustAppBinary();
+
+	const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+	const request = {
+		type: "list_image_models",
+		id: requestId,
+	};
+	const result = spawnSync(binary, resolveRustAppBinaryArgs(), {
+		input: `${JSON.stringify(request)}\n`,
+		encoding: "utf8",
+		maxBuffer: 16 * 1024 * 1024,
+	});
+
+	return parseRustImageRegistryResult(result, requestId, backend);
 }
 
 export function resolveRustAppBinary(): string {
@@ -95,15 +132,19 @@ export function resolveRustAppBinaryArgs(): string[] {
 	return parsed;
 }
 
-function parseRustRegistryResult(result: SpawnSyncReturns<string>, requestId: string): RustRegistryResult | undefined {
+function parseRustRegistryResult(
+	result: SpawnSyncReturns<string>,
+	requestId: string,
+	backend: "rust" | "ts",
+): RustRegistryResult | undefined {
 	if (result.error) {
-		if (process.env.ROZSA_MODEL_REGISTRY_BACKEND === "rust") {
+		if (backend === "rust") {
 			throw result.error;
 		}
 		return undefined;
 	}
 	if (result.status !== 0) {
-		if (process.env.ROZSA_MODEL_REGISTRY_BACKEND === "rust") {
+		if (backend === "rust") {
 			const stderr = result.stderr.trim().slice(-MAX_STDERR_CHARS);
 			throw new Error(`rozsa-app exited with status ${result.status}${stderr ? `: ${stderr}` : ""}`);
 		}
@@ -115,7 +156,7 @@ function parseRustRegistryResult(result: SpawnSyncReturns<string>, requestId: st
 		const parsed = parseRustRegistryLine(line);
 		if (!parsed || parsed.id !== requestId) continue;
 		if (parsed.type === "error") {
-			if (process.env.ROZSA_MODEL_REGISTRY_BACKEND === "rust") {
+			if (backend === "rust") {
 				throw new Error(parsed.message);
 			}
 			return undefined;
@@ -123,8 +164,46 @@ function parseRustRegistryResult(result: SpawnSyncReturns<string>, requestId: st
 		return { models: parsed.models, providerAvailable: parsed.providerAvailable, errors: parsed.errors ?? [] };
 	}
 
-	if (process.env.ROZSA_MODEL_REGISTRY_BACKEND === "rust") {
+	if (backend === "rust") {
 		throw new Error("rozsa-app did not return a model registry response");
+	}
+	return undefined;
+}
+
+function parseRustImageRegistryResult(
+	result: SpawnSyncReturns<string>,
+	requestId: string,
+	backend: "rust" | "ts",
+): RustImageRegistryResult | undefined {
+	if (result.error) {
+		if (backend === "rust") {
+			throw result.error;
+		}
+		return undefined;
+	}
+	if (result.status !== 0) {
+		if (backend === "rust") {
+			const stderr = result.stderr.trim().slice(-MAX_STDERR_CHARS);
+			throw new Error(`rozsa-app exited with status ${result.status}${stderr ? `: ${stderr}` : ""}`);
+		}
+		return undefined;
+	}
+
+	for (const line of result.stdout.split(/\r?\n/)) {
+		if (!line.trim()) continue;
+		const parsed = parseRustImageRegistryLine(line);
+		if (!parsed || parsed.id !== requestId) continue;
+		if (parsed.type === "error") {
+			if (backend === "rust") {
+				throw new Error(parsed.message);
+			}
+			return undefined;
+		}
+		return { imageModels: parsed.imageModels, providerAvailable: parsed.providerAvailable };
+	}
+
+	if (backend === "rust") {
+		throw new Error("rozsa-app did not return an image model registry response");
 	}
 	return undefined;
 }
@@ -133,6 +212,15 @@ function parseRustRegistryLine(line: string): RustRegistryLine | undefined {
 	try {
 		const parsed = JSON.parse(line) as RustRegistryLine;
 		return parsed && (parsed.type === "models" || parsed.type === "error") ? parsed : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function parseRustImageRegistryLine(line: string): RustImageRegistryLine | undefined {
+	try {
+		const parsed = JSON.parse(line) as RustImageRegistryLine;
+		return parsed && (parsed.type === "image_models" || parsed.type === "error") ? parsed : undefined;
 	} catch {
 		return undefined;
 	}

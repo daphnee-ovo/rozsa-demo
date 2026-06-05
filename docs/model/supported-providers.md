@@ -51,21 +51,22 @@ NVIDIA model discovery note:
 
 - NVIDIA NIM exposes `GET /v1/models` for models currently loaded and available on that endpoint. NVIDIA API Catalog uses the same OpenAI-compatible base URL shape, but available hosted models can vary by account and over time. `rozsa-model` therefore does not hardcode a NVIDIA model list.
 - `rozsa-app` owns the Rust `ModelRegistry`: it loads `packages/ai/src/models.generated.json`, merges optional `models.json`, and, when `NVIDIA_API_KEY` is set, merges live NVIDIA models from `GET https://integrate.api.nvidia.com/v1/models`.
-- The TypeScript `ModelRegistry` calls the Rust registry bridge by default in `ROZSA_MODEL_REGISTRY_BACKEND=auto` when the `rozsa-app` binary exists. `/model` then renders `getAvailable()` from this Rust-backed list, so NVIDIA shows only models discovered from the live endpoint unless the user explicitly configures custom models. Set `ROZSA_MODEL_REGISTRY_BACKEND=rust` to fail fast if the bridge is unavailable, or `ROZSA_MODEL_REGISTRY_BACKEND=ts` to force the old TypeScript registry.
+- `rozsa-app` also owns generated image model metadata through `packages/ai/src/image-models.generated.json` and exposes it with the `list_image_models` bridge request.
+- The TypeScript `ModelRegistry` calls the Rust registry bridge by default because `ROZSA_MODEL_REGISTRY_BACKEND` defaults to `rust`. `/model` renders `getAvailable()` from this Rust-backed list, so NVIDIA shows only models discovered from the live endpoint unless the user explicitly configures custom models. Set `ROZSA_MODEL_REGISTRY_BACKEND=ts` to force the old TypeScript registry. There is no `auto` fallback mode.
 
 Provider availability (auth check):
 
 - Rust `ModelRegistry::provider_available()` checks whether each provider has configured credentials via environment variables (using `env_keys::get_env_api_key`) or via `models.json` `apiKey` field (literal value, env var reference, or `!command` marker).
 - The bridge response includes `providerAvailable: Record<provider, {configured, source}>` alongside the full model list.
 - TypeScript `ModelRegistry.hasConfiguredAuth()` uses the Rust-provided `providerAvailable` for API key auth, and separately checks TS-managed OAuth tokens (`AuthStorage`). A model is available if either path reports configured.
-- When `ROZSA_MODEL_REGISTRY_BACKEND=ts`, Rust is not invoked and the TS side falls back to its original env var + models.json check logic.
+- When `ROZSA_MODEL_REGISTRY_BACKEND=ts`, Rust is not invoked and the TS side uses its original env var + models.json check logic.
 - OAuth credential management (token storage, refresh, login flow) remains in TypeScript because it requires interactive browser flows and persistent encrypted storage that the Rust bridge cannot access.
 
 Known current limits:
 
-- `onPayload`/`onResponse` are TypeScript callback functions. Requests using those hooks route through the TypeScript provider until the bridge protocol supports callback round-trips.
+- `onPayload`/`onResponse` are TypeScript callback functions. In Rust execution mode, requests using those hooks fail clearly until the bridge protocol supports callback round-trips. Use `ROZSA_MODEL_BACKEND=ts` when those callbacks are required.
 - Network smoke tests are not part of the default unit tests; the live smoke test is ignored by default and requires explicit credentials or a running local model endpoint.
-- In `auto` mode, a missing `rozsa-app` debug binary falls back to the TypeScript registry. `run.sh` builds `rozsa-app` and passes `ROZSA_APP_BINARY` to the TypeScript backend; standalone frontend runs should build `rozsa-app` or set `ROZSA_APP_BINARY` when validating Rust registry behavior.
+- A missing `rozsa-app` debug binary is a startup/configuration error in Rust registry mode. `run.sh` builds `rozsa-app` and passes `ROZSA_APP_BINARY` to the TypeScript backend; standalone frontend runs should build `rozsa-app` or set `ROZSA_APP_BINARY` when validating Rust registry behavior.
 
 | AWS Bedrock Converse Stream | Supported | `BedrockProvider` implements `ApiProvider` for `Api::BedrockConverseStream`. It uses the official `aws-sdk-bedrockruntime` crate, sends ConverseStream requests, incrementally parses SDK event stream events, forwards normalized stream events through the JSONL bridge, reports usage/cost, and can be registered with `register_provider` or `register_builtin_providers`. |
 
@@ -103,19 +104,18 @@ Bedrock known current limits:
 
 ## Scheduled
 
-| Provider/API | Planned order | Notes |
-| --- | ---: | --- |
-| Anthropic Messages | 3 | Implement direct HTTP/SSE. Preserve cache-control placement, thinking, fine-grained tool streaming, OAuth headers, Copilot headers, and Anthropic-compatible providers. |
-| OpenAI Responses | 4 | Preserve Responses input conversion, reasoning signatures, tool-call IDs, prompt cache retention, and service tier behavior. |
-| Azure OpenAI Responses | 5 | Build on Responses support. Preserve deployment mapping, endpoint normalization, and `api-version`. |
-| Google Gemini | 6 | Implement direct REST using official protocol behavior as reference. Preserve image input, tool schema conversion, thinking, and thought signatures. |
-| Google Vertex | 7 | Build after Gemini. Preserve project/location resolution and Application Default Credentials. |
-| OpenAI Codex Responses | 8 | Special transport provider. Preserve SSE, WebSocket, cached WebSocket, account IDs, session IDs, retry-after handling, and OAuth boundary. |
+No additional provider protocols are scheduled for the current model-layer milestone. The previous 2.3-2.9 provider rollout is delayed so the Rust model layer, bridge routing, and registry ownership can settle first.
 
 ## Deferred
 
 | Provider/API | Reason |
 | --- | --- |
+| Anthropic Messages | Deferred from the previous 2.3 slot. Direct HTTP/SSE support still needs cache-control placement, thinking, fine-grained tool streaming, OAuth headers, Copilot headers, and Anthropic-compatible provider behavior. |
+| OpenAI Responses | Deferred from the previous 2.4 slot. It still needs Responses input conversion, reasoning signatures, tool-call IDs, prompt cache retention, and service tier behavior. |
+| Azure OpenAI Responses | Deferred from the previous 2.5 slot. It depends on OpenAI Responses parity plus Azure endpoint and deployment mapping. |
+| Google Gemini | Deferred from the previous 2.6 slot. Direct REST support still needs image input, tool schema conversion, thinking, and thought signatures. |
+| Google Vertex | Deferred from the previous 2.7 slot. It depends on Gemini behavior plus project/location and Application Default Credentials support. |
+| OpenAI Codex Responses | Deferred from the previous 2.8 slot. It has special SSE/WebSocket transports, account/session handling, retry-after handling, and OAuth boundaries. |
 | Mistral Conversations | No official Rust or Go SDK identified. Current TypeScript layer uses the official TypeScript SDK. Direct HTTP support can be added later if Mistral becomes required. |
 | Provider-specific SDK adapters without Rust/Go support | Deferred unless the provider has a stable compatibility protocol or becomes product-critical. |
 

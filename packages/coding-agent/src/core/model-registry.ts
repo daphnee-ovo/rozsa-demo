@@ -34,7 +34,7 @@ import {
 	resolveConfigValueUncached,
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.ts";
-import { type ProviderAvailableEntry, loadRustModelRegistryModels } from "./rust-model-registry.ts";
+import { loadRustModelRegistryModels, type ProviderAvailableEntry } from "./rust-model-registry.ts";
 
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({

@@ -22,6 +22,8 @@ use thiserror::Error;
 
 const GENERATED_MODELS_JSON: &str =
     include_str!("../../../../packages/ai/src/models.generated.json");
+const GENERATED_IMAGE_MODELS_JSON: &str =
+    include_str!("../../../../packages/ai/src/image-models.generated.json");
 const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 const DEFAULT_MAX_TOKENS: usize = 16_384;
 
@@ -38,6 +40,8 @@ pub struct ProviderAvailable {
 pub enum ModelRegistryError {
     #[error("Failed to parse generated models: {0}")]
     GeneratedParse(serde_json::Error),
+    #[error("Failed to parse generated image models: {0}")]
+    GeneratedImageParse(serde_json::Error),
     #[error("Failed to parse models.json: {0}")]
     ModelsJsonParse(serde_json::Error),
     #[error("Invalid models.json: {0}")]
@@ -94,6 +98,22 @@ pub struct RegistryModel {
     pub compat: Option<Value>,
 }
 
+/// Image model metadata shape shared with the TypeScript image registry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegistryImageModel {
+    pub id: String,
+    pub name: String,
+    pub api: String,
+    pub provider: String,
+    #[serde(rename = "baseUrl")]
+    pub base_url: String,
+    pub input: Vec<String>,
+    pub output: Vec<String>,
+    pub cost: RegistryModelCost,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+}
+
 /// Rust registry containing generated, configured, and discovered model metadata.
 #[derive(Debug, Clone)]
 pub struct ModelRegistry {
@@ -101,6 +121,62 @@ pub struct ModelRegistry {
     user_configured_model_keys: HashSet<String>,
     /// Provider-level apiKey from models.json (raw value, not resolved).
     provider_api_keys: HashMap<String, String>,
+}
+
+/// Rust registry containing generated image model metadata.
+#[derive(Debug, Clone)]
+pub struct ImageModelRegistry {
+    models: Vec<RegistryImageModel>,
+}
+
+impl ImageModelRegistry {
+    /// Load the checked-in generated image model metadata.
+    pub fn from_generated() -> Result<Self, ModelRegistryError> {
+        Self::from_generated_json(GENERATED_IMAGE_MODELS_JSON)
+    }
+
+    /// Load image model metadata from generated JSON text.
+    pub fn from_generated_json(input: &str) -> Result<Self, ModelRegistryError> {
+        Ok(Self {
+            models: flatten_generated_image_models(input)?,
+        })
+    }
+
+    /// Return all image model metadata.
+    pub fn all(&self) -> &[RegistryImageModel] {
+        &self.models
+    }
+
+    /// Find an image model by provider and model ID.
+    pub fn find(&self, provider: &str, model_id: &str) -> Option<&RegistryImageModel> {
+        self.models
+            .iter()
+            .find(|model| model.provider == provider && model.id == model_id)
+    }
+
+    /// Compute auth availability per image provider using known env vars.
+    pub fn provider_available(&self) -> HashMap<String, ProviderAvailable> {
+        let mut result = HashMap::new();
+        for provider_name in self.provider_ids() {
+            let provider_enum = provider_from_str(&provider_name);
+            let configured = provider_enum.as_ref().and_then(get_env_api_key).is_some();
+            result.insert(
+                provider_name,
+                ProviderAvailable {
+                    configured,
+                    source: configured.then(|| "environment".to_string()),
+                },
+            );
+        }
+        result
+    }
+
+    fn provider_ids(&self) -> HashSet<String> {
+        self.models
+            .iter()
+            .map(|model| model.provider.clone())
+            .collect()
+    }
 }
 
 impl ModelRegistry {
@@ -541,6 +617,17 @@ struct ProviderOverride {
 fn flatten_generated_models(input: &str) -> Result<Vec<RegistryModel>, ModelRegistryError> {
     let providers: HashMap<String, HashMap<String, RegistryModel>> =
         serde_json::from_str(input).map_err(ModelRegistryError::GeneratedParse)?;
+    Ok(providers
+        .into_values()
+        .flat_map(|models| models.into_values())
+        .collect())
+}
+
+fn flatten_generated_image_models(
+    input: &str,
+) -> Result<Vec<RegistryImageModel>, ModelRegistryError> {
+    let providers: HashMap<String, HashMap<String, RegistryImageModel>> =
+        serde_json::from_str(input).map_err(ModelRegistryError::GeneratedImageParse)?;
     Ok(providers
         .into_values()
         .flat_map(|models| models.into_values())

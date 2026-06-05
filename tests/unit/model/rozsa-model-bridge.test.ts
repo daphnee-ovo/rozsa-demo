@@ -65,7 +65,7 @@ describe("rozsa-model bridge", () => {
 		});
 	});
 
-	describe("shouldUseRustModelProvider three-value backend semantics", () => {
+	describe("shouldUseRustModelProvider backend semantics", () => {
 		it("backend=rust returns true for listed API without checking binary existence", () => {
 			process.env.ROZSA_MODEL_BACKEND = "rust";
 			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
@@ -79,18 +79,12 @@ describe("rozsa-model bridge", () => {
 			expect(shouldUseRustModelProvider("anthropic-messages")).toBe(false);
 		});
 
-		it("backend=auto returns false when binary does not exist", () => {
+		it("backend=auto is rejected", () => {
 			process.env.ROZSA_MODEL_BACKEND = "auto";
 			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
-			process.env.ROZSA_MODEL_BINARY = "/nonexistent/path/rozsa-model";
-			expect(shouldUseRustModelProvider("openai-completions")).toBe(false);
-		});
-
-		it("backend=auto returns true when binary exists", () => {
-			process.env.ROZSA_MODEL_BACKEND = "auto";
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
-			process.env.ROZSA_MODEL_BINARY = process.execPath;
-			expect(shouldUseRustModelProvider("openai-completions")).toBe(true);
+			expect(() => shouldUseRustModelProvider("openai-completions")).toThrow(
+				'ROZSA_MODEL_BACKEND must be "ts" or "rust".',
+			);
 		});
 
 		it("backend=ts returns false regardless", () => {
@@ -130,7 +124,7 @@ describe("rozsa-model bridge", () => {
 			const stream = provider!.stream(bedrockModel, context);
 			const result = await stream.result();
 			expect(result.stopReason).toBe("error");
-			expect(result.errorMessage).toContain("not in ROZSA_MODEL_RUST_APIS");
+			expect(result.errorMessage).toContain("not available through the Rust bridge");
 		});
 
 		it("migrated API is not blocked", () => {
@@ -143,14 +137,64 @@ describe("rozsa-model bridge", () => {
 			expect(provider!.stream).not.toBe(getApiProvider("anthropic-messages")!.stream);
 		});
 
-		it("backend=auto does not block unmigrated APIs", () => {
-			process.env.ROZSA_MODEL_BACKEND = "auto";
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+		it("routes Bedrock through the Rust bridge when listed", async () => {
+			const bridgeScript = `
+				const readline = require("node:readline");
+				const rl = readline.createInterface({ input: process.stdin });
+				rl.on("line", (line) => {
+					const input = JSON.parse(line);
+					const message = {
+						role: "assistant",
+						content: [{ type: "text", text: "hello from bedrock rust" }],
+						api: input.model.api,
+						provider: input.model.provider,
+						model: input.model.id,
+						usage: {
+							input: 1,
+							output: 2,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 3,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: "stop",
+						timestamp: 123,
+					};
+					console.log(JSON.stringify({
+						type: "event",
+						id: input.id,
+						event: { type: "done", reason: "stop", message },
+					}));
+				});
+			`;
+			process.env.ROZSA_MODEL_BACKEND = "rust";
+			process.env.ROZSA_MODEL_RUST_APIS = "bedrock-converse-stream";
+			process.env.ROZSA_MODEL_BINARY = process.execPath;
+			process.env.ROZSA_MODEL_BINARY_ARGS = JSON.stringify(["-e", bridgeScript]);
 			resetApiProviders();
 
-			const provider = getApiProvider("anthropic-messages");
+			const provider = getApiProvider("bedrock-converse-stream");
 			expect(provider).toBeDefined();
+
+			const bedrockModel = {
+				id: "anthropic.claude-test",
+				name: "Claude Test",
+				api: "bedrock-converse-stream" as const,
+				provider: "amazon-bedrock",
+				baseUrl: "",
+				reasoning: false,
+				input: ["text" as const],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 200000,
+				maxTokens: 4096,
+			};
+			const stream = provider!.stream(bedrockModel, context);
+			const result = await stream.result();
+
+			expect(result.stopReason).toBe("stop");
+			expect(result.content).toEqual([{ type: "text", text: "hello from bedrock rust" }]);
 		});
+
 	});
 
 	it("streams through a JSONL bridge process", async () => {

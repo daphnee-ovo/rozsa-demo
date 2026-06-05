@@ -21,8 +21,8 @@ Replace the TypeScript AI execution layer with Rust in stages:
 
 1. Migrate individual provider protocol implementations into Rust.
 2. Keep the current TypeScript `@earendil-works/pi-ai` API as a compatibility shell while provider migration is incomplete.
-3. Move AI-layer methods such as `streamSimple`, `stream`, `completeSimple`, and `complete` behind the Rust implementation.
-4. Move model registry, provider registry, credential resolution, and OAuth/session support when Rust coverage is ready.
+3. Move AI-layer methods such as `streamSimple`, `stream`, `completeSimple`, and `complete` behind the Rust implementation for supported Rust APIs.
+4. Move provider execution registry, model metadata, compatibility metadata, and custom model metadata loading into Rust while keeping interactive OAuth/session flows in TypeScript.
 5. Remove the TypeScript AI layer as an execution dependency.
 6. Let the agent layer call `rozsa-model` directly.
 
@@ -362,7 +362,9 @@ Implementation requirements:
 - Preserve Converse Stream event parsing.
 - Preserve proxy-related behavior currently supported by environment variables.
 
-### 2.3 Anthropic Messages
+The previous 2.3-2.9 provider rollout is delayed. The current milestone prioritizes finishing the Rust model-layer boundary, bridge routing, and registry ownership before adding more provider protocol adapters.
+
+### 2.3 Deferred: Anthropic Messages
 
 Migrate `anthropic-messages` after OpenAI-compatible and Bedrock.
 
@@ -390,7 +392,7 @@ Implementation requirements:
 
 Rust should use direct HTTP/SSE. There is no official Rust SDK, and the current TS layer already has important compatibility logic around headers and streaming.
 
-### 2.4 OpenAI Responses
+### 2.4 Deferred: OpenAI Responses
 
 Migrate `openai-responses` after `openai-completions`.
 
@@ -403,7 +405,7 @@ Implementation requirements:
 - Preserve `serviceTier` usage adjustments.
 - Preserve GitHub Copilot and Cloudflare AI Gateway special headers when routed through Responses.
 
-### 2.5 Azure OpenAI Responses
+### 2.5 Deferred: Azure OpenAI Responses
 
 Migrate `azure-openai-responses` after OpenAI Responses.
 
@@ -414,7 +416,7 @@ Implementation requirements:
 - Preserve `api-version` handling.
 - Preserve Azure-specific auth and base URL behavior.
 
-### 2.6 Google Gemini
+### 2.6 Deferred: Google Gemini
 
 Migrate `google-generative-ai`.
 
@@ -428,7 +430,7 @@ Implementation requirements:
 
 Rust can use direct REST. Go SDK behavior can be used as a protocol reference, but should not be part of runtime.
 
-### 2.7 Google Vertex
+### 2.7 Deferred: Google Vertex
 
 Migrate `google-vertex` after Gemini.
 
@@ -442,7 +444,7 @@ Implementation requirements:
 
 This provider has more auth risk than plain Gemini. Do not combine it with Gemini migration unless the auth boundary is already isolated.
 
-### 2.8 OpenAI Codex Responses
+### 2.8 Deferred: OpenAI Codex Responses
 
 Migrate `openai-codex-responses` only after the generic stream protocol is stable.
 
@@ -458,7 +460,7 @@ Implementation requirements:
 
 This is a special provider. It should not block replacing common API-key providers.
 
-### 2.9 Mistral
+### 2.9 Deferred: Mistral
 
 Keep Mistral later or experimental unless it becomes a required provider.
 
@@ -476,7 +478,7 @@ Minimum requirements when migrated:
 
 ## Stage 3: Move AI Methods Behind Rust
 
-After several providers are migrated, move the AI method implementation behind the bridge while preserving the TS public API.
+Move the AI method implementation behind the bridge for Rust-supported APIs while preserving the TS public API.
 
 Current TS methods:
 
@@ -487,7 +489,7 @@ Current TS methods:
 
 Target behavior:
 
-- `stream` and `streamSimple` call the Rust backend when the selected API is Rust-enabled.
+- `stream` and `streamSimple` call the Rust backend when the selected API is Rust-supported and explicitly listed in `ROZSA_MODEL_RUST_APIS`.
 - `complete` and `completeSimple` remain wrappers that call the stream method and wait for `result()`.
 - The TS `AssistantMessageEventStream` remains the compatibility surface for Node callers.
 
@@ -497,12 +499,22 @@ Done criteria:
 
 - Agent tests still import `@earendil-works/pi-ai`.
 - Migrated APIs can run through Rust without agent-layer changes.
-- Non-migrated APIs still run through TS.
-- Per-API fallback is explicit and observable.
+- Non-migrated APIs fail clearly in `ROZSA_MODEL_BACKEND=rust` instead of falling back to TS.
+- `ROZSA_MODEL_BACKEND=ts` is the explicit rollback path.
+- Bedrock and OpenAI-compatible APIs route through the Rust bridge when enabled.
+
+Current status:
+
+- Complete for the current model-layer milestone.
+- `ROZSA_MODEL_BACKEND` accepts only `ts` or `rust`; `auto` has been removed.
+- Rust execution and TS execution are separated by `ROZSA_MODEL_BACKEND`.
+- Only APIs implemented by the Rust bridge can run in Rust mode.
+- `stream`/`streamSimple` route `openai-completions` and `bedrock-converse-stream` through `rozsa-model` when enabled.
+- `complete`/`completeSimple` inherit that routing through their existing stream wrappers.
 
 ## Stage 4: Move Registry And Metadata
 
-Move registries only after provider execution is stable.
+Move registries after provider execution is stable enough for the current supported APIs.
 
 Migration order:
 
@@ -510,9 +522,9 @@ Migration order:
 2. Move model metadata loading.
 3. Move compatibility metadata.
 4. Move custom model loading.
-5. Move image model registry if image generation remains in scope.
+5. Move image model registry metadata.
 
-Keep `models.generated.ts` as the source of truth until Rust can load equivalent generated data.
+Keep `models.generated.ts` and `models.generated.json` traceable during the transition. Rust loads the generated JSON data; TypeScript keeps the generated TypeScript metadata for TS-only execution.
 
 Target Rust metadata should preserve:
 
@@ -529,7 +541,17 @@ Target Rust metadata should preserve:
 - thinking level map
 - provider compatibility flags
 
-Do not rewrite model discovery and provider metadata at the same time as provider protocol migration.
+Do not add new provider discovery surfaces while provider protocol migration is paused.
+
+Current status:
+
+- Complete for registry and metadata ownership in the current model-layer milestone.
+- `rozsa-app` owns the Rust model registry bridge.
+- `ROZSA_MODEL_REGISTRY_BACKEND` defaults to `rust`; set it to `ts` to force the TypeScript registry.
+- `auto` registry fallback has been removed. Missing or broken `rozsa-app` is a configuration error in Rust registry mode.
+- Rust loads `packages/ai/src/models.generated.json`, merges optional `models.json`, preserves compatibility metadata, and can merge live NVIDIA model discovery when `NVIDIA_API_KEY` is configured.
+- Rust loads `packages/ai/src/image-models.generated.json` and exposes image model metadata through the `list_image_models` app bridge request.
+- TypeScript still owns OAuth/session credential storage and interactive login flows.
 
 ## Stage 5: Move Credential And OAuth Support
 
@@ -721,8 +743,9 @@ Suggested flags:
 ```bash
 ROZSA_MODEL_BACKEND=ts
 ROZSA_MODEL_BACKEND=rust
-ROZSA_MODEL_BACKEND=auto
-ROZSA_MODEL_RUST_APIS=openai-completions,anthropic-messages
+ROZSA_MODEL_RUST_APIS=openai-completions,bedrock-converse-stream
+ROZSA_MODEL_REGISTRY_BACKEND=rust
+ROZSA_MODEL_REGISTRY_BACKEND=ts
 ROZSA_MODEL_BINARY=/absolute/path/to/rozsa-model
 ROZSA_MODEL_TRACE=1
 ```
@@ -731,9 +754,8 @@ Semantics:
 
 - `ts`: always use TS provider implementation.
 - `rust`: use Rust for listed APIs; fail if Rust cannot serve them.
-- `auto`: use Rust for listed APIs when available, otherwise use TS and emit an observable warning.
 
-Do not make `auto` the default until parity is strong.
+`auto` is not supported. Use `ts` for rollback and `rust` for Rust-owned provider execution. `ROZSA_MODEL_REGISTRY_BACKEND` defaults to `rust`; set it to `ts` only when explicitly isolating the TypeScript registry.
 
 ## Error Handling Requirements
 
@@ -747,7 +769,7 @@ Rust errors must preserve current expectations:
 - Unknown provider API: return a clear unsupported API error.
 - Bridge crash: report child process exit status and stderr excerpt.
 
-Do not hide Rust failures behind silent TS fallback unless the user explicitly enabled an auto fallback mode.
+Do not hide Rust failures behind silent TS fallback. The rollback path is explicit `ROZSA_MODEL_BACKEND=ts` or `ROZSA_MODEL_REGISTRY_BACKEND=ts`.
 
 ## Packaging Strategy
 
@@ -778,10 +800,16 @@ Avoid lifecycle scripts that download or build binaries during install unless th
 - TypeScript AI can route `openai-completions` through Rust by opt-in env flags.
 - OpenAI-compatible Chat Completions has the first Rust provider adapter.
 - OpenAI-compatible Chat Completions now supports incremental stream output, retry, provider routing, Cloudflare Gateway, Copilot dynamic headers, and proxy cache-control payloads.
-- Requests using `onPayload` or `onResponse` keep TypeScript provider routing so callback behavior remains available during the bridge phase.
+- AWS Bedrock Converse Stream has a Rust provider adapter and can route through the Rust bridge.
+- `stream`, `streamSimple`, `complete`, and `completeSimple` route supported Rust APIs through `rozsa-model` when `ROZSA_MODEL_BACKEND=rust`.
+- The TypeScript registry bridge defaults to Rust via `ROZSA_MODEL_REGISTRY_BACKEND=rust`.
+- Rust registry loading covers generated model metadata, compatibility metadata, custom model metadata, image model metadata, provider auth availability, and NVIDIA live discovery.
+- Rust and TypeScript provider execution are explicitly separated by `ROZSA_MODEL_BACKEND`; `auto` mode has been removed.
+- Rust and TypeScript model registry ownership are explicitly separated by `ROZSA_MODEL_REGISTRY_BACKEND`; `auto` mode has been removed.
+- Requests using `onPayload` or `onResponse` fail clearly in Rust mode until callback round-trips exist.
 - An ignored live smoke entrypoint exists under `tests/unit/model` for explicit credential-backed checks.
 - Rust protocol and fake TypeScript bridge tests live under `tests/unit/model`.
-- Provider migration order is defined.
+- Provider migration order is defined, but previous 2.3-2.9 provider rollout is deferred.
 - Final agent direct integration boundary is defined.
 
 ## Remaining

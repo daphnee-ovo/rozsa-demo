@@ -11,7 +11,7 @@ for arg in "$@"; do
 done
 
 if ((${#forward_args[@]} > 0)); then
-	ROZSA_MODEL_BACKEND=ts ROZSA_LLAMA_AUTOSTART=0 exec "$(dirname "$0")/run.sh" "${forward_args[@]}"
+	ROZSA_MODEL_BACKEND=ts ROZSA_MODEL_REGISTRY_BACKEND=ts ROZSA_LLAMA_AUTOSTART=0 exec "$(dirname "$0")/run.sh" "${forward_args[@]}"
 else
-	ROZSA_MODEL_BACKEND=ts ROZSA_LLAMA_AUTOSTART=0 exec "$(dirname "$0")/run.sh"
+	ROZSA_MODEL_BACKEND=ts ROZSA_MODEL_REGISTRY_BACKEND=ts ROZSA_LLAMA_AUTOSTART=0 exec "$(dirname "$0")/run.sh"
 fi

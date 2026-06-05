@@ -1,5 +1,4 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type {
@@ -13,6 +12,7 @@ import type {
 	StreamOptions,
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { isRustModelSupportedApi } from "./rust-supported-apis.ts";
 
 type BridgeMethod = "stream" | "streamSimple";
 
@@ -44,14 +44,15 @@ export const streamSimpleRustModel: StreamFunction<Api, SimpleStreamOptions> = (
 
 /** Decide whether a TypeScript API should route to the Rust model bridge. */
 export function shouldUseRustModelProvider(api: Api): boolean {
-	const backend = process.env.ROZSA_MODEL_BACKEND;
-	if (backend !== "rust" && backend !== "auto") {
+	const backend = process.env.ROZSA_MODEL_BACKEND ?? "ts";
+	if (backend === "ts") {
 		return false;
 	}
+	if (backend !== "rust") {
+		throw new Error('ROZSA_MODEL_BACKEND must be "ts" or "rust".');
+	}
+	if (!isRustModelSupportedApi(api)) return false;
 	if (!rustApiSet().has(api)) {
-		return false;
-	}
-	if (backend === "auto" && !existsSync(resolveRustModelBinary())) {
 		return false;
 	}
 	return true;

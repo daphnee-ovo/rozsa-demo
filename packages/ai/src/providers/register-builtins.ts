@@ -19,6 +19,7 @@ import type { MistralOptions } from "./mistral.ts";
 import type { OpenAICodexResponsesOptions } from "./openai-codex-responses.ts";
 import type { OpenAICompletionsOptions } from "./openai-completions.ts";
 import type { OpenAIResponsesOptions } from "./openai-responses.ts";
+import { isRustModelSupportedApi } from "./rust-supported-apis.ts";
 
 interface LazyProviderModule<
 	TApi extends Api,
@@ -297,6 +298,9 @@ function loadOpenAICompletionsProviderModule(): Promise<
 				const isStrictRust = process.env.ROZSA_MODEL_BACKEND === "rust";
 				return {
 					stream: (model, context, options) => {
+						if (isStrictRust && hasPayloadOrResponseHook(options)) {
+							return createUnsupportedRustCallbackStream(model);
+						}
 						if (!isStrictRust && hasPayloadOrResponseHook(options)) {
 							return streamViaTypeScriptOpenAICompletions(model, context, options);
 						}
@@ -333,6 +337,17 @@ function hasPayloadOrResponseHook(options?: StreamOptions): boolean {
 	return !!options?.onPayload || !!options?.onResponse;
 }
 
+function createUnsupportedRustCallbackStream<TApi extends Api>(model: Model<TApi>): AssistantMessageEventStream {
+	const stream = new AssistantMessageEventStream();
+	const message = createLazyLoadErrorMessage(
+		model,
+		"ROZSA_MODEL_BACKEND=rust does not support onPayload/onResponse callbacks yet.",
+	);
+	stream.push({ type: "error", reason: "error", error: message });
+	stream.end(message);
+	return stream;
+}
+
 function streamViaTypeScriptOpenAICompletions(
 	model: Model<"openai-completions">,
 	context: Context,
@@ -367,8 +382,12 @@ function streamSimpleViaTypeScriptOpenAICompletions(
 
 function shouldAttemptRustModelProvider(api: Api): boolean {
 	if (typeof process === "undefined") return false;
-	const backend = process.env.ROZSA_MODEL_BACKEND;
-	if (backend !== "rust" && backend !== "auto") return false;
+	const backend = process.env.ROZSA_MODEL_BACKEND ?? "ts";
+	if (backend === "ts") return false;
+	if (backend !== "rust") {
+		throw new Error('ROZSA_MODEL_BACKEND must be "ts" or "rust".');
+	}
+	if (!isRustModelSupportedApi(api)) return false;
 	const rawApis = process.env.ROZSA_MODEL_RUST_APIS;
 	if (!rawApis) return false;
 	if (
@@ -401,6 +420,27 @@ function loadBedrockProviderModule(): Promise<
 	if (bedrockProviderModuleOverride) {
 		return Promise.resolve(bedrockProviderModuleOverride);
 	}
+	if (shouldAttemptRustModelProvider("bedrock-converse-stream")) {
+		return importNodeOnlyProvider("./rozsa-model-bridge.ts").then((module) => {
+			const bridge = module as RustModelBridgeModule;
+			if (bridge.shouldUseRustModelProvider("bedrock-converse-stream")) {
+				return {
+					stream: bridge.streamRustModel as StreamFunction<"bedrock-converse-stream", BedrockOptions>,
+					streamSimple: bridge.streamSimpleRustModel as StreamFunction<
+						"bedrock-converse-stream",
+						SimpleStreamOptions
+					>,
+				};
+			}
+			return loadTypeScriptBedrockProviderModule();
+		});
+	}
+	return loadTypeScriptBedrockProviderModule();
+}
+
+function loadTypeScriptBedrockProviderModule(): Promise<
+	LazyProviderModule<"bedrock-converse-stream", BedrockOptions, SimpleStreamOptions>
+> {
 	bedrockProviderModulePromise ||= importNodeOnlyProvider("./amazon-bedrock.ts").then((module) => {
 		const provider = module as BedrockProviderModule;
 		return {
@@ -431,61 +471,112 @@ const streamBedrockLazy = createLazyStream(loadBedrockProviderModule);
 const streamSimpleBedrockLazy = createLazySimpleStream(loadBedrockProviderModule);
 
 export function registerBuiltInApiProviders(): void {
+	validateRustModelBackend();
 	const strict = isStrictRustMode();
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("anthropic-messages")
-			? { api: "anthropic-messages", stream: createRustGuardStream("anthropic-messages"), streamSimple: createRustGuardStream("anthropic-messages") }
+			? {
+					api: "anthropic-messages",
+					stream: createRustGuardStream("anthropic-messages"),
+					streamSimple: createRustGuardStream("anthropic-messages"),
+				}
 			: { api: "anthropic-messages", stream: streamAnthropic, streamSimple: streamSimpleAnthropic },
 	);
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("openai-completions")
-			? { api: "openai-completions", stream: createRustGuardStream("openai-completions"), streamSimple: createRustGuardStream("openai-completions") }
+			? {
+					api: "openai-completions",
+					stream: createRustGuardStream("openai-completions"),
+					streamSimple: createRustGuardStream("openai-completions"),
+				}
 			: { api: "openai-completions", stream: streamOpenAICompletions, streamSimple: streamSimpleOpenAICompletions },
 	);
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("mistral-conversations")
-			? { api: "mistral-conversations", stream: createRustGuardStream("mistral-conversations"), streamSimple: createRustGuardStream("mistral-conversations") }
+			? {
+					api: "mistral-conversations",
+					stream: createRustGuardStream("mistral-conversations"),
+					streamSimple: createRustGuardStream("mistral-conversations"),
+				}
 			: { api: "mistral-conversations", stream: streamMistral, streamSimple: streamSimpleMistral },
 	);
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("openai-responses")
-			? { api: "openai-responses", stream: createRustGuardStream("openai-responses"), streamSimple: createRustGuardStream("openai-responses") }
+			? {
+					api: "openai-responses",
+					stream: createRustGuardStream("openai-responses"),
+					streamSimple: createRustGuardStream("openai-responses"),
+				}
 			: { api: "openai-responses", stream: streamOpenAIResponses, streamSimple: streamSimpleOpenAIResponses },
 	);
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("azure-openai-responses")
-			? { api: "azure-openai-responses", stream: createRustGuardStream("azure-openai-responses"), streamSimple: createRustGuardStream("azure-openai-responses") }
-			: { api: "azure-openai-responses", stream: streamAzureOpenAIResponses, streamSimple: streamSimpleAzureOpenAIResponses },
+			? {
+					api: "azure-openai-responses",
+					stream: createRustGuardStream("azure-openai-responses"),
+					streamSimple: createRustGuardStream("azure-openai-responses"),
+				}
+			: {
+					api: "azure-openai-responses",
+					stream: streamAzureOpenAIResponses,
+					streamSimple: streamSimpleAzureOpenAIResponses,
+				},
 	);
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("openai-codex-responses")
-			? { api: "openai-codex-responses", stream: createRustGuardStream("openai-codex-responses"), streamSimple: createRustGuardStream("openai-codex-responses") }
-			: { api: "openai-codex-responses", stream: streamOpenAICodexResponses, streamSimple: streamSimpleOpenAICodexResponses },
+			? {
+					api: "openai-codex-responses",
+					stream: createRustGuardStream("openai-codex-responses"),
+					streamSimple: createRustGuardStream("openai-codex-responses"),
+				}
+			: {
+					api: "openai-codex-responses",
+					stream: streamOpenAICodexResponses,
+					streamSimple: streamSimpleOpenAICodexResponses,
+				},
 	);
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("google-generative-ai")
-			? { api: "google-generative-ai", stream: createRustGuardStream("google-generative-ai"), streamSimple: createRustGuardStream("google-generative-ai") }
+			? {
+					api: "google-generative-ai",
+					stream: createRustGuardStream("google-generative-ai"),
+					streamSimple: createRustGuardStream("google-generative-ai"),
+				}
 			: { api: "google-generative-ai", stream: streamGoogle, streamSimple: streamSimpleGoogle },
 	);
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("google-vertex")
-			? { api: "google-vertex", stream: createRustGuardStream("google-vertex"), streamSimple: createRustGuardStream("google-vertex") }
+			? {
+					api: "google-vertex",
+					stream: createRustGuardStream("google-vertex"),
+					streamSimple: createRustGuardStream("google-vertex"),
+				}
 			: { api: "google-vertex", stream: streamGoogleVertex, streamSimple: streamSimpleGoogleVertex },
 	);
 
 	registerApiProvider(
 		strict && !shouldAttemptRustModelProvider("bedrock-converse-stream")
-			? { api: "bedrock-converse-stream", stream: createRustGuardStream("bedrock-converse-stream"), streamSimple: createRustGuardStream("bedrock-converse-stream") }
+			? {
+					api: "bedrock-converse-stream",
+					stream: createRustGuardStream("bedrock-converse-stream"),
+					streamSimple: createRustGuardStream("bedrock-converse-stream"),
+				}
 			: { api: "bedrock-converse-stream", stream: streamBedrockLazy, streamSimple: streamSimpleBedrockLazy },
 	);
+}
+
+function validateRustModelBackend(): void {
+	const backend = process.env.ROZSA_MODEL_BACKEND;
+	if (backend === undefined || backend === "ts" || backend === "rust") return;
+	throw new Error('ROZSA_MODEL_BACKEND must be "ts" or "rust".');
 }
 
 function isStrictRustMode(): boolean {
@@ -510,7 +601,7 @@ function createRustGuardStream<TApi extends Api>(api: TApi): StreamFunction<TApi
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "error",
-			errorMessage: `ROZSA_MODEL_BACKEND=rust but API "${api}" is not in ROZSA_MODEL_RUST_APIS. Add it to ROZSA_MODEL_RUST_APIS or use ROZSA_MODEL_BACKEND=auto.`,
+			errorMessage: `ROZSA_MODEL_BACKEND=rust but API "${api}" is not available through the Rust bridge. Use ROZSA_MODEL_BACKEND=ts or add a Rust provider before listing this API in ROZSA_MODEL_RUST_APIS.`,
 			timestamp: Date.now(),
 		};
 		stream.push({ type: "error", reason: "error", error: message });

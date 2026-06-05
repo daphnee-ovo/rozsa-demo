@@ -118,6 +118,7 @@ wait_for_llama_server
 ROZSA_NATIVE_TUI_BACKEND_COMMAND="$PWD/node_modules/.bin/tsx" \
 ROZSA_NATIVE_TUI_BACKEND_ARGS_JSON="$ts_args_json" \
 ROZSA_APP_BINARY="${ROZSA_APP_BINARY:-$PWD/target/debug/rozsa-app}" \
+ROZSA_MODEL_REGISTRY_BACKEND="${ROZSA_MODEL_REGISTRY_BACKEND:-rust}" \
 ROZSA_MODEL_BINARY="${ROZSA_MODEL_BINARY:-$PWD/target/debug/rozsa-model}" \
 ROZSA_MODEL_BACKEND="${ROZSA_MODEL_BACKEND:-rust}" \
 ROZSA_MODEL_RUST_APIS="${ROZSA_MODEL_RUST_APIS:-openai-completions,bedrock-converse-stream}" \

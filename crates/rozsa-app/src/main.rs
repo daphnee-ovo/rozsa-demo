@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use rozsa_app::model_registry::{ModelRegistry, ProviderAvailable};
+use rozsa_app::model_registry::{ImageModelRegistry, ModelRegistry, ProviderAvailable};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -37,6 +37,8 @@ enum AppBridgeInput {
         #[serde(rename = "discoverNvidia", default = "default_true")]
         discover_nvidia: bool,
     },
+    #[serde(rename = "list_image_models")]
+    ListImageModels { id: String },
 }
 
 #[derive(Debug, Serialize)]
@@ -49,6 +51,14 @@ enum AppBridgeOutput {
         #[serde(rename = "providerAvailable")]
         provider_available: HashMap<String, ProviderAvailable>,
         errors: Vec<String>,
+    },
+    #[serde(rename = "image_models")]
+    ImageModels {
+        id: String,
+        #[serde(rename = "imageModels")]
+        image_models: Value,
+        #[serde(rename = "providerAvailable")]
+        provider_available: HashMap<String, ProviderAvailable>,
     },
     #[serde(rename = "error")]
     Error {
@@ -114,6 +124,33 @@ async fn handle_line(line: &str, stdout: &mut Stdout) {
                     models: serde_json::json!(registry.all()),
                     provider_available,
                     errors,
+                },
+            )
+            .await;
+        }
+        AppBridgeInput::ListImageModels { id } => {
+            let registry = match ImageModelRegistry::from_generated() {
+                Ok(registry) => registry,
+                Err(error) => {
+                    write_output(
+                        stdout,
+                        AppBridgeOutput::Error {
+                            id,
+                            message: error.to_string(),
+                            code: "image_model_registry_error".to_string(),
+                        },
+                    )
+                    .await;
+                    return;
+                }
+            };
+            let provider_available = registry.provider_available();
+            write_output(
+                stdout,
+                AppBridgeOutput::ImageModels {
+                    id,
+                    image_models: serde_json::json!(registry.all()),
+                    provider_available,
                 },
             )
             .await;
