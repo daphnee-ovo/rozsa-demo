@@ -19,10 +19,16 @@ const DEFAULT_RUST_APP_BINARY_CANDIDATES = [
 ];
 const MAX_STDERR_CHARS = 4000;
 
+export interface ProviderAvailableEntry {
+	configured: boolean;
+	source?: string;
+}
+
 interface RustModelsLine {
 	type: "models";
 	id: string;
 	models: Model<Api>[];
+	providerAvailable?: Record<string, ProviderAvailableEntry>;
 	errors?: string[];
 }
 
@@ -37,6 +43,7 @@ type RustRegistryLine = RustModelsLine | RustErrorLine;
 
 export interface RustRegistryResult {
 	models: Model<Api>[];
+	providerAvailable?: Record<string, ProviderAvailableEntry>;
 	errors: string[];
 }
 
@@ -113,7 +120,7 @@ function parseRustRegistryResult(result: SpawnSyncReturns<string>, requestId: st
 			}
 			return undefined;
 		}
-		return { models: parsed.models, errors: parsed.errors ?? [] };
+		return { models: parsed.models, providerAvailable: parsed.providerAvailable, errors: parsed.errors ?? [] };
 	}
 
 	if (process.env.ROZSA_MODEL_REGISTRY_BACKEND === "rust") {

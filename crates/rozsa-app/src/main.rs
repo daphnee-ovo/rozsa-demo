@@ -5,9 +5,10 @@
 
 use std::path::PathBuf;
 
-use rozsa_app::model_registry::ModelRegistry;
+use rozsa_app::model_registry::{ModelRegistry, ProviderAvailable};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdout};
 
 /// Run the app bridge loop until stdin closes.
@@ -45,6 +46,8 @@ enum AppBridgeOutput {
     Models {
         id: String,
         models: Value,
+        #[serde(rename = "providerAvailable")]
+        provider_available: HashMap<String, ProviderAvailable>,
         errors: Vec<String>,
     },
     #[serde(rename = "error")]
@@ -103,11 +106,13 @@ async fn handle_line(line: &str, stdout: &mut Stdout) {
                 }
             }
 
+            let provider_available = registry.provider_available();
             write_output(
                 stdout,
                 AppBridgeOutput::Models {
                     id,
                     models: serde_json::json!(registry.all()),
+                    provider_available,
                     errors,
                 },
             )

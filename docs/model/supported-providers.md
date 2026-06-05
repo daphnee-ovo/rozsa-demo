@@ -53,6 +53,14 @@ NVIDIA model discovery note:
 - `rozsa-app` owns the Rust `ModelRegistry`: it loads `packages/ai/src/models.generated.json`, merges optional `models.json`, and, when `NVIDIA_API_KEY` is set, merges live NVIDIA models from `GET https://integrate.api.nvidia.com/v1/models`.
 - The TypeScript `ModelRegistry` calls the Rust registry bridge by default in `ROZSA_MODEL_REGISTRY_BACKEND=auto` when the `rozsa-app` binary exists. `/model` then renders `getAvailable()` from this Rust-backed list, so NVIDIA shows only models discovered from the live endpoint unless the user explicitly configures custom models. Set `ROZSA_MODEL_REGISTRY_BACKEND=rust` to fail fast if the bridge is unavailable, or `ROZSA_MODEL_REGISTRY_BACKEND=ts` to force the old TypeScript registry.
 
+Provider availability (auth check):
+
+- Rust `ModelRegistry::provider_available()` checks whether each provider has configured credentials via environment variables (using `env_keys::get_env_api_key`) or via `models.json` `apiKey` field (literal value, env var reference, or `!command` marker).
+- The bridge response includes `providerAvailable: Record<provider, {configured, source}>` alongside the full model list.
+- TypeScript `ModelRegistry.hasConfiguredAuth()` uses the Rust-provided `providerAvailable` for API key auth, and separately checks TS-managed OAuth tokens (`AuthStorage`). A model is available if either path reports configured.
+- When `ROZSA_MODEL_REGISTRY_BACKEND=ts`, Rust is not invoked and the TS side falls back to its original env var + models.json check logic.
+- OAuth credential management (token storage, refresh, login flow) remains in TypeScript because it requires interactive browser flows and persistent encrypted storage that the Rust bridge cannot access.
+
 Known current limits:
 
 - `onPayload`/`onResponse` are TypeScript callback functions. Requests using those hooks route through the TypeScript provider until the bridge protocol supports callback round-trips.

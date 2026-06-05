@@ -10,9 +10,11 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
+use rozsa_model::env_keys::get_env_api_key;
 use rozsa_model::providers::openai_completions::{
     DiscoveredModel, NVIDIA_BASE_URL, list_nvidia_models,
 };
+use rozsa_model::types::Provider;
 use rozsa_model::types::{CacheRetention, StreamOptions, Transport};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -22,6 +24,14 @@ const GENERATED_MODELS_JSON: &str =
     include_str!("../../../../packages/ai/src/models.generated.json");
 const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 const DEFAULT_MAX_TOKENS: usize = 16_384;
+
+/// Auth availability for a single provider.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderAvailable {
+    pub configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
 
 /// Error returned when generated or user-provided model metadata cannot be loaded.
 #[derive(Debug, Error)]
@@ -89,6 +99,8 @@ pub struct RegistryModel {
 pub struct ModelRegistry {
     models: Vec<RegistryModel>,
     user_configured_model_keys: HashSet<String>,
+    /// Provider-level apiKey from models.json (raw value, not resolved).
+    provider_api_keys: HashMap<String, String>,
 }
 
 impl ModelRegistry {
@@ -121,6 +133,7 @@ impl ModelRegistry {
         Ok(Self {
             models: flatten_generated_models(input)?,
             user_configured_model_keys: HashSet::new(),
+            provider_api_keys: HashMap::new(),
         })
     }
 
@@ -226,8 +239,13 @@ impl ModelRegistry {
         let mut model_overrides = HashMap::new();
         let mut custom_models = Vec::new();
         self.user_configured_model_keys.clear();
+        self.provider_api_keys.clear();
 
         for (provider_name, provider_config) in config.providers {
+            if let Some(api_key) = &provider_config.api_key {
+                self.provider_api_keys
+                    .insert(provider_name.clone(), api_key.clone());
+            }
             if provider_config.base_url.is_some() || provider_config.compat.is_some() {
                 provider_overrides.insert(
                     provider_name.clone(),
@@ -389,6 +407,58 @@ impl ModelRegistry {
                 self.models.push(custom_model);
             }
         }
+    }
+
+    /// Compute auth availability per provider using env vars and models.json apiKey.
+    pub fn provider_available(&self) -> HashMap<String, ProviderAvailable> {
+        let mut result = HashMap::new();
+
+        for provider_name in self.provider_ids() {
+            // 1. Check models.json apiKey for this provider
+            if let Some(api_key) = self.provider_api_keys.get(&provider_name) {
+                let source = if api_key.starts_with('!') {
+                    "models_json_command"
+                } else if std::env::var(api_key).is_ok() {
+                    "environment"
+                } else {
+                    "models_json_key"
+                };
+                result.insert(
+                    provider_name,
+                    ProviderAvailable {
+                        configured: true,
+                        source: Some(source.to_string()),
+                    },
+                );
+                continue;
+            }
+
+            // 2. Check known env vars via get_env_api_key
+            let provider_enum = provider_from_str(&provider_name);
+            if let Some(ref p) = provider_enum {
+                if get_env_api_key(p).is_some() {
+                    result.insert(
+                        provider_name,
+                        ProviderAvailable {
+                            configured: true,
+                            source: Some("environment".to_string()),
+                        },
+                    );
+                    continue;
+                }
+            }
+
+            // 3. Not configured
+            result.insert(
+                provider_name,
+                ProviderAvailable {
+                    configured: false,
+                    source: None,
+                },
+            );
+        }
+
+        result
     }
 }
 
@@ -598,6 +668,39 @@ fn nvidia_openai_compat(provider: &str, base_url: &str) -> Option<Value> {
         "supportsReasoningEffort": false,
         "maxTokensField": "max_tokens"
     }))
+}
+
+fn provider_from_str(name: &str) -> Option<Provider> {
+    match name {
+        "anthropic" => Some(Provider::Anthropic),
+        "openai" | "azure-openai-responses" | "openai-codex" | "github-copilot" => {
+            Some(Provider::OpenAI)
+        }
+        "amazon-bedrock" => Some(Provider::AmazonBedrock),
+        "google" => Some(Provider::Google),
+        "google-vertex" => Some(Provider::GoogleVertex),
+        "deepseek" => Some(Provider::DeepSeek),
+        "openrouter" => Some(Provider::OpenRouter),
+        "xai" => Some(Provider::XAI),
+        "groq" => Some(Provider::Groq),
+        "cerebras" => Some(Provider::Cerebras),
+        "mistral" => Some(Provider::Mistral),
+        "nvidia" => Some(Provider::Nvidia),
+        "zai" | "vercel-ai-gateway" => Some(Provider::Zai),
+        "together" => Some(Provider::Together),
+        "moonshotai" | "kimi-coding" | "opencode" | "opencode-go" => Some(Provider::MoonshotAI),
+        "moonshotai-cn" => Some(Provider::MoonshotAICn),
+        "huggingface" => Some(Provider::HuggingFace),
+        "fireworks" => Some(Provider::MoonshotAI),
+        "cloudflare-workers-ai" => Some(Provider::CloudflareWorkersAI),
+        "cloudflare-ai-gateway" => Some(Provider::CloudflareAIGateway),
+        "xiaomi" => Some(Provider::Xiaomi),
+        "xiaomi-token-plan-cn" => Some(Provider::XiaomiTokenPlanCn),
+        "xiaomi-token-plan-ams" => Some(Provider::XiaomiTokenPlanAms),
+        "xiaomi-token-plan-sgp" => Some(Provider::XiaomiTokenPlanSgp),
+        "minimax" | "minimax-cn" => None,
+        _ => None,
+    }
 }
 
 fn model_key(provider: &str, model_id: &str) -> String {

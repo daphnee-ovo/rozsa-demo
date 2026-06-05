@@ -34,7 +34,7 @@ import {
 	resolveConfigValueUncached,
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.ts";
-import { loadRustModelRegistryModels } from "./rust-model-registry.ts";
+import { type ProviderAvailableEntry, loadRustModelRegistryModels } from "./rust-model-registry.ts";
 
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({
@@ -351,6 +351,8 @@ export class ModelRegistry {
 	private providerProbers: Map<string, ProviderModelProber> = new Map();
 	// 用户在 models.json 中显式配置的模型 key: "provider/modelId"
 	private userConfiguredModelKeys: Set<string> = new Set();
+	// Rust 侧计算的 provider auth 可用性（仅 Rust backend 模式下有值）
+	private rustProviderAvailable: Map<string, ProviderAvailableEntry> = new Map();
 
 	private constructor(authStorage: AuthStorage, modelsJsonPath: string | undefined) {
 		this.authStorage = authStorage;
@@ -420,6 +422,14 @@ export class ModelRegistry {
 		}
 		if (rustModels?.errors.length) {
 			this.loadError = [this.loadError, ...rustModels.errors].filter(Boolean).join("\n");
+		}
+
+		// Store Rust-side provider availability
+		this.rustProviderAvailable.clear();
+		if (rustModels?.providerAvailable) {
+			for (const [provider, entry] of Object.entries(rustModels.providerAvailable)) {
+				this.rustProviderAvailable.set(provider, entry);
+			}
 		}
 
 		// Let OAuth providers modify their models (e.g., update baseUrl)
@@ -649,16 +659,27 @@ export class ModelRegistry {
 	/**
 	 * Get only models that have auth configured.
 	 * Additionally filters by probed provider model IDs (if registered and probed).
+	 * When backend=rust, also excludes models whose API protocol is not yet migrated.
 	 */
 	getAvailable(): Model<Api>[] {
+		const rustSupportedApis = this.getRustSupportedApis();
 		return this.models.filter((m) => {
 			if (!this.hasConfiguredAuth(m)) return false;
+			if (rustSupportedApis && !rustSupportedApis.has(m.api)) return false;
 			const availableIds = this.providerAvailableIds.get(m.provider);
 			if (availableIds) {
 				return availableIds.has(m.id);
 			}
 			return true;
 		});
+	}
+
+	private getRustSupportedApis(): Set<string> | undefined {
+		const backend = process.env.ROZSA_MODEL_BACKEND;
+		if (backend !== "rust") return undefined;
+		const rawApis = process.env.ROZSA_MODEL_RUST_APIS;
+		if (!rawApis) return undefined;
+		return new Set(rawApis.split(",").map((s) => s.trim()));
 	}
 
 	/**
@@ -720,10 +741,19 @@ export class ModelRegistry {
 	 * Get API key for a model.
 	 */
 	hasConfiguredAuth(model: Model<Api>): boolean {
-		return (
-			this.authStorage.hasAuth(model.provider) ||
-			this.providerRequestConfigs.get(model.provider)?.apiKey !== undefined
-		);
+		// Rust 侧已计算 env var + models.json key 的可用性
+		const rustEntry = this.rustProviderAvailable.get(model.provider);
+		if (rustEntry?.configured) return true;
+
+		// OAuth 通路（TS 侧管理）
+		if (this.authStorage.hasAuth(model.provider)) return true;
+
+		// Fallback: models.json apiKey（仅 backend=ts 时 Rust 不参与）
+		if (this.rustProviderAvailable.size === 0) {
+			return this.providerRequestConfigs.get(model.provider)?.apiKey !== undefined;
+		}
+
+		return false;
 	}
 
 	private getModelRequestKey(provider: string, modelId: string): string {
@@ -812,6 +842,13 @@ export class ModelRegistry {
 			return authStatus;
 		}
 
+		// Use Rust-provided availability when present
+		const rustEntry = this.rustProviderAvailable.get(provider);
+		if (rustEntry?.configured && rustEntry.source) {
+			return { configured: true, source: rustEntry.source as AuthStatus["source"] };
+		}
+
+		// Fallback for backend=ts
 		const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
 		if (!providerApiKey) {
 			return authStatus;
