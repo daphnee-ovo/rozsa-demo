@@ -238,11 +238,11 @@ function buildSettingsActions(ctx: NativeBuiltinContext): Array<{ label: string;
 	const onOff = (v: boolean) => (v ? "on" : "off");
 	return [
 		{
-			label: `Auto compact: ${onOff(ctx.session.autoCompactionEnabled)}`,
+			label: `[AI] Auto compact: ${onOff(ctx.session.autoCompactionEnabled)}`,
 			run: () => ctx.session.setAutoCompactionEnabled(!ctx.session.autoCompactionEnabled),
 		},
 		{
-			label: `Thinking level: ${ctx.session.thinkingLevel}`,
+			label: `[AI] Thinking level: ${ctx.session.thinkingLevel}`,
 			run: () => {
 				const levels = ctx.session.getAvailableThinkingLevels();
 				const idx = levels.indexOf(ctx.session.thinkingLevel);
@@ -250,15 +250,15 @@ function buildSettingsActions(ctx: NativeBuiltinContext): Array<{ label: string;
 			},
 		},
 		{
-			label: `Steering mode: ${settings.getSteeringMode()}`,
+			label: `[AI] Steering mode: ${settings.getSteeringMode()}`,
 			run: () => ctx.session.setSteeringMode(settings.getSteeringMode() === "all" ? "one-at-a-time" : "all"),
 		},
 		{
-			label: `Follow-up mode: ${settings.getFollowUpMode()}`,
+			label: `[AI] Follow-up mode: ${settings.getFollowUpMode()}`,
 			run: () => ctx.session.setFollowUpMode(settings.getFollowUpMode() === "all" ? "one-at-a-time" : "all"),
 		},
 		{
-			label: `Transport: ${settings.getTransport()}`,
+			label: `[Network] Transport: ${settings.getTransport()}`,
 			run: () => {
 				const opts: Array<"sse" | "websocket" | "websocket-cached" | "auto"> = [
 					"auto",
@@ -271,7 +271,7 @@ function buildSettingsActions(ctx: NativeBuiltinContext): Array<{ label: string;
 			},
 		},
 		{
-			label: `Permission mode: ${settings.getPermissionMode()}`,
+			label: `[Permission] Permission mode: ${settings.getPermissionMode()}`,
 			run: () => {
 				const opts: Array<"on-request" | "auto-permission" | "free-permission"> = [
 					"on-request",
@@ -285,39 +285,39 @@ function buildSettingsActions(ctx: NativeBuiltinContext): Array<{ label: string;
 			},
 		},
 		{
-			label: `Show images: ${onOff(settings.getShowImages())}`,
+			label: `[Display] Show images: ${onOff(settings.getShowImages())}`,
 			run: () => settings.setShowImages(!settings.getShowImages()),
 		},
 		{
-			label: `Auto resize images: ${onOff(settings.getImageAutoResize())}`,
+			label: `[Display] Auto resize images: ${onOff(settings.getImageAutoResize())}`,
 			run: () => settings.setImageAutoResize(!settings.getImageAutoResize()),
 		},
 		{
-			label: `Block images: ${onOff(settings.getBlockImages())}`,
+			label: `[Display] Block images: ${onOff(settings.getBlockImages())}`,
 			run: () => settings.setBlockImages(!settings.getBlockImages()),
 		},
 		{
-			label: `Skill commands: ${onOff(settings.getEnableSkillCommands())}`,
+			label: `[Editor] Skill commands: ${onOff(settings.getEnableSkillCommands())}`,
 			run: () => settings.setEnableSkillCommands(!settings.getEnableSkillCommands()),
 		},
 		{
-			label: `Hide thinking: ${onOff(settings.getHideThinkingBlock())}`,
+			label: `[Display] Hide thinking: ${onOff(settings.getHideThinkingBlock())}`,
 			run: () => settings.setHideThinkingBlock(!settings.getHideThinkingBlock()),
 		},
 		{
-			label: `Quiet startup: ${onOff(settings.getQuietStartup())}`,
+			label: `[Display] Quiet startup: ${onOff(settings.getQuietStartup())}`,
 			run: () => settings.setQuietStartup(!settings.getQuietStartup()),
 		},
 		{
-			label: `Collapse changelog: ${onOff(settings.getCollapseChangelog())}`,
+			label: `[Display] Collapse changelog: ${onOff(settings.getCollapseChangelog())}`,
 			run: () => settings.setCollapseChangelog(!settings.getCollapseChangelog()),
 		},
 		{
-			label: `Terminal progress: ${onOff(settings.getShowTerminalProgress())}`,
+			label: `[Display] Terminal progress: ${onOff(settings.getShowTerminalProgress())}`,
 			run: () => settings.setShowTerminalProgress(!settings.getShowTerminalProgress()),
 		},
 		{
-			label: `Double-escape: ${settings.getDoubleEscapeAction()}`,
+			label: `[Editor] Double-escape: ${settings.getDoubleEscapeAction()}`,
 			run: () => {
 				const opts: Array<"graph" | "tree" | "fork" | "none"> = ["graph", "tree", "fork", "none"];
 				const idx = opts.indexOf(settings.getDoubleEscapeAction());
@@ -325,7 +325,7 @@ function buildSettingsActions(ctx: NativeBuiltinContext): Array<{ label: string;
 			},
 		},
 		{
-			label: `Tree filter: ${settings.getTreeFilterMode()}`,
+			label: `[Editor] Tree filter: ${settings.getTreeFilterMode()}`,
 			run: () => {
 				const opts: Array<"default" | "no-tools" | "user-only" | "labeled-only" | "all"> = [
 					"default",
@@ -339,11 +339,11 @@ function buildSettingsActions(ctx: NativeBuiltinContext): Array<{ label: string;
 			},
 		},
 		{
-			label: `Install telemetry: ${onOff(settings.getEnableInstallTelemetry())}`,
+			label: `[Network] Install telemetry: ${onOff(settings.getEnableInstallTelemetry())}`,
 			run: () => settings.setEnableInstallTelemetry(!settings.getEnableInstallTelemetry()),
 		},
 		{
-			label: `HTTP idle timeout: ${formatHttpIdleTimeoutMs(settings.getHttpIdleTimeoutMs())}`,
+			label: `[Network] HTTP idle timeout: ${formatHttpIdleTimeoutMs(settings.getHttpIdleTimeoutMs())}`,
 			run: () => {
 				const choices = HTTP_IDLE_TIMEOUT_CHOICES;
 				const current = settings.getHttpIdleTimeoutMs();

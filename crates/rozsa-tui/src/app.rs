@@ -55,6 +55,76 @@ pub struct DialogState {
     pub options: Vec<String>,
     pub selected: usize,
     pub input: String,
+    /// Tab 筛选（仅 settings dialog 使用）
+    pub active_tab: usize,
+    /// 当前 tab 筛选后的原始 options 索引
+    pub filtered_indices: Vec<usize>,
+}
+
+impl DialogState {
+    /// 从 options 提取分类 tab 列表：["All", cat1, cat2, ...]
+    pub fn tabs(&self) -> Vec<&str> {
+        let mut tabs: Vec<&str> = vec!["All"];
+        for opt in &self.options {
+            if let Some(cat) = extract_category(opt) {
+                if !tabs.iter().any(|t| *t == cat) {
+                    tabs.push(cat);
+                }
+            }
+        }
+        tabs
+    }
+
+    /// 是否为带分类的 settings dialog
+    pub fn has_tabs(&self) -> bool {
+        self.title.to_lowercase().contains("settings") && self.tabs().len() > 1
+    }
+
+    pub fn next_tab(&mut self) {
+        let count = self.tabs().len();
+        self.active_tab = (self.active_tab + 1) % count;
+        self.apply_tab_filter();
+    }
+
+    pub fn prev_tab(&mut self) {
+        let count = self.tabs().len();
+        self.active_tab = (self.active_tab + count - 1) % count;
+        self.apply_tab_filter();
+    }
+
+    pub fn apply_tab_filter(&mut self) {
+        let tabs = self.tabs();
+        let active_cat = if self.active_tab == 0 {
+            None
+        } else {
+            tabs.get(self.active_tab).copied()
+        };
+
+        self.filtered_indices = self
+            .options
+            .iter()
+            .enumerate()
+            .filter_map(|(i, opt)| {
+                if let Some(cat) = active_cat {
+                    if extract_category(opt) != Some(cat) {
+                        return None;
+                    }
+                }
+                Some(i)
+            })
+            .collect();
+        self.selected = self.selected.min(self.filtered_indices.len().saturating_sub(1));
+    }
+}
+
+/// 从 "[Category] label" 格式中提取 category
+fn extract_category(s: &str) -> Option<&str> {
+    if s.starts_with('[') {
+        if let Some(end) = s.find(']') {
+            return Some(&s[1..end]);
+        }
+    }
+    None
 }
 
 #[derive(Clone, Debug)]
@@ -382,7 +452,8 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent) {
                 options.push(theme_label.to_string());
             }
             let max_sel = options.len().saturating_sub(1);
-            state.dialog = Some(DialogState {
+            let filtered_indices = (0..options.len()).collect::<Vec<_>>();
+            let mut dialog = DialogState {
                 id,
                 kind,
                 title,
@@ -390,7 +461,11 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent) {
                 options,
                 selected: selected.unwrap_or(0).min(max_sel),
                 input: text.unwrap_or_default(),
-            });
+                active_tab: 0,
+                filtered_indices,
+            };
+            dialog.apply_tab_filter();
+            state.dialog = Some(dialog);
         }
         BackendEvent::Notify { level, message } => {
             state.notifications.push(Notification {

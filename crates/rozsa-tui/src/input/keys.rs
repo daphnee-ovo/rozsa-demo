@@ -1362,15 +1362,31 @@ fn handle_dialog_key(
             },
         )?;
         state.dialog = None;
+    } else if dialog.has_tabs() && key.code == KeyCode::Tab {
+        dialog.next_tab();
+        state.dialog = Some(dialog);
+    } else if dialog.has_tabs() && key.code == KeyCode::BackTab {
+        dialog.prev_tab();
+        state.dialog = Some(dialog);
     } else if is_up {
+        let len = if dialog.has_tabs() {
+            dialog.filtered_indices.len()
+        } else {
+            dialog.options.len()
+        };
         if dialog.selected == 0 {
-            dialog.selected = dialog.options.len().saturating_sub(1);
+            dialog.selected = len.saturating_sub(1);
         } else {
             dialog.selected -= 1;
         }
         state.dialog = Some(dialog);
     } else if is_down {
-        if dialog.selected + 1 >= dialog.options.len() {
+        let len = if dialog.has_tabs() {
+            dialog.filtered_indices.len()
+        } else {
+            dialog.options.len()
+        };
+        if dialog.selected + 1 >= len {
             dialog.selected = 0;
         } else {
             dialog.selected += 1;
@@ -1384,8 +1400,14 @@ fn handle_dialog_key(
             state.dialog = Some(dialog);
         }
     } else if is_confirm {
+        // 解析真实选中索引（tab 筛选时通过 filtered_indices 映射）
+        let real_index = if dialog.has_tabs() {
+            dialog.filtered_indices.get(dialog.selected).copied()
+        } else {
+            Some(dialog.selected)
+        };
+        let selected_value = real_index.and_then(|i| dialog.options.get(i).map(String::as_str));
         // 拦截本地注入的 theme 选项
-        let selected_value = dialog.options.get(dialog.selected).map(String::as_str);
         if let Some(val) = selected_value {
             if val.starts_with("Theme:") {
                 let new_theme = crate::theme::toggle_theme();
