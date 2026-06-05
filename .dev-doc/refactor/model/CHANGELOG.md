@@ -12,3 +12,5 @@
 - 15:55 feat: 模型可用性筛选迁移到 Rust 侧（方案B）
 - 16:47 infra: 添加 AWS SDK 依赖并配置 workspace
 - 18:25 feat: 增加 AWS Bedrock Converse Stream provider 支持
+- 18:54 feat: 统一模型选择器界面，展示格式改为 [Provider] model_id
+- 19:06 feat: ModelSelectorState 增加 tab 状态与按 provider 筛选逻辑
