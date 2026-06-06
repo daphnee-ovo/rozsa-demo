@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@earendil-works/pi-ai";
-import { getApiProvider } from "@earendil-works/pi-ai";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -1097,7 +1096,7 @@ process.stdin.on("end", () => {
 			expect(getOAuthProvider("anthropic")?.name).not.toBe("Custom Anthropic OAuth");
 		});
 
-		test("unregisterProvider removes custom streamSimple override and restores built-in API stream handler", () => {
+		test("unregisterProvider removes custom streamSimple handler from the coding-agent registry", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 
 			registry.registerProvider("stream-override-provider", {
@@ -1107,24 +1106,17 @@ process.stdin.on("end", () => {
 				},
 			});
 
-			let threwCustomOverride = false;
+			let threwCustomHandler = false;
 			try {
-				getApiProvider("openai-completions")?.streamSimple(openAiModel, emptyContext);
+				registry.getProviderStreamHandler("openai-completions")?.(openAiModel, emptyContext);
 			} catch (error) {
-				threwCustomOverride = error instanceof Error && error.message === "custom streamSimple override";
+				threwCustomHandler = error instanceof Error && error.message === "custom streamSimple override";
 			}
-			expect(threwCustomOverride).toBe(true);
+			expect(threwCustomHandler).toBe(true);
 
 			registry.unregisterProvider("stream-override-provider");
 
-			let threwCustomOverrideAfterUnregister = false;
-			try {
-				getApiProvider("openai-completions")?.streamSimple(openAiModel, emptyContext);
-			} catch (error) {
-				threwCustomOverrideAfterUnregister =
-					error instanceof Error && error.message === "custom streamSimple override";
-			}
-			expect(threwCustomOverrideAfterUnregister).toBe(false);
+			expect(registry.getProviderStreamHandler("openai-completions")).toBeUndefined();
 		});
 
 		describe("dynamic provider override persistence", () => {

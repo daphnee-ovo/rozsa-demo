@@ -2,6 +2,7 @@
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+use rozsa_model::credentials::resolve_request_options;
 use rozsa_model::protocol::{
     BridgeMethod, BridgeOutput, bridge_error, event_to_bridge_output, parse_input_line,
     provider_request,
@@ -56,9 +57,24 @@ async fn handle_line(line: &str, stdout: &mut Stdout) {
         return;
     };
 
+    let options = match resolve_request_options(
+        &request.model,
+        &request.options,
+        request.models_json_path.as_deref(),
+        request.auth_json_path.as_deref(),
+    )
+    .await
+    {
+        Ok(options) => options,
+        Err(error) => {
+            write_bridge_output(stdout, bridge_error(&request.id, error, "credential_error")).await;
+            return;
+        }
+    };
+
     let mut stream = match request.method {
         BridgeMethod::Stream | BridgeMethod::StreamSimple => {
-            provider.stream_simple(&request.model, &request.context, &request.options)
+            provider.stream_simple(&request.model, &request.context, &options)
         }
     };
 

@@ -1,6 +1,14 @@
-import type { AssistantMessage, ImageContent, Model, TextContent, Usage } from "@earendil-works/pi-ai";
-import { completeSimple } from "@earendil-works/pi-ai";
-import type { AgentMessage, ThinkingLevel } from "../../types.ts";
+import type {
+	AssistantMessage,
+	Context,
+	ImageContent,
+	Model,
+	SimpleStreamOptions,
+	TextContent,
+	Usage,
+} from "@earendil-works/pi-ai";
+import { missingModelStream } from "../../missing-model-stream.ts";
+import type { AgentMessage, StreamFn, ThinkingLevel } from "../../types.ts";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -451,6 +459,16 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
+async function completeWithStreamFn(
+	model: Model<any>,
+	context: Context,
+	options: SimpleStreamOptions,
+	streamFn?: StreamFn,
+): Promise<AssistantMessage> {
+	const stream = await (streamFn ?? missingModelStream)(model, context, options);
+	return stream.result();
+}
+
 /** Generate or update a conversation summary for compaction. */
 export async function generateSummary(
 	currentMessages: AgentMessage[],
@@ -462,6 +480,7 @@ export async function generateSummary(
 	customInstructions?: string,
 	previousSummary?: string,
 	thinkingLevel?: ThinkingLevel,
+	streamFn?: StreamFn,
 ): Promise<Result<string, CompactionError>> {
 	const maxTokens = Math.min(
 		Math.floor(0.8 * reserveTokens),
@@ -492,10 +511,11 @@ export async function generateSummary(
 			? { maxTokens, signal, apiKey, headers, reasoning: thinkingLevel }
 			: { maxTokens, signal, apiKey, headers };
 
-	const response = await completeSimple(
+	const response = await completeWithStreamFn(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
 		completionOptions,
+		streamFn,
 	);
 	if (response.stopReason === "aborted") {
 		return err(new CompactionError("aborted", response.errorMessage || "Summarization aborted"));
@@ -631,6 +651,7 @@ export async function compact(
 	customInstructions?: string,
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
+	streamFn?: StreamFn,
 ): Promise<Result<CompactionResult, CompactionError>> {
 	const {
 		firstKeptEntryId,
@@ -662,6 +683,7 @@ export async function compact(
 						customInstructions,
 						previousSummary,
 						thinkingLevel,
+						streamFn,
 					)
 				: Promise.resolve(ok<string, CompactionError>("No prior history.")),
 			generateTurnPrefixSummary(
@@ -672,6 +694,7 @@ export async function compact(
 				headers,
 				signal,
 				thinkingLevel,
+				streamFn,
 			),
 		]);
 		if (!historyResult.ok) return err(historyResult.error);
@@ -688,6 +711,7 @@ export async function compact(
 			customInstructions,
 			previousSummary,
 			thinkingLevel,
+			streamFn,
 		);
 		if (!summaryResult.ok) return err(summaryResult.error);
 		summary = summaryResult.value;
@@ -711,6 +735,7 @@ async function generateTurnPrefixSummary(
 	headers?: Record<string, string>,
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
+	streamFn?: StreamFn,
 ): Promise<Result<string, CompactionError>> {
 	const maxTokens = Math.min(
 		Math.floor(0.5 * reserveTokens),
@@ -727,12 +752,13 @@ async function generateTurnPrefixSummary(
 		},
 	];
 
-	const response = await completeSimple(
+	const response = await completeWithStreamFn(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
 		model.reasoning && thinkingLevel && thinkingLevel !== "off"
 			? { maxTokens, signal, apiKey, headers, reasoning: thinkingLevel }
 			: { maxTokens, signal, apiKey, headers },
+		streamFn,
 	);
 	if (response.stopReason === "aborted") {
 		return err(new CompactionError("aborted", response.errorMessage || "Turn prefix summarization aborted"));

@@ -229,6 +229,13 @@ export class AuthStorage {
 	}
 
 	/**
+	 * Get a runtime API key override without reading or refreshing persisted auth.
+	 */
+	getRuntimeApiKey(provider: string): string | undefined {
+		return this.runtimeOverrides.get(provider);
+	}
+
+	/**
 	 * Remove a runtime API key override.
 	 */
 	removeRuntimeApiKey(provider: string): void {

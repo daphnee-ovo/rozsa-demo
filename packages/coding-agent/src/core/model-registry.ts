@@ -14,8 +14,6 @@ import {
 	type OAuthProviderInterface,
 	type OpenAICompletionsCompat,
 	type OpenAIResponsesCompat,
-	registerApiProvider,
-	resetApiProviders,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
@@ -338,11 +336,18 @@ export interface ProviderModelProber {
 	probe(): Promise<Set<string> | undefined>;
 }
 
+type ProviderStreamHandler = (
+	model: Model<Api>,
+	context: Context,
+	options?: SimpleStreamOptions,
+) => AssistantMessageEventStream;
+
 export class ModelRegistry {
 	private models: Model<Api>[] = [];
 	private providerRequestConfigs: Map<string, ProviderRequestConfig> = new Map();
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
+	private providerStreamHandlers: Map<Api, ProviderStreamHandler> = new Map();
 	private loadError: string | undefined = undefined;
 	readonly authStorage: AuthStorage;
 	private modelsJsonPath: string | undefined;
@@ -374,10 +379,10 @@ export class ModelRegistry {
 	refresh(): void {
 		this.providerRequestConfigs.clear();
 		this.modelRequestHeaders.clear();
+		this.providerStreamHandlers.clear();
 		this.loadError = undefined;
 
-		// Ensure dynamic API/OAuth registrations are rebuilt from current provider state.
-		resetApiProviders();
+		// Ensure dynamic OAuth registrations are rebuilt from current provider state.
 		resetOAuthProviders();
 
 		this.loadModels();
@@ -392,6 +397,10 @@ export class ModelRegistry {
 	 */
 	getError(): string | undefined {
 		return this.loadError;
+	}
+
+	getProviderStreamHandler(api: Api): ProviderStreamHandler | undefined {
+		return this.providerStreamHandlers.get(api);
 	}
 
 	private loadModels(): void {
@@ -656,6 +665,10 @@ export class ModelRegistry {
 		return this.models;
 	}
 
+	getModelsJsonPath(): string | undefined {
+		return this.modelsJsonPath;
+	}
+
 	/**
 	 * Get only models that have auth configured.
 	 * Additionally filters by probed provider model IDs (if registered and probed).
@@ -832,6 +845,14 @@ export class ModelRegistry {
 		}
 	}
 
+	async getStoredApiKey(provider: string): Promise<string | undefined> {
+		return this.authStorage.getApiKey(provider, { includeFallback: false });
+	}
+
+	getRuntimeApiKey(provider: string): string | undefined {
+		return this.authStorage.getRuntimeApiKey(provider);
+	}
+
 	/**
 	 * Return auth status for a provider, including request auth configured in models.json.
 	 * This intentionally does not execute command-backed config values.
@@ -985,15 +1006,7 @@ export class ModelRegistry {
 		}
 
 		if (config.streamSimple) {
-			const streamSimple = config.streamSimple;
-			registerApiProvider(
-				{
-					api: config.api!,
-					stream: (model, context, options) => streamSimple(model, context, options as SimpleStreamOptions),
-					streamSimple,
-				},
-				`provider:${providerName}`,
-			);
+			this.providerStreamHandlers.set(config.api!, config.streamSimple);
 		}
 
 		this.storeProviderRequestConfig(providerName, config);

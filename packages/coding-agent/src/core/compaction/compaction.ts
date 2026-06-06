@@ -7,13 +7,13 @@
 
 import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@earendil-works/pi-ai";
-import { completeSimple } from "@earendil-works/pi-ai";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
 	createCustomMessage,
 } from "../messages.ts";
+import { completeResolvedModel } from "../model-stream.ts";
 import { buildSessionContext, type CompactionEntry, type SessionEntry } from "../session-manager.ts";
 import {
 	computeFileLists,
@@ -545,7 +545,7 @@ async function completeSummarization(
 	streamFn?: StreamFn,
 ): Promise<AssistantMessage> {
 	if (!streamFn) {
-		return completeSimple(model, context, options);
+		return completeResolvedModel(model, context, options);
 	}
 	const stream = await streamFn(model, context, options);
 	return stream.result();

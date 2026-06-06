@@ -1,5 +1,5 @@
 import type { ImageContent, Model, SimpleStreamOptions, TextContent, Transport } from "@earendil-works/pi-ai";
-import type { AgentEvent, AgentMessage, AgentTool, QueueMode, ThinkingLevel } from "../index.ts";
+import type { AgentEvent, AgentMessage, AgentTool, QueueMode, StreamFn, ThinkingLevel } from "../index.ts";
 import type { Session } from "./session/session.ts";
 
 /** Result of a fallible operation. Expected failures are returned as `ok: false` instead of thrown. */
@@ -766,6 +766,7 @@ export interface GenerateBranchSummaryOptions {
 	apiKey: string;
 	headers?: Record<string, string>;
 	signal: AbortSignal;
+	streamFn?: StreamFn;
 	customInstructions?: string;
 	replaceInstructions?: boolean;
 	reserveTokens?: number;
@@ -805,6 +806,8 @@ export interface AgentHarnessOptions<
 	) => Promise<{ apiKey: string; headers?: Record<string, string> } | undefined>;
 	/** Curated stream/provider request options. Snapshotted at turn start. */
 	streamOptions?: AgentHarnessStreamOptions;
+	/** Optional model stream function. Node callers can inject the Rust-backed stream boundary. */
+	streamFn?: StreamFn;
 	model: Model<any>;
 	thinkingLevel?: ThinkingLevel;
 	activeToolNames?: string[];

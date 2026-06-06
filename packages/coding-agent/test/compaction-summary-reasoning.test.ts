@@ -1,19 +1,7 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type CompactionPreparation, compact, generateSummary } from "../src/core/compaction/index.ts";
-
-const { completeSimpleMock } = vi.hoisted(() => ({
-	completeSimpleMock: vi.fn(),
-}));
-
-vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
-	return {
-		...actual,
-		completeSimple: completeSimpleMock,
-	};
-});
 
 function createModel(reasoning: boolean, maxTokens = 8192): Model<"anthropic-messages"> {
 	return {
@@ -51,9 +39,13 @@ const mockSummaryResponse: AssistantMessage = {
 const messages: AgentMessage[] = [{ role: "user", content: "Summarize this.", timestamp: Date.now() }];
 
 describe("generateSummary reasoning options", () => {
+	let streamFn: ReturnType<typeof vi.fn<StreamFn>>;
+
 	beforeEach(() => {
-		completeSimpleMock.mockReset();
-		completeSimpleMock.mockResolvedValue(mockSummaryResponse);
+		streamFn = vi.fn<StreamFn>(() => ({
+			async *[Symbol.asyncIterator]() {},
+			result: async () => mockSummaryResponse,
+		}));
 	});
 
 	it("uses the provided thinking level for reasoning-capable models", async () => {
@@ -67,10 +59,11 @@ describe("generateSummary reasoning options", () => {
 			undefined,
 			undefined,
 			"medium",
+			streamFn,
 		);
 
-		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
-		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
+		expect(streamFn).toHaveBeenCalledTimes(1);
+		expect(streamFn.mock.calls[0][2]).toMatchObject({
 			reasoning: "medium",
 			apiKey: "test-key",
 		});
@@ -87,13 +80,14 @@ describe("generateSummary reasoning options", () => {
 			undefined,
 			undefined,
 			"off",
+			streamFn,
 		);
 
-		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
-		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
+		expect(streamFn).toHaveBeenCalledTimes(1);
+		expect(streamFn.mock.calls[0][2]).toMatchObject({
 			apiKey: "test-key",
 		});
-		expect(completeSimpleMock.mock.calls[0][2]).not.toHaveProperty("reasoning");
+		expect(streamFn.mock.calls[0][2]).not.toHaveProperty("reasoning");
 	});
 
 	it("does not set reasoning for non-reasoning models", async () => {
@@ -107,13 +101,14 @@ describe("generateSummary reasoning options", () => {
 			undefined,
 			undefined,
 			"medium",
+			streamFn,
 		);
 
-		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
-		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
+		expect(streamFn).toHaveBeenCalledTimes(1);
+		expect(streamFn.mock.calls[0][2]).toMatchObject({
 			apiKey: "test-key",
 		});
-		expect(completeSimpleMock.mock.calls[0][2]).not.toHaveProperty("reasoning");
+		expect(streamFn.mock.calls[0][2]).not.toHaveProperty("reasoning");
 	});
 
 	it("clamps compaction summary maxTokens to the model output cap", async () => {
@@ -127,8 +122,17 @@ describe("generateSummary reasoning options", () => {
 			settings: { enabled: true, reserveTokens: 500000, keepRecentTokens: 20000 },
 		};
 
-		await compact(preparation, createModel(false, 128000), "test-key");
+		await compact(
+			preparation,
+			createModel(false, 128000),
+			"test-key",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			streamFn,
+		);
 
-		expect(completeSimpleMock.mock.calls.map((call) => call[2]?.maxTokens)).toEqual([128000, 128000]);
+		expect(streamFn.mock.calls.map((call) => call[2]?.maxTokens)).toEqual([128000, 128000]);
 	});
 });

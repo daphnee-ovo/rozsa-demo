@@ -5,6 +5,7 @@ import {
 	type Message,
 	type Model,
 	registerFauxProvider,
+	streamSimple,
 	type Usage,
 } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -35,7 +36,7 @@ import type {
 	ThinkingLevelChangeEntry,
 } from "../../src/harness/types.ts";
 import { getOrThrow } from "../../src/harness/types.ts";
-import type { AgentMessage } from "../../src/types.ts";
+import type { AgentMessage, StreamFn } from "../../src/types.ts";
 
 let nextId = 0;
 function createId(): string {
@@ -124,7 +125,7 @@ function createModelChangeEntry(provider: string, modelId: string, parentId: str
 function createFauxModel(
 	reasoning: boolean,
 	maxTokens = 8192,
-): { faux: FauxProviderRegistration; model: Model<string> } {
+): { faux: FauxProviderRegistration; model: Model<string>; streamFn: StreamFn } {
 	const faux = registerFauxProvider({
 		models: [
 			{
@@ -136,7 +137,7 @@ function createFauxModel(
 		],
 	});
 	fauxRegistrations.push(faux);
-	return { faux, model: faux.getModel() };
+	return { faux, model: faux.getModel(), streamFn: streamSimple as StreamFn };
 }
 
 const fauxRegistrations: FauxProviderRegistration[] = [];
@@ -437,7 +438,7 @@ describe("harness compaction", () => {
 	it("passes reasoning through generateSummary only for reasoning models with thinking enabled", async () => {
 		const messages: AgentMessage[] = [createUserMessage("Summarize this.")];
 		const seenOptions: Array<Record<string, unknown> | undefined> = [];
-		const { faux: fauxReasoning, model: reasoningModel } = createFauxModel(true);
+		const { faux: fauxReasoning, model: reasoningModel, streamFn: reasoningStreamFn } = createFauxModel(true);
 		fauxReasoning.setResponses([
 			(_context, options) => {
 				seenOptions.push(options as Record<string, unknown> | undefined);
@@ -455,11 +456,12 @@ describe("harness compaction", () => {
 				undefined,
 				undefined,
 				"medium",
+				reasoningStreamFn,
 			),
 		);
 		expect(seenOptions[0]).toMatchObject({ reasoning: "medium", apiKey: "test-key" });
 
-		const { faux: fauxOff, model: offModel } = createFauxModel(true);
+		const { faux: fauxOff, model: offModel, streamFn: offStreamFn } = createFauxModel(true);
 		fauxOff.setResponses([
 			(_context, options) => {
 				seenOptions.push(options as Record<string, unknown> | undefined);
@@ -467,11 +469,26 @@ describe("harness compaction", () => {
 			},
 		]);
 		getOrThrow(
-			await generateSummary(messages, offModel, 2000, "test-key", undefined, undefined, undefined, undefined, "off"),
+			await generateSummary(
+				messages,
+				offModel,
+				2000,
+				"test-key",
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				"off",
+				offStreamFn,
+			),
 		);
 		expect(seenOptions[1]).not.toHaveProperty("reasoning");
 
-		const { faux: fauxNonReasoning, model: nonReasoningModel } = createFauxModel(false);
+		const {
+			faux: fauxNonReasoning,
+			model: nonReasoningModel,
+			streamFn: nonReasoningStreamFn,
+		} = createFauxModel(false);
 		fauxNonReasoning.setResponses([
 			(_context, options) => {
 				seenOptions.push(options as Record<string, unknown> | undefined);
@@ -489,6 +506,7 @@ describe("harness compaction", () => {
 				undefined,
 				undefined,
 				"medium",
+				nonReasoningStreamFn,
 			),
 		);
 		expect(seenOptions[2]).not.toHaveProperty("reasoning");
@@ -497,7 +515,7 @@ describe("harness compaction", () => {
 	it("includes previous summaries and custom instructions in generateSummary prompts", async () => {
 		const messages: AgentMessage[] = [createUserMessage("Summarize this.")];
 		let promptText = "";
-		const { faux, model } = createFauxModel(false);
+		const { faux, model, streamFn } = createFauxModel(false);
 		faux.setResponses([
 			(context) => {
 				const message = context.messages[0];
@@ -517,6 +535,8 @@ describe("harness compaction", () => {
 				undefined,
 				"focus",
 				"old summary",
+				undefined,
+				streamFn,
 			),
 		);
 
@@ -527,24 +547,46 @@ describe("harness compaction", () => {
 
 	it("returns error results for failed or aborted summary generations", async () => {
 		const messages: AgentMessage[] = [createUserMessage("Summarize this.")];
-		const { faux: errorFaux, model: errorModel } = createFauxModel(false);
+		const { faux: errorFaux, model: errorModel, streamFn: errorStreamFn } = createFauxModel(false);
 		errorFaux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "boom" })]);
-		const errorResult = await generateSummary(messages, errorModel, 2000, "test-key");
+		const errorResult = await generateSummary(
+			messages,
+			errorModel,
+			2000,
+			"test-key",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			errorStreamFn,
+		);
 		expect(errorResult).toMatchObject({
 			ok: false,
 			error: { code: "summarization_failed", message: "Summarization failed: boom" },
 		});
 
-		const { faux: abortedFaux, model: abortedModel } = createFauxModel(false);
+		const { faux: abortedFaux, model: abortedModel, streamFn: abortedStreamFn } = createFauxModel(false);
 		abortedFaux.setResponses([fauxAssistantMessage("", { stopReason: "aborted", errorMessage: "stopped" })]);
-		const abortedResult = await generateSummary(messages, abortedModel, 2000, "test-key");
+		const abortedResult = await generateSummary(
+			messages,
+			abortedModel,
+			2000,
+			"test-key",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			abortedStreamFn,
+		);
 		expect(abortedResult).toMatchObject({ ok: false, error: { code: "aborted", message: "stopped" } });
 	});
 
 	it("clamps compaction summary maxTokens to the model output cap", async () => {
 		const messages: AgentMessage[] = [createUserMessage("Summarize this.")];
 		const seenOptions: Array<Record<string, unknown> | undefined> = [];
-		const { faux, model } = createFauxModel(false, 128000);
+		const { faux, model, streamFn } = createFauxModel(false, 128000);
 		faux.setResponses([
 			(_context, options) => {
 				seenOptions.push(options as Record<string, unknown> | undefined);
@@ -565,7 +607,7 @@ describe("harness compaction", () => {
 			settings: { enabled: true, reserveTokens: 500000, keepRecentTokens: 20000 },
 		};
 
-		getOrThrow(await compact(preparation, model, "test-key"));
+		getOrThrow(await compact(preparation, model, "test-key", undefined, undefined, undefined, undefined, streamFn));
 
 		expect(seenOptions.map((options) => options?.maxTokens)).toEqual([128000, 128000]);
 	});
@@ -581,9 +623,20 @@ describe("harness compaction", () => {
 			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
 			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
 		};
-		const { faux: historyFaux, model: historyModel } = createFauxModel(false);
+		const { faux: historyFaux, model: historyModel, streamFn: historyStreamFn } = createFauxModel(false);
 		historyFaux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "history failed" })]);
-		expect(await compact(preparation, historyModel, "test-key")).toMatchObject({
+		expect(
+			await compact(
+				preparation,
+				historyModel,
+				"test-key",
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				historyStreamFn,
+			),
+		).toMatchObject({
 			ok: false,
 			error: { code: "summarization_failed", message: "Summarization failed: history failed" },
 		});
@@ -600,7 +653,7 @@ describe("harness compaction", () => {
 	it("passes reasoning through turn-prefix summaries when enabled", async () => {
 		const messages: AgentMessage[] = [createUserMessage("Summarize this.")];
 		const seenOptions: Array<Record<string, unknown> | undefined> = [];
-		const { faux, model } = createFauxModel(true);
+		const { faux, model, streamFn } = createFauxModel(true);
 		faux.setResponses([
 			(_context, options) => {
 				seenOptions.push(options as Record<string, unknown> | undefined);
@@ -617,7 +670,7 @@ describe("harness compaction", () => {
 			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
 		};
 
-		getOrThrow(await compact(preparation, model, "test-key", undefined, undefined, undefined, "high"));
+		getOrThrow(await compact(preparation, model, "test-key", undefined, undefined, undefined, "high", streamFn));
 
 		expect(seenOptions[0]).toMatchObject({ reasoning: "high" });
 	});
@@ -633,17 +686,30 @@ describe("harness compaction", () => {
 			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
 			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
 		};
-		const { faux, model } = createFauxModel(false);
+		const { faux, model, streamFn } = createFauxModel(false);
 		faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "prefix failed" })]);
 
-		expect(await compact(preparation, model, "test-key")).toMatchObject({
+		expect(
+			await compact(preparation, model, "test-key", undefined, undefined, undefined, undefined, streamFn),
+		).toMatchObject({
 			ok: false,
 			error: { code: "summarization_failed", message: "Turn prefix summarization failed: prefix failed" },
 		});
 
-		const { faux: abortedFaux, model: abortedModel } = createFauxModel(false);
+		const { faux: abortedFaux, model: abortedModel, streamFn: abortedStreamFn } = createFauxModel(false);
 		abortedFaux.setResponses([fauxAssistantMessage("", { stopReason: "aborted", errorMessage: "prefix stopped" })]);
-		expect(await compact(preparation, abortedModel, "test-key")).toMatchObject({
+		expect(
+			await compact(
+				preparation,
+				abortedModel,
+				"test-key",
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				abortedStreamFn,
+			),
+		).toMatchObject({
 			ok: false,
 			error: { code: "aborted", message: "prefix stopped" },
 		});
@@ -660,9 +726,11 @@ describe("harness compaction", () => {
 		const a2 = createMessageEntry(createAssistantMessage("done", createMockUsage(4000, 500)), u2.id);
 		const preparation = getOrThrow(prepareCompaction([u1, a1, u2, a2], DEFAULT_COMPACTION_SETTINGS));
 		expect(preparation).toBeDefined();
-		const { faux, model } = createFauxModel(false);
+		const { faux, model, streamFn } = createFauxModel(false);
 		faux.setResponses([fauxAssistantMessage("## Goal\nTest summary")]);
-		const result = getOrThrow(await compact(preparation!, model, "test-key"));
+		const result = getOrThrow(
+			await compact(preparation!, model, "test-key", undefined, undefined, undefined, undefined, streamFn),
+		);
 		expect(result.summary.length).toBeGreaterThan(0);
 		expect(result.firstKeptEntryId).toBeTruthy();
 		expect(result.details).toBeDefined();

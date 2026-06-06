@@ -1,4 +1,10 @@
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, type StreamOptions } from "@earendil-works/pi-ai";
+import {
+	fauxAssistantMessage,
+	fauxToolCall,
+	registerFauxProvider,
+	type StreamOptions,
+	streamSimple,
+} from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHarness } from "../../src/harness/agent-harness.ts";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";
@@ -43,6 +49,7 @@ describe("AgentHarness stream configuration", () => {
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
+			streamFn: streamSimple,
 			streamOptions: {
 				timeoutMs: 1000,
 				maxRetries: 2,
@@ -94,6 +101,7 @@ describe("AgentHarness stream configuration", () => {
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
+			streamFn: streamSimple,
 			streamOptions: {
 				timeoutMs: 1000,
 				maxRetries: 2,
@@ -152,6 +160,7 @@ describe("AgentHarness stream configuration", () => {
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
+			streamFn: streamSimple,
 			tools: [calculateTool],
 			streamOptions: { timeoutMs: 1000, headers: { turn: "first" } },
 		});
@@ -187,6 +196,7 @@ describe("AgentHarness stream configuration", () => {
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
+			streamFn: streamSimple,
 		});
 
 		harness.on("before_provider_payload", (event) => {

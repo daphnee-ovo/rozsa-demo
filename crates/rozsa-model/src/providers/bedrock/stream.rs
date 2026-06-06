@@ -1,8 +1,8 @@
 //! Bedrock ConverseStream event → unified StreamEvent mapping.
 
 use aws_sdk_bedrockruntime::types::{
-    ContentBlockDelta, ContentBlockStart, ConverseStreamOutput,
-    ReasoningContentBlockDelta, StopReason as BedrockStopReason,
+    ContentBlockDelta, ContentBlockStart, ConverseStreamOutput, ReasoningContentBlockDelta,
+    StopReason as BedrockStopReason,
 };
 
 use crate::event_stream::EventStreamSender;

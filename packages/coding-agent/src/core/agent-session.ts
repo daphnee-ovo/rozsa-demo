@@ -21,18 +21,10 @@ import {
 	type AgentMessage,
 	type AgentState,
 	type AgentTool,
+	cleanupCompatModelSessionResources,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai";
-import {
-	clampThinkingLevel,
-	cleanupSessionResources,
-	getSupportedThinkingLevels,
-	isContextOverflow,
-	modelsAreEqual,
-	resetApiProviders,
-	streamSimple,
-} from "@earendil-works/pi-ai";
 import { theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -83,6 +75,7 @@ import { hasActionableErrors, LSPHook, lspTool } from "./lsp/index.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import { parseModelPattern } from "./model-resolver.ts";
+import { clampThinkingLevel, getSupportedThinkingLevels, isContextOverflow, modelsAreEqual } from "./model-utils.ts";
 import {
 	createAutoPermissionReviewerFromSettings,
 	isPathInside,
@@ -222,6 +215,8 @@ export interface AgentSessionConfig {
 	baseToolsOverride?: Record<string, AgentTool>;
 	/** Mutable ref used by Agent to access the current ExtensionRunner */
 	extensionRunnerRef?: { current?: ExtensionRunner };
+	/** Whether the injected Agent streamFn resolves request auth internally. */
+	streamFnResolvesAuth?: boolean;
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
 	/** 干跑模式：写操作 (bash/edit/write) 仅预览不执行 */
@@ -450,6 +445,7 @@ export class AgentSession {
 	private _toolArgsByCallId = new Map<string, unknown>();
 	private _dryRun = false;
 	private _editMode: EditMode = "normal";
+	private _streamFnResolvesAuth = false;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -465,6 +461,7 @@ export class AgentSession {
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._dryRun = config.dryRun ?? false;
+		this._streamFnResolvesAuth = config.streamFnResolvesAuth ?? false;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 		this._runtimeState = new RuntimeStateStore({
 			workspaceRoot: this._cwd,
@@ -552,7 +549,7 @@ export class AgentSession {
 		apiKey?: string;
 		headers?: Record<string, string>;
 	}> {
-		if (this.agent.streamFn === streamSimple) {
+		if (!this._streamFnResolvesAuth) {
 			return this._getRequiredRequestAuth(model);
 		}
 
@@ -1038,7 +1035,7 @@ export class AgentSession {
 			runtime.unsubscribe();
 		}
 		this._subagents.clear();
-		cleanupSessionResources(this.sessionId);
+		cleanupCompatModelSessionResources(this.sessionId);
 	}
 
 	// =========================================================================
@@ -2270,7 +2267,7 @@ export class AgentSession {
 
 			let apiKey: string | undefined;
 			let headers: Record<string, string> | undefined;
-			if (this.agent.streamFn === streamSimple) {
+			if (!this._streamFnResolvesAuth) {
 				const authResult = await this._modelRegistry.getApiKeyAndHeaders(this.model);
 				if (!authResult.ok || !authResult.apiKey) {
 					this._emit({
@@ -2809,7 +2806,7 @@ export class AgentSession {
 		const previousFlagValues = this._extensionRunner.getFlagValues();
 		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
 		await this.settingsManager.reload();
-		resetApiProviders();
+		this._modelRegistry.refresh();
 		await this._resourceLoader.reload();
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),

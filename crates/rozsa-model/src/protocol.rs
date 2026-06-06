@@ -60,6 +60,8 @@ pub struct ProviderRequest {
     pub model: Model,
     pub context: Context,
     pub options: SimpleStreamOptions,
+    pub models_json_path: Option<String>,
+    pub auth_json_path: Option<String>,
 }
 
 /// Parse a JSONL input line into a bridge request.
@@ -81,6 +83,8 @@ pub fn provider_request(input: BridgeInput) -> Result<Option<ProviderRequest>, S
             method,
             model: parse_model(&model)?,
             context: parse_context(&context)?,
+            models_json_path: optional_string_field(&options, "modelsJsonPath"),
+            auth_json_path: optional_string_field(&options, "authJsonPath"),
             options: parse_simple_options(&options)?,
         })),
         BridgeInput::Cancel { .. } => Ok(None),

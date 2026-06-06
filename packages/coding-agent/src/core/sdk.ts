@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai";
+import type { Message, Model } from "@earendil-works/pi-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
@@ -11,6 +11,8 @@ import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefi
 import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
+import { shouldStreamViaRustModel, streamResolvedModel } from "./model-stream.ts";
+import { clampThinkingLevel } from "./model-utils.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
@@ -210,6 +212,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
 	const authStorage = options.authStorage ?? AuthStorage.create(authPath);
 	const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
+	const rustAuthJsonPath = options.authStorage ? undefined : (authPath ?? join(getDefaultAgentDir(), "auth.json"));
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
@@ -344,13 +347,31 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		},
 		convertToLlm: convertToLlmWithBlockImages,
 		streamFn: async (model, context, options) => {
+			const providerRetrySettings = settingsManager.getProviderRetrySettings();
+			const attributionHeaders = getAttributionHeaders(model, settingsManager, options?.sessionId);
+			const providerStreamHandler = modelRegistry.getProviderStreamHandler(model.api);
+			if (!providerStreamHandler && shouldStreamViaRustModel(model.api)) {
+				const apiKey = rustAuthJsonPath
+					? modelRegistry.getRuntimeApiKey(model.provider)
+					: await modelRegistry.getStoredApiKey(model.provider);
+				return streamResolvedModel(model, context, {
+					...options,
+					apiKey,
+					authJsonPath: rustAuthJsonPath,
+					modelsJsonPath: modelRegistry.getModelsJsonPath(),
+					timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
+					maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
+					maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+					headers:
+						attributionHeaders || options?.headers ? { ...attributionHeaders, ...options?.headers } : undefined,
+				});
+			}
+
 			const auth = await modelRegistry.getApiKeyAndHeaders(model);
 			if (!auth.ok) {
 				throw new Error(auth.error);
 			}
-			const providerRetrySettings = settingsManager.getProviderRetrySettings();
-			const attributionHeaders = getAttributionHeaders(model, settingsManager, options?.sessionId);
-			return streamSimple(model, context, {
+			const requestOptions = {
 				...options,
 				apiKey: auth.apiKey,
 				timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
@@ -360,7 +381,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					attributionHeaders || auth.headers || options?.headers
 						? { ...attributionHeaders, ...auth.headers, ...options?.headers }
 						: undefined,
-			});
+			};
+			if (providerStreamHandler) {
+				return providerStreamHandler(model, context, requestOptions);
+			}
+			return streamResolvedModel(model, context, requestOptions);
 		},
 		onPayload: async (payload, _model) => {
 			const runner = extensionRunnerRef.current;
@@ -419,6 +444,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		initialActiveToolNames,
 		allowedToolNames,
 		extensionRunnerRef,
+		streamFnResolvesAuth: true,
 		sessionStartEvent: options.sessionStartEvent,
 		dryRun: options.dryRun,
 	});

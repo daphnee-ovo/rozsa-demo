@@ -18,9 +18,7 @@ pub mod stream;
 use crate::event_stream::{EventStream, create_event_stream};
 use crate::providers::common::{create_output, emit_error};
 use crate::registry::ApiProvider;
-use crate::types::{
-    Api, Context, Model, SimpleStreamOptions, StreamEvent, StreamOptions,
-};
+use crate::types::{Api, Context, Model, SimpleStreamOptions, StreamEvent, StreamOptions};
 
 use aws_config::BehaviorVersion;
 use aws_sdk_bedrockruntime::Client as BedrockClient;

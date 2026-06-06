@@ -4,6 +4,19 @@ This document tracks provider support while `rozsa-model` replaces the TypeScrip
 
 Related plan: [`rozsa-model-migration.md`](./rozsa-model-migration.md).
 
+Related code:
+
+- `packages/agent/src/event-stream.ts`: Agent-owned async event stream primitive，Agent loop 不再使用 `pi-ai` runtime EventStream。
+- `packages/agent/src/tool-validation.ts`: Agent-owned tool argument validation，Agent loop 不再使用 `pi-ai` runtime validation helper。
+- `packages/agent/src/types.ts`: Agent-owned structural `AssistantMessageEventStream` interface，`StreamFn` 不再绑定 `pi-ai` stream class。
+- `packages/agent/src/compat-model-stream.ts`: Browser-safe TypeScript AI compatibility boundary，集中保留 legacy `streamSimple()` fallback。
+- `packages/agent/src/missing-model-stream.ts`: 未注入模型执行函数时的 fail-fast 边界，避免 Agent 默认回退到 TS AI。
+- `packages/agent/src/rozsa-model-client.ts`: Node-only `rozsa-model` JSONL client，agent/coding-agent Rust 执行路径不经过 TS AI provider bridge。
+- `packages/agent/src/model-stream.ts`: Node 调用方显式注入后，把通用 Agent 的模型请求和 completion 请求分发到 `rozsa-model`。
+- `crates/rozsa-model/src/credentials.rs`: Rust bridge request credential/header resolver，读取 `auth.json`、`models.json`、环境变量和命令型 config value。
+- `packages/coding-agent/src/core/model-stream.ts`: Rust mode 下，把 coding-agent stream/completion 请求分发到 `rozsa-model`。
+- `packages/coding-agent/src/core/model-utils.ts`: coding-agent-owned model helper boundary，替代 `pi-ai` 的 model equality、thinking level clamp/support 和 context overflow helpers。
+
 ## Support Levels
 
 | Level | Meaning |
@@ -60,7 +73,8 @@ Provider availability (auth check):
 - The bridge response includes `providerAvailable: Record<provider, {configured, source}>` alongside the full model list.
 - TypeScript `ModelRegistry.hasConfiguredAuth()` uses the Rust-provided `providerAvailable` for API key auth, and separately checks TS-managed OAuth tokens (`AuthStorage`). A model is available if either path reports configured.
 - When `ROZSA_MODEL_REGISTRY_BACKEND=ts`, Rust is not invoked and the TS side uses its original env var + models.json check logic.
-- OAuth credential management (token storage, refresh, login flow) remains in TypeScript because it requires interactive browser flows and persistent encrypted storage that the Rust bridge cannot access.
+- Rust model execution reads request credentials from `auth.json` API keys, OAuth access tokens, `models.json` `apiKey`, environment variables, and `!command` config values.
+- Rust bridge refreshes expired Anthropic、OpenAI Codex 和 GitHub Copilot OAuth credentials during request credential resolution. OAuth login remains in TypeScript.
 
 Known current limits:
 
@@ -123,6 +137,20 @@ No additional provider protocols are scheduled for the current model-layer miles
 
 Custom providers should first use a supported compatibility protocol instead of requiring a new Rust adapter.
 
+当前支持：
+
+- Rust mode 支持使用 `api: "openai-completions"` 的 metadata-defined custom provider。
+- `rozsa-app` Rust registry bridge 合并 custom model metadata、provider-level headers、model-level headers、`compat` 和 model overrides。
+- `rozsa-model` Rust bridge 根据 `authJsonPath` / `modelsJsonPath` 解析 stored API key、已登录 OAuth credential、custom provider `apiKey`、`headers`、`authHeader` 和 command-backed config value。
+- Rust bridge 会刷新已过期的 Anthropic、OpenAI Codex 和 GitHub Copilot OAuth credential；交互式 OAuth login 仍由 TypeScript CLI/UI 负责。
+- `streamResolvedModel()` 会通过 JSONL bridge 发送 model metadata、custom `provider`、custom `baseUrl`、`compat` metadata、`authJsonPath` 和 `modelsJsonPath`。
+- Focused coverage：`tests/unit/model/protocol.rs`、`packages/agent/test/model-stream.test.ts` 和 `packages/coding-agent/test/model-stream.test.ts`。
+
+当前限制：
+
+- Extension 提供的动态 `streamSimple` provider handler 仍然是 TypeScript handler，但已由 coding-agent-owned registry 和 SDK stream boundary 执行，不再注册到 `pi-ai` provider registry。
+- `packages/agent/src/compat-model-stream.ts` 仍保留 legacy `streamSimple()` 作为显式 TS rollback path；这不是 Rust-supported API 的默认 coding-agent 生产执行路径。
+
 For OpenAI-compatible Chat Completions, create a `Model` with:
 
 - `api: Api::OpenAICompletions`
@@ -158,7 +186,7 @@ Custom provider rules:
 - Prefer `Api::OpenAICompletions` when the provider is OpenAI Chat Completions-compatible.
 - Do not add a new provider adapter unless a compatibility protocol cannot represent the provider correctly.
 - Keep provider-specific compatibility in `compat` metadata when possible.
-- Keep credentials explicit. For `Provider::Custom`, pass `api_key` in request options until custom credential resolution is designed.
+- Prefer `models.json` `apiKey`/`headers`/`authHeader` for static custom provider credentials; runtime-only credentials may still be passed through request options.
 - If custom headers contain secrets, pass them through caller-controlled configuration and avoid logging them.
 
 ## Maintenance Rules

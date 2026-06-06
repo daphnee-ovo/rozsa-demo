@@ -142,6 +142,16 @@ export interface StreamOptions {
 	 * For example, Anthropic uses `user_id` for abuse tracking and rate limiting.
 	 */
 	metadata?: Record<string, unknown>;
+	/**
+	 * Optional models.json path forwarded to the Rust model bridge for Rust-owned
+	 * custom provider request credential/header resolution.
+	 */
+	modelsJsonPath?: string;
+	/**
+	 * Optional auth.json path forwarded to the Rust model bridge for Rust-owned
+	 * stored API key and unexpired OAuth token resolution.
+	 */
+	authJsonPath?: string;
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;

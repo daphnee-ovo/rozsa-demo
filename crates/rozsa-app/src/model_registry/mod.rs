@@ -322,11 +322,15 @@ impl ModelRegistry {
                 self.provider_api_keys
                     .insert(provider_name.clone(), api_key.clone());
             }
-            if provider_config.base_url.is_some() || provider_config.compat.is_some() {
+            if provider_config.base_url.is_some()
+                || provider_config.headers.is_some()
+                || provider_config.compat.is_some()
+            {
                 provider_overrides.insert(
                     provider_name.clone(),
                     ProviderOverride {
                         base_url: provider_config.base_url.clone(),
+                        headers: provider_config.headers.clone(),
                         compat: provider_config.compat.clone(),
                     },
                 );
@@ -454,6 +458,13 @@ impl ModelRegistry {
             if let Some(override_config) = overrides.get(&model.provider) {
                 if let Some(base_url) = &override_config.base_url {
                     model.base_url = base_url.clone();
+                }
+                if let Some(headers) = &override_config.headers {
+                    let mut merged = headers.clone();
+                    if let Some(model_headers) = model.headers.take() {
+                        merged.extend(model_headers);
+                    }
+                    model.headers = Some(merged);
                 }
                 model.compat = merge_compat(model.compat.clone(), override_config.compat.clone());
             }
@@ -611,6 +622,7 @@ struct PartialModelCost {
 #[derive(Debug, Clone)]
 struct ProviderOverride {
     base_url: Option<String>,
+    headers: Option<HashMap<String, String>>,
     compat: Option<Value>,
 }
 

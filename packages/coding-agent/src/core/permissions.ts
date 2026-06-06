@@ -1,8 +1,9 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { completeSimple, type Model, type TextContent } from "@earendil-works/pi-ai";
+import type { Model, TextContent } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "./model-registry.ts";
+import { completeResolvedModel } from "./model-stream.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 
 export type PermissionMode = "on-request" | "auto-permission" | "free-permission";
@@ -1247,7 +1248,7 @@ export class ModelAutoPermissionReviewer implements AutoPermissionReviewer {
 				2,
 			),
 		].join("\n\n");
-		const response = await completeSimple(
+		const response = await completeResolvedModel(
 			this.model,
 			{
 				systemPrompt: "You review tool and shell permissions. Output strict JSON only.",

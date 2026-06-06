@@ -8,13 +8,13 @@ import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
 	type Context,
-	EventStream,
 	type Model,
 	parseStreamingJson,
 	type SimpleStreamOptions,
 	type StopReason,
 	type ToolCall,
 } from "@earendil-works/pi-ai";
+import { EventStream } from "./event-stream.ts";
 
 // Create stream class matching ProxyMessageEventStream
 class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
