@@ -6,7 +6,7 @@ import type {
 	SimpleStreamOptions,
 	TextContent,
 	Usage,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/pi-model-types";
 import { missingModelStream } from "../../missing-model-stream.ts";
 import type { AgentMessage, StreamFn, ThinkingLevel } from "../../types.ts";
 import {

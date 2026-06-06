@@ -1,6 +1,6 @@
 import { access, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ImageContent } from "@earendil-works/pi-model-types";
 import { resolveReadPath } from "../../core/tools/path-utils.ts";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.ts";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";

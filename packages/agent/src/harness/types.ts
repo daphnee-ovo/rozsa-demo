@@ -1,4 +1,4 @@
-import type { ImageContent, Model, SimpleStreamOptions, TextContent, Transport } from "@earendil-works/pi-ai";
+import type { ImageContent, Model, SimpleStreamOptions, TextContent, Transport } from "@earendil-works/pi-model-types";
 import type { AgentEvent, AgentMessage, AgentTool, QueueMode, StreamFn, ThinkingLevel } from "../index.ts";
 import type { Session } from "./session/session.ts";
 

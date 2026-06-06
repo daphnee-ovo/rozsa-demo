@@ -14,7 +14,7 @@ import type {
 	Context,
 	Model,
 	SimpleStreamOptions,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/pi-model-types";
 import { EventStream } from "./event-stream.ts";
 import type { AssistantMessageEventStream } from "./types.ts";
 

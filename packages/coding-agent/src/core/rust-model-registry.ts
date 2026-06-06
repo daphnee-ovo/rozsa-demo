@@ -60,14 +60,7 @@ export interface RustImageRegistryResult {
 	providerAvailable?: Record<string, ProviderAvailableEntry>;
 }
 
-export function loadRustModelRegistryModels(modelsJsonPath: string | undefined): RustRegistryResult | undefined {
-	const backend = process.env.ROZSA_MODEL_REGISTRY_BACKEND ?? "rust";
-	if (backend === "ts") {
-		return undefined;
-	}
-	if (backend !== "rust") {
-		throw new Error('ROZSA_MODEL_REGISTRY_BACKEND must be "ts" or "rust".');
-	}
+export function loadRustModelRegistryModels(modelsJsonPath: string | undefined): RustRegistryResult {
 	const binary = resolveRustAppBinary();
 
 	const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -83,17 +76,10 @@ export function loadRustModelRegistryModels(modelsJsonPath: string | undefined):
 		maxBuffer: 16 * 1024 * 1024,
 	});
 
-	return parseRustRegistryResult(result, requestId, backend);
+	return parseRustRegistryResult(result, requestId);
 }
 
-export function loadRustImageModelRegistryModels(): RustImageRegistryResult | undefined {
-	const backend = process.env.ROZSA_MODEL_REGISTRY_BACKEND ?? "rust";
-	if (backend === "ts") {
-		return undefined;
-	}
-	if (backend !== "rust") {
-		throw new Error('ROZSA_MODEL_REGISTRY_BACKEND must be "ts" or "rust".');
-	}
+export function loadRustImageModelRegistryModels(): RustImageRegistryResult {
 	const binary = resolveRustAppBinary();
 
 	const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -107,7 +93,7 @@ export function loadRustImageModelRegistryModels(): RustImageRegistryResult | un
 		maxBuffer: 16 * 1024 * 1024,
 	});
 
-	return parseRustImageRegistryResult(result, requestId, backend);
+	return parseRustImageRegistryResult(result, requestId);
 }
 
 export function resolveRustAppBinary(): string {
@@ -132,23 +118,13 @@ export function resolveRustAppBinaryArgs(): string[] {
 	return parsed;
 }
 
-function parseRustRegistryResult(
-	result: SpawnSyncReturns<string>,
-	requestId: string,
-	backend: "rust" | "ts",
-): RustRegistryResult | undefined {
+function parseRustRegistryResult(result: SpawnSyncReturns<string>, requestId: string): RustRegistryResult {
 	if (result.error) {
-		if (backend === "rust") {
-			throw result.error;
-		}
-		return undefined;
+		throw result.error;
 	}
 	if (result.status !== 0) {
-		if (backend === "rust") {
-			const stderr = result.stderr.trim().slice(-MAX_STDERR_CHARS);
-			throw new Error(`rozsa-app exited with status ${result.status}${stderr ? `: ${stderr}` : ""}`);
-		}
-		return undefined;
+		const stderr = result.stderr.trim().slice(-MAX_STDERR_CHARS);
+		throw new Error(`rozsa-app exited with status ${result.status}${stderr ? `: ${stderr}` : ""}`);
 	}
 
 	for (const line of result.stdout.split(/\r?\n/)) {
@@ -156,37 +132,21 @@ function parseRustRegistryResult(
 		const parsed = parseRustRegistryLine(line);
 		if (!parsed || parsed.id !== requestId) continue;
 		if (parsed.type === "error") {
-			if (backend === "rust") {
-				throw new Error(parsed.message);
-			}
-			return undefined;
+			throw new Error(parsed.message);
 		}
 		return { models: parsed.models, providerAvailable: parsed.providerAvailable, errors: parsed.errors ?? [] };
 	}
 
-	if (backend === "rust") {
-		throw new Error("rozsa-app did not return a model registry response");
-	}
-	return undefined;
+	throw new Error("rozsa-app did not return a model registry response");
 }
 
-function parseRustImageRegistryResult(
-	result: SpawnSyncReturns<string>,
-	requestId: string,
-	backend: "rust" | "ts",
-): RustImageRegistryResult | undefined {
+function parseRustImageRegistryResult(result: SpawnSyncReturns<string>, requestId: string): RustImageRegistryResult {
 	if (result.error) {
-		if (backend === "rust") {
-			throw result.error;
-		}
-		return undefined;
+		throw result.error;
 	}
 	if (result.status !== 0) {
-		if (backend === "rust") {
-			const stderr = result.stderr.trim().slice(-MAX_STDERR_CHARS);
-			throw new Error(`rozsa-app exited with status ${result.status}${stderr ? `: ${stderr}` : ""}`);
-		}
-		return undefined;
+		const stderr = result.stderr.trim().slice(-MAX_STDERR_CHARS);
+		throw new Error(`rozsa-app exited with status ${result.status}${stderr ? `: ${stderr}` : ""}`);
 	}
 
 	for (const line of result.stdout.split(/\r?\n/)) {
@@ -194,18 +154,12 @@ function parseRustImageRegistryResult(
 		const parsed = parseRustImageRegistryLine(line);
 		if (!parsed || parsed.id !== requestId) continue;
 		if (parsed.type === "error") {
-			if (backend === "rust") {
-				throw new Error(parsed.message);
-			}
-			return undefined;
+			throw new Error(parsed.message);
 		}
 		return { imageModels: parsed.imageModels, providerAvailable: parsed.providerAvailable };
 	}
 
-	if (backend === "rust") {
-		throw new Error("rozsa-app did not return an image model registry response");
-	}
-	return undefined;
+	throw new Error("rozsa-app did not return an image model registry response");
 }
 
 function parseRustRegistryLine(line: string): RustRegistryLine | undefined {

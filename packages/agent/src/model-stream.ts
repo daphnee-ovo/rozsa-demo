@@ -8,7 +8,7 @@
  * Related docs: ../../../docs/model/rozsa-model-migration.md
  */
 
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-model-types";
 import { streamSimpleRustModel } from "./rozsa-model-client.ts";
 import type { AssistantMessageEventStream } from "./types.ts";
 

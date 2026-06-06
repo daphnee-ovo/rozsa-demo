@@ -2,21 +2,18 @@
  * Model registry - manages built-in and custom models, provides API key resolution.
  */
 
-import {
-	type AnthropicMessagesCompat,
-	type Api,
-	type AssistantMessageEventStream,
-	type Context,
-	getModels,
-	getProviders,
-	type KnownProvider,
-	type Model,
-	type OAuthProviderInterface,
-	type OpenAICompletionsCompat,
-	type OpenAIResponsesCompat,
-	type SimpleStreamOptions,
-} from "@earendil-works/pi-ai";
+import type { AssistantMessageEventStream } from "@earendil-works/pi-agent-core";
+import type { OAuthProviderInterface } from "@earendil-works/pi-ai";
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
+import type {
+	AnthropicMessagesCompat,
+	Api,
+	Context,
+	Model,
+	OpenAICompletionsCompat,
+	OpenAIResponsesCompat,
+	SimpleStreamOptions,
+} from "@earendil-works/pi-model-types";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";
@@ -292,39 +289,6 @@ function mergeCompat(
 	return merged as Model<Api>["compat"];
 }
 
-/**
- * Deep merge a model override into a model.
- * Handles nested objects (cost, compat) by merging rather than replacing.
- */
-function applyModelOverride(model: Model<Api>, override: ModelOverride): Model<Api> {
-	const result = { ...model };
-
-	// Simple field overrides
-	if (override.name !== undefined) result.name = override.name;
-	if (override.reasoning !== undefined) result.reasoning = override.reasoning;
-	if (override.thinkingLevelMap !== undefined) {
-		result.thinkingLevelMap = { ...model.thinkingLevelMap, ...override.thinkingLevelMap };
-	}
-	if (override.input !== undefined) result.input = override.input as ("text" | "image")[];
-	if (override.contextWindow !== undefined) result.contextWindow = override.contextWindow;
-	if (override.maxTokens !== undefined) result.maxTokens = override.maxTokens;
-
-	// Merge cost (partial override)
-	if (override.cost) {
-		result.cost = {
-			input: override.cost.input ?? model.cost.input,
-			output: override.cost.output ?? model.cost.output,
-			cacheRead: override.cost.cacheRead ?? model.cost.cacheRead,
-			cacheWrite: override.cost.cacheWrite ?? model.cost.cacheWrite,
-		};
-	}
-
-	// Deep merge compat
-	result.compat = mergeCompat(model.compat, override.compat);
-
-	return result;
-}
-
 /** Clear the config value command cache. Exported for testing. */
 export const clearApiKeyCache = clearConfigValueCache;
 
@@ -404,17 +368,13 @@ export class ModelRegistry {
 	}
 
 	private loadModels(): void {
-		// Load custom models and overrides from models.json
-		const {
-			models: customModels,
-			overrides,
-			modelOverrides,
-			error,
-		} = this.modelsJsonPath ? this.loadCustomModels(this.modelsJsonPath) : emptyCustomModelsResult();
+		// Load custom models from models.json (for user configuration tracking)
+		const { models: customModels, error } = this.modelsJsonPath
+			? this.loadCustomModels(this.modelsJsonPath)
+			: emptyCustomModelsResult();
 
 		if (error) {
 			this.loadError = error;
-			// Keep built-in models even if custom models failed to load
 		}
 
 		// 记录用户显式配置的模型
@@ -424,12 +384,8 @@ export class ModelRegistry {
 		}
 
 		const rustModels = loadRustModelRegistryModels(this.modelsJsonPath);
-		let combined = rustModels?.models;
-		if (!combined) {
-			const builtInModels = this.loadBuiltInModels(overrides, modelOverrides);
-			combined = this.mergeCustomModels(builtInModels, customModels);
-		}
-		if (rustModels?.errors.length) {
+		let combined = rustModels.models;
+		if (rustModels.errors.length) {
 			this.loadError = [this.loadError, ...rustModels.errors].filter(Boolean).join("\n");
 		}
 
@@ -450,53 +406,6 @@ export class ModelRegistry {
 		}
 
 		this.models = combined;
-	}
-
-	/** Load built-in models and apply provider/model overrides */
-	private loadBuiltInModels(
-		overrides: Map<string, ProviderOverride>,
-		modelOverrides: Map<string, Map<string, ModelOverride>>,
-	): Model<Api>[] {
-		return getProviders().flatMap((provider) => {
-			const models = getModels(provider as KnownProvider) as Model<Api>[];
-			const providerOverride = overrides.get(provider);
-			const perModelOverrides = modelOverrides.get(provider);
-
-			return models.map((m) => {
-				let model = m;
-
-				// Apply provider-level baseUrl/headers/compat override
-				if (providerOverride) {
-					model = {
-						...model,
-						baseUrl: providerOverride.baseUrl ?? model.baseUrl,
-						compat: mergeCompat(model.compat, providerOverride.compat),
-					};
-				}
-
-				// Apply per-model override
-				const modelOverride = perModelOverrides?.get(m.id);
-				if (modelOverride) {
-					model = applyModelOverride(model, modelOverride);
-				}
-
-				return model;
-			});
-		});
-	}
-
-	/** Merge custom models into built-in list by provider+id (custom wins on conflicts). */
-	private mergeCustomModels(builtInModels: Model<Api>[], customModels: Model<Api>[]): Model<Api>[] {
-		const merged = [...builtInModels];
-		for (const customModel of customModels) {
-			const existingIndex = merged.findIndex((m) => m.provider === customModel.provider && m.id === customModel.id);
-			if (existingIndex >= 0) {
-				merged[existingIndex] = customModel;
-			} else {
-				merged.push(customModel);
-			}
-		}
-		return merged;
 	}
 
 	private loadCustomModels(modelsJsonPath: string): CustomModelsResult {
@@ -555,10 +464,7 @@ export class ModelRegistry {
 	}
 
 	private validateConfig(config: ModelsConfig): void {
-		const builtInProviders = new Set<string>(getProviders());
-
 		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
-			const isBuiltIn = builtInProviders.has(providerName);
 			const hasProviderApi = !!providerConfig.api;
 			const models = providerConfig.models ?? [];
 			const hasModelOverrides =
@@ -571,8 +477,8 @@ export class ModelRegistry {
 						`Provider ${providerName}: must specify "baseUrl", "headers", "compat", "modelOverrides", or "models".`,
 					);
 				}
-			} else if (!isBuiltIn) {
-				// Non-built-in providers with custom models require endpoint + auth.
+			} else {
+				// Custom providers with models require endpoint + auth.
 				if (!providerConfig.baseUrl) {
 					throw new Error(`Provider ${providerName}: "baseUrl" is required when defining custom models.`);
 				}
@@ -580,18 +486,15 @@ export class ModelRegistry {
 					throw new Error(`Provider ${providerName}: "apiKey" is required when defining custom models.`);
 				}
 			}
-			// Built-in providers with custom models: baseUrl/apiKey/api are optional,
-			// inherited from built-in models. Auth comes from env vars / auth storage.
 
 			for (const modelDef of models) {
 				const hasModelApi = !!modelDef.api;
 
-				if (!hasProviderApi && !hasModelApi && !isBuiltIn) {
+				if (!hasProviderApi && !hasModelApi) {
 					throw new Error(
 						`Provider ${providerName}, model ${modelDef.id}: no "api" specified. Set at provider or model level.`,
 					);
 				}
-				// For built-in providers, api is optional — inherited from built-in models.
 
 				if (!modelDef.id) throw new Error(`Provider ${providerName}: model missing "id"`);
 				// Validate contextWindow/maxTokens only if provided (they have defaults)
@@ -605,31 +508,16 @@ export class ModelRegistry {
 
 	private parseModels(config: ModelsConfig): Model<Api>[] {
 		const models: Model<Api>[] = [];
-		const builtInProviders = new Set<string>(getProviders());
-
-		// Cache built-in defaults (api, baseUrl) per provider, extracted from first model.
-		const builtInDefaultsCache = new Map<string, { api: string; baseUrl: string }>();
-		const getBuiltInDefaults = (providerName: string): { api: string; baseUrl: string } | undefined => {
-			if (!builtInProviders.has(providerName)) return undefined;
-			if (builtInDefaultsCache.has(providerName)) return builtInDefaultsCache.get(providerName);
-			const builtIn = getModels(providerName as KnownProvider) as Model<Api>[];
-			if (builtIn.length === 0) return undefined;
-			const defaults = { api: builtIn[0].api, baseUrl: builtIn[0].baseUrl };
-			builtInDefaultsCache.set(providerName, defaults);
-			return defaults;
-		};
 
 		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
 			const modelDefs = providerConfig.models ?? [];
 			if (modelDefs.length === 0) continue; // Override-only, no custom models
 
-			const builtInDefaults = getBuiltInDefaults(providerName);
-
 			for (const modelDef of modelDefs) {
-				const api = modelDef.api ?? providerConfig.api ?? builtInDefaults?.api;
+				const api = modelDef.api ?? providerConfig.api;
 				if (!api) continue;
 
-				const baseUrl = modelDef.baseUrl ?? providerConfig.baseUrl ?? builtInDefaults?.baseUrl;
+				const baseUrl = modelDef.baseUrl ?? providerConfig.baseUrl;
 				if (!baseUrl) continue;
 
 				const compat = mergeCompat(providerConfig.compat, modelDef.compat);

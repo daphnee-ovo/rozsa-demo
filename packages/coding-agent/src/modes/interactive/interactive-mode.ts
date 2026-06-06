@@ -8,15 +8,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
-import {
-	type AssistantMessage,
-	getProviders,
-	type ImageContent,
-	type Message,
-	type Model,
-	type OAuthProviderId,
-	type OAuthSelectPrompt,
-} from "@earendil-works/pi-ai";
+import { getProviders, type OAuthProviderId, type OAuthSelectPrompt } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ImageContent, Message, Model } from "@earendil-works/pi-model-types";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,

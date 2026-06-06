@@ -10,7 +10,7 @@
 
 import type { AssistantMessageEventStream } from "@earendil-works/pi-agent-core";
 import { streamDefaultModel } from "@earendil-works/pi-agent-core/node";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-model-types";
 
 export function streamResolvedModel(
 	model: Model<Api>,

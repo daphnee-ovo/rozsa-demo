@@ -6,7 +6,7 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Model } from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-model-types";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

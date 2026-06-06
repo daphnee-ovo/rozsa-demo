@@ -3,7 +3,7 @@
  * Transforms to Message[] only at the LLM call boundary.
  */
 
-import type { AssistantMessage, Context, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, ToolResultMessage } from "@earendil-works/pi-model-types";
 import { EventStream } from "./event-stream.ts";
 import { missingModelStream } from "./missing-model-stream.ts";
 import { validateToolArguments } from "./tool-validation.ts";

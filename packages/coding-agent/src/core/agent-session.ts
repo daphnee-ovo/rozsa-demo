@@ -23,7 +23,7 @@ import {
 	type AgentTool,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-model-types";
 import { theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";

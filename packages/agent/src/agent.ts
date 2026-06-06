@@ -6,7 +6,7 @@ import type {
 	TextContent,
 	ThinkingBudgets,
 	Transport,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/pi-model-types";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import { missingModelStream } from "./missing-model-stream.ts";
 import type {

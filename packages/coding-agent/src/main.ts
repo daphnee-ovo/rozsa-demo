@@ -8,7 +8,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ImageContent } from "@earendil-works/pi-model-types";
 import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";

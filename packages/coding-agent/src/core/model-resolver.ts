@@ -3,7 +3,7 @@
  */
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, KnownProvider, Model } from "@earendil-works/pi-ai";
+import type { Api, KnownProvider, Model } from "@earendil-works/pi-model-types";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";

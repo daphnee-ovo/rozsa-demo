@@ -12,22 +12,21 @@ import type {
 	AgentMessage,
 	AgentToolResult,
 	AgentToolUpdateCallback,
+	AssistantMessageEventStream,
 	ThinkingLevel,
 	ToolExecutionMode,
 } from "@earendil-works/pi-agent-core";
+import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import type {
 	Api,
 	AssistantMessageEvent,
-	AssistantMessageEventStream,
 	Context,
 	ImageContent,
 	Model,
-	OAuthCredentials,
-	OAuthLoginCallbacks,
 	SimpleStreamOptions,
 	TextContent,
 	ToolResultMessage,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/pi-model-types";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
