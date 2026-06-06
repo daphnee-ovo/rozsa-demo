@@ -1,5 +1,5 @@
 {
-	"name": "@earendil-works/pi-ai",
+	"name": "@earendil-works/rozsa-ai",
 	"version": "0.75.5",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
@@ -52,7 +52,7 @@
 		}
 	},
 	"bin": {
-		"pi-ai": "./dist/cli.js"
+		"rozsa-ai": "./dist/cli.js"
 	},
 	"files": [
 		"dist",
@@ -67,7 +67,7 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@earendil-works/pi-model-types": "*",
+		"@earendil-works/rozsa-model-types": "*",
 		"@anthropic-ai/sdk": "0.91.1",
 		"@aws-sdk/client-bedrock-runtime": "3.1048.0",
 		"@google/genai": "1.52.0",
@@ -93,7 +93,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi-mono.git",
+		"url": "git+https://github.com/earendil-works/rozsa-mono.git",
 		"directory": "packages/ai"
 	},
 	"engines": {

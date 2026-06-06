@@ -2,9 +2,9 @@
  * Model registry - manages built-in and custom models, provides API key resolution.
  */
 
-import type { AssistantMessageEventStream } from "@earendil-works/pi-agent-core";
-import type { OAuthProviderInterface } from "@earendil-works/pi-ai";
-import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
+import type { AssistantMessageEventStream } from "@earendil-works/rozsa-agent-core";
+import type { OAuthProviderInterface } from "@earendil-works/rozsa-ai";
+import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/rozsa-ai/oauth";
 import type {
 	AnthropicMessagesCompat,
 	Api,
@@ -13,7 +13,7 @@ import type {
 	OpenAICompletionsCompat,
 	OpenAIResponsesCompat,
 	SimpleStreamOptions,
-} from "@earendil-works/pi-model-types";
+} from "@earendil-works/rozsa-model-types";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";

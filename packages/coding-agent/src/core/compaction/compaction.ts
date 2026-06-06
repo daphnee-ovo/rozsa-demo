@@ -5,8 +5,8 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@earendil-works/pi-model-types";
+import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/rozsa-agent-core";
+import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@earendil-works/rozsa-model-types";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -45,7 +45,7 @@ function extractFileOperations(
 ): FileOperations {
 	const fileOps = createFileOps();
 
-	// Collect from previous compaction's details (if pi-generated)
+	// Collect from previous compaction's details (if rozsa-generated)
 	if (prevCompactionIndex >= 0) {
 		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
 		if (!prevCompaction.fromHook && prevCompaction.details) {

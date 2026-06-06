@@ -9,7 +9,7 @@ import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Api, ImagesApi, ImagesModel, Model } from "@earendil-works/pi-model-types";
+import type { Api, ImagesApi, ImagesModel, Model } from "@earendil-works/rozsa-model-types";
 
 const RUST_APP_BINARY_NAME = process.platform === "win32" ? "rozsa-app.exe" : "rozsa-app";
 const SOURCE_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");

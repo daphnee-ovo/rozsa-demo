@@ -10,7 +10,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+} from "@earendil-works/rozsa-tui";
 import {
 	generateTrustLevels,
 	type PermissionPromptContext,

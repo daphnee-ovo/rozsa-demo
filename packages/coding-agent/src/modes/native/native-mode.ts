@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { join, resolve } from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ImageContent } from "@earendil-works/pi-model-types";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
+import type { ImageContent } from "@earendil-works/rozsa-model-types";
 import { APP_NAME, VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {

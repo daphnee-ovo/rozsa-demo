@@ -1,5 +1,5 @@
-import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { AgentMessage, StreamFn } from "@earendil-works/rozsa-agent-core";
+import type { AssistantMessage, Model } from "@earendil-works/rozsa-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type CompactionPreparation, compact, generateSummary } from "../src/core/compaction/index.ts";
 

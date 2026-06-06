@@ -1,4 +1,4 @@
-import type { ImageContent, TextContent } from "@earendil-works/pi-model-types";
+import type { ImageContent, TextContent } from "@earendil-works/rozsa-model-types";
 import type { AgentMessage } from "../../types.ts";
 import { createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage } from "../messages.ts";
 import type {

@@ -1,4 +1,4 @@
-import type { AssistantMessage, ImageContent, Model, UserMessage } from "@earendil-works/pi-model-types";
+import type { AssistantMessage, ImageContent, Model, UserMessage } from "@earendil-works/rozsa-model-types";
 import { runAgentLoop } from "../agent-loop.ts";
 import { missingModelStream } from "../missing-model-stream.ts";
 import type {

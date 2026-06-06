@@ -1,4 +1,4 @@
-import type { ImageContent } from "@earendil-works/pi-model-types";
+import type { ImageContent } from "@earendil-works/rozsa-model-types";
 import type { Args } from "./args.ts";
 
 export interface InitialMessageInput {

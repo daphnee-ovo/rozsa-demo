@@ -7,7 +7,7 @@ use serde_json::json;
 #[tokio::test]
 async fn full_conversation_flow_with_mock_backend() {
     let state_msg = NativeUiState {
-        app_name: "pi".to_string(),
+        app_name: "rozsa".to_string(),
         version: "0.1.0".to_string(),
         is_streaming: false,
         ..Default::default()
@@ -19,7 +19,7 @@ async fn full_conversation_flow_with_mock_backend() {
     // Connect 并接收初始 state
     backend.connect().await.unwrap();
     let event = rx.recv().await.unwrap();
-    assert!(matches!(&event, BackendEvent::State(s) if s.app_name == "pi"));
+    assert!(matches!(&event, BackendEvent::State(s) if s.app_name == "rozsa"));
 
     // Submit prompt
     backend.submit("hello world", vec![]).await.unwrap();
@@ -93,7 +93,7 @@ async fn apply_backend_event_updates_state() {
     let mut state = AppState::new();
 
     let ui = NativeUiState {
-        app_name: "pi".to_string(),
+        app_name: "rozsa".to_string(),
         is_streaming: true,
         messages: vec![json!({"role": "user"})],
         ..Default::default()

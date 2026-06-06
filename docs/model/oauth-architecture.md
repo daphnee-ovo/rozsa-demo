@@ -18,7 +18,7 @@ Related docs:
 
 Built-in OAuth providers (Anthropic, GitHub Copilot, OpenAI Codex) execute their login flows entirely in Rust. The TS layer acts as a thin UI relay — forwarding events to the login dialog and user responses back to Rust.
 
-Extension-defined OAuth providers continue to run their JS login callbacks in the TS process (the pi-ai OAuth registry is preserved for this purpose).
+Extension-defined OAuth providers continue to run their JS login callbacks in the TS process (the rozsa-ai OAuth registry is preserved for this purpose).
 
 ## Bridge Protocol
 
@@ -141,7 +141,7 @@ Refresh is triggered automatically when `resolve_request_options()` detects an e
 Extensions register via:
 
 ```typescript
-pi.registerProvider("my-provider", {
+rozsa.registerProvider("my-provider", {
   oauth: {
     name: "My Provider",
     login(callbacks) { /* JS implementation */ },

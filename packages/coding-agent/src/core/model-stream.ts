@@ -8,9 +8,9 @@
  * Related docs: ../../../../docs/model/rozsa-model-migration.md
  */
 
-import type { AssistantMessageEventStream } from "@earendil-works/pi-agent-core";
-import { streamDefaultModel } from "@earendil-works/pi-agent-core/node";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-model-types";
+import type { AssistantMessageEventStream } from "@earendil-works/rozsa-agent-core";
+import { streamDefaultModel } from "@earendil-works/rozsa-agent-core/node";
+import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/rozsa-model-types";
 
 export function streamResolvedModel(
 	model: Model<Api>,

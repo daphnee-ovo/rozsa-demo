@@ -6,7 +6,7 @@ import type {
 	SimpleStreamOptions,
 	TextContent,
 	Usage,
-} from "@earendil-works/pi-model-types";
+} from "@earendil-works/rozsa-model-types";
 import { missingModelStream } from "../../missing-model-stream.ts";
 import type { AgentMessage, StreamFn, ThinkingLevel } from "../../types.ts";
 import {

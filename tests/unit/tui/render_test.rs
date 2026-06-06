@@ -15,7 +15,7 @@ fn make_terminal(width: u16, height: u16) -> Terminal<TestBackend> {
 fn default_ui_state() -> NativeUiState {
     serde_json::from_str(
         r#"{
-        "appName": "pi",
+        "appName": "rozsa",
         "version": "0.1.0",
         "cwd": "/home/user/project",
         "thinkingLevel": "medium",
@@ -278,7 +278,7 @@ fn test_input_multiline_renders() {
 fn test_user_message_has_prefix_and_wraps() {
     let mut state = AppState::new();
     state.ui = serde_json::from_str(r#"{
-        "appName": "pi",
+        "appName": "rozsa",
         "version": "0.1.0",
         "cwd": "/home/user/project",
         "thinkingLevel": "medium",

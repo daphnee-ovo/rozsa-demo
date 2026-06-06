@@ -4,7 +4,7 @@
  */
 
 // Internal import for JSON parsing utility
-import { parseStreamingJson } from "@earendil-works/pi-ai";
+import { parseStreamingJson } from "@earendil-works/rozsa-ai";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -13,7 +13,7 @@ import type {
 	SimpleStreamOptions,
 	StopReason,
 	ToolCall,
-} from "@earendil-works/pi-model-types";
+} from "@earendil-works/rozsa-model-types";
 import { EventStream } from "./event-stream.ts";
 
 // Create stream class matching ProxyMessageEventStream

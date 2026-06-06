@@ -3,7 +3,7 @@
  */
 
 import { access, readFile, stat } from "node:fs/promises";
-import type { ImageContent } from "@earendil-works/pi-model-types";
+import type { ImageContent } from "@earendil-works/rozsa-model-types";
 import chalk from "chalk";
 import { resolve } from "path";
 import { resolveReadPath } from "../core/tools/path-utils.ts";

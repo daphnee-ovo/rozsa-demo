@@ -6,16 +6,16 @@ Related plan: [`rozsa-model-migration.md`](./rozsa-model-migration.md).
 
 Related code:
 
-- `packages/agent/src/event-stream.ts`: Agent-owned async event stream primitive，Agent loop 不再使用 `pi-ai` runtime EventStream。
-- `packages/agent/src/tool-validation.ts`: Agent-owned tool argument validation，Agent loop 不再使用 `pi-ai` runtime validation helper。
-- `packages/agent/src/types.ts`: Agent-owned structural `AssistantMessageEventStream` interface，`StreamFn` 不再绑定 `pi-ai` stream class。
+- `packages/agent/src/event-stream.ts`: Agent-owned async event stream primitive，Agent loop 不再使用 `rozsa-ai` runtime EventStream。
+- `packages/agent/src/tool-validation.ts`: Agent-owned tool argument validation，Agent loop 不再使用 `rozsa-ai` runtime validation helper。
+- `packages/agent/src/types.ts`: Agent-owned structural `AssistantMessageEventStream` interface，`StreamFn` 不再绑定 `rozsa-ai` stream class。
 - `packages/agent/src/compat-model-stream.ts`: Browser-safe TypeScript AI compatibility boundary，集中保留 legacy `streamSimple()` fallback。
 - `packages/agent/src/missing-model-stream.ts`: 未注入模型执行函数时的 fail-fast 边界，避免 Agent 默认回退到 TS AI。
 - `packages/agent/src/rozsa-model-client.ts`: Node-only `rozsa-model` JSONL client，agent/coding-agent Rust 执行路径不经过 TS AI provider bridge。
 - `packages/agent/src/model-stream.ts`: Node 调用方显式注入后，把通用 Agent 的模型请求和 completion 请求分发到 `rozsa-model`。
 - `crates/rozsa-model/src/credentials.rs`: Rust bridge request credential/header resolver，读取 `auth.json`、`models.json`、环境变量和命令型 config value。
 - `packages/coding-agent/src/core/model-stream.ts`: Rust mode 下，把 coding-agent stream/completion 请求分发到 `rozsa-model`。
-- `packages/coding-agent/src/core/model-utils.ts`: coding-agent-owned model helper boundary，替代 `pi-ai` 的 model equality、thinking level clamp/support 和 context overflow helpers。
+- `packages/coding-agent/src/core/model-utils.ts`: coding-agent-owned model helper boundary，替代 `rozsa-ai` 的 model equality、thinking level clamp/support 和 context overflow helpers。
 
 ## Support Levels
 
@@ -148,7 +148,7 @@ Custom providers should first use a supported compatibility protocol instead of 
 
 当前限制：
 
-- Extension 提供的动态 `streamSimple` provider handler 仍然是 TypeScript handler，但已由 coding-agent-owned registry 和 SDK stream boundary 执行，不再注册到 `pi-ai` provider registry。
+- Extension 提供的动态 `streamSimple` provider handler 仍然是 TypeScript handler，但已由 coding-agent-owned registry 和 SDK stream boundary 执行，不再注册到 `rozsa-ai` provider registry。
 - `packages/agent/src/compat-model-stream.ts` 仍保留 legacy `streamSimple()` 作为显式 TS rollback path；这不是 Rust-supported API 的默认 coding-agent 生产执行路径。
 
 For OpenAI-compatible Chat Completions, create a `Model` with:

@@ -11,8 +11,8 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: [
-			{ find: /^@earendil-works\/pi-ai$/, replacement: aiSrcIndex },
-			{ find: /^@mariozechner\/pi-ai$/, replacement: aiSrcIndex },
+			{ find: /^@earendil-works\/rozsa-ai$/, replacement: aiSrcIndex },
+			{ find: /^@mariozechner\/rozsa-ai$/, replacement: aiSrcIndex },
 		],
 	},
 });

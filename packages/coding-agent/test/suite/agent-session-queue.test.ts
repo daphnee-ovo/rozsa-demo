@@ -1,6 +1,6 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { AgentTool } from "@earendil-works/rozsa-agent-core";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/rozsa-ai";
+import type { ExtensionAPI } from "@earendil-works/rozsa-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.ts";
@@ -10,7 +10,7 @@ async function createWaitingHarness(
 		tools?: AgentTool[];
 		extensionFactories?: Harness["session"]["extensionRunner"] extends never
 			? never
-			: Array<(pi: ExtensionAPI) => void>;
+			: Array<(rozsa: ExtensionAPI) => void>;
 	} = {},
 ): Promise<{
 	harness: Harness;
@@ -70,8 +70,8 @@ describe("AgentSession queue characterization", () => {
 		const commandRuns: string[] = [];
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.registerCommand("testcmd", {
+				(rozsa) => {
+					rozsa.registerCommand("testcmd", {
 						description: "Test command",
 						handler: async (args) => {
 							commandRuns.push(args);
@@ -93,8 +93,8 @@ describe("AgentSession queue characterization", () => {
 		let extensionApi: ExtensionAPI | undefined;
 		const waiting = await createWaitingHarness({
 			extensionFactories: [
-				(pi) => {
-					extensionApi = pi;
+				(rozsa) => {
+					extensionApi = rozsa;
 				},
 			],
 		});
@@ -387,8 +387,8 @@ describe("AgentSession queue characterization", () => {
 	it("throws when queueing an extension command with steer", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.registerCommand("testcmd", {
+				(rozsa) => {
+					rozsa.registerCommand("testcmd", {
 						description: "Test command",
 						handler: async () => {},
 					});
@@ -405,8 +405,8 @@ describe("AgentSession queue characterization", () => {
 	it("throws when queueing an extension command with followUp", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.registerCommand("testcmd", {
+				(rozsa) => {
+					rozsa.registerCommand("testcmd", {
 						description: "Test command",
 						handler: async () => {},
 					});

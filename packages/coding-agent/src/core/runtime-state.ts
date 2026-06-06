@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { basename, relative } from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-model-types";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
+import type { AssistantMessage } from "@earendil-works/rozsa-model-types";
 import type { PermissionDecision, PermissionMode, PermissionRiskLevel } from "./permissions.ts";
 
 export interface ProjectInfo {

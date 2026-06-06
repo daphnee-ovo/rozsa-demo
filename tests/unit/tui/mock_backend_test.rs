@@ -19,7 +19,7 @@ async fn mock_backend_submit_records_call() {
 #[tokio::test]
 async fn mock_backend_connect_pushes_preset_events() {
     let state = NativeUiState {
-        app_name: "pi".to_string(),
+        app_name: "rozsa".to_string(),
         version: "0.1.0".to_string(),
         ..Default::default()
     };

@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@earendil-works/pi-model-types";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
+import type { AssistantMessage } from "@earendil-works/rozsa-model-types";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/rozsa-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";

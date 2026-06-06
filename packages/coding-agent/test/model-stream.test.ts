@@ -1,4 +1,4 @@
-import type { Context, Model } from "@earendil-works/pi-model-types";
+import type { Context, Model } from "@earendil-works/rozsa-model-types";
 import { afterEach, describe, expect, it } from "vitest";
 import { streamResolvedModel } from "../src/core/model-stream.ts";
 

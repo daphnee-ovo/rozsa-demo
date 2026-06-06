@@ -47,7 +47,7 @@ export type {
 	Usage,
 	UserMessage,
 	VercelGatewayRouting,
-} from "@earendil-works/pi-model-types";
+} from "@earendil-works/rozsa-model-types";
 
 export type { AssistantMessageEventStream } from "./utils/event-stream.ts";
 
@@ -61,7 +61,7 @@ import type {
 	ImagesOptions,
 	Model,
 	StreamOptions,
-} from "@earendil-works/pi-model-types";
+} from "@earendil-works/rozsa-model-types";
 import type { AssistantMessageEventStream } from "./utils/event-stream.ts";
 
 export type StreamFunction<TApi extends Api = Api, TOptions extends StreamOptions = StreamOptions> = (

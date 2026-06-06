@@ -1,4 +1,4 @@
-import type { AssistantMessage, Model } from "@earendil-works/pi-model-types";
+import type { AssistantMessage, Model } from "@earendil-works/rozsa-model-types";
 import { missingModelStream } from "../../missing-model-stream.ts";
 import type { AgentMessage, StreamFn } from "../../types.ts";
 import {

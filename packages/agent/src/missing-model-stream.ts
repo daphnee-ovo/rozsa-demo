@@ -14,7 +14,7 @@ import type {
 	Context,
 	Model,
 	SimpleStreamOptions,
-} from "@earendil-works/pi-model-types";
+} from "@earendil-works/rozsa-model-types";
 import { EventStream } from "./event-stream.ts";
 import type { AssistantMessageEventStream } from "./types.ts";
 
@@ -35,7 +35,7 @@ function createMissingStreamMessage(model: Model<Api>): AssistantMessage {
 		},
 		stopReason: "error",
 		errorMessage:
-			"Agent model execution requires an explicit streamFn. Use @earendil-works/pi-agent-core/node for the Rust model bridge.",
+			"Agent model execution requires an explicit streamFn. Use @earendil-works/rozsa-agent-core/node for the Rust model bridge.",
 		timestamp: Date.now(),
 	};
 }

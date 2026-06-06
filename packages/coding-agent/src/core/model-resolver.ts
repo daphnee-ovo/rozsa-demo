@@ -2,8 +2,8 @@
  * Model resolution, scoping, and initial selection
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, KnownProvider, Model } from "@earendil-works/pi-model-types";
+import type { ThinkingLevel } from "@earendil-works/rozsa-agent-core";
+import type { Api, KnownProvider, Model } from "@earendil-works/rozsa-model-types";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";

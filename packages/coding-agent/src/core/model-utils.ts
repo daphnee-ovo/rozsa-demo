@@ -10,7 +10,7 @@
  * Related docs: ../../../docs/model/rozsa-model-migration.md
  */
 
-import type { AssistantMessage, Model, ModelThinkingLevel } from "@earendil-works/pi-model-types";
+import type { AssistantMessage, Model, ModelThinkingLevel } from "@earendil-works/rozsa-model-types";
 
 const EXTENDED_THINKING_LEVELS: ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 

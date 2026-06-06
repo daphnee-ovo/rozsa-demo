@@ -2,7 +2,7 @@
  * Credential storage for API keys and OAuth tokens.
  * Handles loading, saving, and refreshing credentials from auth.json.
  *
- * Uses file locking to prevent race conditions when multiple pi instances
+ * Uses file locking to prevent race conditions when multiple rozsa instances
  * try to refresh tokens simultaneously.
  */
 
@@ -12,8 +12,8 @@ import {
 	type OAuthCredentials,
 	type OAuthLoginCallbacks,
 	type OAuthProviderId,
-} from "@earendil-works/pi-ai";
-import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@earendil-works/pi-ai/oauth";
+} from "@earendil-works/rozsa-ai";
+import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@earendil-works/rozsa-ai/oauth";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
@@ -418,7 +418,7 @@ export class AuthStorage {
 	 * Login via Rust bridge for built-in providers.
 	 */
 	private async loginViaRustBridge(providerId: string, callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-		const { oauthLoginRustModel } = await import("@earendil-works/pi-agent-core/node");
+		const { oauthLoginRustModel } = await import("@earendil-works/rozsa-agent-core/node");
 
 		// Determine auth.json path from storage backend
 		const authJsonPath = this.storage.getAuthPath?.() ?? join(getAgentDir(), "auth.json");
@@ -494,7 +494,7 @@ export class AuthStorage {
 
 	/**
 	 * Refresh OAuth token with backend locking to prevent race conditions.
-	 * Multiple pi instances may try to refresh simultaneously when tokens expire.
+	 * Multiple rozsa instances may try to refresh simultaneously when tokens expire.
 	 */
 	private async refreshOAuthTokenWithLock(
 		providerId: OAuthProviderId,

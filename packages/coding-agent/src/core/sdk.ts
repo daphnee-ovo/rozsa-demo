@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Message, Model } from "@earendil-works/pi-model-types";
+import { Agent, type AgentMessage, type ThinkingLevel } from "@earendil-works/rozsa-agent-core";
+import type { Message, Model } from "@earendil-works/rozsa-model-types";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
@@ -61,7 +61,7 @@ export interface CreateAgentSessionOptions {
 	/**
 	 * Optional allowlist of tool names.
 	 *
-	 * When omitted, pi enables the default built-in tools (read, bash, edit, write)
+	 * When omitted, rozsa enables the default built-in tools (read, bash, edit, write)
 	 * and leaves extension/custom tools enabled unless `noTools` changes that default.
 	 * When provided, only the listed tool names are enabled.
 	 */
@@ -160,7 +160,7 @@ function getAttributionHeaders(
 		model.baseUrl.includes("gateway.ai.cloudflare.com")
 	) {
 		return {
-			"User-Agent": "pi-coding-agent",
+			"User-Agent": "rozsa-coding-agent",
 		};
 	}
 
@@ -176,7 +176,7 @@ function getAttributionHeaders(
  * const { session } = await createAgentSession();
  *
  * // With explicit model
- * import { getModel } from '@earendil-works/pi-ai';
+ * import { getModel } from '@earendil-works/rozsa-ai';
  * const { session } = await createAgentSession({
  *   model: getModel('anthropic', 'claude-opus-4-5'),
  *   thinkingLevel: 'high',

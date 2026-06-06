@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Api, ImageContent, Model } from "@earendil-works/pi-model-types";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
+import type { Api, ImageContent, Model } from "@earendil-works/rozsa-model-types";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { ContextUsage } from "../../core/extensions/types.ts";
 import type { PermissionPromptContext, PermissionRequest, UserPermissionChoice } from "../../core/permissions.ts";

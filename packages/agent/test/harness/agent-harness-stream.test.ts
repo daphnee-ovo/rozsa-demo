@@ -4,7 +4,7 @@ import {
 	registerFauxProvider,
 	type StreamOptions,
 	streamSimple,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/rozsa-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHarness } from "../../src/harness/agent-harness.ts";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";

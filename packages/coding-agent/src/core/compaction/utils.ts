@@ -2,8 +2,8 @@
  * Shared utilities for compaction and branch summarization.
  */
 
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Message } from "@earendil-works/pi-model-types";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
+import type { Message } from "@earendil-works/rozsa-model-types";
 
 // ============================================================================
 // File Operation Tracking

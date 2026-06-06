@@ -1,6 +1,6 @@
-export type { AssistantMessageDiagnostic, DiagnosticErrorInfo } from "@earendil-works/pi-model-types";
+export type { AssistantMessageDiagnostic, DiagnosticErrorInfo } from "@earendil-works/rozsa-model-types";
 
-import type { AssistantMessageDiagnostic, DiagnosticErrorInfo } from "@earendil-works/pi-model-types";
+import type { AssistantMessageDiagnostic, DiagnosticErrorInfo } from "@earendil-works/rozsa-model-types";
 
 export function formatThrownValue(value: unknown): string {
 	if (value instanceof Error) return value.message || value.name;

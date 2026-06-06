@@ -7,7 +7,7 @@ import {
 	registerFauxProvider,
 	streamSimple,
 	type Usage,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/rozsa-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	type CompactionPreparation,

@@ -6,7 +6,7 @@ import type {
 	TextContent,
 	ThinkingBudgets,
 	Transport,
-} from "@earendil-works/pi-model-types";
+} from "@earendil-works/rozsa-model-types";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import { missingModelStream } from "./missing-model-stream.ts";
 import type {

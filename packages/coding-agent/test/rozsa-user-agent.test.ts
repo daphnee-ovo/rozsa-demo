@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getRozsaUserAgent } from "../src/utils/pi-user-agent.ts";
+import { getRozsaUserAgent } from "../src/utils/rozsa-user-agent.ts";
 
 describe("getRozsaUserAgent", () => {
 	it("formats the user agent expected by rozsa.dev", () => {

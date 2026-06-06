@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { Model, TextContent } from "@earendil-works/pi-model-types";
+import type { AgentToolResult } from "@earendil-works/rozsa-agent-core";
+import type { Model, TextContent } from "@earendil-works/rozsa-model-types";
 import type { ModelRegistry } from "./model-registry.ts";
 import { completeResolvedModel } from "./model-stream.ts";
 import type { SettingsManager } from "./settings-manager.ts";

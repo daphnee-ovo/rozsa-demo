@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-model-types";
+import type { Api, Model } from "@earendil-works/rozsa-model-types";
 import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../core/http-dispatcher.ts";

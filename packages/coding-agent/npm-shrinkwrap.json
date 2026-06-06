@@ -1,18 +1,18 @@
 {
-	"name": "@earendil-works/pi-coding-agent",
+	"name": "@earendil-works/rozsa-coding-agent",
 	"version": "0.75.5",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
-			"name": "@earendil-works/pi-coding-agent",
+			"name": "@earendil-works/rozsa-coding-agent",
 			"version": "0.75.5",
 			"license": "MIT",
 			"dependencies": {
-				"@earendil-works/pi-agent-core": "^0.75.5",
-				"@earendil-works/pi-ai": "^0.75.5",
-				"@earendil-works/pi-model-types": "*",
-				"@earendil-works/pi-tui": "^0.75.5",
+				"@earendil-works/rozsa-agent-core": "^0.75.5",
+				"@earendil-works/rozsa-ai": "^0.75.5",
+				"@earendil-works/rozsa-model-types": "*",
+				"@earendil-works/rozsa-tui": "^0.75.5",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "5.6.2",
 				"cross-spawn": "7.0.6",
@@ -474,13 +474,13 @@
 				"node": ">=6.9.0"
 			}
 		},
-		"node_modules/@earendil-works/pi-agent-core": {
+		"node_modules/@earendil-works/rozsa-agent-core": {
 			"version": "0.75.5",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.75.5.tgz",
+			"resolved": "https://registry.npmjs.org/@earendil-works/rozsa-agent-core/-/pi-agent-core-0.75.5.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@earendil-works/pi-ai": "^0.75.5",
-				"@earendil-works/pi-model-types": "*",
+				"@earendil-works/rozsa-ai": "^0.75.5",
+				"@earendil-works/rozsa-model-types": "*",
 				"ignore": "7.0.5",
 				"typebox": "1.1.38",
 				"yaml": "2.9.0"
@@ -489,12 +489,12 @@
 				"node": ">=22.19.0"
 			}
 		},
-		"node_modules/@earendil-works/pi-ai": {
+		"node_modules/@earendil-works/rozsa-ai": {
 			"version": "0.75.5",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.75.5.tgz",
+			"resolved": "https://registry.npmjs.org/@earendil-works/rozsa-ai/-/rozsa-ai-0.75.5.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@earendil-works/pi-model-types": "*",
+				"@earendil-works/rozsa-model-types": "*",
 				"@anthropic-ai/sdk": "0.91.1",
 				"@aws-sdk/client-bedrock-runtime": "3.1048.0",
 				"@google/genai": "1.52.0",
@@ -507,15 +507,15 @@
 				"typebox": "1.1.38"
 			},
 			"bin": {
-				"pi-ai": "./dist/cli.js"
+				"rozsa-ai": "./dist/cli.js"
 			},
 			"engines": {
 				"node": ">=22.19.0"
 			}
 		},
-		"node_modules/@earendil-works/pi-model-types": {
+		"node_modules/@earendil-works/rozsa-model-types": {
 			"version": "0.75.5",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-model-types/-/pi-model-types-0.75.5.tgz",
+			"resolved": "https://registry.npmjs.org/@earendil-works/rozsa-model-types/-/pi-model-types-0.75.5.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"typebox": "1.1.38"
@@ -524,9 +524,9 @@
 				"node": ">=22.19.0"
 			}
 		},
-		"node_modules/@earendil-works/pi-tui": {
+		"node_modules/@earendil-works/rozsa-tui": {
 			"version": "0.75.5",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.75.5.tgz",
+			"resolved": "https://registry.npmjs.org/@earendil-works/rozsa-tui/-/pi-tui-0.75.5.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",
