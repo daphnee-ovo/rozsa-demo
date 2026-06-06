@@ -202,8 +202,14 @@ pub fn handle_model_selector_key(
         }
         KeyCode::Enter => {
             if let Some(&index) = state.filtered_indices.get(state.selected) {
-                let id = state.models[index].id.clone();
-                send(writer, &ClientMessage::SwitchModel { id: &id })?;
+                let entry = state.models[index].clone();
+                send(
+                    writer,
+                    &ClientMessage::SwitchModel {
+                        provider: &entry.provider,
+                        id: &entry.id,
+                    },
+                )?;
             }
             Ok(None)
         }

@@ -2,6 +2,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../core/http-dispatcher.ts";
+import { findExactModelReferenceMatch } from "../../core/model-resolver.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.ts";
 import type { SessionTreeNode } from "../../core/session-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
@@ -360,7 +361,7 @@ function providerDisplayName(provider: string): string {
 }
 
 function findModel(models: Model<Api>[], reference: string): Model<Api> | undefined {
-	return models.find((model) => `${model.provider}/${model.id}` === reference || model.id === reference);
+	return findExactModelReferenceMatch(reference, models);
 }
 
 async function handleTree(ctx: NativeBuiltinContext): Promise<void> {

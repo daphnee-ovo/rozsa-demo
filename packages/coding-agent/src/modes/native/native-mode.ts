@@ -14,6 +14,7 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { findExactModelReferenceMatch } from "../../core/model-resolver.ts";
 import { SessionManager } from "../../core/session-manager.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import {
@@ -359,8 +360,19 @@ export class NativeMode {
 					break;
 				case "switch_model": {
 					const allModels = this.session.modelRegistry.getAll();
-					const target = allModels.find((m) => m.id === message.id);
-					if (target) await this.session.setModel(target);
+					const target = message.provider
+						? allModels.find((m) => m.provider === message.provider && m.id === message.id)
+						: findExactModelReferenceMatch(message.id, allModels);
+					if (!target) {
+						const reference = message.provider ? `${message.provider}/${message.id}` : message.id;
+						this.send({
+							type: "notify",
+							level: "warning",
+							message: `Model not found or ambiguous: ${reference}`,
+						});
+						break;
+					}
+					await this.session.setModel(target);
 					break;
 				}
 				case "switch_session":

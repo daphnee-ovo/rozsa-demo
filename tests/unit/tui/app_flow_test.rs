@@ -118,13 +118,18 @@ async fn model_and_session_commands() {
     let _rx = backend.events();
 
     backend.list_models().await.unwrap();
-    backend.switch_model("claude-opus-4-20250514").await.unwrap();
+    backend
+        .switch_model("anthropic", "claude-opus-4-20250514")
+        .await
+        .unwrap();
     backend.cycle_model(Direction::Forward).await.unwrap();
     backend.list_sessions().await.unwrap();
 
     let calls = backend.calls();
     assert!(matches!(&calls[0], MockCall::ListModels));
-    assert!(matches!(&calls[1], MockCall::SwitchModel { id } if id == "claude-opus-4-20250514"));
+    assert!(
+        matches!(&calls[1], MockCall::SwitchModel { provider, id } if provider == "anthropic" && id == "claude-opus-4-20250514")
+    );
     assert!(matches!(&calls[2], MockCall::CycleModel { direction: Direction::Forward }));
     assert!(matches!(&calls[3], MockCall::ListSessions));
 }

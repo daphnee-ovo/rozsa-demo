@@ -65,6 +65,26 @@ const mockOpenRouterModels: Model<"anthropic-messages">[] = [
 
 const allModels = [...mockModels, ...mockOpenRouterModels];
 
+function mockProviderModel(provider: string, id: string, name: string = id): Model<"anthropic-messages"> {
+	return {
+		id,
+		name,
+		api: "anthropic-messages",
+		provider,
+		baseUrl: `https://${provider}.example`,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+		contextWindow: 128000,
+		maxTokens: 8192,
+	};
+}
+
+const duplicateGatewayModel = mockProviderModel("vercel-ai-gateway", "google/gemma-4-31b-it");
+const duplicateNvidiaModel = mockProviderModel("nvidia", "google/gemma-4-31b-it");
+const googleProviderModel = mockProviderModel("google", "gemini-3.1-pro-preview");
+const duplicateIdModels = [...allModels, googleProviderModel, duplicateGatewayModel, duplicateNvidiaModel];
+
 describe("parseModelPattern", () => {
 	describe("simple patterns without colons", () => {
 		test("exact match returns model with undefined thinking level", () => {
@@ -202,6 +222,18 @@ describe("parseModelPattern", () => {
 			// So it tries to match "sonnet:" which won't match, then tries "sonnet"
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
 			expect(result.warning).toContain("Invalid thinking level");
+		});
+
+		test("bare duplicate model id does not pick an arbitrary provider", () => {
+			const result = parseModelPattern("google/gemma-4-31b-it", duplicateIdModels);
+			expect(result.model).toBeUndefined();
+			expect(result.warning).toBeUndefined();
+		});
+
+		test("canonical provider/model resolves duplicate model ids", () => {
+			const result = parseModelPattern("nvidia/google/gemma-4-31b-it", duplicateIdModels);
+			expect(result.model?.provider).toBe("nvidia");
+			expect(result.model?.id).toBe("google/gemma-4-31b-it");
 		});
 	});
 });
@@ -369,6 +401,53 @@ describe("resolveCliModel", () => {
 		expect(result.error).toBeUndefined();
 		expect(result.model?.provider).toBe("openrouter");
 		expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
+	});
+
+	test("rejects ambiguous duplicate bare ids instead of picking gateway provider by order", () => {
+		const registry = {
+			getAll: () => duplicateIdModels,
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
+
+		const result = resolveCliModel({
+			cliModel: "google/gemma-4-31b-it",
+			modelRegistry: registry,
+		});
+
+		expect(result.model).toBeUndefined();
+		expect(result.error).toContain("ambiguous across providers");
+		expect(result.error).toContain("nvidia/google/gemma-4-31b-it");
+		expect(result.error).toContain("vercel-ai-gateway/google/gemma-4-31b-it");
+	});
+
+	test("resolves duplicate ids through canonical nvidia provider/model reference", () => {
+		const registry = {
+			getAll: () => duplicateIdModels,
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
+
+		const result = resolveCliModel({
+			cliModel: "nvidia/google/gemma-4-31b-it",
+			modelRegistry: registry,
+		});
+
+		expect(result.error).toBeUndefined();
+		expect(result.model?.provider).toBe("nvidia");
+		expect(result.model?.id).toBe("google/gemma-4-31b-it");
+	});
+
+	test("resolves duplicate ids with explicit --provider nvidia", () => {
+		const registry = {
+			getAll: () => duplicateIdModels,
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
+
+		const result = resolveCliModel({
+			cliProvider: "nvidia",
+			cliModel: "google/gemma-4-31b-it",
+			modelRegistry: registry,
+		});
+
+		expect(result.error).toBeUndefined();
+		expect(result.model?.provider).toBe("nvidia");
+		expect(result.model?.id).toBe("google/gemma-4-31b-it");
 	});
 });
 

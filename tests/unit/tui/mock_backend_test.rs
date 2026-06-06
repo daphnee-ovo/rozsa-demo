@@ -77,7 +77,7 @@ async fn mock_backend_all_methods_callable() {
         .unwrap();
     backend.steer("steer", vec![]).await.unwrap();
     backend.list_models().await.unwrap();
-    backend.switch_model("gpt-4").await.unwrap();
+    backend.switch_model("openai", "gpt-4").await.unwrap();
     backend.cycle_model(Direction::Forward).await.unwrap();
     backend.list_sessions().await.unwrap();
     backend.switch_session("/tmp/s1").await.unwrap();

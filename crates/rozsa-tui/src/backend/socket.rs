@@ -98,8 +98,8 @@ impl AgentBackend for SocketBackend {
         self.send_msg(&ClientMessage::ListModels)
     }
 
-    async fn switch_model(&self, id: &str) -> BackendResult<()> {
-        self.send_msg(&ClientMessage::SwitchModel { id })
+    async fn switch_model(&self, provider: &str, id: &str) -> BackendResult<()> {
+        self.send_msg(&ClientMessage::SwitchModel { provider, id })
     }
 
     async fn cycle_model(&self, direction: Direction) -> BackendResult<()> {
