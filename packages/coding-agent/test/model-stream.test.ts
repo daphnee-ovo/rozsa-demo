@@ -1,9 +1,7 @@
-import type { Context, Model } from "@earendil-works/pi-ai";
+import type { Context, Model } from "@earendil-works/pi-model-types";
 import { afterEach, describe, expect, it } from "vitest";
 import { streamResolvedModel } from "../src/core/model-stream.ts";
 
-const originalBackend = process.env.ROZSA_MODEL_BACKEND;
-const originalRustApis = process.env.ROZSA_MODEL_RUST_APIS;
 const originalBinary = process.env.ROZSA_MODEL_BINARY;
 const originalBinaryArgs = process.env.ROZSA_MODEL_BINARY_ARGS;
 
@@ -12,8 +10,6 @@ const context = {
 } satisfies Context;
 
 afterEach(() => {
-	restoreEnv("ROZSA_MODEL_BACKEND", originalBackend);
-	restoreEnv("ROZSA_MODEL_RUST_APIS", originalRustApis);
 	restoreEnv("ROZSA_MODEL_BINARY", originalBinary);
 	restoreEnv("ROZSA_MODEL_BINARY_ARGS", originalBinaryArgs);
 });
@@ -69,8 +65,6 @@ describe("streamResolvedModel", () => {
 			});
 		`;
 
-		process.env.ROZSA_MODEL_BACKEND = "rust";
-		process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
 		process.env.ROZSA_MODEL_BINARY = process.execPath;
 		process.env.ROZSA_MODEL_BINARY_ARGS = JSON.stringify(["-e", bridgeScript]);
 

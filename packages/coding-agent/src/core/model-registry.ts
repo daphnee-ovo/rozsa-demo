@@ -560,27 +560,16 @@ export class ModelRegistry {
 	/**
 	 * Get only models that have auth configured.
 	 * Additionally filters by probed provider model IDs (if registered and probed).
-	 * When backend=rust, also excludes models whose API protocol is not yet migrated.
 	 */
 	getAvailable(): Model<Api>[] {
-		const rustSupportedApis = this.getRustSupportedApis();
 		return this.models.filter((m) => {
 			if (!this.hasConfiguredAuth(m)) return false;
-			if (rustSupportedApis && !rustSupportedApis.has(m.api)) return false;
 			const availableIds = this.providerAvailableIds.get(m.provider);
 			if (availableIds) {
 				return availableIds.has(m.id);
 			}
 			return true;
 		});
-	}
-
-	private getRustSupportedApis(): Set<string> | undefined {
-		const backend = process.env.ROZSA_MODEL_BACKEND;
-		if (backend !== "rust") return undefined;
-		const rawApis = process.env.ROZSA_MODEL_RUST_APIS;
-		if (!rawApis) return undefined;
-		return new Set(rawApis.split(",").map((s) => s.trim()));
 	}
 
 	/**

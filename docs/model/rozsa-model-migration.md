@@ -12,12 +12,12 @@ Related code:
 - `packages/agent/src/agent-loop.ts`: current agent loop entry point into the AI layer.
 - `packages/agent/src/event-stream.ts`: Agent-owned async event stream primitive，替代 `pi-ai` runtime EventStream 依赖。
 - `packages/agent/src/tool-validation.ts`: Agent-owned tool argument validation，替代 `pi-ai` runtime validation 依赖。
-- `packages/agent/src/compat-model-stream.ts`: Browser-safe TypeScript AI compatibility boundary，集中保留 legacy `streamSimple()` fallback。
+- `packages/model-types/src/types.ts`: Shared model protocol type definitions extracted from pi-ai.
 - `packages/agent/src/missing-model-stream.ts`: Agent-owned fail-fast stream boundary；未显式注入模型执行函数时不再隐式回退到 TS AI。
 - `packages/agent/src/rozsa-model-client.ts`: Node-only `rozsa-model` JSONL client，直接管理 Rust child process 和 bridge protocol。
-- `packages/agent/src/model-stream.ts`: 通用 Agent Node 模型请求边界，提供 `streamDefaultModel()` / `completeDefaultModel()`，按配置分发到 Rust 或 TS。
+- `packages/agent/src/model-stream.ts`: 通用 Agent Node 模型请求边界，提供 `streamDefaultModel()` / `completeDefaultModel()`，无条件路由到 Rust bridge。
 - `crates/rozsa-model/src/credentials.rs`: Rust-owned request credential/header resolver，读取 `auth.json`、`models.json`、环境变量和命令型 config value。
-- `packages/coding-agent/src/core/model-stream.ts`: coding-agent 模型请求边界，提供 `streamResolvedModel()` / `completeResolvedModel()`，把请求分发到 Rust 或显式 TS rollback。
+- `packages/coding-agent/src/core/model-stream.ts`: coding-agent 模型请求边界，提供 `streamResolvedModel()` / `completeResolvedModel()`，委托到 agent 的 Rust bridge。
 - `packages/coding-agent/src/core/model-utils.ts`: coding-agent-owned model helper boundary，替代 `pi-ai` 的 model equality、thinking level clamp/support 和 context overflow helpers。
 
 Related docs:
@@ -882,6 +882,13 @@ Avoid lifecycle scripts that download or build binaries during install unless th
 - Rust registry bridge preserves provider-level custom headers, model-level headers, and provider `authHeader` behavior for Rust-executed custom providers.
 - Rust and TypeScript provider execution are explicitly separated by `ROZSA_MODEL_BACKEND`; `auto` mode has been removed.
 - Rust and TypeScript model registry ownership are explicitly separated by `ROZSA_MODEL_REGISTRY_BACKEND`; `auto` mode has been removed.
+- Model protocol types extracted to `@earendil-works/pi-model-types`, breaking the compile-time type dependency on `@earendil-works/pi-ai`.
+- `rozsa-model` changed to a long-lived singleton process with concurrent request support via multiplexed JSONL.
+- `ROZSA_MODEL_BACKEND` and `ROZSA_MODEL_RUST_APIS` gates removed from agent/coding-agent; model execution always routes through Rust.
+- `ROZSA_MODEL_REGISTRY_BACKEND` gate removed; model registry always loads from Rust.
+- All type imports in agent/coding-agent migrated from `@earendil-works/pi-ai` to `@earendil-works/pi-model-types`.
+- Extension loader registers `@earendil-works/pi-model-types` as a virtual module for extension compatibility.
+- `@earendil-works/pi-ai` retained only for OAuth runtime and extension bundling (off the model execution path).
 - Agent、AgentHarness 和 agent harness compaction 默认 fail fast，不再隐式回落到 legacy TS `streamSimple()`；coding-agent session auth 判断、model helper、compaction、branch summary 和 auto permission reviewer 已接入 coding-agent-owned boundary，不再直接调用或判断 `completeSimple()` / `streamSimple()`。
 - Requests using `onPayload` or `onResponse` fail clearly in Rust mode until callback round-trips exist.
 - An ignored live smoke entrypoint exists under `tests/unit/model` for explicit credential-backed checks.
@@ -895,6 +902,4 @@ Avoid lifecycle scripts that download or build binaries during install unless th
 - Design callback round-trips if `onPayload`/`onResponse` must execute inside the Rust bridge instead of using the TypeScript compatibility route.
 - Decide packaging strategy for platform binaries.
 - Decide final compatibility story for external `@earendil-works/pi-ai` consumers.
-- Replace the remaining explicit TypeScript rollback path in `packages/agent/src/compat-model-stream.ts` after the public type/provider replacement is designed.
 - Move interactive OAuth login and provider-specific OAuth model mutation into Rust only if OAuth needs to become fully Rust-native.
-- Replace the remaining `@earendil-works/pi-ai` compile-time message/model type imports with a public agent/model type boundary.

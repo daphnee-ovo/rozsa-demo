@@ -1,21 +1,17 @@
-import type { Model } from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-model-types";
 import { afterEach, describe, expect, it } from "vitest";
 import { streamDefaultModel } from "../src/model-stream.ts";
 
-const originalBackend = process.env.ROZSA_MODEL_BACKEND;
-const originalRustApis = process.env.ROZSA_MODEL_RUST_APIS;
 const originalBinary = process.env.ROZSA_MODEL_BINARY;
 const originalBinaryArgs = process.env.ROZSA_MODEL_BINARY_ARGS;
 
 afterEach(() => {
-	restoreEnv("ROZSA_MODEL_BACKEND", originalBackend);
-	restoreEnv("ROZSA_MODEL_RUST_APIS", originalRustApis);
 	restoreEnv("ROZSA_MODEL_BINARY", originalBinary);
 	restoreEnv("ROZSA_MODEL_BINARY_ARGS", originalBinaryArgs);
 });
 
 describe("streamDefaultModel", () => {
-	it("uses the Rust bridge when the backend is rust", async () => {
+	it("routes requests through the Rust bridge", async () => {
 		const bridgeScript = `
 			const readline = require("node:readline");
 			const rl = readline.createInterface({ input: process.stdin });
@@ -55,8 +51,6 @@ describe("streamDefaultModel", () => {
 			});
 		`;
 
-		process.env.ROZSA_MODEL_BACKEND = "rust";
-		process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
 		process.env.ROZSA_MODEL_BINARY = process.execPath;
 		process.env.ROZSA_MODEL_BINARY_ARGS = JSON.stringify(["-e", bridgeScript]);
 

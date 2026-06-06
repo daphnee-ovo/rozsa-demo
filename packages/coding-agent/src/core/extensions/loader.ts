@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import * as _bundledPiAgentCore from "@earendil-works/pi-agent-core";
 import * as _bundledPiAi from "@earendil-works/pi-ai";
 import * as _bundledPiAiOauth from "@earendil-works/pi-ai/oauth";
+import * as _bundledPiModelTypes from "@earendil-works/pi-model-types";
 import type { KeyId } from "@earendil-works/pi-tui";
 import * as _bundledPiTui from "@earendil-works/pi-tui";
 import { createJiti } from "jiti/static";
@@ -49,11 +50,13 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox/compile": _bundledTypeboxCompile,
 	"@sinclair/typebox/value": _bundledTypeboxValue,
 	"@earendil-works/pi-agent-core": _bundledPiAgentCore,
+	"@earendil-works/pi-model-types": _bundledPiModelTypes,
 	"@earendil-works/pi-tui": _bundledPiTui,
 	"@earendil-works/pi-ai": _bundledPiAi,
 	"@earendil-works/pi-ai/oauth": _bundledPiAiOauth,
 	"@earendil-works/pi-coding-agent": _bundledPiCodingAgent,
 	"@mariozechner/pi-agent-core": _bundledPiAgentCore,
+	"@mariozechner/pi-model-types": _bundledPiModelTypes,
 	"@mariozechner/pi-tui": _bundledPiTui,
 	"@mariozechner/pi-ai": _bundledPiAi,
 	"@mariozechner/pi-ai/oauth": _bundledPiAiOauth,
@@ -89,6 +92,7 @@ function getAliases(): Record<string, string> {
 
 	const piCodingAgentEntry = packageIndex;
 	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@earendil-works/pi-agent-core");
+	const piModelTypesEntry = resolveWorkspaceOrImport("model-types/dist/index.js", "@earendil-works/pi-model-types");
 	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@earendil-works/pi-tui");
 	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@earendil-works/pi-ai");
 	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@earendil-works/pi-ai/oauth");
@@ -96,11 +100,13 @@ function getAliases(): Record<string, string> {
 	_aliases = {
 		"@earendil-works/pi-coding-agent": piCodingAgentEntry,
 		"@earendil-works/pi-agent-core": piAgentCoreEntry,
+		"@earendil-works/pi-model-types": piModelTypesEntry,
 		"@earendil-works/pi-tui": piTuiEntry,
 		"@earendil-works/pi-ai": piAiEntry,
 		"@earendil-works/pi-ai/oauth": piAiOauthEntry,
 		"@mariozechner/pi-coding-agent": piCodingAgentEntry,
 		"@mariozechner/pi-agent-core": piAgentCoreEntry,
+		"@mariozechner/pi-model-types": piModelTypesEntry,
 		"@mariozechner/pi-tui": piTuiEntry,
 		"@mariozechner/pi-ai": piAiEntry,
 		"@mariozechner/pi-ai/oauth": piAiOauthEntry,
