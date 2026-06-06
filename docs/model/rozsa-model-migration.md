@@ -889,6 +889,10 @@ Avoid lifecycle scripts that download or build binaries during install unless th
 - All type imports in agent/coding-agent migrated from `@earendil-works/pi-ai` to `@earendil-works/pi-model-types`.
 - Extension loader registers `@earendil-works/pi-model-types` as a virtual module for extension compatibility.
 - `@earendil-works/pi-ai` retained only for OAuth runtime and extension bundling (off the model execution path).
+- Full OAuth login migrated to Rust: Anthropic (Auth Code + PKCE), GitHub Copilot (Device Code), OpenAI Codex (Auth Code + PKCE) all execute in `rozsa-model` via bridge protocol.
+- OAuth bridge protocol added: `oauth_login`, `oauth_response` input messages and `oauth_event` output messages enable interactive login flows without TS-side OAuth provider execution.
+- Built-in provider login flows now execute in Rust; credential storage (auth.json read/write with file locking) is fully Rust-owned.
+- Extension OAuth providers continue to execute JS callbacks via the pi-ai OAuth registry (extension API preserved).
 - Agent、AgentHarness 和 agent harness compaction 默认 fail fast，不再隐式回落到 legacy TS `streamSimple()`；coding-agent session auth 判断、model helper、compaction、branch summary 和 auto permission reviewer 已接入 coding-agent-owned boundary，不再直接调用或判断 `completeSimple()` / `streamSimple()`。
 - Requests using `onPayload` or `onResponse` fail clearly in Rust mode until callback round-trips exist.
 - An ignored live smoke entrypoint exists under `tests/unit/model` for explicit credential-backed checks.
@@ -902,4 +906,4 @@ Avoid lifecycle scripts that download or build binaries during install unless th
 - Design callback round-trips if `onPayload`/`onResponse` must execute inside the Rust bridge instead of using the TypeScript compatibility route.
 - Decide packaging strategy for platform binaries.
 - Decide final compatibility story for external `@earendil-works/pi-ai` consumers.
-- Move interactive OAuth login and provider-specific OAuth model mutation into Rust only if OAuth needs to become fully Rust-native.
+- Move extension OAuth provider registration from pi-ai shared registry to a Rust-owned registry (would fully remove pi-ai runtime dependency from coding-agent).

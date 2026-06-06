@@ -390,6 +390,40 @@ fn release_auth_lock(path: &str) -> Result<(), String> {
     }
 }
 
+/// Store OAuth credentials for a provider into auth.json (creating the file if needed).
+pub fn store_oauth_credentials(
+    path: &str,
+    provider: &str,
+    credentials: &crate::oauth::types::OAuthCredentials,
+) -> Result<(), String> {
+    let mut auth: Map<String, Value> = match fs::read_to_string(path) {
+        Ok(input) => {
+            let cleaned = strip_json_comments(&input);
+            serde_json::from_str(&cleaned)
+                .map_err(|e| format!("Failed to parse auth.json `{path}`: {e}"))?
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = Path::new(path).parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            Map::new()
+        }
+        Err(e) => return Err(format!("Failed to read auth.json `{path}`: {e}")),
+    };
+
+    let mut value = serde_json::Map::new();
+    value.insert("type".to_string(), json!("oauth"));
+    value.insert("access".to_string(), json!(credentials.access));
+    value.insert("refresh".to_string(), json!(credentials.refresh));
+    value.insert("expires".to_string(), json!(credentials.expires));
+    for (key, val) in &credentials.extra {
+        value.insert(key.clone(), val.clone());
+    }
+
+    auth.insert(provider.to_string(), Value::Object(value));
+    write_auth_json(path, &auth)
+}
+
 fn write_auth_json(path: &str, auth: &Map<String, Value>) -> Result<(), String> {
     let _lock = acquire_auth_lock(path)?
         .ok_or_else(|| format!("auth.json `{path}` is locked by another process"))?;

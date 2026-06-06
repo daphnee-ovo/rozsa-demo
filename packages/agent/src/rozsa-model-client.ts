@@ -39,10 +39,39 @@ interface BridgeErrorLine {
 	code?: string;
 }
 
-type BridgeLine = BridgeEventLine | BridgeErrorLine;
+interface BridgeOAuthEventLine {
+	type: "oauth_event";
+	id: string;
+	event: OAuthEvent;
+}
+
+type BridgeLine = BridgeEventLine | BridgeErrorLine | BridgeOAuthEventLine;
+
+type OAuthEvent =
+	| { type: "auth_url"; url: string; instructions?: string }
+	| { type: "device_code"; userCode: string; verificationUri: string }
+	| { type: "prompt"; message: string; placeholder?: string }
+	| { type: "select"; message: string; options: string[] }
+	| { type: "progress"; message: string }
+	| { type: "waiting"; message: string }
+	| { type: "complete"; credentials: OAuthCredentials }
+	| { type: "error"; message: string }
+	| { type: "delegate" };
+
+type OAuthCredentials = {
+	access: string;
+	refresh: string;
+	expires: number;
+	[key: string]: unknown;
+};
 
 const DEFAULT_RUST_MODEL_BINARY = resolve(process.cwd(), "target", "debug", "rozsa-model");
 const MAX_STDERR_CHARS = 4000;
+
+interface OAuthSession {
+	push: (event: OAuthEvent) => void;
+	end: () => void;
+}
 
 /**
  * Manages a long-lived rozsa-model process that handles concurrent requests via multiplexing.
@@ -50,6 +79,7 @@ const MAX_STDERR_CHARS = 4000;
 class RustModelProcess {
 	private child: ChildProcessWithoutNullStreams | null = null;
 	private pending: Map<string, AgentAssistantMessageEventStream> = new Map();
+	private oauthSessions: Map<string, OAuthSession> = new Map();
 	private readline: Interface | null = null;
 	private stderrText = "";
 	private nextRequestId = 0;
@@ -92,6 +122,19 @@ class RustModelProcess {
 		this.readline.on("line", (line) => {
 			const parsed = parseBridgeLine(line);
 			if (!parsed) {
+				return;
+			}
+
+			// Handle OAuth events
+			if (parsed.type === "oauth_event") {
+				const session = this.oauthSessions.get(parsed.id);
+				if (session) {
+					session.push(parsed.event);
+					if (parsed.event.type === "complete" || parsed.event.type === "error") {
+						session.end();
+						this.oauthSessions.delete(parsed.id);
+					}
+				}
 				return;
 			}
 
@@ -225,6 +268,119 @@ class RustModelProcess {
 			this.readline = null;
 		}
 	}
+
+	/**
+	 * Start an OAuth login flow via the Rust bridge.
+	 * Returns an async iterable of OAuth events.
+	 */
+	oauthLogin(
+		provider: string,
+		options?: Record<string, unknown>,
+	): {
+		id: string;
+		events: AsyncIterable<OAuthEvent>;
+		respond(response: unknown): void;
+		cancel(): void;
+	} {
+		const requestId = `oauth-${Date.now().toString(36)}-${(this.nextRequestId++).toString(36)}`;
+		const eventQueue: OAuthEvent[] = [];
+		let resolveNext: ((value: IteratorResult<OAuthEvent>) => void) | null = null;
+		let ended = false;
+
+		const session: OAuthSession = {
+			push: (event: OAuthEvent) => {
+				if (ended) return;
+				if (resolveNext) {
+					resolveNext({ value: event, done: false });
+					resolveNext = null;
+				} else {
+					eventQueue.push(event);
+				}
+			},
+			end: () => {
+				ended = true;
+				if (resolveNext) {
+					resolveNext({ value: undefined, done: true });
+					resolveNext = null;
+				}
+			},
+		};
+
+		let child: ChildProcessWithoutNullStreams;
+		try {
+			child = this.ensureProcess();
+		} catch (error) {
+			session.push({ type: "error", message: error instanceof Error ? error.message : String(error) });
+			session.end();
+			child = this.child!; // For TypeScript - we need it for respond/cancel
+		}
+
+		this.oauthSessions.set(requestId, session);
+
+		// Write login request to stdin
+		const request = {
+			type: "oauth_login",
+			id: requestId,
+			provider,
+			options: options || {},
+		};
+
+		try {
+			child.stdin.write(`${JSON.stringify(request)}\n`);
+		} catch (error) {
+			this.oauthSessions.delete(requestId);
+			session.push({ type: "error", message: error instanceof Error ? error.message : String(error) });
+			session.end();
+		}
+
+		const events: AsyncIterable<OAuthEvent> = {
+			[Symbol.asyncIterator]: () => ({
+				next: async () => {
+					if (eventQueue.length > 0) {
+						return { value: eventQueue.shift()!, done: false };
+					}
+					if (ended) {
+						return { value: undefined, done: true };
+					}
+					return new Promise<IteratorResult<OAuthEvent>>((resolve) => {
+						resolveNext = resolve;
+					});
+				},
+			}),
+		};
+
+		return {
+			id: requestId,
+			events,
+			respond: (response: unknown) => {
+				try {
+					child.stdin.write(
+						`${JSON.stringify({
+							type: "oauth_response",
+							id: requestId,
+							response,
+						})}\n`,
+					);
+				} catch {
+					// Ignore write errors - process may be dead
+				}
+			},
+			cancel: () => {
+				try {
+					child.stdin.write(
+						`${JSON.stringify({
+							type: "cancel",
+							id: requestId,
+						})}\n`,
+					);
+				} catch {
+					// Ignore write errors - process may be dead
+				}
+				this.oauthSessions.delete(requestId);
+				session.end();
+			},
+		};
+	}
 }
 
 /** Singleton process manager. */
@@ -252,6 +408,22 @@ export const streamSimpleRustModel = (
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => rustModelProcess.stream("streamSimple", model, context, options);
+
+/**
+ * Start an OAuth login flow via the Rust bridge.
+ * Returns an async iterable of OAuth events with respond() and cancel() methods.
+ */
+export const oauthLoginRustModel = (
+	provider: string,
+	options?: Record<string, unknown>,
+): {
+	id: string;
+	events: AsyncIterable<OAuthEvent>;
+	respond(response: unknown): void;
+	cancel(): void;
+} => rustModelProcess.oauthLogin(provider, options);
+
+export type { OAuthEvent, OAuthCredentials };
 
 /** Resolve the bridge executable path from env or the Cargo dev target. */
 export function resolveRustModelBinary(): string {
@@ -300,6 +472,10 @@ export function createRustModelBridgeStream<TApi extends Api>(
 	createInterface({ input: child.stdout }).on("line", (line) => {
 		const parsed = parseBridgeLine(line);
 		if (!parsed || parsed.id !== requestId) {
+			return;
+		}
+		if (parsed.type === "oauth_event") {
+			// OAuth events should not appear in model stream responses
 			return;
 		}
 		if (parsed.type === "error") {
@@ -363,7 +539,9 @@ export function createRustModelBridgeStream<TApi extends Api>(
 export function parseBridgeLine(line: string): BridgeLine | undefined {
 	try {
 		const parsed = JSON.parse(line) as BridgeLine;
-		return parsed && (parsed.type === "event" || parsed.type === "error") ? parsed : undefined;
+		return parsed && (parsed.type === "event" || parsed.type === "error" || parsed.type === "oauth_event")
+			? parsed
+			: undefined;
 	} catch {
 		return undefined;
 	}

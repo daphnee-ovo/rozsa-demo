@@ -7,7 +7,7 @@ license = "MIT"
 
 [dependencies]
 tokio = { workspace = true }
-tokio-util = "0.7"
+tokio-util = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -17,6 +17,9 @@ futures-util = "0.3"
 aws-config = { workspace = true }
 aws-sdk-bedrockruntime = { workspace = true }
 aws-smithy-types = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
 
 [[test]]
 name = "unit_model_openai_completions"
@@ -29,3 +32,7 @@ path = "../../tests/unit/model/protocol.rs"
 [[test]]
 name = "unit_model_bedrock_converse_stream"
 path = "../../tests/unit/model/bedrock_converse_stream.rs"
+
+[[test]]
+name = "unit_model_oauth_pkce"
+path = "../../tests/unit/model/oauth_pkce.rs"

@@ -3,14 +3,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use rozsa_model::credentials::resolve_request_options;
+use rozsa_model::credentials::{resolve_request_options, store_oauth_credentials};
+use rozsa_model::oauth::types::OAuthFlowEvent;
 use rozsa_model::protocol::{
-    BridgeInput, BridgeMethod, BridgeOutput, bridge_error, event_to_bridge_output, parse_input_line,
-    provider_request,
+    BridgeInput, BridgeMethod, BridgeOutput, bridge_error, event_to_bridge_output, oauth_event,
+    parse_input_line, provider_request,
 };
 use rozsa_model::providers::register_builtin_providers;
 use rozsa_model::registry::get_provider;
@@ -27,6 +29,10 @@ async fn main() {
 
     // Map of active request cancellation tokens
     let active_requests = Arc::new(Mutex::new(HashMap::<String, CancellationToken>::new()));
+
+    // Map of active OAuth sessions: id -> channel to send user responses
+    let oauth_responses: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<Value>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     // Spawn stdout writer task
     let writer_handle = tokio::spawn(async move {
@@ -76,6 +82,55 @@ async fn main() {
             BridgeInput::Cancel { id } => {
                 if let Some(token) = active_requests.lock().await.remove(&id) {
                     token.cancel();
+                }
+            }
+            BridgeInput::OAuthLogin { id, provider, options } => {
+                let auth_json_path = options
+                    .get("authJsonPath")
+                    .and_then(Value::as_str)
+                    .unwrap_or("~/.rozsa/auth.json")
+                    .to_string();
+
+                // Check if it's a known built-in provider
+                let is_builtin = matches!(
+                    provider.as_str(),
+                    "anthropic" | "github-copilot" | "openai-codex"
+                );
+
+                if !is_builtin {
+                    // Extension providers: signal TS to handle login in JS
+                    let _ = output_tx.send(oauth_event(&id, json!({ "type": "delegate" })));
+                    continue;
+                }
+
+                let cancel_token = CancellationToken::new();
+                active_requests.lock().await.insert(id.clone(), cancel_token.clone());
+
+                // Create response channel for this OAuth session
+                let (resp_tx, resp_rx) = mpsc::unbounded_channel::<Value>();
+                oauth_responses.lock().await.insert(id.clone(), resp_tx);
+
+                let output_tx_clone = output_tx.clone();
+                let active_requests_clone = active_requests.clone();
+                let oauth_responses_clone = oauth_responses.clone();
+
+                tokio::spawn(async move {
+                    handle_oauth_login(
+                        id.clone(),
+                        provider,
+                        auth_json_path,
+                        resp_rx,
+                        cancel_token,
+                        output_tx_clone,
+                    )
+                    .await;
+                    active_requests_clone.lock().await.remove(&id);
+                    oauth_responses_clone.lock().await.remove(&id);
+                });
+            }
+            BridgeInput::OAuthResponse { id, response } => {
+                if let Some(tx) = oauth_responses.lock().await.get(&id) {
+                    let _ = tx.send(response);
                 }
             }
         }
@@ -173,6 +228,123 @@ async fn handle_request(
             }
         }
     }
+}
+
+/// Handle an OAuth login request: dispatch to provider, forward events, store credentials.
+async fn handle_oauth_login(
+    id: String,
+    provider: String,
+    auth_json_path: String,
+    response_rx: mpsc::UnboundedReceiver<Value>,
+    cancel_token: CancellationToken,
+    output_tx: mpsc::UnboundedSender<BridgeOutput>,
+) {
+    // Create event forwarding channel: login fn sends OAuthFlowEvent, we convert to bridge output
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<OAuthFlowEvent>();
+
+    let id_clone = id.clone();
+    let output_tx_clone = output_tx.clone();
+
+    // Spawn event forwarder
+    let forwarder = tokio::spawn(async move {
+        while let Some(flow_event) = event_rx.recv().await {
+            let bridge_event = flow_event_to_value(flow_event);
+            let _ = output_tx_clone.send(oauth_event(&id_clone, bridge_event));
+        }
+    });
+
+    // Dispatch to provider-specific login
+    let result = match provider.as_str() {
+        "anthropic" => {
+            rozsa_model::oauth::anthropic::login(event_tx, response_rx, cancel_token).await
+        }
+        "github-copilot" => {
+            rozsa_model::oauth::github_copilot::login(event_tx, response_rx, cancel_token).await
+        }
+        "openai-codex" => {
+            rozsa_model::oauth::openai_codex::login(event_tx, response_rx, cancel_token).await
+        }
+        _ => unreachable!(),
+    };
+
+    // Wait for forwarder to drain
+    let _ = forwarder.await;
+
+    // Handle result
+    match result {
+        Ok(credentials) => {
+            // Resolve auth.json path (expand ~)
+            let resolved_path = resolve_tilde(&auth_json_path);
+
+            // Write credentials to auth.json
+            if let Err(e) = store_oauth_credentials(&resolved_path, &provider, &credentials) {
+                let _ = output_tx.send(oauth_event(
+                    &id,
+                    json!({ "type": "error", "message": format!("Failed to store credentials: {e}") }),
+                ));
+                return;
+            }
+
+            // Send complete event with credentials
+            let _ = output_tx.send(oauth_event(
+                &id,
+                json!({
+                    "type": "complete",
+                    "credentials": {
+                        "access": credentials.access,
+                        "refresh": credentials.refresh,
+                        "expires": credentials.expires,
+                    }
+                }),
+            ));
+        }
+        Err(e) => {
+            let _ = output_tx.send(oauth_event(
+                &id,
+                json!({ "type": "error", "message": e.to_string() }),
+            ));
+        }
+    }
+}
+
+fn flow_event_to_value(event: OAuthFlowEvent) -> Value {
+    match event {
+        OAuthFlowEvent::AuthUrl { url, instructions } => {
+            let mut v = json!({ "type": "auth_url", "url": url });
+            if let Some(instr) = instructions {
+                v["instructions"] = json!(instr);
+            }
+            v
+        }
+        OAuthFlowEvent::DeviceCode { user_code, verification_uri } => {
+            json!({ "type": "device_code", "userCode": user_code, "verificationUri": verification_uri })
+        }
+        OAuthFlowEvent::Prompt { message, placeholder } => {
+            let mut v = json!({ "type": "prompt", "message": message });
+            if let Some(ph) = placeholder {
+                v["placeholder"] = json!(ph);
+            }
+            v
+        }
+        OAuthFlowEvent::Select { message, options } => {
+            json!({ "type": "select", "message": message, "options": options })
+        }
+        OAuthFlowEvent::Progress { message } => {
+            json!({ "type": "progress", "message": message })
+        }
+        OAuthFlowEvent::Waiting { message } => {
+            json!({ "type": "waiting", "message": message })
+        }
+    }
+}
+
+fn resolve_tilde(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{home}/{rest}");
+        }
+    }
+    path.to_string()
 }
 
 /// Serialize one bridge output and flush it to stdout immediately.
