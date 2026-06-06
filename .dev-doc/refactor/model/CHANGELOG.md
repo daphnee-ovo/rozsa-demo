@@ -14,3 +14,7 @@
 - 18:25 feat: 增加 AWS Bedrock Converse Stream provider 支持
 - 18:54 feat: 统一模型选择器界面，展示格式改为 [Provider] model_id
 - 19:06 feat: ModelSelectorState 增加 tab 状态与按 provider 筛选逻辑
+
+## 2026-06-06
+- 22:48 fix: disambiguate native model switching
+- 23:32 refactor: 提取模型协议类型到 packages/model-types

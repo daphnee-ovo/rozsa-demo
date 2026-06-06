@@ -11,7 +11,7 @@ import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefi
 import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
-import { shouldStreamViaRustModel, streamResolvedModel } from "./model-stream.ts";
+import { streamResolvedModel } from "./model-stream.ts";
 import { clampThinkingLevel } from "./model-utils.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
@@ -350,42 +350,37 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const providerRetrySettings = settingsManager.getProviderRetrySettings();
 			const attributionHeaders = getAttributionHeaders(model, settingsManager, options?.sessionId);
 			const providerStreamHandler = modelRegistry.getProviderStreamHandler(model.api);
-			if (!providerStreamHandler && shouldStreamViaRustModel(model.api)) {
-				const apiKey = rustAuthJsonPath
-					? modelRegistry.getRuntimeApiKey(model.provider)
-					: await modelRegistry.getStoredApiKey(model.provider);
-				return streamResolvedModel(model, context, {
+			if (providerStreamHandler) {
+				const auth = await modelRegistry.getApiKeyAndHeaders(model);
+				if (!auth.ok) {
+					throw new Error(auth.error);
+				}
+				return providerStreamHandler(model, context, {
 					...options,
-					apiKey,
-					authJsonPath: rustAuthJsonPath,
-					modelsJsonPath: modelRegistry.getModelsJsonPath(),
+					apiKey: auth.apiKey,
 					timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
 					maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 					maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
 					headers:
-						attributionHeaders || options?.headers ? { ...attributionHeaders, ...options?.headers } : undefined,
+						attributionHeaders || auth.headers || options?.headers
+							? { ...attributionHeaders, ...auth.headers, ...options?.headers }
+							: undefined,
 				});
 			}
-
-			const auth = await modelRegistry.getApiKeyAndHeaders(model);
-			if (!auth.ok) {
-				throw new Error(auth.error);
-			}
-			const requestOptions = {
+			const apiKey = rustAuthJsonPath
+				? modelRegistry.getRuntimeApiKey(model.provider)
+				: await modelRegistry.getStoredApiKey(model.provider);
+			return streamResolvedModel(model, context, {
 				...options,
-				apiKey: auth.apiKey,
+				apiKey,
+				authJsonPath: rustAuthJsonPath,
+				modelsJsonPath: modelRegistry.getModelsJsonPath(),
 				timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
 				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
 				headers:
-					attributionHeaders || auth.headers || options?.headers
-						? { ...attributionHeaders, ...auth.headers, ...options?.headers }
-						: undefined,
-			};
-			if (providerStreamHandler) {
-				return providerStreamHandler(model, context, requestOptions);
-			}
-			return streamResolvedModel(model, context, requestOptions);
+					attributionHeaders || options?.headers ? { ...attributionHeaders, ...options?.headers } : undefined,
+			});
 		},
 		onPayload: async (payload, _model) => {
 			const runner = extensionRunnerRef.current;

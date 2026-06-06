@@ -492,6 +492,7 @@
 			"resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.75.5.tgz",
 			"license": "MIT",
 			"dependencies": {
+				"@earendil-works/pi-model-types": "*",
 				"@anthropic-ai/sdk": "0.91.1",
 				"@aws-sdk/client-bedrock-runtime": "3.1048.0",
 				"@google/genai": "1.52.0",
@@ -505,6 +506,17 @@
 			},
 			"bin": {
 				"pi-ai": "./dist/cli.js"
+			},
+			"engines": {
+				"node": ">=22.19.0"
+			}
+		},
+		"node_modules/@earendil-works/pi-model-types": {
+			"version": "0.75.5",
+			"resolved": "https://registry.npmjs.org/@earendil-works/pi-model-types/-/pi-model-types-0.75.5.tgz",
+			"license": "MIT",
+			"dependencies": {
+				"typebox": "1.1.38"
 			},
 			"engines": {
 				"node": ">=22.19.0"

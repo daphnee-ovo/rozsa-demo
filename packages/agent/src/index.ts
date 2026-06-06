@@ -2,7 +2,6 @@
 export * from "./agent.ts";
 // Loop functions
 export * from "./agent-loop.ts";
-export * from "./compat-model-stream.ts";
 export * from "./event-stream.ts";
 export * from "./harness/agent-harness.ts";
 export {

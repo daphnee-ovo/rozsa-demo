@@ -1,0 +1,43 @@
+{
+	"name": "@earendil-works/pi-model-types",
+	"version": "0.75.5",
+	"description": "Shared type definitions for AI model protocols",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"typebox": "1.1.38"
+	},
+	"keywords": [
+		"ai",
+		"llm",
+		"types",
+		"model",
+		"protocol"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/earendil-works/pi-mono.git",
+		"directory": "packages/model-types"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}

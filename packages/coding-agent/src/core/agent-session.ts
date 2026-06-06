@@ -21,7 +21,6 @@ import {
 	type AgentMessage,
 	type AgentState,
 	type AgentTool,
-	cleanupCompatModelSessionResources,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai";
@@ -1035,7 +1034,6 @@ export class AgentSession {
 			runtime.unsubscribe();
 		}
 		this._subagents.clear();
-		cleanupCompatModelSessionResources(this.sessionId);
 	}
 
 	// =========================================================================

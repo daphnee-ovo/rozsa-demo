@@ -4,6 +4,7 @@
 		"noEmit": true,
 		"paths": {
 			"*": ["./*"],
+			"@earendil-works/pi-model-types": ["./packages/model-types/src/index.ts"],
 			"@earendil-works/pi-ai": ["./packages/ai/src/index.ts"],
 			"@earendil-works/pi-ai/oauth": ["./packages/ai/src/oauth.ts"],
 			"@earendil-works/pi-ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],

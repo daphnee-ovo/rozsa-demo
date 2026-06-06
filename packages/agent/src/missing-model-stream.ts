@@ -35,7 +35,7 @@ function createMissingStreamMessage(model: Model<Api>): AssistantMessage {
 		},
 		stopReason: "error",
 		errorMessage:
-			"Agent model execution requires an explicit streamFn. Use @earendil-works/pi-agent-core/node for the Rust model bridge or streamCompatModel() for the legacy TypeScript fallback.",
+			"Agent model execution requires an explicit streamFn. Use @earendil-works/pi-agent-core/node for the Rust model bridge.",
 		timestamp: Date.now(),
 	};
 }

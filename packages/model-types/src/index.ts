@@ -47,31 +47,4 @@ export type {
 	Usage,
 	UserMessage,
 	VercelGatewayRouting,
-} from "@earendil-works/pi-model-types";
-
-export type { AssistantMessageEventStream } from "./utils/event-stream.ts";
-
-import type {
-	Api,
-	AssistantImages,
-	Context,
-	ImagesApi,
-	ImagesContext,
-	ImagesModel,
-	ImagesOptions,
-	Model,
-	StreamOptions,
-} from "@earendil-works/pi-model-types";
-import type { AssistantMessageEventStream } from "./utils/event-stream.ts";
-
-export type StreamFunction<TApi extends Api = Api, TOptions extends StreamOptions = StreamOptions> = (
-	model: Model<TApi>,
-	context: Context,
-	options?: TOptions,
-) => AssistantMessageEventStream;
-
-export type ImagesFunction<TApi extends ImagesApi = ImagesApi, TOptions extends ImagesOptions = ImagesOptions> = (
-	model: ImagesModel<TApi>,
-	context: ImagesContext,
-	options?: TOptions,
-) => Promise<AssistantImages>;
+} from "./types.ts";
