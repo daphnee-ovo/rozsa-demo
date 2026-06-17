@@ -82,6 +82,49 @@ Known current limits:
 - Network smoke tests are not part of the default unit tests; the live smoke test is ignored by default and requires explicit credentials or a running local model endpoint.
 - A missing `rozsa-app` debug binary is a startup/configuration error in Rust registry mode. `run.sh` builds `rozsa-app` and passes `ROZSA_APP_BINARY` to the TypeScript backend; standalone frontend runs should build `rozsa-app` or set `ROZSA_APP_BINARY` when validating Rust registry behavior.
 
+| Anthropic Messages | Supported | `AnthropicProvider` implements `ApiProvider` for `Api::AnthropicMessages`. It builds `/v1/messages` payloads, sends HTTP requests with SSE streaming, incrementally parses Anthropic SSE events (message_start, content_block_start/delta/stop, message_delta, message_stop), forwards normalized stream events through the JSONL bridge, reports usage/cost, and can be registered with `register_provider` or `register_builtin_providers`. |
+
+Current Anthropic Messages provider coverage:
+
+- Anthropic Messages API (direct `api.anthropic.com` endpoint)
+- Fireworks AI (Anthropic-compatible endpoint)
+- MiniMax (Anthropic-compatible endpoint)
+- Kimi Coding (Anthropic-compatible endpoint)
+- Vercel AI Gateway (Anthropic-protocol proxy)
+- Cloudflare AI Gateway (Anthropic-protocol proxy)
+- GitHub Copilot (Anthropic-protocol proxy)
+
+Anthropic Messages compatibility rules already modeled:
+
+- API key auth (`x-api-key` header)
+- OAuth bearer token auth (`sk-ant-oat` prefix detection → `Authorization: Bearer`)
+- GitHub Copilot auth (`Authorization: Bearer` + dynamic headers)
+- Cloudflare AI Gateway auth (`cf-aig-authorization` header)
+- Session affinity headers (`x-session-affinity`) for Fireworks/Cloudflare
+- Cache control placement (last user message block + last tool)
+- Long cache retention (`ttl: "1h"`) for providers that support it
+- Thinking configuration: adaptive thinking (effort level) and budget-based thinking
+- Interleaved thinking beta header
+- Fine-grained tool streaming beta header (when eager streaming is unsupported)
+- Tool input eager streaming
+- OAuth stealth mode (Claude Code tool name rewriting)
+- Tool call ID normalization (64-char limit, alphanumeric + `_`/`-`)
+- Consecutive tool results merged into single user message
+- Non-vision model image degradation to placeholder text
+- System prompt handling (OAuth vs standard mode)
+- Temperature vs thinking mutual exclusion
+- `metadata.user_id` forwarding
+- Stop reason mapping (end_turn/pause_turn→stop, max_tokens→length, tool_use→toolUse, refusal/sensitive→error)
+- Usage calculation (input/output/cacheRead/cacheWrite/totalTokens/cost)
+- Compat flags: `supportsEagerToolInputStreaming`, `supportsLongCacheRetention`, `sendSessionAffinityHeaders`, `supportsCacheControlOnTools`, `forceAdaptiveThinking`
+- TS-vs-Rust parity test with a fake Anthropic SSE server for payload, stream event, and final message equivalence
+
+Anthropic Messages known current limits:
+
+- No HTTP proxy support
+- No `onPayload`/`onResponse` callbacks (TypeScript-only)
+- Network smoke tests require explicit credentials
+
 | AWS Bedrock Converse Stream | Supported | `BedrockProvider` implements `ApiProvider` for `Api::BedrockConverseStream`. It uses the official `aws-sdk-bedrockruntime` crate, sends ConverseStream requests, incrementally parses SDK event stream events, forwards normalized stream events through the JSONL bridge, reports usage/cost, and can be registered with `register_provider` or `register_builtin_providers`. |
 
 Current Bedrock provider coverage:
@@ -124,7 +167,7 @@ No additional provider protocols are scheduled for the current model-layer miles
 
 | Provider/API | Reason |
 | --- | --- |
-| Anthropic Messages | Deferred from the previous 2.3 slot. Direct HTTP/SSE support still needs cache-control placement, thinking, fine-grained tool streaming, OAuth headers, Copilot headers, and Anthropic-compatible provider behavior. |
+| Anthropic Messages | Moved to Supported. See above. |
 | OpenAI Responses | Deferred from the previous 2.4 slot. It still needs Responses input conversion, reasoning signatures, tool-call IDs, prompt cache retention, and service tier behavior. |
 | Azure OpenAI Responses | Deferred from the previous 2.5 slot. It depends on OpenAI Responses parity plus Azure endpoint and deployment mapping. |
 | Google Gemini | Deferred from the previous 2.6 slot. Direct REST support still needs image input, tool schema conversion, thinking, and thought signatures. |

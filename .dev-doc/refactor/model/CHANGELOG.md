@@ -18,3 +18,20 @@
 ## 2026-06-06
 - 22:48 fix: disambiguate native model switching
 - 23:32 refactor: 提取模型协议类型到 packages/model-types
+
+## 2026-06-07
+- feat: migrate OAuth login to rozsa-model Rust layer
+- refactor: extension compat mapping + cleanup (T007)
+- refactor: migrate type imports and remove model registry TS fallback (T004-T006)
+- refactor: eliminate ts-ai middleman (T001-T003)
+- refactor: rename all pi/Pi identifiers to rozsa
+
+## 2026-06-16
+- docs: 同步 task_2026-06-06_1 — 确认 T001-T007 全部完成并归档
+- feat: implement Anthropic Messages Rust provider (payload, SSE stream, auth routing)
+- feat: thinking/reasoning config (adaptive + budget-based)
+- feat: compat layer (Fireworks, Cloudflare, Copilot, OAuth stealth mode)
+- test: TS/Rust parity test for Anthropic Messages provider (5 cases, all pass)
+- docs: move Anthropic Messages from Deferred to Supported in supported-providers.md
+- feat: register anthropic-messages in rust-supported-apis.ts
+- 15:51 feat: Anthropic Messages payload 构建
