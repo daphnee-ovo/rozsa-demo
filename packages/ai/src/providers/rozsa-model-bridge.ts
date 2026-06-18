@@ -237,11 +237,7 @@ export function shouldUseRustModelProvider(api: Api): boolean {
 	if (backend !== "rust") {
 		throw new Error('ROZSA_MODEL_BACKEND must be "ts" or "rust".');
 	}
-	if (!isRustModelSupportedApi(api)) return false;
-	if (!rustApiSet().has(api)) {
-		return false;
-	}
-	return true;
+	return isRustModelSupportedApi(api);
 }
 
 /** Resolve the bridge executable path from env or the Cargo dev target. */
@@ -349,19 +345,6 @@ export function createRustModelBridgeStream<TApi extends Api>(
 	return stream;
 }
 
-/** Parse the Rust-enabled API allow-list from the environment. */
-function rustApiSet(): Set<string> {
-	const raw = process.env.ROZSA_MODEL_RUST_APIS;
-	if (!raw) {
-		return new Set();
-	}
-	return new Set(
-		raw
-			.split(",")
-			.map((api) => api.trim())
-			.filter((api) => api.length > 0),
-	);
-}
 
 /** Serialize stream options while removing Node-only callbacks and signals. */
 function serializeOptions(options?: StreamOptions | SimpleStreamOptions): Record<string, unknown> {

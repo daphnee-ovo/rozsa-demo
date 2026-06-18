@@ -35,3 +35,6 @@
 - docs: move Anthropic Messages from Deferred to Supported in supported-providers.md
 - feat: register anthropic-messages in rust-supported-apis.ts
 - 15:51 feat: Anthropic Messages payload 构建
+
+## 2026-06-18
+- 16:55 fix: ISSUE-I002：smoke test — anthropic-messages custom provider JSON 端到端验证

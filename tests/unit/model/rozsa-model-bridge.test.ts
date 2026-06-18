@@ -12,7 +12,6 @@ import type { Context, Model } from "../../../packages/ai/src/types.ts";
 const originalBinary = process.env.ROZSA_MODEL_BINARY;
 const originalBinaryArgs = process.env.ROZSA_MODEL_BINARY_ARGS;
 const originalBackend = process.env.ROZSA_MODEL_BACKEND;
-const originalRustApis = process.env.ROZSA_MODEL_RUST_APIS;
 
 const model = {
 	id: "gpt-test",
@@ -47,11 +46,7 @@ afterEach(() => {
 	} else {
 		process.env.ROZSA_MODEL_BACKEND = originalBackend;
 	}
-	if (originalRustApis === undefined) {
-		delete process.env.ROZSA_MODEL_RUST_APIS;
-	} else {
-		process.env.ROZSA_MODEL_RUST_APIS = originalRustApis;
-	}
+	delete process.env.ROZSA_MODEL_RUST_APIS;
 });
 
 describe("rozsa-model bridge", () => {
@@ -66,22 +61,21 @@ describe("rozsa-model bridge", () => {
 	});
 
 	describe("shouldUseRustModelProvider backend semantics", () => {
-		it("backend=rust returns true for listed API without checking binary existence", () => {
+		it("backend=rust returns true for supported API", () => {
 			process.env.ROZSA_MODEL_BACKEND = "rust";
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
 			process.env.ROZSA_MODEL_BINARY = "/nonexistent/path/rozsa-model";
 			expect(shouldUseRustModelProvider("openai-completions")).toBe(true);
+			expect(shouldUseRustModelProvider("anthropic-messages")).toBe(true);
+			expect(shouldUseRustModelProvider("bedrock-converse-stream")).toBe(true);
 		});
 
-		it("backend=rust returns false for unlisted API", () => {
+		it("backend=rust returns false for unsupported API", () => {
 			process.env.ROZSA_MODEL_BACKEND = "rust";
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
-			expect(shouldUseRustModelProvider("anthropic-messages")).toBe(false);
+			expect(shouldUseRustModelProvider("google-generative-ai")).toBe(false);
 		});
 
 		it("backend=auto is rejected", () => {
 			process.env.ROZSA_MODEL_BACKEND = "auto";
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
 			expect(() => shouldUseRustModelProvider("openai-completions")).toThrow(
 				'ROZSA_MODEL_BACKEND must be "ts" or "rust".',
 			);
@@ -89,13 +83,11 @@ describe("rozsa-model bridge", () => {
 
 		it("backend=ts returns false regardless", () => {
 			process.env.ROZSA_MODEL_BACKEND = "ts";
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
 			expect(shouldUseRustModelProvider("openai-completions")).toBe(false);
 		});
 
 		it("backend unset returns false", () => {
 			delete process.env.ROZSA_MODEL_BACKEND;
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
 			expect(shouldUseRustModelProvider("openai-completions")).toBe(false);
 		});
 	});
@@ -103,7 +95,7 @@ describe("rozsa-model bridge", () => {
 	describe("backend=rust strict mode rejects unmigrated APIs", () => {
 		it("unmigrated API returns error stream", async () => {
 			process.env.ROZSA_MODEL_BACKEND = "rust";
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+
 			resetApiProviders();
 
 			const provider = getApiProvider("anthropic-messages");
@@ -129,7 +121,7 @@ describe("rozsa-model bridge", () => {
 
 		it("migrated API is not blocked", () => {
 			process.env.ROZSA_MODEL_BACKEND = "rust";
-			process.env.ROZSA_MODEL_RUST_APIS = "openai-completions";
+
 			resetApiProviders();
 
 			const provider = getApiProvider("openai-completions");
@@ -168,7 +160,6 @@ describe("rozsa-model bridge", () => {
 				});
 			`;
 			process.env.ROZSA_MODEL_BACKEND = "rust";
-			process.env.ROZSA_MODEL_RUST_APIS = "bedrock-converse-stream";
 			process.env.ROZSA_MODEL_BINARY = process.execPath;
 			process.env.ROZSA_MODEL_BINARY_ARGS = JSON.stringify(["-e", bridgeScript]);
 			resetApiProviders();

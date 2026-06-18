@@ -21,12 +21,10 @@ interface FakeServer {
 
 const originalBinary = process.env.ROZSA_MODEL_BINARY;
 const originalBinaryArgs = process.env.ROZSA_MODEL_BINARY_ARGS;
-const originalRustApis = process.env.ROZSA_MODEL_RUST_APIS;
 
 afterEach(() => {
 	restoreEnv("ROZSA_MODEL_BINARY", originalBinary);
 	restoreEnv("ROZSA_MODEL_BINARY_ARGS", originalBinaryArgs);
-	restoreEnv("ROZSA_MODEL_RUST_APIS", originalRustApis);
 });
 
 describe("Anthropic messages TS/Rust parity", () => {
@@ -35,7 +33,7 @@ describe("Anthropic messages TS/Rust parity", () => {
 		expect(existsSync(rustBinary)).toBe(true);
 		process.env.ROZSA_MODEL_BINARY = rustBinary;
 		delete process.env.ROZSA_MODEL_BINARY_ARGS;
-		process.env.ROZSA_MODEL_RUST_APIS = "anthropic-messages";
+
 
 		const fake = await startAnthropicFakeServer();
 		try {
@@ -85,7 +83,7 @@ describe("Anthropic messages TS/Rust parity", () => {
 		expect(existsSync(rustBinary)).toBe(true);
 		process.env.ROZSA_MODEL_BINARY = rustBinary;
 		delete process.env.ROZSA_MODEL_BINARY_ARGS;
-		process.env.ROZSA_MODEL_RUST_APIS = "anthropic-messages";
+
 
 		const fake = await startAnthropicFakeServer();
 		try {
@@ -118,7 +116,7 @@ describe("Anthropic messages TS/Rust parity", () => {
 		expect(existsSync(rustBinary)).toBe(true);
 		process.env.ROZSA_MODEL_BINARY = rustBinary;
 		delete process.env.ROZSA_MODEL_BINARY_ARGS;
-		process.env.ROZSA_MODEL_RUST_APIS = "anthropic-messages";
+
 
 		const fake = await startAnthropicFakeServer({ thinking: true });
 		try {
@@ -153,7 +151,7 @@ describe("Anthropic messages TS/Rust parity", () => {
 		expect(existsSync(rustBinary)).toBe(true);
 		process.env.ROZSA_MODEL_BINARY = rustBinary;
 		delete process.env.ROZSA_MODEL_BINARY_ARGS;
-		process.env.ROZSA_MODEL_RUST_APIS = "anthropic-messages";
+
 
 		for (const stopReason of ["end_turn", "max_tokens", "tool_use"]) {
 			const fake = await startAnthropicFakeServer({ stopReason });
@@ -180,7 +178,7 @@ describe("Anthropic messages TS/Rust parity", () => {
 		expect(existsSync(rustBinary)).toBe(true);
 		process.env.ROZSA_MODEL_BINARY = rustBinary;
 		delete process.env.ROZSA_MODEL_BINARY_ARGS;
-		process.env.ROZSA_MODEL_RUST_APIS = "anthropic-messages";
+
 
 		const fake = await startAnthropicFakeServer();
 		try {
@@ -199,6 +197,56 @@ describe("Anthropic messages TS/Rust parity", () => {
 			await fake.close();
 		}
 	});
+	it("matches custom provider (Fireworks compat) payload and response", async () => {
+		const rustBinary = resolve(process.cwd(), "target", "debug", "rozsa-model");
+		expect(existsSync(rustBinary)).toBe(true);
+		process.env.ROZSA_MODEL_BINARY = rustBinary;
+		delete process.env.ROZSA_MODEL_BINARY_ARGS;
+
+
+		const fake = await startAnthropicFakeServer();
+		try {
+			const model = createFireworksModel(fake.baseUrl);
+			const context = createContext();
+			const options: SimpleStreamOptions = {
+				apiKey: "fw-test-key-abc",
+				maxTokens: 64,
+				sessionId: "sess-fw-001",
+			};
+
+			const ts = await runAndCollect(streamSimpleAnthropic(model, context, options));
+			const rust = await runAndCollect(streamSimpleRustModel(model, context, options));
+
+			expect(fake.requests).toHaveLength(2);
+			const [tsRequest, rustRequest] = fake.requests;
+
+			const tsBody = tsRequest.body as Record<string, unknown>;
+			const rustBody = rustRequest.body as Record<string, unknown>;
+
+			// Fireworks: no cache_control on tools
+			const tsTools = tsBody.tools as Record<string, unknown>[];
+			const rustTools = rustBody.tools as Record<string, unknown>[];
+			for (const tool of tsTools) expect(tool.cache_control).toBeUndefined();
+			for (const tool of rustTools) expect(tool.cache_control).toBeUndefined();
+
+			// Fireworks: no eager_input_streaming
+			for (const tool of tsTools) expect(tool.eager_input_streaming).toBeUndefined();
+			for (const tool of rustTools) expect(tool.eager_input_streaming).toBeUndefined();
+
+			// Session affinity header present
+			expect(tsRequest.headers["x-session-affinity"]).toBe("sess-fw-001");
+			expect(rustRequest.headers["x-session-affinity"]).toBe("sess-fw-001");
+
+			// Standard API key auth (not OAuth)
+			expect(tsRequest.headers["x-api-key"]).toBe("fw-test-key-abc");
+			expect(rustRequest.headers["x-api-key"]).toBe("fw-test-key-abc");
+
+			expect(stripVolatileMessage(ts.result)).toEqual(stripVolatileMessage(rust.result));
+			expect(eventTypes(ts.events)).toEqual(eventTypes(rust.events));
+		} finally {
+			await fake.close();
+		}
+	});
 });
 
 function createModel(baseUrl: string): Model<"anthropic-messages"> {
@@ -213,6 +261,28 @@ function createModel(baseUrl: string): Model<"anthropic-messages"> {
 		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
 		contextWindow: 200000,
 		maxTokens: 8192,
+	};
+}
+
+function createFireworksModel(baseUrl: string): Model<"anthropic-messages"> {
+	return {
+		id: "accounts/fireworks/models/claude-sonnet-4",
+		name: "Claude Sonnet 4 (Fireworks)",
+		api: "anthropic-messages",
+		provider: "fireworks",
+		baseUrl,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+		contextWindow: 200000,
+		maxTokens: 8192,
+		compat: {
+			supportsEagerToolInputStreaming: false,
+			supportsLongCacheRetention: false,
+			sendSessionAffinityHeaders: true,
+			supportsCacheControlOnTools: false,
+			forceAdaptiveThinking: false,
+		},
 	};
 }
 

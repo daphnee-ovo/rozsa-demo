@@ -387,18 +387,7 @@ function shouldAttemptRustModelProvider(api: Api): boolean {
 	if (backend !== "rust") {
 		throw new Error('ROZSA_MODEL_BACKEND must be "ts" or "rust".');
 	}
-	if (!isRustModelSupportedApi(api)) return false;
-	const rawApis = process.env.ROZSA_MODEL_RUST_APIS;
-	if (!rawApis) return false;
-	if (
-		!rawApis
-			.split(",")
-			.map((candidate) => candidate.trim())
-			.includes(api)
-	) {
-		return false;
-	}
-	return true;
+	return isRustModelSupportedApi(api);
 }
 
 function loadOpenAIResponsesProviderModule(): Promise<
@@ -601,7 +590,7 @@ function createRustGuardStream<TApi extends Api>(api: TApi): StreamFunction<TApi
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "error",
-			errorMessage: `ROZSA_MODEL_BACKEND=rust but API "${api}" is not available through the Rust bridge. Use ROZSA_MODEL_BACKEND=ts or add a Rust provider before listing this API in ROZSA_MODEL_RUST_APIS.`,
+			errorMessage: `ROZSA_MODEL_BACKEND=rust but API "${api}" is not available through the Rust bridge. Use ROZSA_MODEL_BACKEND=ts or wait for the Rust provider to be implemented.`,
 			timestamp: Date.now(),
 		};
 		stream.push({ type: "error", reason: "error", error: message });
