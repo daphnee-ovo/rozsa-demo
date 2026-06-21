@@ -264,7 +264,8 @@ pub struct Context {
 }
 
 /// Stream event emitted by provider implementations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
     Start {
         partial: AssistantMessage,
