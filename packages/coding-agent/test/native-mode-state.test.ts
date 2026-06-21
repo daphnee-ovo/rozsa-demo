@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
 import { describe, expect, test } from "vitest";
 import { nativeMessagesWithStreaming } from "../src/modes/native/native-mode.ts";
 

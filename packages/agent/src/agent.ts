@@ -1,14 +1,14 @@
-import {
-	type ImageContent,
-	type Message,
-	type Model,
-	type SimpleStreamOptions,
-	streamSimple,
-	type TextContent,
-	type ThinkingBudgets,
-	type Transport,
-} from "@earendil-works/pi-ai";
+import type {
+	ImageContent,
+	Message,
+	Model,
+	SimpleStreamOptions,
+	TextContent,
+	ThinkingBudgets,
+	Transport,
+} from "@earendil-works/rozsa-model-types";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
+import { missingModelStream } from "./missing-model-stream.ts";
 import type {
 	AfterToolCallContext,
 	AfterToolCallResult,
@@ -202,7 +202,7 @@ export class Agent {
 		this._state = createMutableAgentState(options.initialState);
 		this.convertToLlm = options.convertToLlm ?? defaultConvertToLlm;
 		this.transformContext = options.transformContext;
-		this.streamFn = options.streamFn ?? streamSimple;
+		this.streamFn = options.streamFn ?? missingModelStream;
 		this.getApiKey = options.getApiKey;
 		this.onPayload = options.onPayload;
 		this.onResponse = options.onResponse;

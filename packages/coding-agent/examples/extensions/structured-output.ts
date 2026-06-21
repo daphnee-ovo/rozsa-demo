@@ -5,8 +5,8 @@
  * without paying for an extra follow-up LLM turn.
  */
 
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { defineTool, type ExtensionAPI } from "@earendil-works/rozsa-coding-agent";
+import { Text } from "@earendil-works/rozsa-tui";
 import { Type } from "typebox";
 
 interface StructuredOutputDetails {
@@ -60,6 +60,6 @@ const structuredOutputTool = defineTool({
 	},
 });
 
-export default function (pi: ExtensionAPI) {
-	pi.registerTool(structuredOutputTool);
+export default function (rozsa: ExtensionAPI) {
+	rozsa.registerTool(structuredOutputTool);
 }

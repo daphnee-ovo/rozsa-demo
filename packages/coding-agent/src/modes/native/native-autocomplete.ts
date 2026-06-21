@@ -4,7 +4,7 @@ import {
 	CombinedAutocompleteProvider,
 	fuzzyFilter,
 	type SlashCommand,
-} from "@earendil-works/pi-tui";
+} from "@earendil-works/rozsa-tui";
 import type { AgentSession } from "../../core/agent-session.ts";
 import type { AutocompleteProviderFactory } from "../../core/extensions/index.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";

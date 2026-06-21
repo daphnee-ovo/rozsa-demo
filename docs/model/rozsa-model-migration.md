@@ -10,6 +10,15 @@ Related code:
 - `packages/ai/src/providers/`: current provider implementations.
 - `packages/ai/src/models.generated.ts`: current model metadata.
 - `packages/agent/src/agent-loop.ts`: current agent loop entry point into the AI layer.
+- `packages/agent/src/event-stream.ts`: Agent-owned async event stream primitive，替代 `rozsa-ai` runtime EventStream 依赖。
+- `packages/agent/src/tool-validation.ts`: Agent-owned tool argument validation，替代 `rozsa-ai` runtime validation 依赖。
+- `packages/model-types/src/types.ts`: Shared model protocol type definitions extracted from rozsa-ai.
+- `packages/agent/src/missing-model-stream.ts`: Agent-owned fail-fast stream boundary；未显式注入模型执行函数时不再隐式回退到 TS AI。
+- `packages/agent/src/rozsa-model-client.ts`: Node-only `rozsa-model` JSONL client，直接管理 Rust child process 和 bridge protocol。
+- `packages/agent/src/model-stream.ts`: 通用 Agent Node 模型请求边界，提供 `streamDefaultModel()` / `completeDefaultModel()`，无条件路由到 Rust bridge。
+- `crates/rozsa-model/src/credentials.rs`: Rust-owned request credential/header resolver，读取 `auth.json`、`models.json`、环境变量和命令型 config value。
+- `packages/coding-agent/src/core/model-stream.ts`: coding-agent 模型请求边界，提供 `streamResolvedModel()` / `completeResolvedModel()`，委托到 agent 的 Rust bridge。
+- `packages/coding-agent/src/core/model-utils.ts`: coding-agent-owned model helper boundary，替代 `rozsa-ai` 的 model equality、thinking level clamp/support 和 context overflow helpers。
 
 Related docs:
 
@@ -20,9 +29,9 @@ Related docs:
 Replace the TypeScript AI execution layer with Rust in stages:
 
 1. Migrate individual provider protocol implementations into Rust.
-2. Keep the current TypeScript `@earendil-works/pi-ai` API as a compatibility shell while provider migration is incomplete.
-3. Move AI-layer methods such as `streamSimple`, `stream`, `completeSimple`, and `complete` behind the Rust implementation.
-4. Move model registry, provider registry, credential resolution, and OAuth/session support when Rust coverage is ready.
+2. Keep the current TypeScript `@earendil-works/rozsa-ai` API as a compatibility shell while provider migration is incomplete.
+3. Move AI-layer methods such as `streamSimple`, `stream`, `completeSimple`, and `complete` behind the Rust implementation for supported Rust APIs.
+4. Move provider execution registry, model metadata, compatibility metadata, and custom model metadata loading into Rust while keeping interactive OAuth/session flows in TypeScript.
 5. Remove the TypeScript AI layer as an execution dependency.
 6. Let the agent layer call `rozsa-model` directly.
 
@@ -99,7 +108,7 @@ Initial target:
 
 ```text
 agent layer
-  -> @earendil-works/pi-ai compatibility shell
+  -> @earendil-works/rozsa-ai compatibility shell
       -> RustModelBridge
           -> rozsa-model binary
               -> provider adapters
@@ -362,7 +371,9 @@ Implementation requirements:
 - Preserve Converse Stream event parsing.
 - Preserve proxy-related behavior currently supported by environment variables.
 
-### 2.3 Anthropic Messages
+The previous 2.3-2.9 provider rollout is delayed. The current milestone prioritizes finishing the Rust model-layer boundary, bridge routing, and registry ownership before adding more provider protocol adapters.
+
+### 2.3 Deferred: Anthropic Messages
 
 Migrate `anthropic-messages` after OpenAI-compatible and Bedrock.
 
@@ -390,7 +401,7 @@ Implementation requirements:
 
 Rust should use direct HTTP/SSE. There is no official Rust SDK, and the current TS layer already has important compatibility logic around headers and streaming.
 
-### 2.4 OpenAI Responses
+### 2.4 Deferred: OpenAI Responses
 
 Migrate `openai-responses` after `openai-completions`.
 
@@ -403,7 +414,7 @@ Implementation requirements:
 - Preserve `serviceTier` usage adjustments.
 - Preserve GitHub Copilot and Cloudflare AI Gateway special headers when routed through Responses.
 
-### 2.5 Azure OpenAI Responses
+### 2.5 Deferred: Azure OpenAI Responses
 
 Migrate `azure-openai-responses` after OpenAI Responses.
 
@@ -414,7 +425,7 @@ Implementation requirements:
 - Preserve `api-version` handling.
 - Preserve Azure-specific auth and base URL behavior.
 
-### 2.6 Google Gemini
+### 2.6 Deferred: Google Gemini
 
 Migrate `google-generative-ai`.
 
@@ -428,7 +439,7 @@ Implementation requirements:
 
 Rust can use direct REST. Go SDK behavior can be used as a protocol reference, but should not be part of runtime.
 
-### 2.7 Google Vertex
+### 2.7 Deferred: Google Vertex
 
 Migrate `google-vertex` after Gemini.
 
@@ -442,7 +453,7 @@ Implementation requirements:
 
 This provider has more auth risk than plain Gemini. Do not combine it with Gemini migration unless the auth boundary is already isolated.
 
-### 2.8 OpenAI Codex Responses
+### 2.8 Deferred: OpenAI Codex Responses
 
 Migrate `openai-codex-responses` only after the generic stream protocol is stable.
 
@@ -458,7 +469,7 @@ Implementation requirements:
 
 This is a special provider. It should not block replacing common API-key providers.
 
-### 2.9 Mistral
+### 2.9 Deferred: Mistral
 
 Keep Mistral later or experimental unless it becomes a required provider.
 
@@ -476,7 +487,7 @@ Minimum requirements when migrated:
 
 ## Stage 3: Move AI Methods Behind Rust
 
-After several providers are migrated, move the AI method implementation behind the bridge while preserving the TS public API.
+Move the AI method implementation behind the bridge for Rust-supported APIs while preserving the TS public API.
 
 Current TS methods:
 
@@ -487,7 +498,7 @@ Current TS methods:
 
 Target behavior:
 
-- `stream` and `streamSimple` call the Rust backend when the selected API is Rust-enabled.
+- `stream` and `streamSimple` call the Rust backend when the selected API is Rust-supported and explicitly listed in `ROZSA_MODEL_RUST_APIS`.
 - `complete` and `completeSimple` remain wrappers that call the stream method and wait for `result()`.
 - The TS `AssistantMessageEventStream` remains the compatibility surface for Node callers.
 
@@ -495,14 +506,24 @@ This stage should not change agent code.
 
 Done criteria:
 
-- Agent tests still import `@earendil-works/pi-ai`.
+- Agent tests still import `@earendil-works/rozsa-ai`.
 - Migrated APIs can run through Rust without agent-layer changes.
-- Non-migrated APIs still run through TS.
-- Per-API fallback is explicit and observable.
+- Non-migrated APIs fail clearly in `ROZSA_MODEL_BACKEND=rust` instead of falling back to TS.
+- `ROZSA_MODEL_BACKEND=ts` is the explicit rollback path.
+- Bedrock and OpenAI-compatible APIs route through the Rust bridge when enabled.
+
+Current status:
+
+- Complete for the current model-layer milestone.
+- `ROZSA_MODEL_BACKEND` accepts only `ts` or `rust`; `auto` has been removed.
+- Rust execution and TS execution are separated by `ROZSA_MODEL_BACKEND`.
+- Only APIs implemented by the Rust bridge can run in Rust mode.
+- `stream`/`streamSimple` route `openai-completions` and `bedrock-converse-stream` through `rozsa-model` when enabled.
+- `complete`/`completeSimple` inherit that routing through their existing stream wrappers.
 
 ## Stage 4: Move Registry And Metadata
 
-Move registries only after provider execution is stable.
+Move registries after provider execution is stable enough for the current supported APIs.
 
 Migration order:
 
@@ -510,9 +531,9 @@ Migration order:
 2. Move model metadata loading.
 3. Move compatibility metadata.
 4. Move custom model loading.
-5. Move image model registry if image generation remains in scope.
+5. Move image model registry metadata.
 
-Keep `models.generated.ts` as the source of truth until Rust can load equivalent generated data.
+Keep `models.generated.ts` and `models.generated.json` traceable during the transition. Rust loads the generated JSON data; TypeScript keeps the generated TypeScript metadata for TS-only execution.
 
 Target Rust metadata should preserve:
 
@@ -529,30 +550,61 @@ Target Rust metadata should preserve:
 - thinking level map
 - provider compatibility flags
 
-Do not rewrite model discovery and provider metadata at the same time as provider protocol migration.
+Do not add new provider discovery surfaces while provider protocol migration is paused.
 
-## Stage 5: Move Credential And OAuth Support
+Current status:
 
-Move credential resolution after model/provider routing is stable.
+- Complete for registry and metadata ownership in the current model-layer milestone.
+- `rozsa-app` owns the Rust model registry bridge.
+- `ROZSA_MODEL_REGISTRY_BACKEND` defaults to `rust`; set it to `ts` to force the TypeScript registry.
+- `auto` registry fallback has been removed. Missing or broken `rozsa-app` is a configuration error in Rust registry mode.
+- Rust loads `packages/ai/src/models.generated.json`, merges optional `models.json`, preserves compatibility metadata, and can merge live NVIDIA model discovery when `NVIDIA_API_KEY` is configured.
+- Rust loads `packages/ai/src/image-models.generated.json` and exposes image model metadata through the `list_image_models` app bridge request.
+- TypeScript still owns interactive OAuth login flows and the default `auth.json` storage location; Rust execution reads and refreshes persisted credentials when handling model requests.
 
-Credential sources to preserve:
+## Stage 5: Credential 和 OAuth 支持迁移
 
-- CLI-provided API key.
-- `auth.json` API key.
-- environment variables.
-- custom provider `models.json` API key resolution.
-- shell command key resolution for custom providers.
-- OAuth tokens for OpenAI Codex, Anthropic subscription auth, and GitHub Copilot.
-- AWS ambient credentials.
-- Google ADC credentials.
+模型和 provider 路由稳定后，再迁移 request credential 解析。
 
-Important boundary:
+需要保留的 credential 来源：
 
-- Rust should not execute arbitrary shell commands for custom provider credentials until a clear policy exists.
-- If shell command resolution remains TS-owned during transition, pass resolved credentials to Rust.
-- If Rust owns shell command resolution later, implement transparent errors and avoid hidden stale fallback behavior.
+- CLI 提供的 API key。
+- `auth.json` API key。
+- 环境变量。
+- custom provider 的 `models.json` API key。
+- custom provider 的 `!command` shell key。
+- OpenAI Codex、Anthropic subscription auth、GitHub Copilot 的 OAuth token。
+- AWS ambient credentials。
+- Google ADC credentials。
 
-## Stage 6: Move Custom Provider Support
+当前边界：
+
+- Rust 已负责读取持久化 credential、`models.json` request config、provider headers 和 `authHeader`。
+- Rust 已负责已知 OAuth provider 的过期 token refresh。
+- TypeScript 仍负责交互式 OAuth login、runtime override、extension/in-memory auth storage。
+- Rust 执行 `!command` 时必须失败透明；command 失败返回 credential error，不做静默 fallback。
+
+当前状态：
+
+- 对 Rust 已支持的执行 API，request credential/header 解析已迁到 Rust bridge 前置层。
+- `crates/rozsa-model/src/credentials.rs` 现在读取：
+  - `auth.json` 中的 API key。
+  - `auth.json` 中未过期的 OAuth access token。
+  - `auth.json` 中过期的 Anthropic、OpenAI Codex 和 GitHub Copilot OAuth token，并在 Rust 内刷新后写回。
+  - `models.json` provider `apiKey`，包括环境变量引用和 `!command` shell 解析。
+  - `models.json` provider `headers` 和 `authHeader`。
+- `packages/coding-agent/src/core/sdk.ts` 在 Rust path 下传递 `authJsonPath` 和 `modelsJsonPath`，不再要求 TS 先解析 `auth.json` 或 `models.json` request credential。
+- CLI/runtime override 和自定义/in-memory `AuthStorage` 仍由 TS 解析后作为 request `apiKey` 传入 Rust，因为 Rust bridge 不能读取进程内虚拟状态。
+- OAuth interactive login 仍由 TypeScript `AuthStorage`/OAuth provider 执行；Rust bridge 只负责已登录 credential 的使用和刷新。
+- Rust 写回 refreshed OAuth credential 时使用 `auth.json.lock` 文件保护；锁被占用时直接返回 credential error。
+- Provider 自己拥有的 ambient credential 仍由 Rust provider 解析，例如 AWS Bedrock 通过 `aws-config` 解析。
+
+Focused coverage：
+
+- `tests/unit/model/protocol.rs` 验证 Rust resolver 能从 `auth.json` 解析 stored API key 和未过期 OAuth，并能从 `models.json` 解析 `apiKey`、provider headers 和 `authHeader`；过期但不支持 Rust refresh 的 OAuth provider 会 fail fast。
+- `packages/coding-agent/test/model-stream.test.ts` 验证 Rust mode 下 custom OpenAI-compatible model 会带着 provider id、`baseUrl` 和 request options 进入 Rust JSONL bridge。
+
+## Stage 6: Custom Provider 支持迁移
 
 Current custom provider support allows providers to define:
 
@@ -576,13 +628,57 @@ Rust replacement must preserve:
 
 Do not remove extension custom provider behavior until there is a compatible replacement or a confirmed product decision to drop it.
 
-## Stage 7: Agent Direct Integration
+当前状态：
+
+- 对使用 Rust 已支持 API 的 metadata-defined custom provider 已完成。
+- `models.json` custom provider 已在 Stage 4 由 Rust registry bridge 加载，并成为普通 `Model` metadata。
+- `ROZSA_MODEL_BACKEND=rust` 时，coding-agent 对 Rust 已支持 API 调用 `streamResolvedModel()`，不再进入 TS provider registry。带 `api: "openai-completions"` 的 custom provider 会带着 `baseUrl`、`compat`、headers、`modelsJsonPath` 和 `authJsonPath` 通过 `rozsa-model` 执行。
+- Provider-level defaults、model-level overrides、per-model API override、compatibility merge rules 已由 Rust registry bridge 保留。
+- Provider-level request headers、`authHeader` 和 `apiKey` 解析已由 Rust bridge 前置 resolver 接管。
+- Extension 提供的动态 `streamSimple` handler 已从 `rozsa-ai` provider registry 迁出。`ModelRegistry` 现在在 coding-agent-owned registry 中保存 handler，`packages/coding-agent/src/core/sdk.ts` 的 stream boundary 会先检查 `getProviderStreamHandler(model.api)`，命中时直接执行该 handler；未命中时才进入 `streamResolvedModel()` / Rust bridge。
+
+下一接手点：
+
+- 若要让 extension stream handler 也完全 Rust-native，需要设计 Rust-side extension provider contract；当前替代方案是 coding-agent-owned local stream handler，不再依赖 TS AI provider registry。
+
+## Stage 7: Agent 直接集成
 
 Only after Rust owns provider execution, registry, metadata, credentials, and custom providers should the agent layer bypass `packages/ai`.
 
-Current agent dependency:
+当前 Agent 依赖：
 
-- `packages/agent/src/agent-loop.ts` imports `streamSimple`, `Context`, `AssistantMessage`, and validation helpers from `@earendil-works/pi-ai`.
+- `packages/agent/src/compat-model-stream.ts` is the only generic Agent source file that imports legacy `streamSimple` as the explicit browser-safe TypeScript fallback.
+- `packages/agent/src/missing-model-stream.ts` is the default Agent stream boundary when a caller does not inject model execution; it returns a terminal error instead of falling back to TS AI.
+- Agent and coding-agent still import message/model type definitions from `@earendil-works/rozsa-ai` until a separate public type boundary replaces them.
+
+当前状态：
+
+- 当前 model-layer milestone 内，coding-agent 生产执行路径已完成；通用 Agent 包提供 Node-only direct bridge helper。
+- `packages/agent/src/rozsa-model-client.ts` 是 agent-side Rust JSONL client，已从 `packages/ai/src/providers/rozsa-model-bridge.ts` 旁路出来，agent/coding-agent 的 Rust 执行不再依赖 TS AI provider bridge。
+- `packages/agent/src/model-stream.ts` 提供 Node-only `streamDefaultModel()` 和 `completeDefaultModel()`。`ROZSA_MODEL_BACKEND=rust` 且 model API 被列入 `ROZSA_MODEL_RUST_APIS` 时，它直接调用 agent-side `streamSimpleRustModel()`；`ROZSA_MODEL_BACKEND=ts` 时才调用 `streamCompatModel()`。
+- `packages/agent/src/node.ts` 导出 `streamDefaultModel()`，Node 调用方可以显式使用该 direct bridge boundary。
+- `packages/agent/src/harness/agent-harness.ts` 新增 `streamFn` 注入点。默认路径是 `missingModelStream()` fail-fast；Node 调用方可以从 `packages/agent/src/node.ts` 注入 `streamDefaultModel()` 进入 Rust direct bridge。
+- `packages/agent/src/harness/compaction/compaction.ts` 和 `packages/agent/src/harness/compaction/branch-summarization.ts` 已改成基于 `StreamFn.result()` 的 completion helper。默认路径是 `missingModelStream()` fail-fast；注入 `streamDefaultModel()` 时总结请求会走 Rust direct bridge。
+- `packages/agent/src/agent.ts`、`packages/agent/src/agent-loop.ts`、AgentHarness 和 harness compaction 都不再默认导入或调用 `streamCompatModel()`；legacy TS fallback 必须由调用方显式选择。
+- `packages/agent/src/agent-loop.ts` 不再从 `@earendil-works/rozsa-ai` 导入 runtime `EventStream` 或 `validateToolArguments`。这两个运行时边界已分别迁到 `packages/agent/src/event-stream.ts` 和 `packages/agent/src/tool-validation.ts`。
+- `packages/agent/src/proxy.ts` 也改用本地 `EventStream`，避免 proxy runtime 继续依赖 `rozsa-ai` stream primitive。
+- `packages/agent/src/types.ts` 的 `StreamFn` 已改成 agent-owned 结构化 `AssistantMessageEventStream` 接口，不再通过 `typeof streamSimple` 绑定到 `rozsa-ai` 的 stream class 类型。
+- `packages/coding-agent/src/core/sdk.ts` 在 Rust path 下传递 `authJsonPath`、`modelsJsonPath`、retry settings、attribution headers 和 session options 后调用 `streamResolvedModel()`；TS/custom handler path 才调用 `ModelRegistry.getApiKeyAndHeaders()`。
+- `packages/coding-agent/src/core/agent-session.ts` 不再导入 `streamSimple` 做函数身份判断；SDK 创建的生产 session 通过 `streamFnResolvesAuth: true` 显式声明 model stream boundary 会在请求内解析 auth。
+- `packages/coding-agent/src/core/model-utils.ts` 已接管 `modelsAreEqual()`、`getSupportedThinkingLevels()`、`clampThinkingLevel()` 和 `isContextOverflow()`，coding-agent 不再从 `rozsa-ai` runtime 导入这些通用 helper。
+- `packages/coding-agent/src/core/compaction/compaction.ts`、`packages/coding-agent/src/core/compaction/branch-summarization.ts` 和 `packages/coding-agent/src/core/permissions.ts` 已改用 `completeResolvedModel()`，生产 summary、branch summary 和 auto permission reviewer 不再直接调用 `completeSimple()`。
+- `streamResolvedModel()` 通过 `@earendil-works/rozsa-agent-core/node` 复用通用 Agent Node 边界；Rust request auth/header 由 Rust bridge 根据 `authJsonPath`/`modelsJsonPath` 解析。
+- `ROZSA_MODEL_BACKEND=ts` 仍是明确 rollback path，并通过 `streamCompatModel()` 调用 legacy `streamSimple()`。
+- Extension 提供的动态 TS provider handler 仍保留在 `ModelRegistry.registerProvider(... streamSimple ...)`，但 handler 已由 coding-agent-owned registry 和 SDK stream boundary 执行，不再注册到 `rozsa-ai` provider registry。
+- `resetApiProviders()` 已从 coding-agent runtime 路径移除。`cleanupSessionResources()` 已收窄到 `packages/agent/src/compat-model-stream.ts`，只服务显式 TS fallback 的 Codex WebSocket session 清理。
+- 完全移除 `@earendil-works/rozsa-ai` 的 compile-time type utilities 和 TS fallback 需要单独的 public API/type boundary 变更。
+
+Focused coverage：
+
+- `packages/agent/test/model-stream.test.ts` 验证 Node-only `streamDefaultModel()` 会在 Rust mode 下使用 Rust bridge，并转发 request `apiKey`。
+- `packages/agent/test/agent-loop.test.ts` 和 `packages/agent/test/agent.test.ts` 覆盖迁移后的本地 EventStream/tool validation 边界。
+- `packages/coding-agent/test/model-stream.test.ts` 验证 coding-agent 会把 resolved registry auth 和 custom provider metadata 发送到 Rust bridge。
+- `packages/coding-agent/test/compaction-summary-reasoning.test.ts` 通过 fake `StreamFn` 覆盖 compaction summary 参数构造，避免继续 mock `completeSimple()`。
 
 Direct integration requires:
 
@@ -610,7 +706,7 @@ The agent layer should not know provider SDK details. It should only know:
 - cancellation signal
 - stream events
 
-At this stage, do not preserve `@earendil-works/pi-ai` method names or type shapes just because they existed during migration. Keep them only if they remain the simplest stable interface. The direct agent boundary should be designed from the agent's needs and the Rust model layer's responsibilities.
+At this stage, do not preserve `@earendil-works/rozsa-ai` method names or type shapes just because they existed during migration. Keep them only if they remain the simplest stable interface. The direct agent boundary should be designed from the agent's needs and the Rust model layer's responsibilities.
 
 ## Stage 8: Remove TS AI Execution Layer
 
@@ -619,7 +715,7 @@ Remove TypeScript provider implementations only after all required routes have R
 Removal checklist:
 
 - No production caller imports provider functions from `packages/ai/src/providers/*`.
-- `@earendil-works/pi-ai` compatibility wrapper no longer owns provider protocol code.
+- `@earendil-works/rozsa-ai` compatibility wrapper no longer owns provider protocol code.
 - Agent and coding-agent no longer require TS provider execution.
 - Tests for migrated providers run against Rust.
 - Packaging includes `rozsa-model` binary for supported platforms.
@@ -721,8 +817,9 @@ Suggested flags:
 ```bash
 ROZSA_MODEL_BACKEND=ts
 ROZSA_MODEL_BACKEND=rust
-ROZSA_MODEL_BACKEND=auto
-ROZSA_MODEL_RUST_APIS=openai-completions,anthropic-messages
+ROZSA_MODEL_RUST_APIS=openai-completions,bedrock-converse-stream
+ROZSA_MODEL_REGISTRY_BACKEND=rust
+ROZSA_MODEL_REGISTRY_BACKEND=ts
 ROZSA_MODEL_BINARY=/absolute/path/to/rozsa-model
 ROZSA_MODEL_TRACE=1
 ```
@@ -731,9 +828,8 @@ Semantics:
 
 - `ts`: always use TS provider implementation.
 - `rust`: use Rust for listed APIs; fail if Rust cannot serve them.
-- `auto`: use Rust for listed APIs when available, otherwise use TS and emit an observable warning.
 
-Do not make `auto` the default until parity is strong.
+`auto` is not supported. Use `ts` for rollback and `rust` for Rust-owned provider execution. `ROZSA_MODEL_REGISTRY_BACKEND` defaults to `rust`; set it to `ts` only when explicitly isolating the TypeScript registry.
 
 ## Error Handling Requirements
 
@@ -747,7 +843,7 @@ Rust errors must preserve current expectations:
 - Unknown provider API: return a clear unsupported API error.
 - Bridge crash: report child process exit status and stderr excerpt.
 
-Do not hide Rust failures behind silent TS fallback unless the user explicitly enabled an auto fallback mode.
+Do not hide Rust failures behind silent TS fallback. The rollback path is explicit `ROZSA_MODEL_BACKEND=ts` or `ROZSA_MODEL_REGISTRY_BACKEND=ts`.
 
 ## Packaging Strategy
 
@@ -778,10 +874,30 @@ Avoid lifecycle scripts that download or build binaries during install unless th
 - TypeScript AI can route `openai-completions` through Rust by opt-in env flags.
 - OpenAI-compatible Chat Completions has the first Rust provider adapter.
 - OpenAI-compatible Chat Completions now supports incremental stream output, retry, provider routing, Cloudflare Gateway, Copilot dynamic headers, and proxy cache-control payloads.
-- Requests using `onPayload` or `onResponse` keep TypeScript provider routing so callback behavior remains available during the bridge phase.
+- AWS Bedrock Converse Stream has a Rust provider adapter and can route through the Rust bridge.
+- `stream`, `streamSimple`, `complete`, and `completeSimple` route supported Rust APIs through `rozsa-model` when `ROZSA_MODEL_BACKEND=rust`.
+- The TypeScript registry bridge defaults to Rust via `ROZSA_MODEL_REGISTRY_BACKEND=rust`.
+- Rust registry loading covers generated model metadata, compatibility metadata, custom model metadata, image model metadata, provider auth availability, and NVIDIA live discovery.
+- Rust bridge resolves request credentials from `auth.json`, `models.json`, environment variables, and command-backed config values for Rust-executed requests.
+- Rust registry bridge preserves provider-level custom headers, model-level headers, and provider `authHeader` behavior for Rust-executed custom providers.
+- Rust and TypeScript provider execution are explicitly separated by `ROZSA_MODEL_BACKEND`; `auto` mode has been removed.
+- Rust and TypeScript model registry ownership are explicitly separated by `ROZSA_MODEL_REGISTRY_BACKEND`; `auto` mode has been removed.
+- Model protocol types extracted to `@earendil-works/rozsa-model-types`, breaking the compile-time type dependency on `@earendil-works/rozsa-ai`.
+- `rozsa-model` changed to a long-lived singleton process with concurrent request support via multiplexed JSONL.
+- `ROZSA_MODEL_BACKEND` and `ROZSA_MODEL_RUST_APIS` gates removed from agent/coding-agent; model execution always routes through Rust.
+- `ROZSA_MODEL_REGISTRY_BACKEND` gate removed; model registry always loads from Rust.
+- All type imports in agent/coding-agent migrated from `@earendil-works/rozsa-ai` to `@earendil-works/rozsa-model-types`.
+- Extension loader registers `@earendil-works/rozsa-model-types` as a virtual module for extension compatibility.
+- `@earendil-works/rozsa-ai` retained only for OAuth runtime and extension bundling (off the model execution path).
+- Full OAuth login migrated to Rust: Anthropic (Auth Code + PKCE), GitHub Copilot (Device Code), OpenAI Codex (Auth Code + PKCE) all execute in `rozsa-model` via bridge protocol.
+- OAuth bridge protocol added: `oauth_login`, `oauth_response` input messages and `oauth_event` output messages enable interactive login flows without TS-side OAuth provider execution.
+- Built-in provider login flows now execute in Rust; credential storage (auth.json read/write with file locking) is fully Rust-owned.
+- Extension OAuth providers continue to execute JS callbacks via the rozsa-ai OAuth registry (extension API preserved).
+- Agent、AgentHarness 和 agent harness compaction 默认 fail fast，不再隐式回落到 legacy TS `streamSimple()`；coding-agent session auth 判断、model helper、compaction、branch summary 和 auto permission reviewer 已接入 coding-agent-owned boundary，不再直接调用或判断 `completeSimple()` / `streamSimple()`。
+- Requests using `onPayload` or `onResponse` fail clearly in Rust mode until callback round-trips exist.
 - An ignored live smoke entrypoint exists under `tests/unit/model` for explicit credential-backed checks.
 - Rust protocol and fake TypeScript bridge tests live under `tests/unit/model`.
-- Provider migration order is defined.
+- Provider migration order is defined, but previous 2.3-2.9 provider rollout is deferred.
 - Final agent direct integration boundary is defined.
 
 ## Remaining
@@ -789,4 +905,5 @@ Avoid lifecycle scripts that download or build binaries during install unless th
 - Define exact `AssistantMessageEvent` JSON schema version.
 - Design callback round-trips if `onPayload`/`onResponse` must execute inside the Rust bridge instead of using the TypeScript compatibility route.
 - Decide packaging strategy for platform binaries.
-- Decide final compatibility story for external `@earendil-works/pi-ai` consumers.
+- Decide final compatibility story for external `@earendil-works/rozsa-ai` consumers.
+- Move extension OAuth provider registration from rozsa-ai shared registry to a Rust-owned registry (would fully remove rozsa-ai runtime dependency from coding-agent).

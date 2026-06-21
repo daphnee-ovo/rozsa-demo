@@ -13,6 +13,14 @@ function makeContext(overrides: Partial<NativeBuiltinContext> = {}): NativeBuilt
 		getShowTerminalProgress: () => false,
 		getSteeringMode: () => "one-at-a-time",
 		getFollowUpMode: () => "one-at-a-time",
+		getTransport: () => "auto",
+		getPermissionMode: () => "on-request",
+		getHideThinkingBlock: () => false,
+		getCollapseChangelog: () => false,
+		getDoubleEscapeAction: () => "graph",
+		getTreeFilterMode: () => "default",
+		getEnableInstallTelemetry: () => false,
+		getHttpIdleTimeoutMs: () => 300000,
 	};
 	const session = {
 		settingsManager,
@@ -27,6 +35,7 @@ function makeContext(overrides: Partial<NativeBuiltinContext> = {}): NativeBuilt
 		notify: () => {},
 		select: async () => undefined,
 		listSessions: () => {},
+		listModels: () => {},
 		setInput: () => {},
 		setActiveSubagent: () => {},
 		activeSubagentId: () => undefined,
@@ -49,7 +58,7 @@ describe("native builtin commands", () => {
 		);
 
 		expect(handled).toBe(true);
-		expect(selectedTitle).toBe("Settings");
+		expect(selectedTitle).toBe("Settings (Enter to toggle, Esc to close)");
 	});
 
 	test("known but unsupported builtin commands do not fall through to the agent", async () => {

@@ -50,7 +50,7 @@ describe("version checks", () => {
 			"https://pi.dev/api/latest-version",
 			expect.objectContaining({
 				headers: expect.objectContaining({
-					"User-Agent": expect.stringMatching(/^pi\/1\.2\.3 /),
+					"User-Agent": expect.stringMatching(/^rozsa\/1\.2\.3 /),
 					accept: "application/json",
 				}),
 			}),
@@ -60,14 +60,14 @@ describe("version checks", () => {
 	it("returns the active package metadata from the version check api", async () => {
 		const fetchMock = vi.fn(async () =>
 			Response.json({
-				packageName: "@new-scope/pi",
+				packageName: "@new-scope/rozsa",
 				version: "1.2.4",
 			}),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(getLatestRozsaRelease("1.2.3")).resolves.toEqual({
-			packageName: "@new-scope/pi",
+			packageName: "@new-scope/rozsa",
 			version: "1.2.4",
 		});
 	});

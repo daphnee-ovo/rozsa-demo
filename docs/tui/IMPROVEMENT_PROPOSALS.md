@@ -1,4 +1,4 @@
-# pi-tui-rs 改进提案
+# rozsa-tui-rs 改进提案
 
 > 基于 codex-rs/tui 架构对比分析，按优先级排列。
 > 参考源码：`codex-rs/tui/src/` @ commit e5afe5bf

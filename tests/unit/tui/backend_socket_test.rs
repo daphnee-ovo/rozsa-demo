@@ -23,7 +23,7 @@ async fn socket_backend_connect_and_receive_state() {
     let server_handle = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         // 发送一个 state message
-        let state_json = r#"{"type":"state","state":{"appName":"pi","version":"0.1.0","cwd":"/tmp","thinkingLevel":"medium","isStreaming":false,"messages":[],"pendingMessages":[],"status":{},"widgetsAbove":{},"widgetsBelow":{},"keybindings":{}}}"#;
+        let state_json = r#"{"type":"state","state":{"appName":"rozsa","version":"0.1.0","cwd":"/tmp","thinkingLevel":"medium","isStreaming":false,"messages":[],"pendingMessages":[],"status":{},"widgetsAbove":{},"widgetsBelow":{},"keybindings":{}}}"#;
         stream.write_all(state_json.as_bytes()).unwrap();
         stream.write_all(b"\n").unwrap();
         stream.flush().unwrap();
@@ -39,7 +39,7 @@ async fn socket_backend_connect_and_receive_state() {
 
     // 接收 state 事件
     let event = rx.recv().await.unwrap();
-    assert!(matches!(event, BackendEvent::State(s) if s.app_name == "pi"));
+    assert!(matches!(event, BackendEvent::State(s) if s.app_name == "rozsa"));
 
     // 发送 submit
     backend.submit("hello", vec![]).await.unwrap();

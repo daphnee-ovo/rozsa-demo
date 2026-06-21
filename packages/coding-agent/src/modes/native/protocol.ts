@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
+import type { Api, ImageContent, Model } from "@earendil-works/rozsa-model-types";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { ContextUsage } from "../../core/extensions/types.ts";
 import type { PermissionPromptContext, PermissionRequest, UserPermissionChoice } from "../../core/permissions.ts";
@@ -90,7 +90,7 @@ export type NativeToHostMessage =
 	| { type: "dialog_response"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean }
 	| { type: "permission_response"; id: string; choice: UserPermissionChoice; trustKey?: string }
 	| { type: "switch_agent"; id: string }
-	| { type: "switch_model"; id: string }
+	| { type: "switch_model"; provider?: string; id: string }
 	| { type: "switch_session"; path: string }
 	| { type: "delete_session"; path: string }
 	| { type: "rename_session"; path: string; name: string }

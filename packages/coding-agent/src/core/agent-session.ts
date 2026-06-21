@@ -22,17 +22,8 @@ import {
 	type AgentState,
 	type AgentTool,
 	type ThinkingLevel,
-} from "@earendil-works/pi-agent-core";
-import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai";
-import {
-	clampThinkingLevel,
-	cleanupSessionResources,
-	getSupportedThinkingLevels,
-	isContextOverflow,
-	modelsAreEqual,
-	resetApiProviders,
-	streamSimple,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/rozsa-agent-core";
+import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/rozsa-model-types";
 import { theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -83,6 +74,7 @@ import { hasActionableErrors, LSPHook, lspTool } from "./lsp/index.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import { parseModelPattern } from "./model-resolver.ts";
+import { clampThinkingLevel, getSupportedThinkingLevels, isContextOverflow, modelsAreEqual } from "./model-utils.ts";
 import {
 	createAutoPermissionReviewerFromSettings,
 	isPathInside,
@@ -222,6 +214,8 @@ export interface AgentSessionConfig {
 	baseToolsOverride?: Record<string, AgentTool>;
 	/** Mutable ref used by Agent to access the current ExtensionRunner */
 	extensionRunnerRef?: { current?: ExtensionRunner };
+	/** Whether the injected Agent streamFn resolves request auth internally. */
+	streamFnResolvesAuth?: boolean;
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
 	/** 干跑模式：写操作 (bash/edit/write) 仅预览不执行 */
@@ -450,6 +444,7 @@ export class AgentSession {
 	private _toolArgsByCallId = new Map<string, unknown>();
 	private _dryRun = false;
 	private _editMode: EditMode = "normal";
+	private _streamFnResolvesAuth = false;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -465,6 +460,7 @@ export class AgentSession {
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._dryRun = config.dryRun ?? false;
+		this._streamFnResolvesAuth = config.streamFnResolvesAuth ?? false;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 		this._runtimeState = new RuntimeStateStore({
 			workspaceRoot: this._cwd,
@@ -552,7 +548,7 @@ export class AgentSession {
 		apiKey?: string;
 		headers?: Record<string, string>;
 	}> {
-		if (this.agent.streamFn === streamSimple) {
+		if (!this._streamFnResolvesAuth) {
 			return this._getRequiredRequestAuth(model);
 		}
 
@@ -1029,7 +1025,7 @@ export class AgentSession {
 	 */
 	dispose(): void {
 		this._extensionRunner.invalidate(
-			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
+			"This extension ctx is stale after session replacement or reload. Do not use a captured rozsa or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 		);
 		this._disconnectFromAgent();
 		this._eventListeners = [];
@@ -1038,7 +1034,6 @@ export class AgentSession {
 			runtime.unsubscribe();
 		}
 		this._subagents.clear();
-		cleanupSessionResources(this.sessionId);
 	}
 
 	// =========================================================================
@@ -1316,7 +1311,7 @@ export class AgentSession {
 
 	/**
 	 * Send a prompt to the agent.
-	 * - Handles extension commands (registered via pi.registerCommand) immediately, even during streaming
+	 * - Handles extension commands (registered via rozsa.registerCommand) immediately, even during streaming
 	 * - Expands file-based prompt templates by default
 	 * - During streaming, queues via steer() or followUp() based on streamingBehavior option
 	 * - Validates model and API key before sending (when not streaming)
@@ -1330,7 +1325,7 @@ export class AgentSession {
 
 		try {
 			// Handle extension commands first (execute immediately, even during streaming)
-			// Extension commands manage their own LLM interaction via pi.sendMessage()
+			// Extension commands manage their own LLM interaction via rozsa.sendMessage()
 			if (expandPromptTemplates && text.startsWith("/")) {
 				const handled = await this._tryExecuteExtensionCommand(text);
 				if (handled) {
@@ -2270,7 +2265,7 @@ export class AgentSession {
 
 			let apiKey: string | undefined;
 			let headers: Record<string, string> | undefined;
-			if (this.agent.streamFn === streamSimple) {
+			if (!this._streamFnResolvesAuth) {
 				const authResult = await this._modelRegistry.getApiKeyAndHeaders(this.model);
 				if (!authResult.ok || !authResult.apiKey) {
 					this._emit({
@@ -2809,7 +2804,7 @@ export class AgentSession {
 		const previousFlagValues = this._extensionRunner.getFlagValues();
 		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
 		await this.settingsManager.reload();
-		resetApiProviders();
+		this._modelRegistry.refresh();
 		await this._resourceLoader.reload();
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),

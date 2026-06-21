@@ -1,15 +1,15 @@
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
+	Context,
 	ImageContent,
 	Message,
 	Model,
 	SimpleStreamOptions,
-	streamSimple,
 	TextContent,
 	Tool,
 	ToolResultMessage,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/rozsa-model-types";
 import type { Static, TSchema } from "typebox";
 
 /**
@@ -17,13 +17,19 @@ import type { Static, TSchema } from "typebox";
  *
  * Contract:
  * - Must not throw or return a rejected promise for request/model/runtime failures.
- * - Must return an AssistantMessageEventStream.
+ * - Must return an AssistantMessageEventStream-compatible object.
  * - Failures must be encoded in the returned stream via protocol events and a
  *   final AssistantMessage with stopReason "error" or "aborted" and errorMessage.
  */
+export interface AssistantMessageEventStream extends AsyncIterable<AssistantMessageEvent> {
+	result(): Promise<AssistantMessage>;
+}
+
 export type StreamFn = (
-	...args: Parameters<typeof streamSimple>
-) => ReturnType<typeof streamSimple> | Promise<ReturnType<typeof streamSimple>>;
+	model: Model<any>,
+	context: Context,
+	options?: SimpleStreamOptions,
+) => AssistantMessageEventStream | Promise<AssistantMessageEventStream>;
 
 /**
  * Configuration for how tool calls from a single assistant message are executed.
@@ -279,7 +285,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 /**
  * Thinking/reasoning level for models that support it.
  * Note: "xhigh" is only supported by selected model families. Use model thinking-level metadata
- * from @earendil-works/pi-ai to detect support for a concrete model.
+ * from @earendil-works/rozsa-ai to detect support for a concrete model.
  */
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 

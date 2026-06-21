@@ -1,5 +1,5 @@
 {
-	"name": "@earendil-works/pi-coding-agent",
+	"name": "@earendil-works/rozsa-coding-agent",
 	"version": "0.75.5",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
@@ -37,9 +37,10 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
-		"@earendil-works/pi-agent-core": "^0.75.5",
-		"@earendil-works/pi-ai": "^0.75.5",
-		"@earendil-works/pi-tui": "^0.75.5",
+		"@earendil-works/rozsa-agent-core": "^0.75.5",
+		"@earendil-works/rozsa-ai": "^0.75.5",
+		"@earendil-works/rozsa-model-types": "*",
+		"@earendil-works/rozsa-tui": "^0.75.5",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
 		"cross-spawn": "7.0.6",
@@ -88,7 +89,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi-mono.git",
+		"url": "git+https://github.com/earendil-works/rozsa-mono.git",
 		"directory": "packages/coding-agent"
 	},
 	"engines": {

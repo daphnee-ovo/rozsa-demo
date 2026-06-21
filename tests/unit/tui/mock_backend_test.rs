@@ -19,7 +19,7 @@ async fn mock_backend_submit_records_call() {
 #[tokio::test]
 async fn mock_backend_connect_pushes_preset_events() {
     let state = NativeUiState {
-        app_name: "pi".to_string(),
+        app_name: "rozsa".to_string(),
         version: "0.1.0".to_string(),
         ..Default::default()
     };
@@ -77,7 +77,7 @@ async fn mock_backend_all_methods_callable() {
         .unwrap();
     backend.steer("steer", vec![]).await.unwrap();
     backend.list_models().await.unwrap();
-    backend.switch_model("gpt-4").await.unwrap();
+    backend.switch_model("openai", "gpt-4").await.unwrap();
     backend.cycle_model(Direction::Forward).await.unwrap();
     backend.list_sessions().await.unwrap();
     backend.switch_session("/tmp/s1").await.unwrap();

@@ -1,20 +1,22 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@earendil-works/pi-ai";
-import { getApiProvider } from "@earendil-works/pi-ai";
-import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@earendil-works/rozsa-ai";
+import { getOAuthProvider } from "@earendil-works/rozsa-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { clearApiKeyCache, ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
+import { loadRustImageModelRegistryModels } from "../src/core/rust-model-registry.ts";
 
 describe("ModelRegistry", () => {
 	let tempDir: string;
 	let modelsJsonPath: string;
 	let authStorage: AuthStorage;
+	const originalRegistryBackend = process.env.ROZSA_MODEL_REGISTRY_BACKEND;
 
 	beforeEach(() => {
-		tempDir = join(tmpdir(), `pi-test-model-registry-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		process.env.ROZSA_MODEL_REGISTRY_BACKEND = "ts";
+		tempDir = join(tmpdir(), `rozsa-test-model-registry-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		modelsJsonPath = join(tempDir, "models.json");
 		authStorage = AuthStorage.create(join(tempDir, "auth.json"));
@@ -25,6 +27,7 @@ describe("ModelRegistry", () => {
 			rmSync(tempDir, { recursive: true });
 		}
 		clearApiKeyCache();
+		restoreEnv("ROZSA_MODEL_REGISTRY_BACKEND", originalRegistryBackend);
 	});
 
 	/** Create minimal provider config  */
@@ -96,7 +99,7 @@ describe("ModelRegistry", () => {
 		messages: [],
 	};
 
-	test("loads available model metadata from the Rust registry bridge in auto mode", () => {
+	test("loads available model metadata from the Rust registry bridge by default", () => {
 		const bridgeScriptPath = join(tempDir, "fake-rozsa-app.mjs");
 		writeFileSync(
 			bridgeScriptPath,
@@ -153,6 +156,57 @@ process.stdin.on("end", () => {
 			restoreEnv("ROZSA_APP_BINARY", originalBinary);
 			restoreEnv("ROZSA_APP_BINARY_ARGS", originalBinaryArgs);
 			restoreEnv("NVIDIA_API_KEY", originalNvidiaKey);
+		}
+	});
+
+	test("loads image model metadata from the Rust registry bridge by default", () => {
+		const bridgeScriptPath = join(tempDir, "fake-rozsa-app-images.mjs");
+		writeFileSync(
+			bridgeScriptPath,
+			`let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+	input += chunk;
+});
+process.stdin.on("end", () => {
+	const request = JSON.parse(input.trim());
+	process.stdout.write(JSON.stringify({
+		type: "image_models",
+		id: request.id,
+		imageModels: [{
+			id: "openrouter/image-test",
+			name: "OpenRouter Image Test",
+			api: "openrouter-images",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			input: ["text", "image"],
+			output: ["image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+		}],
+		providerAvailable: {
+			openrouter: { configured: true, source: "environment" }
+		}
+	}) + "\\n");
+});
+`,
+		);
+
+		const originalBackend = process.env.ROZSA_MODEL_REGISTRY_BACKEND;
+		const originalBinary = process.env.ROZSA_APP_BINARY;
+		const originalBinaryArgs = process.env.ROZSA_APP_BINARY_ARGS;
+
+		try {
+			delete process.env.ROZSA_MODEL_REGISTRY_BACKEND;
+			process.env.ROZSA_APP_BINARY = process.execPath;
+			process.env.ROZSA_APP_BINARY_ARGS = JSON.stringify([bridgeScriptPath]);
+
+			const result = loadRustImageModelRegistryModels();
+			expect(result?.imageModels[0]?.id).toBe("openrouter/image-test");
+			expect(result?.providerAvailable?.openrouter).toEqual({ configured: true, source: "environment" });
+		} finally {
+			restoreEnv("ROZSA_MODEL_REGISTRY_BACKEND", originalBackend);
+			restoreEnv("ROZSA_APP_BINARY", originalBinary);
+			restoreEnv("ROZSA_APP_BINARY_ARGS", originalBinaryArgs);
 		}
 	});
 
@@ -1042,7 +1096,7 @@ process.stdin.on("end", () => {
 			expect(getOAuthProvider("anthropic")?.name).not.toBe("Custom Anthropic OAuth");
 		});
 
-		test("unregisterProvider removes custom streamSimple override and restores built-in API stream handler", () => {
+		test("unregisterProvider removes custom streamSimple handler from the coding-agent registry", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 
 			registry.registerProvider("stream-override-provider", {
@@ -1052,24 +1106,17 @@ process.stdin.on("end", () => {
 				},
 			});
 
-			let threwCustomOverride = false;
+			let threwCustomHandler = false;
 			try {
-				getApiProvider("openai-completions")?.streamSimple(openAiModel, emptyContext);
+				registry.getProviderStreamHandler("openai-completions")?.(openAiModel, emptyContext);
 			} catch (error) {
-				threwCustomOverride = error instanceof Error && error.message === "custom streamSimple override";
+				threwCustomHandler = error instanceof Error && error.message === "custom streamSimple override";
 			}
-			expect(threwCustomOverride).toBe(true);
+			expect(threwCustomHandler).toBe(true);
 
 			registry.unregisterProvider("stream-override-provider");
 
-			let threwCustomOverrideAfterUnregister = false;
-			try {
-				getApiProvider("openai-completions")?.streamSimple(openAiModel, emptyContext);
-			} catch (error) {
-				threwCustomOverrideAfterUnregister =
-					error instanceof Error && error.message === "custom streamSimple override";
-			}
-			expect(threwCustomOverrideAfterUnregister).toBe(false);
+			expect(registry.getProviderStreamHandler("openai-completions")).toBeUndefined();
 		});
 
 		describe("dynamic provider override persistence", () => {

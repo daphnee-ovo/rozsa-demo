@@ -117,12 +117,22 @@ ${providerEntries}
 `;
 }
 
+function generateImageModelsJson(models: ImagesModel<"openrouter-images">[]): string {
+	const imageModelsByProvider = {
+		openrouter: Object.fromEntries(models.sort((a, b) => a.id.localeCompare(b.id)).map((model) => [model.id, model])),
+	};
+	return `${JSON.stringify(imageModelsByProvider, null, 2)}\n`;
+}
+
 async function main(): Promise<void> {
 	const models = await fetchOpenRouterImageModels();
 	const output = generateImageModelsFile(models);
 	const outputPath = join(packageRoot, "src", "image-models.generated.ts");
 	writeFileSync(outputPath, output, "utf-8");
 	console.log(`Generated ${outputPath}`);
+	const jsonOutputPath = join(packageRoot, "src", "image-models.generated.json");
+	writeFileSync(jsonOutputPath, generateImageModelsJson(models), "utf-8");
+	console.log(`Generated ${jsonOutputPath}`);
 }
 
 main().catch((error) => {

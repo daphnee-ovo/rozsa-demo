@@ -1,4 +1,4 @@
-import { getRozsaUserAgent } from "./pi-user-agent.ts";
+import { getRozsaUserAgent } from "./rozsa-user-agent.ts";
 
 const LATEST_VERSION_URL = "https://rozsa.dev/api/latest-version";
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;

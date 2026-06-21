@@ -251,7 +251,7 @@ describe("permission system", () => {
 			cwd: workspaceRoot,
 			sessionId: "session-1",
 		});
-		const log = readFileSync(join(workspaceRoot, ".pi-agent", "sessions", "session-1.jsonl"), "utf-8");
+		const log = readFileSync(join(workspaceRoot, ".rozsa-agent", "sessions", "session-1.jsonl"), "utf-8");
 		expect(log).toContain("[REDACTED]");
 		expect(log).not.toContain("super-secret-token");
 	});
