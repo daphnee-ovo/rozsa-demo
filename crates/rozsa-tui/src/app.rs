@@ -17,10 +17,9 @@ use std::{
     env,
     error::Error,
     fs,
-    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -335,10 +334,12 @@ async fn run_with_socket(socket_path: String) -> Result<(), Box<dyn Error>> {
     let mut event_rx = backend.events();
 
     let connect_result = backend.connect().await;
-    let writer = match connect_result {
-        Ok(()) => backend.writer().expect("writer available after connect"),
+    let writer: crate::input::Writer = match connect_result {
+        Ok(()) => {
+            let raw_writer = backend.writer().expect("writer available after connect");
+            Arc::new(crate::protocol::SocketCommandSink::new(raw_writer))
+        }
         Err(e) => {
-            // 连接失败：清理 terminal 并报错
             disable_raw_mode()?;
             execute!(
                 terminal.backend_mut(),
@@ -550,7 +551,7 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent) {
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     event_rx: &mut mpsc::UnboundedReceiver<BackendEvent>,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
 ) -> Result<(), Box<dyn Error>> {
     let mut state = AppState::new();
     let mut editor = InputState::default();

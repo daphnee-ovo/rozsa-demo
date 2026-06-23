@@ -14,18 +14,20 @@ pub mod mouse;
 
 pub use keys::handle_key;
 
-use std::{
-    os::unix::net::UnixStream,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use crate::{
     kill_ring::KillRing,
     undo::{EditorSnapshot, UndoStack},
 };
 
-/// Writer 类型别名，方便未来替换为 async channel
-pub type Writer = Arc<Mutex<UnixStream>>;
+/// Command sink trait — abstracts how the TUI sends commands to the backend.
+pub trait CommandSink: Send + Sync {
+    fn send_command(&self, msg: &crate::protocol::ClientMessage<'_>) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+/// Writer type alias — any CommandSink implementor.
+pub type Writer = Arc<dyn CommandSink>;
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum JumpDirection {

@@ -12,8 +12,6 @@
 use std::{
     collections::BTreeMap,
     error::Error,
-    os::unix::net::UnixStream,
-    sync::{Arc, Mutex},
 };
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -61,7 +59,7 @@ impl PermissionState {
 pub fn handle_permission_key(
     key: KeyEvent,
     permission: PermissionState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
     keybindings: &BTreeMap<String, Vec<String>>,
 ) -> Result<Option<PermissionState>, Box<dyn Error>> {
     if permission.trust_mode {
@@ -73,7 +71,7 @@ pub fn handle_permission_key(
 fn handle_main_key(
     key: KeyEvent,
     mut permission: PermissionState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
     keybindings: &BTreeMap<String, Vec<String>>,
 ) -> Result<Option<PermissionState>, Box<dyn Error>> {
     if shortcut(key, 'y') {
@@ -122,7 +120,7 @@ fn shortcut(key: KeyEvent, target: char) -> bool {
 
 fn enter_trust(
     mut permission: PermissionState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
 ) -> Result<Option<PermissionState>, Box<dyn Error>> {
     if permission.prompt.trust_levels.len() <= 1 {
         let key = permission
@@ -141,7 +139,7 @@ fn enter_trust(
 fn handle_trust_key(
     key: KeyEvent,
     mut permission: PermissionState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
     keybindings: &BTreeMap<String, Vec<String>>,
 ) -> Result<Option<PermissionState>, Box<dyn Error>> {
     if matches_action(keybindings, key, "tui.select.cancel") {
@@ -285,7 +283,7 @@ pub fn render_permission(frame: &mut ratatui::Frame<'_>, area: Rect, permission:
 }
 
 fn send_permission(
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
     id: &str,
     choice: &str,
     trust_key: Option<&str>,

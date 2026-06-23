@@ -31,8 +31,6 @@
 
 use std::{
     error::Error,
-    os::unix::net::UnixStream,
-    sync::{Arc, Mutex},
     time::Instant,
 };
 
@@ -276,7 +274,7 @@ impl SessionSelectorState {
 pub fn handle_session_selector_key(
     key: KeyEvent,
     state: SessionSelectorState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
 ) -> Result<Option<SessionSelectorState>, Box<dyn Error>> {
     match &state.mode {
         SelectorMode::Rename { .. } => handle_rename_key(key, state, writer),
@@ -288,7 +286,7 @@ pub fn handle_session_selector_key(
 fn handle_normal_key(
     key: KeyEvent,
     mut state: SessionSelectorState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
 ) -> Result<Option<SessionSelectorState>, Box<dyn Error>> {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
@@ -412,7 +410,7 @@ fn handle_normal_key(
 fn handle_confirm_delete_key(
     key: KeyEvent,
     mut state: SessionSelectorState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
 ) -> Result<Option<SessionSelectorState>, Box<dyn Error>> {
     match key.code {
         KeyCode::Enter => {
@@ -434,7 +432,7 @@ fn handle_confirm_delete_key(
 fn handle_rename_key(
     key: KeyEvent,
     mut state: SessionSelectorState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
 ) -> Result<Option<SessionSelectorState>, Box<dyn Error>> {
     match key.code {
         KeyCode::Esc => {

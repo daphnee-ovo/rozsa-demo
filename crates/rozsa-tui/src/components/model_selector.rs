@@ -24,8 +24,6 @@
 
 use std::{
     error::Error,
-    os::unix::net::UnixStream,
-    sync::{Arc, Mutex},
 };
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -180,7 +178,7 @@ fn fuzzy_match(filter: &str, haystack: &str) -> bool {
 pub fn handle_model_selector_key(
     key: KeyEvent,
     mut state: ModelSelectorState,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
 ) -> Result<Option<ModelSelectorState>, Box<dyn Error>> {
     match key.code {
         KeyCode::Esc => Ok(None),

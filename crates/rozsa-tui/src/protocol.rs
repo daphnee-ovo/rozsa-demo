@@ -258,12 +258,29 @@ pub enum ClientMessage<'a> {
 }
 
 pub fn send(
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
     message: &ClientMessage<'_>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut stream = writer.lock().expect("writer lock poisoned");
-    serde_json::to_writer(&mut *stream, message)?;
-    stream.write_all(b"\n")?;
-    stream.flush()?;
-    Ok(())
+    writer.send_command(message)
+}
+
+/// CommandSink implementation for Unix socket (legacy SocketBackend).
+pub struct SocketCommandSink {
+    stream: Arc<Mutex<UnixStream>>,
+}
+
+impl SocketCommandSink {
+    pub fn new(stream: Arc<Mutex<UnixStream>>) -> Self {
+        Self { stream }
+    }
+}
+
+impl crate::input::CommandSink for SocketCommandSink {
+    fn send_command(&self, msg: &ClientMessage<'_>) -> Result<(), Box<dyn Error>> {
+        let mut stream = self.stream.lock().expect("writer lock poisoned");
+        serde_json::to_writer(&mut *stream, msg)?;
+        stream.write_all(b"\n")?;
+        stream.flush()?;
+        Ok(())
+    }
 }

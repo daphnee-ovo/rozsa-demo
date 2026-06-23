@@ -15,8 +15,6 @@
 
 use std::{
     error::Error,
-    os::unix::net::UnixStream,
-    sync::{Arc, Mutex},
 };
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -221,7 +219,7 @@ pub fn handle_autocomplete_key(
 pub fn request_autocomplete(
     text: &str,
     cursor: usize,
-    writer: &Arc<Mutex<UnixStream>>,
+    writer: &crate::input::Writer,
 ) -> Result<(), Box<dyn Error>> {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
