@@ -20,6 +20,13 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1.11"
 
+[dev-dependencies]
+tempfile = "3"
+
 [[test]]
 name = "unit_app_model_registry"
 path = "../../tests/unit/app/model_registry.rs"
+
+[[test]]
+name = "integration_app_session"
+path = "../../tests/integration/app_session.rs"

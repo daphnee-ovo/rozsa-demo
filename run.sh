@@ -10,11 +10,16 @@ ROZSA_LLAMA_CONTEXT_SIZE="${ROZSA_LLAMA_CONTEXT_SIZE:-8192}"
 ROZSA_LLAMA_BASE_URL="${ROZSA_LLAMA_BASE_URL:-http://$ROZSA_LLAMA_HOST:$ROZSA_LLAMA_PORT/v1}"
 ROZSA_LLAMA_AUTOSTART="${ROZSA_LLAMA_AUTOSTART:-0}"
 
+ROZSA_RUST_ONLY="${ROZSA_RUST_ONLY:-0}"
+
 forward_args=()
 for arg in "$@"; do
 	case "$arg" in
 		--local)
 			ROZSA_LLAMA_AUTOSTART=1
+			;;
+		--rust)
+			ROZSA_RUST_ONLY=1
 			;;
 		*)
 			forward_args+=("$arg")
@@ -102,8 +107,13 @@ wait_for_llama_server() {
 
 trap cleanup_llama_server EXIT
 
-cargo build -p rozsa-tui -p rozsa-model -p rozsa-app -p rozsa-core
+cargo build -p rozsa-tui -p rozsa-model -p rozsa-app -p rozsa-core -p rozsa-cli
 clear
+
+# Pure Rust mode: single binary, no Node.js
+if [[ "$ROZSA_RUST_ONLY" == "1" ]]; then
+	exec target/debug/rozsa "$@"
+fi
 
 if [ ! -x "node_modules/.bin/tsx" ]; then
 	echo "tsx not found at node_modules/.bin/tsx. Run npm install --ignore-scripts first." >&2
