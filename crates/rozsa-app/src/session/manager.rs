@@ -1,0 +1,400 @@
+use anyhow::{Context, Result};
+use rozsa_model::types::Message;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Write as _};
+use std::path::{Path, PathBuf};
+
+const SESSION_VERSION: u32 = 3;
+
+/// Session header written as first line of the session file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionHeader {
+    #[serde(rename = "type")]
+    pub typ: String,
+    pub version: u32,
+    pub id: String,
+    pub timestamp: String,
+    pub cwd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "parentSession")]
+    pub parent_session: Option<String>,
+}
+
+/// Base fields shared by all session entries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionEntryBase {
+    #[serde(rename = "type")]
+    pub typ: String,
+    pub id: String,
+    #[serde(rename = "parentId")]
+    pub parent_id: Option<String>,
+    pub timestamp: String,
+}
+
+/// Message entry containing an agent message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionMessageEntry {
+    #[serde(flatten)]
+    pub base: SessionEntryBase,
+    pub message: Message,
+}
+
+/// Thinking level change entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThinkingLevelChangeEntry {
+    #[serde(flatten)]
+    pub base: SessionEntryBase,
+    #[serde(rename = "thinkingLevel")]
+    pub thinking_level: String,
+}
+
+/// Model change entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelChangeEntry {
+    #[serde(flatten)]
+    pub base: SessionEntryBase,
+    pub provider: String,
+    #[serde(rename = "modelId")]
+    pub model_id: String,
+}
+
+/// Compaction entry summarizing removed messages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactionEntry {
+    #[serde(flatten)]
+    pub base: SessionEntryBase,
+    pub summary: String,
+    #[serde(rename = "firstKeptEntryId")]
+    pub first_kept_entry_id: String,
+    #[serde(rename = "tokensBefore")]
+    pub tokens_before: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "fromHook")]
+    pub from_hook: Option<bool>,
+}
+
+/// Custom entry for extension-specific data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomEntry {
+    #[serde(flatten)]
+    pub base: SessionEntryBase,
+    #[serde(rename = "customType")]
+    pub custom_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+/// Label entry for bookmarking entries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LabelEntry {
+    #[serde(flatten)]
+    pub base: SessionEntryBase,
+    #[serde(rename = "targetId")]
+    pub target_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// Union of all session entry types.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum SessionEntry {
+    #[serde(rename = "message")]
+    Message(SessionMessageEntry),
+    #[serde(rename = "thinking_level_change")]
+    ThinkingLevelChange(ThinkingLevelChangeEntry),
+    #[serde(rename = "model_change")]
+    ModelChange(ModelChangeEntry),
+    #[serde(rename = "compaction")]
+    Compaction(CompactionEntry),
+    #[serde(rename = "custom")]
+    Custom(CustomEntry),
+    #[serde(rename = "label")]
+    Label(LabelEntry),
+}
+
+impl SessionEntry {
+    fn id(&self) -> &str {
+        match self {
+            SessionEntry::Message(e) => &e.base.id,
+            SessionEntry::ThinkingLevelChange(e) => &e.base.id,
+            SessionEntry::ModelChange(e) => &e.base.id,
+            SessionEntry::Compaction(e) => &e.base.id,
+            SessionEntry::Custom(e) => &e.base.id,
+            SessionEntry::Label(e) => &e.base.id,
+        }
+    }
+
+    fn parent_id(&self) -> Option<&str> {
+        match self {
+            SessionEntry::Message(e) => e.base.parent_id.as_deref(),
+            SessionEntry::ThinkingLevelChange(e) => e.base.parent_id.as_deref(),
+            SessionEntry::ModelChange(e) => e.base.parent_id.as_deref(),
+            SessionEntry::Compaction(e) => e.base.parent_id.as_deref(),
+            SessionEntry::Custom(e) => e.base.parent_id.as_deref(),
+            SessionEntry::Label(e) => e.base.parent_id.as_deref(),
+        }
+    }
+}
+
+/// Manages conversation sessions as append-only trees stored in JSONL files.
+pub struct SessionManager {
+    session_id: String,
+    session_file: PathBuf,
+    /// In-memory index of entries by ID.
+    by_id: HashMap<String, SessionEntry>,
+    /// Current leaf pointer (last entry in current branch).
+    leaf_id: Option<String>,
+}
+
+impl SessionManager {
+    /// Create a new session file with header.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the session file to create
+    /// * `session_id` - UUID for the session
+    /// * `cwd` - Current working directory
+    /// * `parent_session` - Optional parent session path (for forked sessions)
+    ///
+    /// # Returns
+    /// Empty SessionManager with no entries, ready for appending.
+    pub fn create(
+        path: impl AsRef<Path>,
+        session_id: String,
+        cwd: String,
+        parent_session: Option<String>,
+    ) -> Result<Self> {
+        let path = path.as_ref();
+
+        // Create parent directory if needed
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create session directory: {}", parent.display()))?;
+        }
+
+        // Create the file and write header
+        let file = File::create(path)
+            .with_context(|| format!("Failed to create session file: {}", path.display()))?;
+        let mut writer = BufWriter::new(file);
+
+        let header = SessionHeader {
+            typ: "session".to_string(),
+            version: SESSION_VERSION,
+            id: session_id.clone(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            cwd,
+            parent_session,
+        };
+
+        let header_json = serde_json::to_string(&header)
+            .context("Failed to serialize session header")?;
+        writeln!(writer, "{}", header_json)
+            .context("Failed to write session header")?;
+        writer.flush()
+            .context("Failed to flush session file")?;
+
+        Ok(SessionManager {
+            session_id,
+            session_file: path.to_path_buf(),
+            by_id: HashMap::new(),
+            leaf_id: None,
+        })
+    }
+
+    /// Generate a short UUID (8 hex chars) that doesn't collide with existing entries.
+    fn generate_id(&self) -> String {
+        for _ in 0..100 {
+            let id = uuid::Uuid::new_v4().to_string();
+            let short_id = &id[..8];
+            if !self.by_id.contains_key(short_id) {
+                return short_id.to_string();
+            }
+        }
+        // Fallback to full UUID if we somehow have collisions
+        uuid::Uuid::new_v4().to_string()
+    }
+
+    /// Append an entry to the session file and update internal state.
+    fn append_entry(&mut self, entry: SessionEntry) -> Result<String> {
+        let id = entry.id().to_string();
+
+        // Serialize and append to file
+        let entry_json = serde_json::to_string(&entry)
+            .context("Failed to serialize session entry")?;
+
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open(&self.session_file)
+            .with_context(|| format!("Failed to open session file for append: {}", self.session_file.display()))?;
+
+        writeln!(file, "{}", entry_json)
+            .context("Failed to append entry to session file")?;
+
+        // Update internal state
+        self.by_id.insert(id.clone(), entry);
+        self.leaf_id = Some(id.clone());
+
+        Ok(id)
+    }
+
+    /// Append a message as child of current leaf.
+    ///
+    /// # Returns
+    /// The ID of the newly created entry.
+    pub fn append_message(&mut self, message: Message) -> Result<String> {
+        let id = self.generate_id();
+        let entry = SessionEntry::Message(SessionMessageEntry {
+            base: SessionEntryBase {
+                typ: "message".to_string(),
+                id,
+                parent_id: self.leaf_id.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            message,
+        });
+        self.append_entry(entry)
+    }
+
+    /// Append a compaction summary as child of current leaf.
+    ///
+    /// # Arguments
+    /// * `summary` - Human-readable summary of removed messages
+    /// * `first_kept_entry_id` - ID of the first entry kept after compaction
+    /// * `tokens_before` - Token count before compaction
+    /// * `details` - Optional extension-specific metadata
+    /// * `from_hook` - True if generated by an extension
+    ///
+    /// # Returns
+    /// The ID of the newly created entry.
+    pub fn append_compaction(
+        &mut self,
+        summary: String,
+        first_kept_entry_id: String,
+        tokens_before: u64,
+        details: Option<serde_json::Value>,
+        from_hook: Option<bool>,
+    ) -> Result<String> {
+        let id = self.generate_id();
+        let entry = SessionEntry::Compaction(CompactionEntry {
+            base: SessionEntryBase {
+                typ: "compaction".to_string(),
+                id,
+                parent_id: self.leaf_id.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            summary,
+            first_kept_entry_id,
+            tokens_before,
+            details,
+            from_hook,
+        });
+        self.append_entry(entry)
+    }
+
+    /// Append a model change as child of current leaf.
+    ///
+    /// # Returns
+    /// The ID of the newly created entry.
+    pub fn append_model_change(&mut self, provider: String, model_id: String) -> Result<String> {
+        let id = self.generate_id();
+        let entry = SessionEntry::ModelChange(ModelChangeEntry {
+            base: SessionEntryBase {
+                typ: "model_change".to_string(),
+                id,
+                parent_id: self.leaf_id.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            provider,
+            model_id,
+        });
+        self.append_entry(entry)
+    }
+
+    /// Append a thinking level change as child of current leaf.
+    ///
+    /// # Returns
+    /// The ID of the newly created entry.
+    pub fn append_thinking_level_change(&mut self, level: String) -> Result<String> {
+        let id = self.generate_id();
+        let entry = SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
+            base: SessionEntryBase {
+                typ: "thinking_level_change".to_string(),
+                id,
+                parent_id: self.leaf_id.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            thinking_level: level,
+        });
+        self.append_entry(entry)
+    }
+
+    /// Append a custom entry (for extension-specific data) as child of current leaf.
+    ///
+    /// # Returns
+    /// The ID of the newly created entry.
+    pub fn append_custom(
+        &mut self,
+        custom_type: String,
+        payload: Option<serde_json::Value>,
+    ) -> Result<String> {
+        let id = self.generate_id();
+        let entry = SessionEntry::Custom(CustomEntry {
+            base: SessionEntryBase {
+                typ: "custom".to_string(),
+                id,
+                parent_id: self.leaf_id.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            custom_type,
+            data: payload,
+        });
+        self.append_entry(entry)
+    }
+
+    /// Append a label entry as child of current leaf.
+    ///
+    /// # Arguments
+    /// * `target_id` - ID of the entry to label
+    /// * `label` - Label text, or None to clear the label
+    ///
+    /// # Returns
+    /// The ID of the newly created entry.
+    pub fn append_label(&mut self, target_id: String, label: Option<String>) -> Result<String> {
+        // Verify target exists
+        if !self.by_id.contains_key(&target_id) {
+            anyhow::bail!("Entry {} not found", target_id);
+        }
+
+        let id = self.generate_id();
+        let entry = SessionEntry::Label(LabelEntry {
+            base: SessionEntryBase {
+                typ: "label".to_string(),
+                id,
+                parent_id: self.leaf_id.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            target_id,
+            label,
+        });
+        self.append_entry(entry)
+    }
+
+    /// Get the current leaf ID.
+    pub fn leaf_id(&self) -> Option<&str> {
+        self.leaf_id.as_deref()
+    }
+
+    /// Get the session ID.
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    /// Get the session file path.
+    pub fn session_file(&self) -> &Path {
+        &self.session_file
+    }
+}

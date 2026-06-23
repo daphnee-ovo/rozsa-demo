@@ -9,11 +9,16 @@ license = "MIT"
 rozsa-model = { path = "../rozsa-model" }
 rozsa-core = { path = "../rozsa-core" }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.11"
 
 [[test]]
 name = "unit_app_model_registry"
