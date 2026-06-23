@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@earendil-works/rozsa-agent-core";
+import { Agent, type AgentLoopBackend, type AgentMessage, type ThinkingLevel } from "@earendil-works/rozsa-agent-core";
+import { resolveAgentLoopBackend } from "@earendil-works/rozsa-agent-core/node";
 import type { Message, Model } from "@earendil-works/rozsa-model-types";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -81,6 +82,8 @@ export interface CreateAgentSessionOptions {
 	sessionStartEvent?: SessionStartEvent;
 	/** 干跑模式：写操作 (bash/edit/write) 仅预览不执行 */
 	dryRun?: boolean;
+	/** Agent loop backend. Default: resolved from ROZSA_CORE_BACKEND env var. */
+	backend?: AgentLoopBackend;
 }
 
 /** Result from createAgentSession */
@@ -339,6 +342,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	agent = new Agent({
+		backend: options.backend ?? resolveAgentLoopBackend(),
 		initialState: {
 			systemPrompt: "",
 			model,

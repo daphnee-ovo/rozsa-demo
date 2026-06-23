@@ -1,0 +1,1009 @@
+use crate::agent_loop::*;
+use crate::config::{AgentContext, AgentLoopConfig, TurnUpdate};
+use crate::events::AgentEvent;
+use crate::messages::AgentMessage;
+use crate::tool::{Tool, ToolError, ToolExecutionMode, ToolResult};
+use rozsa_model::event_stream::{EventStream, create_event_stream};
+use rozsa_model::types::{
+    Api, CacheRetention, ContentBlock, InputModality, Message, ModelCost, Provider,
+    SimpleStreamOptions, StopReason, StreamEvent, StreamOptions, ToolCall, Transport, Usage,
+    UsageCost, UserContent, UserMessage,
+};
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
+
+fn config_with_stream(
+    make_stream: impl Fn() -> EventStream<StreamEvent> + Send + Sync + 'static,
+) -> AgentLoopConfig {
+    AgentLoopConfig {
+        model: model(),
+        reasoning: None,
+        stream_options: stream_options(),
+        model_stream: Box::new(move |_model, _context, _options| make_stream()),
+        convert_to_llm: Box::new(|messages| {
+            messages
+                .iter()
+                .filter_map(AgentMessage::as_standard)
+                .cloned()
+                .collect()
+        }),
+        transform_context: None,
+        get_api_key: None,
+        should_stop_after_turn: None,
+        prepare_next_turn: None,
+        get_steering_messages: None,
+        get_follow_up_messages: None,
+        tool_execution: ToolExecutionMode::Sequential,
+        before_tool_call: None,
+        after_tool_call: None,
+        tools: vec![],
+    }
+}
+
+fn empty_context() -> AgentContext {
+    AgentContext {
+        system_prompt: Some("system".to_string()),
+        messages: Vec::new(),
+        tools: Vec::new(),
+    }
+}
+
+fn assistant_message(content: Vec<ContentBlock>) -> rozsa_model::types::AssistantMessage {
+    rozsa_model::types::AssistantMessage {
+        content,
+        api: Api::OpenAIResponses,
+        provider: Provider::OpenAI,
+        model: "mock".to_string(),
+        response_model: None,
+        response_id: None,
+        usage: Usage {
+            input: 0,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+            total_tokens: 0,
+            cost: UsageCost {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+                total: 0.0,
+            },
+        },
+        stop_reason: StopReason::Stop,
+        error_message: None,
+        timestamp: 1,
+    }
+}
+
+fn model() -> rozsa_model::types::Model {
+    rozsa_model::types::Model {
+        id: "mock".to_string(),
+        name: "mock".to_string(),
+        api: Api::OpenAIResponses,
+        provider: Provider::OpenAI,
+        base_url: "https://example.invalid".to_string(),
+        reasoning: false,
+        input_modalities: vec![InputModality::Text],
+        cost: ModelCost {
+            input: 0.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+        },
+        context_window: 8192,
+        max_tokens: 2048,
+        thinking_level_map: None,
+        headers: None,
+        compat: None,
+    }
+}
+
+fn stream_options() -> SimpleStreamOptions {
+    SimpleStreamOptions {
+        base: StreamOptions {
+            temperature: None,
+            max_tokens: None,
+            api_key: None,
+            transport: Transport::Sse,
+            cache_retention: CacheRetention::None,
+            session_id: None,
+            headers: None,
+            timeout_ms: None,
+            max_retries: None,
+            max_retry_delay_ms: None,
+            metadata: None,
+        },
+        reasoning: None,
+        thinking_budgets: None,
+        tool_choice: None,
+    }
+}
+
+fn event_name(event: &AgentEvent) -> &'static str {
+    match event {
+        AgentEvent::AgentStart => "agent_start",
+        AgentEvent::AgentEnd { .. } => "agent_end",
+        AgentEvent::TurnStart => "turn_start",
+        AgentEvent::TurnEnd { .. } => "turn_end",
+        AgentEvent::MessageStart { .. } => "message_start",
+        AgentEvent::MessageUpdate { .. } => "message_update",
+        AgentEvent::MessageEnd { .. } => "message_end",
+        AgentEvent::ToolExecutionStart { .. } => "tool_execution_start",
+        AgentEvent::ToolExecutionUpdate { .. } => "tool_execution_update",
+        AgentEvent::ToolExecutionEnd { .. } => "tool_execution_end",
+    }
+}
+
+struct FakeTool {
+    name: String,
+    response: String,
+    schema: serde_json::Value,
+}
+
+#[async_trait::async_trait]
+impl Tool for FakeTool {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> &str {
+        "fake tool"
+    }
+    fn label(&self) -> &str {
+        "fake"
+    }
+    fn parameters_schema(&self) -> &serde_json::Value {
+        &self.schema
+    }
+    async fn execute(
+        &self,
+        _tool_call_id: &str,
+        _params: serde_json::Value,
+        _signal: Option<CancellationToken>,
+        _on_update: Option<&(dyn Fn(ToolResult) + Send + Sync)>,
+    ) -> Result<ToolResult, ToolError> {
+        Ok(ToolResult {
+            content: vec![ContentBlock::Text {
+                text: self.response.clone(),
+                signature: None,
+            }],
+            details: serde_json::Value::Null,
+            terminate: false,
+        })
+    }
+}
+
+fn assistant_agent_message(
+    message: rozsa_model::types::AssistantMessage,
+) -> AgentMessage {
+    AgentMessage::standard(Message::Assistant(message))
+}
+
+#[tokio::test]
+async fn no_tool_prompt_loop_emits_core_event_order() {
+    let final_message = assistant_message(vec![ContentBlock::Text {
+        text: "hi".to_string(),
+        signature: None,
+    }]);
+    let final_for_stream = final_message.clone();
+    let config = config_with_stream(move || {
+        let (sender, stream) = create_event_stream();
+        let message = final_for_stream.clone();
+        tokio::spawn(async move {
+            sender.push(StreamEvent::Start {
+                partial: assistant_message(Vec::new()),
+            });
+            sender.push(StreamEvent::TextDelta {
+                content_index: 0,
+                delta: "hi".to_string(),
+                partial: message.clone(),
+            });
+            sender.push(StreamEvent::Done {
+                reason: StopReason::Stop,
+                message,
+            });
+        });
+        stream
+    });
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    assert_eq!(
+        events.iter().map(event_name).collect::<Vec<_>>(),
+        vec![
+            "agent_start",
+            "turn_start",
+            "message_start",
+            "message_end",
+            "message_start",
+            "message_update",
+            "message_end",
+            "turn_end",
+            "agent_end",
+        ]
+    );
+    let AgentEvent::TurnEnd {
+        message,
+        tool_results,
+    } = &events[7]
+    else {
+        panic!("expected turn_end");
+    };
+    assert_eq!(message.content.len(), 1);
+    assert!(tool_results.is_empty());
+}
+
+#[test]
+fn core_events_are_json_serializable() {
+    let event = AgentEvent::MessageEnd {
+        message: AgentMessage::standard(Message::Assistant(assistant_message(Vec::new()))),
+    };
+    let encoded = serde_json::to_value(event).expect("serialize event");
+    assert_eq!(encoded["type"], "message_end");
+    assert_eq!(encoded["message"]["kind"], "standard");
+}
+
+#[tokio::test]
+async fn steering_messages_injected_before_assistant_response() {
+    use std::sync::Mutex;
+    let steering_count = Arc::new(Mutex::new(0));
+    let steering_count_clone = steering_count.clone();
+
+    let config = {
+        let mut base = config_with_stream(|| {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![ContentBlock::Text {
+                text: "response".to_string(),
+                signature: None,
+            }]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.get_steering_messages = Some(Box::new(move || {
+            let mut count = steering_count_clone.lock().unwrap();
+            *count += 1;
+            if *count == 1 {
+                vec![AgentMessage::standard(Message::User(UserMessage {
+                    content: UserContent::Text("steering message".to_string()),
+                    display_text: None,
+                    timestamp: 2,
+                }))]
+            } else {
+                vec![]
+            }
+        }));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    assert!(*steering_count.lock().unwrap() >= 1);
+
+    let mut found_steering = false;
+    let mut found_assistant = false;
+    for event in &events {
+        if let AgentEvent::MessageEnd { message } = event {
+            if let Some(Message::User(u)) = message.as_standard() {
+                if matches!(u.content, UserContent::Text(ref s) if s == "steering message") {
+                    found_steering = true;
+                }
+            }
+            if let Some(Message::Assistant(_)) = message.as_standard() {
+                assert!(found_steering, "steering message should appear before assistant");
+                found_assistant = true;
+            }
+        }
+    }
+    assert!(found_steering && found_assistant);
+}
+
+#[tokio::test]
+async fn follow_up_messages_trigger_new_turn() {
+    use std::sync::Mutex;
+    let follow_up_count = Arc::new(Mutex::new(0));
+    let follow_up_count_clone = follow_up_count.clone();
+    let turn_count = Arc::new(Mutex::new(0));
+    let turn_count_clone = turn_count.clone();
+
+    let config = {
+        let mut base = config_with_stream(move || {
+            let (sender, stream) = create_event_stream();
+            let turn_num = {
+                let mut count = turn_count_clone.lock().unwrap();
+                *count += 1;
+                *count
+            };
+            let text = format!("response {}", turn_num);
+            let message = assistant_message(vec![ContentBlock::Text {
+                text,
+                signature: None,
+            }]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.get_follow_up_messages = Some(Box::new(move || {
+            let mut count = follow_up_count_clone.lock().unwrap();
+            *count += 1;
+            if *count == 1 {
+                vec![AgentMessage::standard(Message::User(UserMessage {
+                    content: UserContent::Text("follow-up".to_string()),
+                    display_text: None,
+                    timestamp: 3,
+                }))]
+            } else {
+                vec![]
+            }
+        }));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let event_names: Vec<_> = events.iter().map(event_name).collect();
+    let turn_starts = event_names.iter().filter(|&&n| n == "turn_start").count();
+    assert_eq!(turn_starts, 2, "should have 2 turns due to follow-up");
+    assert_eq!(*turn_count.lock().unwrap(), 2);
+}
+
+#[tokio::test]
+async fn follow_up_empty_agent_ends_normally() {
+    use std::sync::Mutex;
+    let follow_up_count = Arc::new(Mutex::new(0));
+    let follow_up_count_clone = follow_up_count.clone();
+
+    let config = {
+        let mut base = config_with_stream(|| {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![ContentBlock::Text {
+                text: "response".to_string(),
+                signature: None,
+            }]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.get_follow_up_messages = Some(Box::new(move || {
+            let mut count = follow_up_count_clone.lock().unwrap();
+            *count += 1;
+            vec![]
+        }));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let event_names: Vec<_> = events.iter().map(event_name).collect();
+    assert!(event_names.contains(&"agent_end"));
+    assert_eq!(*follow_up_count.lock().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn should_stop_after_turn_ends_agent() {
+    let config = {
+        let mut base = config_with_stream(|| {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![ContentBlock::Text {
+                text: "response".to_string(),
+                signature: None,
+            }]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.should_stop_after_turn = Some(Box::new(|_ctx| true));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let event_names: Vec<_> = events.iter().map(event_name).collect();
+    assert!(event_names.contains(&"agent_end"));
+    let turn_ends = event_names.iter().filter(|&&n| n == "turn_end").count();
+    assert_eq!(turn_ends, 1, "should have exactly one turn before stopping");
+}
+
+#[tokio::test]
+async fn prepare_next_turn_updates_model() {
+    use std::sync::Mutex;
+    let prepare_count = Arc::new(Mutex::new(0));
+    let prepare_count_clone = prepare_count.clone();
+    let prepare_count_clone2 = prepare_count.clone();
+    let initial_model_id = Arc::new(Mutex::new(String::from("mock")));
+    let model_id_for_check = initial_model_id.clone();
+
+    let config = {
+        let mut base = config_with_stream(move || {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![ContentBlock::Text {
+                text: "response".to_string(),
+                signature: None,
+            }]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.prepare_next_turn = Some(Box::new(move |_ctx| {
+            let mut count = prepare_count_clone.lock().unwrap();
+            *count += 1;
+            if *count == 1 {
+                let mut new_model = model();
+                new_model.id = "updated-model".to_string();
+                *model_id_for_check.lock().unwrap() = new_model.id.clone();
+                Some(TurnUpdate {
+                    context: None,
+                    model: Some(new_model),
+                    thinking_level: None,
+                })
+            } else {
+                None
+            }
+        }));
+        base.get_follow_up_messages = Some(Box::new(move || {
+            let count = prepare_count_clone2.lock().unwrap();
+            if *count == 1 {
+                vec![AgentMessage::standard(Message::User(UserMessage {
+                    content: UserContent::Text("continue".to_string()),
+                    display_text: None,
+                    timestamp: 3,
+                }))]
+            } else {
+                vec![]
+            }
+        }));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    assert_eq!(*prepare_count.lock().unwrap(), 2, "prepare_next_turn should be called twice");
+    assert_eq!(*initial_model_id.lock().unwrap(), "updated-model");
+}
+
+#[tokio::test]
+async fn multi_turn_with_tools() {
+    let tool = Arc::new(FakeTool {
+        name: "test_tool".to_string(),
+        response: "tool result".to_string(),
+        schema: serde_json::json!({ "type": "object" }),
+    }) as Arc<dyn Tool>;
+
+    use std::sync::Mutex;
+    let call_count = Arc::new(Mutex::new(0));
+    let call_count_clone = call_count.clone();
+
+    let config = {
+        let mut base = config_with_stream(move || {
+            let (sender, stream) = create_event_stream();
+            let mut count = call_count_clone.lock().unwrap();
+            *count += 1;
+            let turn = *count;
+
+            let message = if turn == 1 {
+                assistant_message(vec![ContentBlock::ToolCall(ToolCall {
+                    id: "call1".to_string(),
+                    name: "test_tool".to_string(),
+                    arguments: serde_json::json!({}),
+                })])
+            } else {
+                assistant_message(vec![ContentBlock::Text {
+                    text: "final response".to_string(),
+                    signature: None,
+                }])
+            };
+
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.tools = vec![tool];
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let event_names: Vec<_> = events.iter().map(event_name).collect();
+    assert!(event_names.contains(&"tool_execution_start"));
+    assert!(event_names.contains(&"tool_execution_end"));
+
+    let turn_starts = event_names.iter().filter(|&&n| n == "turn_start").count();
+    assert_eq!(turn_starts, 2, "should have 2 turns: tool call then final response");
+
+    let mut found_tool_result = false;
+    for event in &events {
+        if let AgentEvent::MessageEnd { message } = event {
+            if let Some(Message::ToolResult(_)) = message.as_standard() {
+                found_tool_result = true;
+            }
+        }
+    }
+    assert!(found_tool_result, "tool result should appear in messages");
+}
+
+#[tokio::test]
+async fn continue_empty_context_emits_agent_end_immediately() {
+    let context = empty_context();
+    let config = config_with_stream(|| {
+        panic!("should not stream");
+    });
+    let mut stream = agent_loop_continue(context, config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+    assert_eq!(
+        events.iter().map(event_name).collect::<Vec<_>>(),
+        vec!["agent_start", "agent_end"]
+    );
+}
+
+#[tokio::test]
+async fn continue_last_message_assistant_emits_agent_end_immediately() {
+    let mut context = empty_context();
+    context.messages.push(assistant_agent_message(assistant_message(vec![
+        ContentBlock::Text {
+            text: "hi".to_string(),
+            signature: None,
+        },
+    ])));
+    let config = config_with_stream(|| {
+        panic!("should not stream");
+    });
+    let mut stream = agent_loop_continue(context, config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+    assert_eq!(
+        events.iter().map(event_name).collect::<Vec<_>>(),
+        vec!["agent_start", "agent_end"]
+    );
+}
+
+#[tokio::test]
+async fn continue_valid_last_user_message_streams_response() {
+    let mut context = empty_context();
+    context.messages.push(AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    })));
+    let config = config_with_stream(|| {
+        let (sender, stream) = create_event_stream();
+        let message = assistant_message(vec![ContentBlock::Text {
+            text: "response".to_string(),
+            signature: None,
+        }]);
+        tokio::spawn(async move {
+            sender.push(StreamEvent::Start {
+                partial: assistant_message(Vec::new()),
+            });
+            sender.push(StreamEvent::Done {
+                reason: StopReason::Stop,
+                message,
+            });
+        });
+        stream
+    });
+    let mut stream = agent_loop_continue(context, config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+    let names: Vec<_> = events.iter().map(event_name).collect();
+    assert!(names.contains(&"message_end"));
+    assert!(names.contains(&"agent_end"));
+}
+
+#[tokio::test]
+async fn unknown_tool_returns_error_result() {
+    let config = {
+        let mut base = config_with_stream(|| {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![ContentBlock::ToolCall(ToolCall {
+                id: "call1".to_string(),
+                name: "nonexistent".to_string(),
+                arguments: serde_json::json!({}),
+            })]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.should_stop_after_turn = Some(Box::new(|_| true));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let mut found_error_result = false;
+    for event in &events {
+        if let AgentEvent::ToolExecutionEnd { result, .. } = event {
+            if result.is_error {
+                found_error_result = true;
+            }
+        }
+    }
+    assert!(found_error_result, "unknown tool should produce error result");
+}
+
+#[tokio::test]
+async fn before_tool_call_blocks_tool() {
+    let tool = Arc::new(FakeTool {
+        name: "test_tool".to_string(),
+        response: "should not see this".to_string(),
+        schema: serde_json::json!({ "type": "object" }),
+    }) as Arc<dyn Tool>;
+
+    let config = {
+        let mut base = config_with_stream(|| {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![ContentBlock::ToolCall(ToolCall {
+                id: "call1".to_string(),
+                name: "test_tool".to_string(),
+                arguments: serde_json::json!({}),
+            })]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.tools = vec![tool];
+        base.before_tool_call = Some(Box::new(|_ctx| {
+            Some(crate::config::BeforeToolCallResult {
+                block: true,
+                reason: Some("Permission denied".to_string()),
+            })
+        }));
+        base.should_stop_after_turn = Some(Box::new(|_| true));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let mut found_blocked = false;
+    for event in &events {
+        if let AgentEvent::ToolExecutionEnd { result, .. } = event {
+            if result.is_error {
+                let has_deny_text = result
+                    .content
+                    .iter()
+                    .any(|b| matches!(b, ContentBlock::Text { text, .. } if text.contains("Permission denied")));
+                if has_deny_text {
+                    found_blocked = true;
+                }
+            }
+        }
+    }
+    assert!(found_blocked, "blocked tool should produce error with reason");
+}
+
+#[tokio::test]
+async fn after_tool_call_overrides_result() {
+    let tool = Arc::new(FakeTool {
+        name: "test_tool".to_string(),
+        response: "original result".to_string(),
+        schema: serde_json::json!({ "type": "object" }),
+    }) as Arc<dyn Tool>;
+
+    let config = {
+        let mut base = config_with_stream(|| {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![ContentBlock::ToolCall(ToolCall {
+                id: "call1".to_string(),
+                name: "test_tool".to_string(),
+                arguments: serde_json::json!({}),
+            })]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.tools = vec![tool];
+        base.after_tool_call = Some(Box::new(|_ctx| {
+            Some(crate::config::AfterToolCallResult {
+                content: Some(vec![ContentBlock::Text {
+                    text: "overridden".to_string(),
+                    signature: None,
+                }]),
+                is_error: None,
+                terminate: Some(true),
+            })
+        }));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let mut found_override = false;
+    for event in &events {
+        if let AgentEvent::ToolExecutionEnd { result, .. } = event {
+            let has_override = result
+                .content
+                .iter()
+                .any(|b| matches!(b, ContentBlock::Text { text, .. } if text == "overridden"));
+            if has_override {
+                found_override = true;
+            }
+        }
+    }
+    assert!(found_override, "after_tool_call should override result content");
+}
+
+#[tokio::test]
+async fn all_tools_terminate_ends_tool_loop() {
+    struct TerminateTool {
+        schema: serde_json::Value,
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for TerminateTool {
+        fn name(&self) -> &str { "term_tool" }
+        fn description(&self) -> &str { "terminates" }
+        fn label(&self) -> &str { "term" }
+        fn parameters_schema(&self) -> &serde_json::Value { &self.schema }
+        async fn execute(
+            &self,
+            _tool_call_id: &str,
+            _params: serde_json::Value,
+            _signal: Option<CancellationToken>,
+            _on_update: Option<&(dyn Fn(ToolResult) + Send + Sync)>,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult {
+                content: vec![ContentBlock::Text {
+                    text: "done".to_string(),
+                    signature: None,
+                }],
+                details: serde_json::Value::Null,
+                terminate: true,
+            })
+        }
+    }
+
+    use std::sync::Mutex;
+    let stream_count = Arc::new(Mutex::new(0));
+    let stream_count_clone = stream_count.clone();
+    let tool: Arc<dyn Tool> = Arc::new(TerminateTool {
+        schema: serde_json::json!({ "type": "object" }),
+    });
+
+    let config = {
+        let mut base = config_with_stream(move || {
+            let (sender, stream) = create_event_stream();
+            let mut count = stream_count_clone.lock().unwrap();
+            *count += 1;
+            let message = assistant_message(vec![ContentBlock::ToolCall(ToolCall {
+                id: "call1".to_string(),
+                name: "term_tool".to_string(),
+                arguments: serde_json::json!({}),
+            })]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.tools = vec![tool];
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    assert_eq!(
+        *stream_count.lock().unwrap(),
+        1,
+        "terminate=true should stop tool loop, so only 1 model call"
+    );
+}
+
+#[tokio::test]
+async fn error_stop_reason_exits_immediately() {
+    let config = config_with_stream(|| {
+        let (sender, stream) = create_event_stream();
+        let mut message = assistant_message(vec![ContentBlock::Text {
+            text: "error occurred".to_string(),
+            signature: None,
+        }]);
+        message.stop_reason = StopReason::Error;
+        message.error_message = Some("rate limit".to_string());
+        tokio::spawn(async move {
+            sender.push(StreamEvent::Error {
+                reason: StopReason::Error,
+                error: message,
+            });
+        });
+        stream
+    });
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let names: Vec<_> = events.iter().map(event_name).collect();
+    assert!(names.contains(&"turn_end"));
+    assert!(names.contains(&"agent_end"));
+    assert_eq!(
+        names.iter().filter(|&&n| n == "turn_start").count(),
+        1,
+        "should have only one turn"
+    );
+}

@@ -7,7 +7,7 @@ import type {
 	ThinkingBudgets,
 	Transport,
 } from "@earendil-works/rozsa-model-types";
-import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
+import { type AgentLoopBackend, TsAgentLoopBackend } from "./backend.ts";
 import { missingModelStream } from "./missing-model-stream.ts";
 import type {
 	AfterToolCallContext,
@@ -27,6 +27,9 @@ import type {
 } from "./types.ts";
 
 export type { QueueMode } from "./types.ts";
+
+/** Default backend singleton — uses the TS-native agent loop. */
+const DEFAULT_BACKEND = new TsAgentLoopBackend();
 
 function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
 	return messages.filter(
@@ -113,6 +116,14 @@ export interface AgentOptions {
 	transport?: Transport;
 	maxRetryDelayMs?: number;
 	toolExecution?: ToolExecutionMode;
+	/**
+	 * Backend implementation for the agent loop.
+	 * Defaults to TsAgentLoopBackend (existing TS-native implementation).
+	 * Set to RustAgentLoopBackend to use the Rust bridge.
+	 *
+	 * Can also be controlled via ROZSA_CORE_BACKEND env var ("ts" or "rust").
+	 */
+	backend?: AgentLoopBackend;
 }
 
 class PendingMessageQueue {
@@ -197,6 +208,8 @@ export class Agent {
 	public maxRetryDelayMs?: number;
 	/** Tool execution strategy for assistant messages that contain multiple tool calls. */
 	public toolExecution: ToolExecutionMode;
+	/** Backend implementation for the agent loop. */
+	private readonly backend: AgentLoopBackend;
 
 	constructor(options: AgentOptions = {}) {
 		this._state = createMutableAgentState(options.initialState);
@@ -216,6 +229,7 @@ export class Agent {
 		this.transport = options.transport ?? "auto";
 		this.maxRetryDelayMs = options.maxRetryDelayMs;
 		this.toolExecution = options.toolExecution ?? "parallel";
+		this.backend = options.backend ?? DEFAULT_BACKEND;
 	}
 
 	/**
@@ -388,7 +402,7 @@ export class Agent {
 		options: { skipInitialSteeringPoll?: boolean } = {},
 	): Promise<void> {
 		await this.runWithLifecycle(async (signal) => {
-			await runAgentLoop(
+			await this.backend.runPrompt(
 				messages,
 				this.createContextSnapshot(),
 				this.createLoopConfig(options),
@@ -401,7 +415,7 @@ export class Agent {
 
 	private async runContinuation(): Promise<void> {
 		await this.runWithLifecycle(async (signal) => {
-			await runAgentLoopContinue(
+			await this.backend.runContinue(
 				this.createContextSnapshot(),
 				this.createLoopConfig(),
 				(event) => this.processEvents(event),

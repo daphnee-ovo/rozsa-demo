@@ -128,7 +128,8 @@ function eventSignature(event: AgentEvent): string {
 		return `${event.type}:${event.toolCallId}:${event.toolName}:${String(event.isError)}`;
 	}
 	if (event.type === "turn_end") {
-		return `${event.type}:${event.message.stopReason}:${event.toolResults.map((result) => result.toolCallId).join(",")}`;
+		const msg = event.message as { stopReason?: string };
+		return `${event.type}:${msg.stopReason ?? ""}:${event.toolResults.map((result) => result.toolCallId).join(",")}`;
 	}
 	return event.type;
 }
@@ -196,9 +197,9 @@ describe("agent loop parity fixtures", () => {
 			label: "Echo",
 			description: "Echo tool",
 			parameters: toolSchema,
-			async execute() {
+			async execute(_toolCallId: string, _params: { value: string }) {
 				executed = true;
-				return { content: [{ type: "text", text: "unused" }], details: {} };
+				return { content: [{ type: "text", text: "unused" }], details: { value: "" } };
 			},
 		};
 		let callIndex = 0;
@@ -291,8 +292,8 @@ describe("agent loop parity fixtures", () => {
 			label: "Exit",
 			description: "Exit tool",
 			parameters: toolSchema,
-			async execute() {
-				return { content: [{ type: "text", text: "terminated" }], details: {}, terminate: true };
+			async execute(_toolCallId: string, _params: { value: string }) {
+				return { content: [{ type: "text", text: "terminated" }], details: { value: "" }, terminate: true };
 			},
 		};
 		let modelCalls = 0;

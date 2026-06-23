@@ -102,7 +102,7 @@ wait_for_llama_server() {
 
 trap cleanup_llama_server EXIT
 
-cargo build -p rozsa-tui -p rozsa-model -p rozsa-app
+cargo build -p rozsa-tui -p rozsa-model -p rozsa-app -p rozsa-core
 clear
 
 if [ ! -x "node_modules/.bin/tsx" ]; then
@@ -121,4 +121,6 @@ ROZSA_APP_BINARY="${ROZSA_APP_BINARY:-$PWD/target/debug/rozsa-app}" \
 ROZSA_MODEL_REGISTRY_BACKEND="${ROZSA_MODEL_REGISTRY_BACKEND:-rust}" \
 ROZSA_MODEL_BINARY="${ROZSA_MODEL_BINARY:-$PWD/target/debug/rozsa-model}" \
 ROZSA_MODEL_BACKEND="${ROZSA_MODEL_BACKEND:-rust}" \
+ROZSA_CORE_BINARY="${ROZSA_CORE_BINARY:-$PWD/target/debug/rozsa-core}" \
+ROZSA_CORE_BACKEND="${ROZSA_CORE_BACKEND:-ts}" \
 target/debug/rozsa-tui

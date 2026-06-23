@@ -1,5 +1,7 @@
 // Core Agent
 export * from "./agent.ts";
+// Backend abstraction
+export * from "./backend.ts";
 // Loop functions
 export * from "./agent-loop.ts";
 export * from "./event-stream.ts";

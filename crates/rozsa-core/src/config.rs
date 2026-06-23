@@ -1,11 +1,12 @@
 use crate::messages::AgentMessage;
-use crate::tool::ToolExecutionMode;
+use crate::tool::{Tool, ToolExecutionMode};
 use rozsa_model::event_stream::EventStream;
 use rozsa_model::types::{
     Context as ModelContext, Message, Model, SimpleStreamOptions, StreamEvent, ThinkingLevel,
     ToolSchema,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 pub type ModelStreamFn = Box<
     dyn Fn(&Model, &ModelContext, &SimpleStreamOptions) -> EventStream<StreamEvent> + Send + Sync,
@@ -20,6 +21,7 @@ pub struct AgentContext {
 
 pub struct AgentLoopConfig {
     pub model: Model,
+    pub reasoning: Option<ThinkingLevel>,
     pub stream_options: SimpleStreamOptions,
     pub model_stream: ModelStreamFn,
     pub convert_to_llm: Box<dyn Fn(&[AgentMessage]) -> Vec<Message> + Send + Sync>,
@@ -35,25 +37,31 @@ pub struct AgentLoopConfig {
         Option<Box<dyn Fn(&BeforeToolCallContext) -> Option<BeforeToolCallResult> + Send + Sync>>,
     pub after_tool_call:
         Option<Box<dyn Fn(&AfterToolCallContext) -> Option<AfterToolCallResult> + Send + Sync>>,
+    pub tools: Vec<Arc<dyn Tool>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ShouldStopContext {
     pub message: rozsa_model::types::AssistantMessage,
     pub tool_results: Vec<rozsa_model::types::ToolResultMessage>,
+    pub context: AgentContext,
     pub new_messages: Vec<AgentMessage>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TurnUpdate {
+    pub context: Option<AgentContext>,
     pub model: Option<Model>,
     pub thinking_level: Option<ThinkingLevel>,
 }
 
 #[derive(Debug, Clone)]
 pub struct BeforeToolCallContext {
+    pub assistant_message: rozsa_model::types::AssistantMessage,
+    pub tool_call_id: String,
     pub tool_name: String,
     pub args: serde_json::Value,
+    pub context: AgentContext,
 }
 
 #[derive(Debug, Clone)]
@@ -64,10 +72,13 @@ pub struct BeforeToolCallResult {
 
 #[derive(Debug, Clone)]
 pub struct AfterToolCallContext {
+    pub assistant_message: rozsa_model::types::AssistantMessage,
+    pub tool_call_id: String,
     pub tool_name: String,
     pub args: serde_json::Value,
     pub result: crate::tool::ToolResult,
     pub is_error: bool,
+    pub context: AgentContext,
 }
 
 #[derive(Debug, Clone)]

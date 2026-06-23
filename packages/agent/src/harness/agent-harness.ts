@@ -1,5 +1,5 @@
 import type { AssistantMessage, ImageContent, Model, UserMessage } from "@earendil-works/rozsa-model-types";
-import { runAgentLoop } from "../agent-loop.ts";
+import { type AgentLoopBackend, TsAgentLoopBackend } from "../backend.ts";
 import { missingModelStream } from "../missing-model-stream.ts";
 import type {
 	AgentContext,
@@ -172,6 +172,7 @@ export class AgentHarness<
 	private systemPrompt: AgentHarnessOptions<TSkill, TPromptTemplate, TTool>["systemPrompt"];
 	private streamOptions: AgentHarnessStreamOptions;
 	private streamFn?: StreamFn;
+	private backend: AgentLoopBackend;
 	private getApiKeyAndHeaders?: AgentHarnessOptions["getApiKeyAndHeaders"];
 	private resources: AgentHarnessResources<TSkill, TPromptTemplate>;
 	private tools = new Map<string, TTool>();
@@ -189,6 +190,7 @@ export class AgentHarness<
 		this.resources = options.resources ?? {};
 		this.streamOptions = cloneStreamOptions(options.streamOptions);
 		this.streamFn = options.streamFn;
+		this.backend = options.backend ?? new TsAgentLoopBackend();
 		this.systemPrompt = options.systemPrompt;
 		this.getApiKeyAndHeaders = options.getApiKeyAndHeaders;
 		for (const tool of options.tools ?? []) {
@@ -555,11 +557,11 @@ export class AgentHarness<
 		this.runAbortController = abortController;
 		const runResultPromise = (async () => {
 			try {
-				return await runAgentLoop(
+				return await this.backend.runPrompt(
 					messages,
 					this.createContext(turnState, beforeResult?.systemPrompt),
 					this.createLoopConfig(getTurnState, setTurnState),
-					(event) => this.handleAgentEvent(event, abortController.signal),
+					(event: AgentEvent) => this.handleAgentEvent(event, abortController.signal),
 					abortController.signal,
 					this.createStreamFn(getTurnState),
 				);

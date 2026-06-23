@@ -36,12 +36,12 @@ pub enum AgentEvent {
     ToolExecutionUpdate {
         tool_call_id: String,
         tool_name: String,
+        args: serde_json::Value,
         partial_result: ToolResult,
     },
     ToolExecutionEnd {
         tool_call_id: String,
         tool_name: String,
-        result: ToolResult,
-        is_error: bool,
+        result: ToolResultMessage,
     },
 }

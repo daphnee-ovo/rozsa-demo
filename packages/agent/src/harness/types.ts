@@ -808,6 +808,8 @@ export interface AgentHarnessOptions<
 	streamOptions?: AgentHarnessStreamOptions;
 	/** Optional model stream function. Node callers can inject the Rust-backed stream boundary. */
 	streamFn?: StreamFn;
+	/** Agent loop backend. When omitted, uses TsAgentLoopBackend (TS-native loop). */
+	backend?: import("../backend.ts").AgentLoopBackend;
 	model: Model<any>;
 	thinkingLevel?: ThinkingLevel;
 	activeToolNames?: string[];
