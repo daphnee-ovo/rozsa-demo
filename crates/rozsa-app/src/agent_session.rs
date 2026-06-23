@@ -293,11 +293,13 @@ impl AgentSession {
             level => Some(level),
         };
 
+        let api_key = resolve_api_key(&model);
+
         let stream_options = SimpleStreamOptions {
             base: StreamOptions {
                 temperature: None,
                 max_tokens: Some(model.max_tokens),
-                api_key: None,
+                api_key,
                 transport: Transport::Auto,
                 cache_retention: CacheRetention::Short,
                 session_id: Some(
@@ -405,6 +407,26 @@ async fn collect_events(mut stream: EventStream<AgentEvent>) -> Vec<AgentEvent> 
         events.push(event);
     }
     events
+}
+
+/// Resolve API key for a model from environment variables.
+fn resolve_api_key(model: &Model) -> Option<String> {
+    use rozsa_model::types::Provider;
+    let env_var = match &model.provider {
+        Provider::Anthropic => "ANTHROPIC_API_KEY",
+        Provider::OpenAI => "OPENAI_API_KEY",
+        Provider::Google | Provider::GoogleVertex => "GOOGLE_API_KEY",
+        Provider::DeepSeek => "DEEPSEEK_API_KEY",
+        Provider::OpenRouter => "OPENROUTER_API_KEY",
+        Provider::XAI => "XAI_API_KEY",
+        Provider::Groq => "GROQ_API_KEY",
+        Provider::Mistral => "MISTRAL_API_KEY",
+        Provider::Together => "TOGETHER_API_KEY",
+        Provider::HuggingFace => "HF_TOKEN",
+        Provider::Custom(_) => return std::env::var("LLM_API_KEY").ok(),
+        _ => return None,
+    };
+    std::env::var(env_var).ok()
 }
 
 /// Current timestamp in milliseconds since UNIX epoch.

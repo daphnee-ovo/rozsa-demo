@@ -13,6 +13,8 @@ use rozsa_model::types::ThinkingLevel;
 use crate::args::Args;
 
 pub async fn run(args: &Args) -> Result<()> {
+    rozsa_model::providers::register_builtin_providers();
+
     let cwd = std::env::current_dir()?;
 
     let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -38,6 +40,11 @@ pub async fn run(args: &Args) -> Result<()> {
 
     let model = if let Some(ref model_arg) = args.model {
         registry.find_by_id(model_arg)
+    } else if let (Some(provider), Some(model_id)) = (
+        settings_manager.default_provider(),
+        settings_manager.default_model(),
+    ) {
+        registry.resolve(provider, model_id)
     } else {
         registry.first_available()
     };
@@ -82,14 +89,15 @@ pub async fn run(args: &Args) -> Result<()> {
 
         for event in &events {
             if let AgentEvent::MessageEnd { message } = event {
-                if let Some(rozsa_model::types::Message::Assistant(msg)) =
+                if let Some(rozsa_model::types::Message::Assistant(assistant)) =
                     message.as_standard()
                 {
-                    for block in &msg.content {
+                    for block in &assistant.content {
                         if let rozsa_model::types::ContentBlock::Text { text, .. } = block {
-                            println!("{text}");
+                            print!("{text}");
                         }
                     }
+                    println!();
                 }
             }
         }
@@ -102,3 +110,4 @@ pub async fn run(args: &Args) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
+
