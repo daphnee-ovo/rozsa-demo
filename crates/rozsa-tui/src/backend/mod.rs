@@ -10,6 +10,7 @@
 // - [SPEC Design](../../../../dev-doc/refactor/tui/SPEC.md#design)
 
 pub mod mock;
+pub mod native;
 pub mod socket;
 
 use std::pin::Pin;

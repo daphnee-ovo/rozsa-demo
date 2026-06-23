@@ -235,6 +235,16 @@ impl AgentSession {
         &self.config.settings_manager
     }
 
+    /// Get the working directory.
+    pub fn cwd(&self) -> &Path {
+        &self.config.cwd
+    }
+
+    /// Get the current thinking level.
+    pub fn thinking_level(&self) -> ThinkingLevel {
+        self.config.thinking_level
+    }
+
     /// Get the current model.
     pub fn model(&self) -> &Model {
         &self.config.model

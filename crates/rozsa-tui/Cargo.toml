@@ -12,6 +12,9 @@ name = "rozsa-tui"
 path = "src/main.rs"
 
 [dependencies]
+rozsa-app = { path = "../rozsa-app" }
+rozsa-core = { path = "../rozsa-core" }
+rozsa-model = { path = "../rozsa-model" }
 crossterm = { version = "0.29", features = ["bracketed-paste", "event-stream"] }
 base64 = "0.22"
 libc = "0.2"
