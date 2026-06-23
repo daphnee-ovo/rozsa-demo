@@ -84,15 +84,10 @@ pub async fn run(args: &Args) -> Result<()> {
         return Ok(());
     }
 
-    println!("rozsa - AI coding agent (pure Rust runtime)");
-    println!();
-    println!("Usage: rozsa [OPTIONS] [PROMPT]");
-    println!();
-    println!("  rozsa -p \"explain this code\"");
-    println!();
-    println!("Set ANTHROPIC_API_KEY (or other provider key) to use.");
-
-    Ok(())
+    // No prompt — launch interactive TUI
+    rozsa_tui::app::run_native(session)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 fn resolve_model_from_env() -> Result<Model> {

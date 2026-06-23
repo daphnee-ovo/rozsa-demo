@@ -297,6 +297,107 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     result
 }
 
+/// Run the TUI with a NativeBackend (pure Rust, no TS subprocess).
+pub async fn run_native(session: rozsa_app::agent_session::AgentSession) -> Result<(), Box<dyn Error>> {
+    use crate::backend::native::NativeBackend;
+
+    let native = NativeBackend::new(session);
+    let mut event_rx = native.events();
+    let _ = native.connect().await;
+
+    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<NativeCommand>();
+    let writer: crate::input::Writer = Arc::new(NativeCommandSink { tx: cmd_tx });
+
+    let native = Arc::new(native);
+    let native_for_cmds = native.clone();
+
+    tokio::spawn(async move {
+        while let Some(cmd) = cmd_rx.recv().await {
+            match cmd {
+                NativeCommand::Submit(text) => { let _ = native_for_cmds.submit(&text, vec![]).await; }
+                NativeCommand::Abort => { let _ = native_for_cmds.abort().await; }
+                NativeCommand::Exit => { let _ = native_for_cmds.exit().await; break; }
+                NativeCommand::FollowUp(text) => { let _ = native_for_cmds.follow_up(&text, vec![]).await; }
+                NativeCommand::Steer(text) => { let _ = native_for_cmds.steer(&text, vec![]).await; }
+                NativeCommand::ListModels => { let _ = native_for_cmds.list_models().await; }
+                NativeCommand::ListSessions => { let _ = native_for_cmds.list_sessions().await; }
+                NativeCommand::Compact => { let _ = native_for_cmds.compact().await; }
+            }
+        }
+    });
+
+    enable_raw_mode()?;
+    let mut stdout = std::io::stdout();
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        crossterm::event::EnableBracketedPaste,
+        crossterm::event::EnableMouseCapture
+    )?;
+    let kitty_keyboard_enabled = {
+        use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
+        execute!(
+            stdout,
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                    | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+            )
+        )
+        .is_ok()
+    };
+    let backend_term = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend_term)?;
+
+    let result = run_app(&mut terminal, &mut event_rx, &writer).await;
+
+    if kitty_keyboard_enabled {
+        let _ = execute!(terminal.backend_mut(), crossterm::event::PopKeyboardEnhancementFlags);
+    }
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        crossterm::event::DisableMouseCapture,
+        crossterm::event::DisableBracketedPaste,
+        LeaveAlternateScreen
+    )?;
+    terminal.show_cursor()?;
+    result
+}
+
+enum NativeCommand {
+    Submit(String),
+    Abort,
+    Exit,
+    FollowUp(String),
+    Steer(String),
+    ListModels,
+    ListSessions,
+    Compact,
+}
+
+struct NativeCommandSink {
+    tx: tokio::sync::mpsc::UnboundedSender<NativeCommand>,
+}
+
+impl crate::input::CommandSink for NativeCommandSink {
+    fn send_command(&self, msg: &ClientMessage<'_>) -> Result<(), Box<dyn Error>> {
+        let cmd = match msg {
+            ClientMessage::Submit { text, .. } => NativeCommand::Submit(text.to_string()),
+            ClientMessage::Abort => NativeCommand::Abort,
+            ClientMessage::Exit => NativeCommand::Exit,
+            ClientMessage::FollowUp { text, .. } => NativeCommand::FollowUp(text.to_string()),
+            ClientMessage::Steer { text, .. } => NativeCommand::Steer(text.to_string()),
+            ClientMessage::ListModels => NativeCommand::ListModels,
+            ClientMessage::ListSessions { .. } => NativeCommand::ListSessions,
+            ClientMessage::Compact => NativeCommand::Compact,
+            _ => return Ok(()),
+        };
+        let _ = self.tx.send(cmd);
+        Ok(())
+    }
+}
+
 async fn run_with_socket(socket_path: String) -> Result<(), Box<dyn Error>> {
     // T027 (StdinBuffer): Crossterm 的 parse_event 内置了分段 escape 序列处理
     //   — buffer.len()==1 且 input_available 时返回 None 等待后续字节
