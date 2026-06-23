@@ -1,1 +1,2 @@
-// TODO: AgentSession, lifecycle management
+pub mod entry;
+pub mod manager;

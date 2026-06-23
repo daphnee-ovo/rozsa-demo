@@ -11,9 +11,13 @@ path = "src/main.rs"
 
 [dependencies]
 rozsa-app = { path = "../rozsa-app" }
+rozsa-core = { path = "../rozsa-core" }
+rozsa-model = { path = "../rozsa-model" }
 rozsa-tui = { path = "../rozsa-tui" }
 clap = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+dirs-next = "2"
