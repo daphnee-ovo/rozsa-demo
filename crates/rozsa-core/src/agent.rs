@@ -1,9 +1,7 @@
-use crate::config::AgentLoopConfig;
 use crate::events::AgentEvent;
 use crate::messages::AgentMessage;
-use crate::queue::{PendingMessageQueue, QueueMode};
+use crate::queue::PendingMessageQueue;
 use crate::tool::ToolExecutionMode;
-use rozsa_model::event_stream::EventStream;
 use rozsa_model::types::{Model, ThinkingLevel, ThinkingBudgets, Transport};
 
 pub struct Agent {

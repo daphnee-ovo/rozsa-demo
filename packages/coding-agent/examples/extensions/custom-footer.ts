@@ -8,14 +8,14 @@
  * Token stats come from ctx.sessionManager/ctx.model (already accessible).
  */
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { AssistantMessage } from "@earendil-works/rozsa-ai";
+import type { ExtensionAPI } from "@earendil-works/rozsa-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/rozsa-tui";
 
-export default function (pi: ExtensionAPI) {
+export default function (rozsa: ExtensionAPI) {
 	let enabled = false;
 
-	pi.registerCommand("footer", {
+	rozsa.registerCommand("footer", {
 		description: "Toggle custom footer",
 		handler: async (_args, ctx) => {
 			enabled = !enabled;

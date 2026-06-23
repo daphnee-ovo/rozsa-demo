@@ -296,7 +296,7 @@ export function getSelfUpdateUnavailableInstruction(
 ): string {
 	const method = detectInstallMethod();
 	if (method === "bun-binary") {
-		return `Download from: https://github.com/earendil-works/pi-mono/releases/latest`;
+		return `Download from: https://github.com/earendil-works/rozsa-mono/releases/latest`;
 	}
 	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
 	if (command) {
@@ -442,7 +442,7 @@ interface PackageJson {
 const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8")) as PackageJson;
 
 const rozsaConfigName: string | undefined = pkg.rozsaConfig?.name;
-export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent";
+export const PACKAGE_NAME: string = pkg.name || "@earendil-works/rozsa-coding-agent";
 export const APP_NAME: string = rozsaConfigName || "rozsa";
 export const APP_TITLE: string = rozsaConfigName ? APP_NAME : "Rózsa";
 export const CONFIG_DIR_NAME: string = pkg.rozsaConfig?.configDir || ".rozsa";

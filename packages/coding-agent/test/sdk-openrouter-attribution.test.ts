@@ -7,7 +7,7 @@ import {
 	createAssistantMessageEventStream,
 	type Model,
 	type SimpleStreamOptions,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/rozsa-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRegistry } from "../src/core/model-registry.ts";
@@ -22,7 +22,7 @@ describe("createAgentSession OpenRouter attribution headers", () => {
 	let originalTelemetryEnv: string | undefined;
 
 	beforeEach(() => {
-		tempDir = join(tmpdir(), `pi-sdk-openrouter-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		tempDir = join(tmpdir(), `rozsa-sdk-openrouter-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		cwd = join(tempDir, "project");
 		agentDir = join(tempDir, "agent");
 		mkdirSync(cwd, { recursive: true });
@@ -149,8 +149,8 @@ describe("createAgentSession OpenRouter attribution headers", () => {
 	it("adds default attribution headers for OpenRouter models", async () => {
 		const headers = await captureHeaders(createModel("openrouter", "https://openrouter.ai/api/v1"));
 
-		expect(headers?.["HTTP-Referer"]).toBe("https://pi.dev");
-		expect(headers?.["X-OpenRouter-Title"]).toBe("pi");
+		expect(headers?.["HTTP-Referer"]).toBe("https://rozsa.dev");
+		expect(headers?.["X-OpenRouter-Title"]).toBe("rozsa");
 		expect(headers?.["X-OpenRouter-Categories"]).toBe("cli-agent");
 	});
 
@@ -167,8 +167,8 @@ describe("createAgentSession OpenRouter attribution headers", () => {
 	it("adds attribution headers for custom providers routed through OpenRouter", async () => {
 		const headers = await captureHeaders(createModel("custom-openrouter", "https://openrouter.ai/api/v1"));
 
-		expect(headers?.["HTTP-Referer"]).toBe("https://pi.dev");
-		expect(headers?.["X-OpenRouter-Title"]).toBe("pi");
+		expect(headers?.["HTTP-Referer"]).toBe("https://rozsa.dev");
+		expect(headers?.["X-OpenRouter-Title"]).toBe("rozsa");
 		expect(headers?.["X-OpenRouter-Categories"]).toBe("cli-agent");
 	});
 
@@ -194,7 +194,7 @@ describe("createAgentSession OpenRouter attribution headers", () => {
 		});
 
 		expect(headers?.["x-opencode-session"]).toBe("opencode-session");
-		expect(headers?.["x-opencode-client"]).toBe("pi");
+		expect(headers?.["x-opencode-client"]).toBe("rozsa");
 	});
 
 	it("lets configured OpenCode headers override the defaults", async () => {

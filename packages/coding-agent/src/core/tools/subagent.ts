@@ -1,4 +1,4 @@
-import { Text } from "@earendil-works/pi-tui";
+import { Text } from "@earendil-works/rozsa-tui";
 import { type Static, Type } from "typebox";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";

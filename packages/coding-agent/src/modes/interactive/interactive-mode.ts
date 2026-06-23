@@ -7,16 +7,9 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
-import {
-	type AssistantMessage,
-	getProviders,
-	type ImageContent,
-	type Message,
-	type Model,
-	type OAuthProviderId,
-	type OAuthSelectPrompt,
-} from "@earendil-works/pi-ai";
+import type { AgentEvent, AgentMessage } from "@earendil-works/rozsa-agent-core";
+import { getProviders, type OAuthProviderId, type OAuthSelectPrompt } from "@earendil-works/rozsa-ai";
+import type { AssistantMessage, ImageContent, Message, Model } from "@earendil-works/rozsa-model-types";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -27,7 +20,7 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 	SlashCommand,
-} from "@earendil-works/pi-tui";
+} from "@earendil-works/rozsa-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -46,7 +39,7 @@ import {
 	TruncatedText,
 	TUI,
 	visibleWidth,
-} from "@earendil-works/pi-tui";
+} from "@earendil-works/rozsa-tui";
 import { spawn, spawnSync } from "child_process";
 import {
 	APP_NAME,
@@ -98,7 +91,7 @@ import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
 import { parseGitUrl } from "../../utils/git.ts";
 import { getCwdRelativePath } from "../../utils/paths.ts";
-import { getRozsaUserAgent } from "../../utils/pi-user-agent.ts";
+import { getRozsaUserAgent } from "../../utils/rozsa-user-agent.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import { checkForNewRozsaVersion, type LatestRozsaRelease } from "../../utils/version-check.ts";
@@ -2618,7 +2611,7 @@ export class InteractiveMode {
 			// Write to temp file
 			const tmpDir = os.tmpdir();
 			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
-			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
+			const fileName = `rozsa-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
@@ -3710,7 +3703,7 @@ export class InteractiveMode {
 		try {
 			this.ui.stop();
 		} catch {}
-		console.error("pi exiting due to uncaughtException:");
+		console.error("rozsa exiting due to uncaughtException:");
 		console.error(error);
 		process.exit(1);
 	}
@@ -3756,7 +3749,7 @@ export class InteractiveMode {
 
 		// Restore the terminal before the process dies on any uncaught throw.
 		// Without this, an unhandled exception from extension code (or anywhere
-		// in pi) leaves the terminal in raw mode with no cursor.
+		// in rozsa) leaves the terminal in raw mode with no cursor.
 		const uncaughtExceptionHandler = (error: Error) => this.uncaughtCrash(error);
 		process.prependListener("uncaughtException", uncaughtExceptionHandler);
 		this.signalCleanupHandlers.push(() => process.off("uncaughtException", uncaughtExceptionHandler));

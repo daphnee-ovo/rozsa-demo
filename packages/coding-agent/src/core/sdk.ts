@@ -1,6 +1,7 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai";
+import { Agent, type AgentLoopBackend, type AgentMessage, type ThinkingLevel } from "@earendil-works/rozsa-agent-core";
+import { resolveAgentLoopBackend } from "@earendil-works/rozsa-agent-core/node";
+import type { Message, Model } from "@earendil-works/rozsa-model-types";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
@@ -11,6 +12,8 @@ import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefi
 import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
+import { streamResolvedModel } from "./model-stream.ts";
+import { clampThinkingLevel } from "./model-utils.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
@@ -59,7 +62,7 @@ export interface CreateAgentSessionOptions {
 	/**
 	 * Optional allowlist of tool names.
 	 *
-	 * When omitted, pi enables the default built-in tools (read, bash, edit, write)
+	 * When omitted, rozsa enables the default built-in tools (read, bash, edit, write)
 	 * and leaves extension/custom tools enabled unless `noTools` changes that default.
 	 * When provided, only the listed tool names are enabled.
 	 */
@@ -79,6 +82,8 @@ export interface CreateAgentSessionOptions {
 	sessionStartEvent?: SessionStartEvent;
 	/** 干跑模式：写操作 (bash/edit/write) 仅预览不执行 */
 	dryRun?: boolean;
+	/** Agent loop backend. Default: resolved from ROZSA_CORE_BACKEND env var. */
+	backend?: AgentLoopBackend;
 }
 
 /** Result from createAgentSession */
@@ -158,7 +163,7 @@ function getAttributionHeaders(
 		model.baseUrl.includes("gateway.ai.cloudflare.com")
 	) {
 		return {
-			"User-Agent": "pi-coding-agent",
+			"User-Agent": "rozsa-coding-agent",
 		};
 	}
 
@@ -174,7 +179,7 @@ function getAttributionHeaders(
  * const { session } = await createAgentSession();
  *
  * // With explicit model
- * import { getModel } from '@earendil-works/pi-ai';
+ * import { getModel } from '@earendil-works/rozsa-ai';
  * const { session } = await createAgentSession({
  *   model: getModel('anthropic', 'claude-opus-4-5'),
  *   thinkingLevel: 'high',
@@ -210,6 +215,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
 	const authStorage = options.authStorage ?? AuthStorage.create(authPath);
 	const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
+	const rustAuthJsonPath = options.authStorage ? undefined : (authPath ?? join(getDefaultAgentDir(), "auth.json"));
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
@@ -336,6 +342,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	agent = new Agent({
+		backend: options.backend ?? resolveAgentLoopBackend(),
 		initialState: {
 			systemPrompt: "",
 			model,
@@ -344,22 +351,39 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		},
 		convertToLlm: convertToLlmWithBlockImages,
 		streamFn: async (model, context, options) => {
-			const auth = await modelRegistry.getApiKeyAndHeaders(model);
-			if (!auth.ok) {
-				throw new Error(auth.error);
-			}
 			const providerRetrySettings = settingsManager.getProviderRetrySettings();
 			const attributionHeaders = getAttributionHeaders(model, settingsManager, options?.sessionId);
-			return streamSimple(model, context, {
+			const providerStreamHandler = modelRegistry.getProviderStreamHandler(model.api);
+			if (providerStreamHandler) {
+				const auth = await modelRegistry.getApiKeyAndHeaders(model);
+				if (!auth.ok) {
+					throw new Error(auth.error);
+				}
+				return providerStreamHandler(model, context, {
+					...options,
+					apiKey: auth.apiKey,
+					timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
+					maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
+					maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+					headers:
+						attributionHeaders || auth.headers || options?.headers
+							? { ...attributionHeaders, ...auth.headers, ...options?.headers }
+							: undefined,
+				});
+			}
+			const apiKey = rustAuthJsonPath
+				? modelRegistry.getRuntimeApiKey(model.provider)
+				: await modelRegistry.getStoredApiKey(model.provider);
+			return streamResolvedModel(model, context, {
 				...options,
-				apiKey: auth.apiKey,
+				apiKey,
+				authJsonPath: rustAuthJsonPath,
+				modelsJsonPath: modelRegistry.getModelsJsonPath(),
 				timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
 				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
 				headers:
-					attributionHeaders || auth.headers || options?.headers
-						? { ...attributionHeaders, ...auth.headers, ...options?.headers }
-						: undefined,
+					attributionHeaders || options?.headers ? { ...attributionHeaders, ...options?.headers } : undefined,
 			});
 		},
 		onPayload: async (payload, _model) => {
@@ -419,6 +443,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		initialActiveToolNames,
 		allowedToolNames,
 		extensionRunnerRef,
+		streamFnResolvesAuth: true,
 		sessionStartEvent: options.sessionStartEvent,
 		dryRun: options.dryRun,
 	});

@@ -5,15 +5,15 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@earendil-works/pi-ai";
-import { completeSimple } from "@earendil-works/pi-ai";
+import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/rozsa-agent-core";
+import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@earendil-works/rozsa-model-types";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
 	createCustomMessage,
 } from "../messages.ts";
+import { completeResolvedModel } from "../model-stream.ts";
 import { buildSessionContext, type CompactionEntry, type SessionEntry } from "../session-manager.ts";
 import {
 	computeFileLists,
@@ -45,7 +45,7 @@ function extractFileOperations(
 ): FileOperations {
 	const fileOps = createFileOps();
 
-	// Collect from previous compaction's details (if pi-generated)
+	// Collect from previous compaction's details (if rozsa-generated)
 	if (prevCompactionIndex >= 0) {
 		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
 		if (!prevCompaction.fromHook && prevCompaction.details) {
@@ -545,7 +545,7 @@ async function completeSummarization(
 	streamFn?: StreamFn,
 ): Promise<AssistantMessage> {
 	if (!streamFn) {
-		return completeSimple(model, context, options);
+		return completeResolvedModel(model, context, options);
 	}
 	const stream = await streamFn(model, context, options);
 	return stream.result();

@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
 import type { SessionEntry } from "../../core/session-manager.ts";
 import type { HostToNativeMessage, NativeGraphNode } from "./protocol.ts";
 

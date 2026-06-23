@@ -1,4 +1,4 @@
-import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model } from "@earendil-works/rozsa-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, type Harness } from "./test-harness.ts";
 

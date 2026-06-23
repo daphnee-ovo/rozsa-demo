@@ -4,6 +4,19 @@ This document tracks provider support while `rozsa-model` replaces the TypeScrip
 
 Related plan: [`rozsa-model-migration.md`](./rozsa-model-migration.md).
 
+Related code:
+
+- `packages/agent/src/event-stream.ts`: Agent-owned async event stream primitive，Agent loop 不再使用 `rozsa-ai` runtime EventStream。
+- `packages/agent/src/tool-validation.ts`: Agent-owned tool argument validation，Agent loop 不再使用 `rozsa-ai` runtime validation helper。
+- `packages/agent/src/types.ts`: Agent-owned structural `AssistantMessageEventStream` interface，`StreamFn` 不再绑定 `rozsa-ai` stream class。
+- `packages/agent/src/compat-model-stream.ts`: Browser-safe TypeScript AI compatibility boundary，集中保留 legacy `streamSimple()` fallback。
+- `packages/agent/src/missing-model-stream.ts`: 未注入模型执行函数时的 fail-fast 边界，避免 Agent 默认回退到 TS AI。
+- `packages/agent/src/rozsa-model-client.ts`: Node-only `rozsa-model` JSONL client，agent/coding-agent Rust 执行路径不经过 TS AI provider bridge。
+- `packages/agent/src/model-stream.ts`: Node 调用方显式注入后，把通用 Agent 的模型请求和 completion 请求分发到 `rozsa-model`。
+- `crates/rozsa-model/src/credentials.rs`: Rust bridge request credential/header resolver，读取 `auth.json`、`models.json`、环境变量和命令型 config value。
+- `packages/coding-agent/src/core/model-stream.ts`: Rust mode 下，把 coding-agent stream/completion 请求分发到 `rozsa-model`。
+- `packages/coding-agent/src/core/model-utils.ts`: coding-agent-owned model helper boundary，替代 `rozsa-ai` 的 model equality、thinking level clamp/support 和 context overflow helpers。
+
 ## Support Levels
 
 | Level | Meaning |
@@ -51,21 +64,66 @@ NVIDIA model discovery note:
 
 - NVIDIA NIM exposes `GET /v1/models` for models currently loaded and available on that endpoint. NVIDIA API Catalog uses the same OpenAI-compatible base URL shape, but available hosted models can vary by account and over time. `rozsa-model` therefore does not hardcode a NVIDIA model list.
 - `rozsa-app` owns the Rust `ModelRegistry`: it loads `packages/ai/src/models.generated.json`, merges optional `models.json`, and, when `NVIDIA_API_KEY` is set, merges live NVIDIA models from `GET https://integrate.api.nvidia.com/v1/models`.
-- The TypeScript `ModelRegistry` calls the Rust registry bridge by default in `ROZSA_MODEL_REGISTRY_BACKEND=auto` when the `rozsa-app` binary exists. `/model` then renders `getAvailable()` from this Rust-backed list, so NVIDIA shows only models discovered from the live endpoint unless the user explicitly configures custom models. Set `ROZSA_MODEL_REGISTRY_BACKEND=rust` to fail fast if the bridge is unavailable, or `ROZSA_MODEL_REGISTRY_BACKEND=ts` to force the old TypeScript registry.
+- `rozsa-app` also owns generated image model metadata through `packages/ai/src/image-models.generated.json` and exposes it with the `list_image_models` bridge request.
+- The TypeScript `ModelRegistry` calls the Rust registry bridge by default because `ROZSA_MODEL_REGISTRY_BACKEND` defaults to `rust`. `/model` renders `getAvailable()` from this Rust-backed list, so NVIDIA shows only models discovered from the live endpoint unless the user explicitly configures custom models. Set `ROZSA_MODEL_REGISTRY_BACKEND=ts` to force the old TypeScript registry. There is no `auto` fallback mode.
 
 Provider availability (auth check):
 
 - Rust `ModelRegistry::provider_available()` checks whether each provider has configured credentials via environment variables (using `env_keys::get_env_api_key`) or via `models.json` `apiKey` field (literal value, env var reference, or `!command` marker).
 - The bridge response includes `providerAvailable: Record<provider, {configured, source}>` alongside the full model list.
 - TypeScript `ModelRegistry.hasConfiguredAuth()` uses the Rust-provided `providerAvailable` for API key auth, and separately checks TS-managed OAuth tokens (`AuthStorage`). A model is available if either path reports configured.
-- When `ROZSA_MODEL_REGISTRY_BACKEND=ts`, Rust is not invoked and the TS side falls back to its original env var + models.json check logic.
-- OAuth credential management (token storage, refresh, login flow) remains in TypeScript because it requires interactive browser flows and persistent encrypted storage that the Rust bridge cannot access.
+- When `ROZSA_MODEL_REGISTRY_BACKEND=ts`, Rust is not invoked and the TS side uses its original env var + models.json check logic.
+- Rust model execution reads request credentials from `auth.json` API keys, OAuth access tokens, `models.json` `apiKey`, environment variables, and `!command` config values.
+- Rust bridge refreshes expired Anthropic、OpenAI Codex 和 GitHub Copilot OAuth credentials during request credential resolution. OAuth login remains in TypeScript.
 
 Known current limits:
 
-- `onPayload`/`onResponse` are TypeScript callback functions. Requests using those hooks route through the TypeScript provider until the bridge protocol supports callback round-trips.
+- `onPayload`/`onResponse` are TypeScript callback functions. In Rust execution mode, requests using those hooks fail clearly until the bridge protocol supports callback round-trips. Use `ROZSA_MODEL_BACKEND=ts` when those callbacks are required.
 - Network smoke tests are not part of the default unit tests; the live smoke test is ignored by default and requires explicit credentials or a running local model endpoint.
-- In `auto` mode, a missing `rozsa-app` debug binary falls back to the TypeScript registry. `run.sh` builds `rozsa-app` and passes `ROZSA_APP_BINARY` to the TypeScript backend; standalone frontend runs should build `rozsa-app` or set `ROZSA_APP_BINARY` when validating Rust registry behavior.
+- A missing `rozsa-app` debug binary is a startup/configuration error in Rust registry mode. `run.sh` builds `rozsa-app` and passes `ROZSA_APP_BINARY` to the TypeScript backend; standalone frontend runs should build `rozsa-app` or set `ROZSA_APP_BINARY` when validating Rust registry behavior.
+
+| Anthropic Messages | Supported | `AnthropicProvider` implements `ApiProvider` for `Api::AnthropicMessages`. It builds `/v1/messages` payloads, sends HTTP requests with SSE streaming, incrementally parses Anthropic SSE events (message_start, content_block_start/delta/stop, message_delta, message_stop), forwards normalized stream events through the JSONL bridge, reports usage/cost, and can be registered with `register_provider` or `register_builtin_providers`. |
+
+Current Anthropic Messages provider coverage:
+
+- Anthropic Messages API (direct `api.anthropic.com` endpoint)
+- Fireworks AI (Anthropic-compatible endpoint)
+- MiniMax (Anthropic-compatible endpoint)
+- Kimi Coding (Anthropic-compatible endpoint)
+- Vercel AI Gateway (Anthropic-protocol proxy)
+- Cloudflare AI Gateway (Anthropic-protocol proxy)
+- GitHub Copilot (Anthropic-protocol proxy)
+
+Anthropic Messages compatibility rules already modeled:
+
+- API key auth (`x-api-key` header)
+- OAuth bearer token auth (`sk-ant-oat` prefix detection → `Authorization: Bearer`)
+- GitHub Copilot auth (`Authorization: Bearer` + dynamic headers)
+- Cloudflare AI Gateway auth (`cf-aig-authorization` header)
+- Session affinity headers (`x-session-affinity`) for Fireworks/Cloudflare
+- Cache control placement (last user message block + last tool)
+- Long cache retention (`ttl: "1h"`) for providers that support it
+- Thinking configuration: adaptive thinking (effort level) and budget-based thinking
+- Interleaved thinking beta header
+- Fine-grained tool streaming beta header (when eager streaming is unsupported)
+- Tool input eager streaming
+- OAuth stealth mode (Claude Code tool name rewriting)
+- Tool call ID normalization (64-char limit, alphanumeric + `_`/`-`)
+- Consecutive tool results merged into single user message
+- Non-vision model image degradation to placeholder text
+- System prompt handling (OAuth vs standard mode)
+- Temperature vs thinking mutual exclusion
+- `metadata.user_id` forwarding
+- Stop reason mapping (end_turn/pause_turn→stop, max_tokens→length, tool_use→toolUse, refusal/sensitive→error)
+- Usage calculation (input/output/cacheRead/cacheWrite/totalTokens/cost)
+- Compat flags: `supportsEagerToolInputStreaming`, `supportsLongCacheRetention`, `sendSessionAffinityHeaders`, `supportsCacheControlOnTools`, `forceAdaptiveThinking`
+- TS-vs-Rust parity test with a fake Anthropic SSE server for payload, stream event, and final message equivalence
+
+Anthropic Messages known current limits:
+
+- No HTTP proxy support
+- No `onPayload`/`onResponse` callbacks (TypeScript-only)
+- Network smoke tests require explicit credentials
 
 | AWS Bedrock Converse Stream | Supported | `BedrockProvider` implements `ApiProvider` for `Api::BedrockConverseStream`. It uses the official `aws-sdk-bedrockruntime` crate, sends ConverseStream requests, incrementally parses SDK event stream events, forwards normalized stream events through the JSONL bridge, reports usage/cost, and can be registered with `register_provider` or `register_builtin_providers`. |
 
@@ -103,25 +161,38 @@ Bedrock known current limits:
 
 ## Scheduled
 
-| Provider/API | Planned order | Notes |
-| --- | ---: | --- |
-| Anthropic Messages | 3 | Implement direct HTTP/SSE. Preserve cache-control placement, thinking, fine-grained tool streaming, OAuth headers, Copilot headers, and Anthropic-compatible providers. |
-| OpenAI Responses | 4 | Preserve Responses input conversion, reasoning signatures, tool-call IDs, prompt cache retention, and service tier behavior. |
-| Azure OpenAI Responses | 5 | Build on Responses support. Preserve deployment mapping, endpoint normalization, and `api-version`. |
-| Google Gemini | 6 | Implement direct REST using official protocol behavior as reference. Preserve image input, tool schema conversion, thinking, and thought signatures. |
-| Google Vertex | 7 | Build after Gemini. Preserve project/location resolution and Application Default Credentials. |
-| OpenAI Codex Responses | 8 | Special transport provider. Preserve SSE, WebSocket, cached WebSocket, account IDs, session IDs, retry-after handling, and OAuth boundary. |
+No additional provider protocols are scheduled for the current model-layer milestone. The previous 2.3-2.9 provider rollout is delayed so the Rust model layer, bridge routing, and registry ownership can settle first.
 
 ## Deferred
 
 | Provider/API | Reason |
 | --- | --- |
+| Anthropic Messages | Moved to Supported. See above. |
+| OpenAI Responses | Deferred from the previous 2.4 slot. It still needs Responses input conversion, reasoning signatures, tool-call IDs, prompt cache retention, and service tier behavior. |
+| Azure OpenAI Responses | Deferred from the previous 2.5 slot. It depends on OpenAI Responses parity plus Azure endpoint and deployment mapping. |
+| Google Gemini | Deferred from the previous 2.6 slot. Direct REST support still needs image input, tool schema conversion, thinking, and thought signatures. |
+| Google Vertex | Deferred from the previous 2.7 slot. It depends on Gemini behavior plus project/location and Application Default Credentials support. |
+| OpenAI Codex Responses | Deferred from the previous 2.8 slot. It has special SSE/WebSocket transports, account/session handling, retry-after handling, and OAuth boundaries. |
 | Mistral Conversations | No official Rust or Go SDK identified. Current TypeScript layer uses the official TypeScript SDK. Direct HTTP support can be added later if Mistral becomes required. |
 | Provider-specific SDK adapters without Rust/Go support | Deferred unless the provider has a stable compatibility protocol or becomes product-critical. |
 
 ## Custom Providers
 
 Custom providers should first use a supported compatibility protocol instead of requiring a new Rust adapter.
+
+当前支持：
+
+- Rust mode 支持使用 `api: "openai-completions"` 的 metadata-defined custom provider。
+- `rozsa-app` Rust registry bridge 合并 custom model metadata、provider-level headers、model-level headers、`compat` 和 model overrides。
+- `rozsa-model` Rust bridge 根据 `authJsonPath` / `modelsJsonPath` 解析 stored API key、已登录 OAuth credential、custom provider `apiKey`、`headers`、`authHeader` 和 command-backed config value。
+- Rust bridge 会刷新已过期的 Anthropic、OpenAI Codex 和 GitHub Copilot OAuth credential；交互式 OAuth login 仍由 TypeScript CLI/UI 负责。
+- `streamResolvedModel()` 会通过 JSONL bridge 发送 model metadata、custom `provider`、custom `baseUrl`、`compat` metadata、`authJsonPath` 和 `modelsJsonPath`。
+- Focused coverage：`tests/unit/model/protocol.rs`、`packages/agent/test/model-stream.test.ts` 和 `packages/coding-agent/test/model-stream.test.ts`。
+
+当前限制：
+
+- Extension 提供的动态 `streamSimple` provider handler 仍然是 TypeScript handler，但已由 coding-agent-owned registry 和 SDK stream boundary 执行，不再注册到 `rozsa-ai` provider registry。
+- `packages/agent/src/compat-model-stream.ts` 仍保留 legacy `streamSimple()` 作为显式 TS rollback path；这不是 Rust-supported API 的默认 coding-agent 生产执行路径。
 
 For OpenAI-compatible Chat Completions, create a `Model` with:
 
@@ -158,7 +229,7 @@ Custom provider rules:
 - Prefer `Api::OpenAICompletions` when the provider is OpenAI Chat Completions-compatible.
 - Do not add a new provider adapter unless a compatibility protocol cannot represent the provider correctly.
 - Keep provider-specific compatibility in `compat` metadata when possible.
-- Keep credentials explicit. For `Provider::Custom`, pass `api_key` in request options until custom credential resolution is designed.
+- Prefer `models.json` `apiKey`/`headers`/`authHeader` for static custom provider credentials; runtime-only credentials may still be passed through request options.
 - If custom headers contain secrets, pass them through caller-controlled configuration and avoid logging them.
 
 ## Maintenance Rules

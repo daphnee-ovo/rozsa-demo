@@ -28,6 +28,15 @@ pub enum BridgeInput {
     },
     #[serde(rename = "cancel")]
     Cancel { id: String },
+    #[serde(rename = "oauth_login")]
+    OAuthLogin {
+        id: String,
+        provider: String,
+        #[serde(default)]
+        options: Value,
+    },
+    #[serde(rename = "oauth_response")]
+    OAuthResponse { id: String, response: Value },
 }
 
 /// Streaming method requested by the TypeScript side.
@@ -51,6 +60,8 @@ pub enum BridgeOutput {
         message: String,
         code: String,
     },
+    #[serde(rename = "oauth_event")]
+    OAuthEvent { id: String, event: Value },
 }
 
 /// Parsed request ready for the Rust provider registry.
@@ -60,6 +71,8 @@ pub struct ProviderRequest {
     pub model: Model,
     pub context: Context,
     pub options: SimpleStreamOptions,
+    pub models_json_path: Option<String>,
+    pub auth_json_path: Option<String>,
 }
 
 /// Parse a JSONL input line into a bridge request.
@@ -81,9 +94,13 @@ pub fn provider_request(input: BridgeInput) -> Result<Option<ProviderRequest>, S
             method,
             model: parse_model(&model)?,
             context: parse_context(&context)?,
+            models_json_path: optional_string_field(&options, "modelsJsonPath"),
+            auth_json_path: optional_string_field(&options, "authJsonPath"),
             options: parse_simple_options(&options)?,
         })),
         BridgeInput::Cancel { .. } => Ok(None),
+        BridgeInput::OAuthLogin { .. } => Ok(None),
+        BridgeInput::OAuthResponse { .. } => Ok(None),
     }
 }
 
@@ -101,6 +118,24 @@ pub fn bridge_error(id: &str, message: impl ToString, code: &str) -> BridgeOutpu
         id: id.to_string(),
         message: message.to_string(),
         code: code.to_string(),
+    }
+}
+
+/// OAuth event types sent from Rust to TypeScript during login flow.
+/// Events:
+///   auth_url: { type: "auth_url", url, instructions? }     — open browser
+///   device_code: { type: "device_code", userCode, verificationUri } — show device code
+///   prompt: { type: "prompt", message, placeholder? }       — request text input
+///   select: { type: "select", message, options: string[] }  — request selection
+///   progress: { type: "progress", message }                 — progress update
+///   waiting: { type: "waiting", message }                   — polling indicator
+///   complete: { type: "complete", credentials }             — login succeeded
+///   error: { type: "error", message }                       — login failed
+///   delegate: { type: "delegate" }                          — extension provider, handle in TS
+pub fn oauth_event(id: &str, event: Value) -> BridgeOutput {
+    BridgeOutput::OAuthEvent {
+        id: id.to_string(),
+        event,
     }
 }
 

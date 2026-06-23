@@ -1,7 +1,10 @@
 // Core Agent
 export * from "./agent.ts";
+// Backend abstraction
+export * from "./backend.ts";
 // Loop functions
 export * from "./agent-loop.ts";
+export * from "./event-stream.ts";
 export * from "./harness/agent-harness.ts";
 export {
 	type BranchPreparation,
@@ -38,6 +41,7 @@ export * from "./harness/system-prompt.ts";
 export * from "./harness/types.ts";
 export * from "./harness/utils/shell-output.ts";
 export * from "./harness/utils/truncate.ts";
+export * from "./missing-model-stream.ts";
 // Proxy utilities
 export * from "./proxy.ts";
 // Types

@@ -1461,7 +1461,7 @@ fn open_external_editor(current_text: &str) -> Option<String> {
         .or_else(|_| env::var("VISUAL"))
         .unwrap_or_else(|_| "vi".to_string());
 
-    let tmp_path = env::temp_dir().join(format!("pi_input_{}.txt", std::process::id()));
+    let tmp_path = env::temp_dir().join(format!("rozsa_input_{}.txt", std::process::id()));
 
     {
         let mut file = fs::File::create(&tmp_path).ok()?;

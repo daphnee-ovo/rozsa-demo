@@ -124,7 +124,7 @@ pub trait AgentBackend: Send + Sync {
 
     // --- 模型管理 ---
     async fn list_models(&self) -> BackendResult<()>;
-    async fn switch_model(&self, id: &str) -> BackendResult<()>;
+    async fn switch_model(&self, provider: &str, id: &str) -> BackendResult<()>;
     async fn cycle_model(&self, direction: Direction) -> BackendResult<()>;
 
     // --- 会话管理 ---

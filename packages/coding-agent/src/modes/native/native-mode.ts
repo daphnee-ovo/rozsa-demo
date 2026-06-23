@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { join, resolve } from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
+import type { ImageContent } from "@earendil-works/rozsa-model-types";
 import { APP_NAME, VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
@@ -14,6 +14,7 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { findExactModelReferenceMatch } from "../../core/model-resolver.ts";
 import { SessionManager } from "../../core/session-manager.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import {
@@ -359,8 +360,19 @@ export class NativeMode {
 					break;
 				case "switch_model": {
 					const allModels = this.session.modelRegistry.getAll();
-					const target = allModels.find((m) => m.id === message.id);
-					if (target) await this.session.setModel(target);
+					const target = message.provider
+						? allModels.find((m) => m.provider === message.provider && m.id === message.id)
+						: findExactModelReferenceMatch(message.id, allModels);
+					if (!target) {
+						const reference = message.provider ? `${message.provider}/${message.id}` : message.id;
+						this.send({
+							type: "notify",
+							level: "warning",
+							message: `Model not found or ambiguous: ${reference}`,
+						});
+						break;
+					}
+					await this.session.setModel(target);
 					break;
 				}
 				case "switch_session":

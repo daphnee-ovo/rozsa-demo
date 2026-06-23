@@ -1,16 +1,6 @@
-export interface DiagnosticErrorInfo {
-	name?: string;
-	message: string;
-	stack?: string;
-	code?: string | number;
-}
+export type { AssistantMessageDiagnostic, DiagnosticErrorInfo } from "@earendil-works/rozsa-model-types";
 
-export interface AssistantMessageDiagnostic {
-	type: string;
-	timestamp: number;
-	error?: DiagnosticErrorInfo;
-	details?: Record<string, unknown>;
-}
+import type { AssistantMessageDiagnostic, DiagnosticErrorInfo } from "@earendil-works/rozsa-model-types";
 
 export function formatThrownValue(value: unknown): string {
 	if (value instanceof Error) return value.message || value.name;

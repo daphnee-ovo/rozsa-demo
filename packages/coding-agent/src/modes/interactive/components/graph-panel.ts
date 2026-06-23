@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/rozsa-agent-core";
 import {
 	type Component,
 	Container,
@@ -9,7 +9,7 @@ import {
 	Spacer,
 	TruncatedText,
 	truncateToWidth,
-} from "@earendil-works/pi-tui";
+} from "@earendil-works/rozsa-tui";
 import type { SessionEntry } from "../../../core/session-manager.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";

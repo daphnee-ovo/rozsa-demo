@@ -5,8 +5,8 @@
  * Multiple questions: tab bar navigation between questions
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/rozsa-coding-agent";
+import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@earendil-works/rozsa-tui";
 import { Type } from "typebox";
 
 // Types
@@ -73,8 +73,8 @@ function errorResult(
 	};
 }
 
-export default function questionnaire(pi: ExtensionAPI) {
-	pi.registerTool({
+export default function questionnaire(rozsa: ExtensionAPI) {
+	rozsa.registerTool({
 		name: "questionnaire",
 		label: "Questionnaire",
 		description:

@@ -6,15 +6,15 @@
 
 use serde_json::json;
 
+use rozsa_model::providers::bedrock::BedrockProvider;
 use rozsa_model::providers::bedrock::payload::{
     build_converse_stream_input, is_anthropic_claude_model,
 };
-use rozsa_model::providers::bedrock::BedrockProvider;
 use rozsa_model::registry::ApiProvider;
 use rozsa_model::types::{
-    Api, CacheRetention, ContentBlock, Context, InputModality, Message, Model, ModelCost,
-    Provider, SimpleStreamOptions, StreamOptions, ThinkingLevel, ToolCall, ToolSchema,
-    Transport, UserContent, UserMessage,
+    Api, CacheRetention, ContentBlock, Context, InputModality, Message, Model, ModelCost, Provider,
+    SimpleStreamOptions, StreamOptions, ThinkingLevel, ToolCall, ToolSchema, Transport,
+    UserContent, UserMessage,
 };
 
 fn bedrock_model(id: &str, name: &str, reasoning: bool) -> Model {
@@ -81,19 +81,31 @@ fn provider_returns_correct_api() {
 
 #[test]
 fn is_claude_model_detection() {
-    let claude_model = bedrock_model("anthropic.claude-3-5-sonnet-20241022-v2:0", "Claude 3.5 Sonnet", true);
+    let claude_model = bedrock_model(
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "Claude 3.5 Sonnet",
+        true,
+    );
     assert!(is_anthropic_claude_model(&claude_model));
 
     let nova_model = bedrock_model("amazon.nova-2-lite-v1:0", "Nova 2 Lite", false);
     assert!(!is_anthropic_claude_model(&nova_model));
 
-    let arn_model = bedrock_model("arn:aws:bedrock:us-east-1:123456:inference-profile/my-profile", "Claude", true);
+    let arn_model = bedrock_model(
+        "arn:aws:bedrock:us-east-1:123456:inference-profile/my-profile",
+        "Claude",
+        true,
+    );
     assert!(is_anthropic_claude_model(&arn_model));
 }
 
 #[test]
 fn payload_basic_messages() {
-    let model = bedrock_model("anthropic.claude-3-5-sonnet-20241022-v2:0", "Claude 3.5 Sonnet", true);
+    let model = bedrock_model(
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "Claude 3.5 Sonnet",
+        true,
+    );
     let context = basic_context();
     let options = test_options();
 
@@ -108,7 +120,11 @@ fn payload_basic_messages() {
 #[test]
 fn payload_system_prompt_has_cache_point_for_claude() {
     // Claude 3.5 Haiku supports cache points.
-    let model = bedrock_model("anthropic.claude-3-5-haiku-20241022-v1:0", "Claude 3.5 Haiku", false);
+    let model = bedrock_model(
+        "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "Claude 3.5 Haiku",
+        false,
+    );
     let context = basic_context();
     let options = test_options();
 
@@ -134,7 +150,11 @@ fn payload_no_cache_point_for_non_claude() {
 
 #[test]
 fn payload_no_cache_point_when_retention_none() {
-    let model = bedrock_model("anthropic.claude-3-5-sonnet-20241022-v2:0", "Claude 3.5 Sonnet", true);
+    let model = bedrock_model(
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "Claude 3.5 Sonnet",
+        true,
+    );
     let context = basic_context();
     let mut options = test_options();
     options.base.cache_retention = CacheRetention::None;
@@ -147,7 +167,11 @@ fn payload_no_cache_point_when_retention_none() {
 
 #[test]
 fn payload_tools_converted() {
-    let model = bedrock_model("anthropic.claude-3-5-sonnet-20241022-v2:0", "Claude 3.5 Sonnet", true);
+    let model = bedrock_model(
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "Claude 3.5 Sonnet",
+        true,
+    );
     let context = Context {
         system_prompt: Some("System".to_string()),
         messages: vec![Message::User(UserMessage {
@@ -185,7 +209,11 @@ fn payload_thinking_adaptive_for_opus_4() {
 
 #[test]
 fn payload_thinking_budget_for_older_claude() {
-    let model = bedrock_model("anthropic.claude-3-7-sonnet-20250219-v1:0", "Claude 3.7 Sonnet", true);
+    let model = bedrock_model(
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "Claude 3.7 Sonnet",
+        true,
+    );
     let context = basic_context();
     let mut options = test_options();
     options.reasoning = Some(ThinkingLevel::Medium);
@@ -211,7 +239,11 @@ fn payload_no_thinking_when_reasoning_none() {
 
 #[test]
 fn payload_no_thinking_for_non_reasoning_model() {
-    let model = bedrock_model("anthropic.claude-3-5-haiku-20241022-v1:0", "Claude 3.5 Haiku", false);
+    let model = bedrock_model(
+        "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "Claude 3.5 Haiku",
+        false,
+    );
     let context = basic_context();
     let mut options = test_options();
     options.reasoning = Some(ThinkingLevel::High);
@@ -223,7 +255,11 @@ fn payload_no_thinking_for_non_reasoning_model() {
 
 #[test]
 fn payload_consecutive_tool_results_merged() {
-    let model = bedrock_model("anthropic.claude-3-5-sonnet-20241022-v2:0", "Claude 3.5 Sonnet", true);
+    let model = bedrock_model(
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "Claude 3.5 Sonnet",
+        true,
+    );
     let context = Context {
         system_prompt: None,
         messages: vec![

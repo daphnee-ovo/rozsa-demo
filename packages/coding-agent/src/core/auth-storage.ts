@@ -2,7 +2,7 @@
  * Credential storage for API keys and OAuth tokens.
  * Handles loading, saving, and refreshing credentials from auth.json.
  *
- * Uses file locking to prevent race conditions when multiple pi instances
+ * Uses file locking to prevent race conditions when multiple rozsa instances
  * try to refresh tokens simultaneously.
  */
 
@@ -12,8 +12,8 @@ import {
 	type OAuthCredentials,
 	type OAuthLoginCallbacks,
 	type OAuthProviderId,
-} from "@earendil-works/pi-ai";
-import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@earendil-works/pi-ai/oauth";
+} from "@earendil-works/rozsa-ai";
+import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@earendil-works/rozsa-ai/oauth";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
@@ -48,6 +48,7 @@ type LockResult<T> = {
 export interface AuthStorageBackend {
 	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T;
 	withLockAsync<T>(fn: (current: string | undefined) => Promise<LockResult<T>>): Promise<T>;
+	getAuthPath?(): string;
 }
 
 export class FileAuthStorageBackend implements AuthStorageBackend {
@@ -55,6 +56,10 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 
 	constructor(authPath: string = join(getAgentDir(), "auth.json")) {
 		this.authPath = normalizePath(authPath);
+	}
+
+	getAuthPath(): string {
+		return this.authPath;
 	}
 
 	private ensureParentDir(): void {
@@ -229,6 +234,13 @@ export class AuthStorage {
 	}
 
 	/**
+	 * Get a runtime API key override without reading or refreshing persisted auth.
+	 */
+	getRuntimeApiKey(provider: string): string | undefined {
+		return this.runtimeOverrides.get(provider);
+	}
+
+	/**
 	 * Remove a runtime API key override.
 	 */
 	removeRuntimeApiKey(provider: string): void {
@@ -389,8 +401,88 @@ export class AuthStorage {
 			throw new Error(`Unknown OAuth provider: ${providerId}`);
 		}
 
+		// Built-in providers: use Rust bridge
+		const builtinProviders = ["anthropic", "github-copilot", "openai-codex"];
+		if (builtinProviders.includes(providerId)) {
+			const credentials = await this.loginViaRustBridge(providerId, callbacks);
+			this.set(providerId, { type: "oauth", ...credentials });
+			return;
+		}
+
+		// Extension providers: use JS callback as before
 		const credentials = await provider.login(callbacks);
 		this.set(providerId, { type: "oauth", ...credentials });
+	}
+
+	/**
+	 * Login via Rust bridge for built-in providers.
+	 */
+	private async loginViaRustBridge(providerId: string, callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+		const { oauthLoginRustModel } = await import("@earendil-works/rozsa-agent-core/node");
+
+		// Determine auth.json path from storage backend
+		const authJsonPath = this.storage.getAuthPath?.() ?? join(getAgentDir(), "auth.json");
+
+		const session = oauthLoginRustModel(providerId, {
+			authJsonPath,
+		});
+
+		// Wire abort signal
+		callbacks.signal?.addEventListener("abort", () => session.cancel());
+
+		try {
+			for await (const event of session.events) {
+				switch (event.type) {
+					case "auth_url":
+						callbacks.onAuth({ url: event.url, instructions: event.instructions });
+						break;
+					case "device_code":
+						callbacks.onDeviceCode({
+							userCode: event.userCode,
+							verificationUri: event.verificationUri,
+						});
+						break;
+					case "prompt": {
+						const answer = await callbacks.onPrompt({
+							message: event.message,
+							placeholder: event.placeholder,
+						});
+						session.respond({ response: answer });
+						break;
+					}
+					case "select": {
+						// Convert Rust event options (string[]) to OAuthSelectOption[]
+						const options = event.options.map((label, idx) => ({
+							id: String(idx),
+							label,
+						}));
+						const selectedId = await callbacks.onSelect({
+							message: event.message,
+							options,
+						});
+						// Convert selected id back to index for Rust side
+						const selectedIdx = selectedId !== undefined ? Number.parseInt(selectedId, 10) : undefined;
+						session.respond({ response: selectedIdx });
+						break;
+					}
+					case "progress":
+						callbacks.onProgress?.(event.message);
+						break;
+					case "waiting":
+						callbacks.onProgress?.(event.message);
+						break;
+					case "complete":
+						return event.credentials;
+					case "error":
+						throw new Error(event.message);
+					case "delegate":
+						throw new Error("Unexpected delegate event for built-in provider");
+				}
+			}
+			throw new Error("OAuth login ended without result");
+		} finally {
+			// Session cleanup is handled by the bridge process
+		}
 	}
 
 	/**
@@ -402,7 +494,7 @@ export class AuthStorage {
 
 	/**
 	 * Refresh OAuth token with backend locking to prevent race conditions.
-	 * Multiple pi instances may try to refresh simultaneously when tokens expire.
+	 * Multiple rozsa instances may try to refresh simultaneously when tokens expire.
 	 */
 	private async refreshOAuthTokenWithLock(
 		providerId: OAuthProviderId,

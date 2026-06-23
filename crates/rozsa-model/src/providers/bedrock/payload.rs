@@ -4,8 +4,8 @@
 
 use aws_sdk_bedrockruntime::types::{
     CachePointBlock, CachePointType, CacheTtl, ContentBlock, ConversationRole,
-    InferenceConfiguration, Message, SystemContentBlock, Tool as BedrockTool,
-    ToolConfiguration, ToolInputSchema, ToolSpecification,
+    InferenceConfiguration, Message, SystemContentBlock, Tool as BedrockTool, ToolConfiguration,
+    ToolInputSchema, ToolSpecification,
 };
 use aws_smithy_types::Document;
 
@@ -68,48 +68,40 @@ fn convert_messages(context: &Context) -> Vec<Message> {
                     crate::types::UserContent::Text(text) => {
                         vec![ContentBlock::Text(text.clone())]
                     }
-                    crate::types::UserContent::Blocks(blocks) => {
-                        blocks
-                            .iter()
-                            .filter_map(|b| match b {
-                                crate::types::ContentBlock::Text { text, .. } => {
-                                    Some(ContentBlock::Text(text.clone()))
-                                }
-                                crate::types::ContentBlock::Image { data, mime_type } => {
-                                    let format = match mime_type.as_str() {
-                                        "image/jpeg" | "image/jpg" => {
-                                            aws_sdk_bedrockruntime::types::ImageFormat::Jpeg
-                                        }
-                                        "image/png" => {
-                                            aws_sdk_bedrockruntime::types::ImageFormat::Png
-                                        }
-                                        "image/gif" => {
-                                            aws_sdk_bedrockruntime::types::ImageFormat::Gif
-                                        }
-                                        "image/webp" => {
-                                            aws_sdk_bedrockruntime::types::ImageFormat::Webp
-                                        }
-                                        _ => return None,
-                                    };
-                                    use aws_sdk_bedrockruntime::primitives::Blob;
-                                    let bytes = aws_smithy_types::base64::decode(data)
-                                        .unwrap_or_default();
-                                    Some(ContentBlock::Image(
-                                        aws_sdk_bedrockruntime::types::ImageBlock::builder()
-                                            .format(format)
-                                            .source(
-                                                aws_sdk_bedrockruntime::types::ImageSource::Bytes(
-                                                    Blob::new(bytes),
-                                                ),
-                                            )
-                                            .build()
-                                            .unwrap(),
-                                    ))
-                                }
-                                _ => None,
-                            })
-                            .collect()
-                    }
+                    crate::types::UserContent::Blocks(blocks) => blocks
+                        .iter()
+                        .filter_map(|b| match b {
+                            crate::types::ContentBlock::Text { text, .. } => {
+                                Some(ContentBlock::Text(text.clone()))
+                            }
+                            crate::types::ContentBlock::Image { data, mime_type } => {
+                                let format = match mime_type.as_str() {
+                                    "image/jpeg" | "image/jpg" => {
+                                        aws_sdk_bedrockruntime::types::ImageFormat::Jpeg
+                                    }
+                                    "image/png" => aws_sdk_bedrockruntime::types::ImageFormat::Png,
+                                    "image/gif" => aws_sdk_bedrockruntime::types::ImageFormat::Gif,
+                                    "image/webp" => {
+                                        aws_sdk_bedrockruntime::types::ImageFormat::Webp
+                                    }
+                                    _ => return None,
+                                };
+                                use aws_sdk_bedrockruntime::primitives::Blob;
+                                let bytes =
+                                    aws_smithy_types::base64::decode(data).unwrap_or_default();
+                                Some(ContentBlock::Image(
+                                    aws_sdk_bedrockruntime::types::ImageBlock::builder()
+                                        .format(format)
+                                        .source(aws_sdk_bedrockruntime::types::ImageSource::Bytes(
+                                            Blob::new(bytes),
+                                        ))
+                                        .build()
+                                        .unwrap(),
+                                ))
+                            }
+                            _ => None,
+                        })
+                        .collect(),
                 };
                 if content.is_empty() {
                     continue;
@@ -198,13 +190,12 @@ fn convert_messages(context: &Context) -> Vec<Message> {
                 } else {
                     aws_sdk_bedrockruntime::types::ToolResultStatus::Success
                 };
-                let tool_result_block =
-                    aws_sdk_bedrockruntime::types::ToolResultBlock::builder()
-                        .tool_use_id(&tool_result.tool_call_id)
-                        .set_content(Some(content_blocks))
-                        .status(status)
-                        .build()
-                        .unwrap();
+                let tool_result_block = aws_sdk_bedrockruntime::types::ToolResultBlock::builder()
+                    .tool_use_id(&tool_result.tool_call_id)
+                    .set_content(Some(content_blocks))
+                    .status(status)
+                    .build()
+                    .unwrap();
                 // Consecutive tool results should be in a single user message.
                 // Check if last message is a user message we can append to.
                 if let Some(last) = result.last_mut() {
@@ -410,7 +401,10 @@ fn map_thinking_level_to_effort(
         ThinkingLevel::High => "high",
         ThinkingLevel::XHigh => {
             let candidates = model_match_candidates(&model.id, &model.name);
-            if candidates.iter().any(|s| s.contains("opus-4-7") || s.contains("opus-4-8")) {
+            if candidates
+                .iter()
+                .any(|s| s.contains("opus-4-7") || s.contains("opus-4-8"))
+            {
                 "xhigh"
             } else {
                 "high"
@@ -495,9 +489,7 @@ fn build_cache_point(cache_retention: CacheRetention) -> CachePointBlock {
 pub fn is_anthropic_claude_model(model: &Model) -> bool {
     let candidates = model_match_candidates(&model.id, &model.name);
     candidates.iter().any(|s| {
-        s.contains("anthropic.claude")
-            || s.contains("anthropic/claude")
-            || s.contains("claude")
+        s.contains("anthropic.claude") || s.contains("anthropic/claude") || s.contains("claude")
     })
 }
 
@@ -511,7 +503,8 @@ fn model_match_candidates(id: &str, name: &str) -> Vec<String> {
         .into_iter()
         .flat_map(|v| {
             let lower = v.to_lowercase();
-            let normalized = lower.replace(|c: char| c == ' ' || c == '_' || c == '.' || c == ':', "-");
+            let normalized =
+                lower.replace(|c: char| c == ' ' || c == '_' || c == '.' || c == ':', "-");
             if lower == normalized {
                 vec![lower]
             } else {

@@ -1,11 +1,6 @@
-import {
-	type AssistantMessage,
-	type ImageContent,
-	type Model,
-	streamSimple,
-	type UserMessage,
-} from "@earendil-works/pi-ai";
-import { runAgentLoop } from "../agent-loop.ts";
+import type { AssistantMessage, ImageContent, Model, UserMessage } from "@earendil-works/rozsa-model-types";
+import { type AgentLoopBackend, TsAgentLoopBackend } from "../backend.ts";
+import { missingModelStream } from "../missing-model-stream.ts";
 import type {
 	AgentContext,
 	AgentEvent,
@@ -176,6 +171,8 @@ export class AgentHarness<
 	private thinkingLevel: ThinkingLevel;
 	private systemPrompt: AgentHarnessOptions<TSkill, TPromptTemplate, TTool>["systemPrompt"];
 	private streamOptions: AgentHarnessStreamOptions;
+	private streamFn?: StreamFn;
+	private backend: AgentLoopBackend;
 	private getApiKeyAndHeaders?: AgentHarnessOptions["getApiKeyAndHeaders"];
 	private resources: AgentHarnessResources<TSkill, TPromptTemplate>;
 	private tools = new Map<string, TTool>();
@@ -192,6 +189,8 @@ export class AgentHarness<
 		this.session = options.session;
 		this.resources = options.resources ?? {};
 		this.streamOptions = cloneStreamOptions(options.streamOptions);
+		this.streamFn = options.streamFn;
+		this.backend = options.backend ?? new TsAgentLoopBackend();
 		this.systemPrompt = options.systemPrompt;
 		this.getApiKeyAndHeaders = options.getApiKeyAndHeaders;
 		for (const tool of options.tools ?? []) {
@@ -364,7 +363,8 @@ export class AgentHarness<
 				headers: mergeHeaders(turnState.streamOptions.headers, auth?.headers),
 			};
 			const requestOptions = await this.emitBeforeProviderRequest(model, turnState.sessionId, snapshotOptions);
-			return streamSimple(model, context, {
+			const baseStreamFn = this.streamFn ?? missingModelStream;
+			return baseStreamFn(model, context, {
 				cacheRetention: requestOptions.cacheRetention,
 				headers: requestOptions.headers,
 				maxRetries: requestOptions.maxRetries,
@@ -557,11 +557,11 @@ export class AgentHarness<
 		this.runAbortController = abortController;
 		const runResultPromise = (async () => {
 			try {
-				return await runAgentLoop(
+				return await this.backend.runPrompt(
 					messages,
 					this.createContext(turnState, beforeResult?.systemPrompt),
 					this.createLoopConfig(getTurnState, setTurnState),
-					(event) => this.handleAgentEvent(event, abortController.signal),
+					(event: AgentEvent) => this.handleAgentEvent(event, abortController.signal),
 					abortController.signal,
 					this.createStreamFn(getTurnState),
 				);
@@ -712,6 +712,7 @@ export class AgentHarness<
 						customInstructions,
 						undefined,
 						this.thinkingLevel,
+						this.streamFn,
 					);
 			if (!compactResult.ok) throw compactResult.error;
 			const result = compactResult.value;
@@ -772,6 +773,7 @@ export class AgentHarness<
 					apiKey: auth.apiKey,
 					headers: auth.headers,
 					signal: new AbortController().signal,
+					streamFn: this.streamFn,
 					customInstructions: hookResult?.customInstructions ?? options?.customInstructions,
 					replaceInstructions: hookResult?.replaceInstructions ?? options?.replaceInstructions,
 				});

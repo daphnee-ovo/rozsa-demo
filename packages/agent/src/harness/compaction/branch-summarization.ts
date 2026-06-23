@@ -1,6 +1,6 @@
-import type { Model } from "@earendil-works/pi-ai";
-import { completeSimple } from "@earendil-works/pi-ai";
-import type { AgentMessage } from "../../types.ts";
+import type { AssistantMessage, Model } from "@earendil-works/rozsa-model-types";
+import { missingModelStream } from "../../missing-model-stream.ts";
+import type { AgentMessage, StreamFn } from "../../types.ts";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -57,6 +57,8 @@ export interface GenerateBranchSummaryOptions {
 	headers?: Record<string, string>;
 	/** Abort signal for the summarization request. */
 	signal: AbortSignal;
+	/** Optional stream function used to complete the summary request. */
+	streamFn?: StreamFn;
 	/** Optional instructions appended to or replacing the default prompt. */
 	customInstructions?: string;
 	/** Replace the default prompt with custom instructions instead of appending them. */
@@ -201,7 +203,16 @@ export async function generateBranchSummary(
 	entries: SessionTreeEntry[],
 	options: GenerateBranchSummaryOptions,
 ): Promise<Result<BranchSummaryResult, BranchSummaryError>> {
-	const { model, apiKey, headers, signal, customInstructions, replaceInstructions, reserveTokens = 16384 } = options;
+	const {
+		model,
+		apiKey,
+		headers,
+		signal,
+		streamFn,
+		customInstructions,
+		replaceInstructions,
+		reserveTokens = 16384,
+	} = options;
 	const contextWindow = model.contextWindow || 128000;
 	const tokenBudget = contextWindow - reserveTokens;
 
@@ -229,11 +240,12 @@ export async function generateBranchSummary(
 			timestamp: Date.now(),
 		},
 	];
-	const response = await completeSimple(
+	const stream = await (streamFn ?? missingModelStream)(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
 		{ apiKey, headers, signal, maxTokens: 2048 },
 	);
+	const response: AssistantMessage = await stream.result();
 	if (response.stopReason === "aborted") {
 		return err(new BranchSummaryError("aborted", response.errorMessage || "Branch summary aborted"));
 	}

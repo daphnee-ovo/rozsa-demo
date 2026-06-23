@@ -5,6 +5,10 @@ edition = "2024"
 description = "Agent loop engine — state machine, event stream, tool dispatch"
 license = "MIT"
 
+[[bin]]
+name = "rozsa-core"
+path = "src/bin/bridge.rs"
+
 [dependencies]
 rozsa-model = { path = "../rozsa-model" }
 tokio = { workspace = true }
@@ -15,3 +19,5 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { version = "1", features = ["v4"] }

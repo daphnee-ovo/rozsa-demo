@@ -1,7 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { createInterface } from "node:readline";
+import { createInterface, type Interface } from "node:readline";
 import type {
 	Api,
 	AssistantMessage,
@@ -13,6 +12,7 @@ import type {
 	StreamOptions,
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { isRustModelSupportedApi } from "./rust-supported-apis.ts";
 
 type BridgeMethod = "stream" | "streamSimple";
 
@@ -34,27 +34,210 @@ type BridgeLine = BridgeEventLine | BridgeErrorLine;
 const DEFAULT_RUST_MODEL_BINARY = resolve(process.cwd(), "target", "debug", "rozsa-model");
 const MAX_STDERR_CHARS = 4000;
 
-/** Stream a full TypeScript AI request through the Rust model bridge. */
-export const streamRustModel: StreamFunction<Api, StreamOptions> = (model, context, options) =>
-	createRustModelBridgeStream("stream", model, context, options);
+/**
+ * Manages a long-lived rozsa-model process that handles concurrent requests via multiplexing.
+ */
+class RustModelProcess {
+	private child: ChildProcessWithoutNullStreams | null = null;
+	private pending: Map<string, AssistantMessageEventStream> = new Map();
+	private readline: Interface | null = null;
+	private stderrText = "";
+	private nextRequestId = 0;
+	private currentBinary: string | null = null;
+	private currentArgs: string | null = null;
 
-/** Stream a simple TypeScript AI request through the Rust model bridge. */
+	/** Spawn or get the existing process. */
+	private ensureProcess(): ChildProcessWithoutNullStreams {
+		// Check if binary or args changed — restart if so
+		const binary = resolveRustModelBinary();
+		const args = JSON.stringify(resolveRustModelBinaryArgs());
+		if (this.child && (this.currentBinary !== binary || this.currentArgs !== args)) {
+			this.shutdown();
+		}
+
+		this.currentBinary = binary;
+		this.currentArgs = args;
+		if (this.child) {
+			return this.child;
+		}
+
+		try {
+			this.child = spawn(resolveRustModelBinary(), resolveRustModelBinaryArgs(), {
+				stdio: ["pipe", "pipe", "pipe"],
+			});
+		} catch (error) {
+			this.child = null;
+			throw error;
+		}
+
+		this.stderrText = "";
+
+		// Capture stderr for debugging
+		this.child.stderr.on("data", (chunk: Buffer) => {
+			this.stderrText = `${this.stderrText}${chunk.toString("utf8")}`.slice(-MAX_STDERR_CHARS);
+		});
+
+		// Parse stdout lines and route by request ID
+		this.readline = createInterface({ input: this.child.stdout });
+		this.readline.on("line", (line) => {
+			const parsed = parseBridgeLine(line);
+			if (!parsed) {
+				return;
+			}
+
+			const stream = this.pending.get(parsed.id);
+			if (!stream) {
+				return;
+			}
+
+			if (parsed.type === "error") {
+				pushBridgeError(
+					stream,
+					{
+						api: "openai-completions",
+						provider: "openai",
+						id: "unknown",
+					} as Model<Api>,
+					parsed.message,
+				);
+				this.pending.delete(parsed.id);
+				return;
+			}
+
+			stream.push(parsed.event);
+			if (parsed.event.type === "done" || parsed.event.type === "error") {
+				this.pending.delete(parsed.id);
+			}
+		});
+
+		// On process error or exit: fail all pending requests
+		const handleExit = (codeOrError?: number | Error | null, signal?: NodeJS.Signals | null) => {
+			for (const [_id, stream] of this.pending) {
+				const detail = this.stderrText.trim().length > 0 ? `: ${this.stderrText.trim()}` : "";
+				const errorMsg =
+					codeOrError instanceof Error
+						? codeOrError.message
+						: `rozsa-model exited with code ${codeOrError ?? "null"} signal ${signal ?? "null"}${detail}`;
+				pushBridgeError(
+					stream,
+					{
+						api: "openai-completions",
+						provider: "openai",
+						id: "unknown",
+					} as Model<Api>,
+					errorMsg,
+				);
+			}
+			this.pending.clear();
+			this.child = null;
+			this.readline = null;
+		};
+
+		this.child.on("error", (error) => {
+			handleExit(error);
+		});
+
+		this.child.on("close", (code, signal) => {
+			handleExit(code, signal);
+		});
+
+		return this.child;
+	}
+
+	/** Stream a request through the long-lived process. */
+	stream<TApi extends Api>(
+		method: BridgeMethod,
+		model: Model<TApi>,
+		context: Context,
+		options?: StreamOptions | SimpleStreamOptions,
+	): AssistantMessageEventStream {
+		const stream = new AssistantMessageEventStream();
+		const requestId = `${Date.now().toString(36)}-${(this.nextRequestId++).toString(36)}`;
+
+		let child: ChildProcessWithoutNullStreams;
+		try {
+			child = this.ensureProcess();
+		} catch (error) {
+			pushBridgeError(stream, model, error);
+			return stream;
+		}
+
+		this.pending.set(requestId, stream);
+
+		// Write request to stdin
+		const request = {
+			type: "request",
+			id: requestId,
+			method,
+			model,
+			context,
+			options: serializeOptions(options),
+		};
+
+		try {
+			child.stdin.write(`${JSON.stringify(request)}\n`);
+		} catch (error) {
+			this.pending.delete(requestId);
+			pushBridgeError(stream, model, error);
+			return stream;
+		}
+
+		// Handle abort signal: send cancel message
+		if (options?.signal) {
+			const abortHandler = () => {
+				if (this.pending.has(requestId)) {
+					this.pending.delete(requestId);
+					pushBridgeError(stream, model, "Request was aborted", "aborted");
+					try {
+						child.stdin.write(`${JSON.stringify({ type: "cancel", id: requestId })}\n`);
+					} catch {
+						// If stdin write fails, the process is likely dead; error already sent
+					}
+				}
+			};
+			options.signal.addEventListener("abort", abortHandler, { once: true });
+		}
+
+		return stream;
+	}
+
+	/** Shut down the process gracefully. */
+	shutdown(): void {
+		if (this.child) {
+			// Remove all listeners to prevent error handlers from firing
+			this.child.removeAllListeners();
+			if (this.readline) {
+				this.readline.removeAllListeners();
+				this.readline.close();
+			}
+			this.child.kill();
+			this.child = null;
+			this.readline = null;
+		}
+	}
+}
+
+/** Singleton process manager. */
+const rustModelProcess = new RustModelProcess();
+
+/** Stream a full TypeScript AI request through the Rust model bridge using the long-lived process. */
+export const streamRustModel: StreamFunction<Api, StreamOptions> = (model, context, options) =>
+	rustModelProcess.stream("stream", model, context, options);
+
+/** Stream a simple TypeScript AI request through the Rust model bridge using the long-lived process. */
 export const streamSimpleRustModel: StreamFunction<Api, SimpleStreamOptions> = (model, context, options) =>
-	createRustModelBridgeStream("streamSimple", model, context, options);
+	rustModelProcess.stream("streamSimple", model, context, options);
 
 /** Decide whether a TypeScript API should route to the Rust model bridge. */
 export function shouldUseRustModelProvider(api: Api): boolean {
-	const backend = process.env.ROZSA_MODEL_BACKEND;
-	if (backend !== "rust" && backend !== "auto") {
+	const backend = process.env.ROZSA_MODEL_BACKEND ?? "ts";
+	if (backend === "ts") {
 		return false;
 	}
-	if (!rustApiSet().has(api)) {
-		return false;
+	if (backend !== "rust") {
+		throw new Error('ROZSA_MODEL_BACKEND must be "ts" or "rust".');
 	}
-	if (backend === "auto" && !existsSync(resolveRustModelBinary())) {
-		return false;
-	}
-	return true;
+	return isRustModelSupportedApi(api);
 }
 
 /** Resolve the bridge executable path from env or the Cargo dev target. */
@@ -162,19 +345,6 @@ export function createRustModelBridgeStream<TApi extends Api>(
 	return stream;
 }
 
-/** Parse the Rust-enabled API allow-list from the environment. */
-function rustApiSet(): Set<string> {
-	const raw = process.env.ROZSA_MODEL_RUST_APIS;
-	if (!raw) {
-		return new Set();
-	}
-	return new Set(
-		raw
-			.split(",")
-			.map((api) => api.trim())
-			.filter((api) => api.length > 0),
-	);
-}
 
 /** Serialize stream options while removing Node-only callbacks and signals. */
 function serializeOptions(options?: StreamOptions | SimpleStreamOptions): Record<string, unknown> {

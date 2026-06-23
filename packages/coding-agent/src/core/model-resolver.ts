@@ -2,13 +2,14 @@
  * Model resolution, scoping, and initial selection
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@earendil-works/pi-ai";
+import type { ThinkingLevel } from "@earendil-works/rozsa-agent-core";
+import type { Api, KnownProvider, Model } from "@earendil-works/rozsa-model-types";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import { modelsAreEqual } from "./model-utils.ts";
 
 /** Default model IDs for each known provider */
 export const defaultModelPerProvider: Record<KnownProvider, string> = {
@@ -114,6 +115,17 @@ export function findExactModelReferenceMatch(
 	return idMatches.length === 1 ? idMatches[0] : undefined;
 }
 
+function exactIdMatches(modelReference: string, availableModels: Model<Api>[]): Model<Api>[] {
+	const normalizedReference = modelReference.trim().toLowerCase();
+	if (!normalizedReference) return [];
+	return availableModels.filter((model) => model.id.toLowerCase() === normalizedReference);
+}
+
+function ambiguousModelReferenceMessage(modelReference: string, matches: Model<Api>[]): string {
+	const references = matches.map((model) => `${model.provider}/${model.id}`).sort();
+	return `Model "${modelReference}" is ambiguous across providers: ${references.join(", ")}. Use --provider or the full provider/model id.`;
+}
+
 /**
  * Try to match a pattern to a model from the available models list.
  * Returns the matched model or undefined if no match found.
@@ -142,10 +154,16 @@ function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Mod
 	if (aliases.length > 0) {
 		// Prefer alias - if multiple aliases, pick the one that sorts highest
 		aliases.sort((a, b) => b.id.localeCompare(a.id));
+		if (aliases.length > 1 && aliases[0].id === aliases[1].id) {
+			return undefined;
+		}
 		return aliases[0];
 	} else {
 		// No alias found, pick latest dated version
 		datedVersions.sort((a, b) => b.id.localeCompare(a.id));
+		if (datedVersions.length > 1 && datedVersions[0].id === datedVersions[1].id) {
+			return undefined;
+		}
 		return datedVersions[0];
 	}
 }
@@ -396,9 +414,15 @@ export function resolveCliModel(options: {
 	// This handles models whose IDs naturally contain slashes (e.g. OpenRouter-style IDs).
 	if (!provider) {
 		const lower = cliModel.toLowerCase();
-		const exact = availableModels.find(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
+		const idMatches = exactIdMatches(cliModel, availableModels);
+		if (idMatches.length > 1) {
+			return {
+				model: undefined,
+				warning: undefined,
+				error: ambiguousModelReferenceMessage(cliModel, idMatches),
+			};
+		}
+		const exact = availableModels.find((m) => `${m.provider}/${m.id}`.toLowerCase() === lower) ?? idMatches[0];
 		if (exact) {
 			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
 		}
@@ -427,9 +451,15 @@ export function resolveCliModel(options: {
 	// looks like a provider but the full string is actually a model id on openrouter.
 	if (inferredProvider) {
 		const lower = cliModel.toLowerCase();
-		const exact = availableModels.find(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
+		const idMatches = exactIdMatches(cliModel, availableModels);
+		if (idMatches.length > 1) {
+			return {
+				model: undefined,
+				warning: undefined,
+				error: ambiguousModelReferenceMessage(cliModel, idMatches),
+			};
+		}
+		const exact = availableModels.find((m) => `${m.provider}/${m.id}`.toLowerCase() === lower) ?? idMatches[0];
 		if (exact) {
 			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
 		}

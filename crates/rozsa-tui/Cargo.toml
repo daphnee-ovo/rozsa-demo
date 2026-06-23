@@ -29,9 +29,9 @@ two-face = { version = "0.4", default-features = false, features = ["syntect-def
 regex = "1"
 chrono = "0.4"
 dirs = "6"
-lru = "0.12"
+lru = "0.18"
 tracing = "0.1"
 
 [dev-dependencies]
 portable-pty = "0.9"
-vt100 = "0.15"
+vt100 = "0.16.2"

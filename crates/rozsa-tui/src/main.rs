@@ -147,6 +147,16 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert_eq!(json, r#"{"type":"abort"}"#);
 
+        let msg = ClientMessage::SwitchModel {
+            provider: "nvidia",
+            id: "google/gemma-4-31b-it",
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"switch_model","provider":"nvidia","id":"google/gemma-4-31b-it"}"#
+        );
+
         let msg = ClientMessage::PermissionResponse { id: "p1", choice: "approve_once", trust_key: None };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""id":"p1""#));

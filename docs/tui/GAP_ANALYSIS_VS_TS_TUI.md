@@ -193,9 +193,9 @@ TS 提供三个诊断入口：
 
 | 环境变量 | 行为 |
 |----------|------|
-| `PI_DEBUG_REDRAW=1` | 每次全量重绘写日志到 `~/.pi/agent/pi-debug.log` |
+| `ROZSA_DEBUG_REDRAW=1` | 每次全量重绘写日志到 `~/.rozsa/agent/rozsa-debug.log` |
 | `PI_TUI_DEBUG=1` | 每帧将 newLines/previousLines/buffer 写到 `/tmp/tui/` |
-| 渲染行宽溢出 | 写 `pi-crash.log`（含所有行宽诊断），清理终端后抛出有意义的 Error |
+| 渲染行宽溢出 | 写 `rozsa-crash.log`（含所有行宽诊断），清理终端后抛出有意义的 Error |
 
 Rust 目前渲染 bug 只能靠 eprintln 或 panic，无法事后追踪。
 

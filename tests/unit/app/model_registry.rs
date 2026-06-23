@@ -1,4 +1,4 @@
-use rozsa_app::model_registry::{ModelRegistry, RegistryModelCost};
+use rozsa_app::model_registry::{ImageModelRegistry, ModelRegistry, RegistryModelCost};
 use rozsa_model::providers::openai_completions::DiscoveredModel;
 
 fn generated_json() -> &'static str {
@@ -16,6 +16,23 @@ fn generated_json() -> &'static str {
                 "contextWindow": 128000,
                 "maxTokens": 4096,
                 "compat": { "supportsStore": true, "openRouterRouting": { "allow_fallbacks": true } }
+            }
+        }
+    }"#
+}
+
+fn generated_image_json() -> &'static str {
+    r#"{
+        "openrouter": {
+            "image-test": {
+                "id": "image-test",
+                "name": "Image Test",
+                "api": "openrouter-images",
+                "provider": "openrouter",
+                "baseUrl": "https://openrouter.ai/api/v1",
+                "input": ["text", "image"],
+                "output": ["image"],
+                "cost": { "input": 1, "output": 2, "cacheRead": 0.1, "cacheWrite": 0.2 }
             }
         }
     }"#
@@ -39,6 +56,64 @@ fn loads_generated_model_metadata() {
             cache_write: 0.2,
         }
     );
+}
+
+#[test]
+fn loads_generated_image_model_metadata() {
+    let registry = ImageModelRegistry::from_generated_json(generated_image_json()).unwrap();
+    let model = registry.find("openrouter", "image-test").unwrap();
+
+    assert_eq!(model.name, "Image Test");
+    assert_eq!(model.api, "openrouter-images");
+    assert_eq!(model.base_url, "https://openrouter.ai/api/v1");
+    assert_eq!(model.input, vec!["text", "image"]);
+    assert_eq!(model.output, vec!["image"]);
+    assert_eq!(
+        model.cost,
+        RegistryModelCost {
+            input: 1.0,
+            output: 2.0,
+            cache_read: 0.1,
+            cache_write: 0.2,
+        }
+    );
+}
+
+#[test]
+fn loads_checked_in_generated_image_models() {
+    let registry = ImageModelRegistry::from_generated().unwrap();
+
+    assert!(!registry.all().is_empty());
+    assert!(
+        registry
+            .find("openrouter", "google/gemini-2.5-flash-image")
+            .is_some()
+    );
+}
+
+#[test]
+fn reports_image_provider_auth_from_env() {
+    let original = std::env::var("OPENROUTER_API_KEY").ok();
+    unsafe {
+        std::env::set_var("OPENROUTER_API_KEY", "test-key");
+    }
+
+    let registry = ImageModelRegistry::from_generated_json(generated_image_json()).unwrap();
+    let available = registry.provider_available();
+
+    assert_eq!(available.get("openrouter").unwrap().configured, true);
+    assert_eq!(
+        available.get("openrouter").unwrap().source.as_deref(),
+        Some("environment")
+    );
+
+    unsafe {
+        if let Some(value) = original {
+            std::env::set_var("OPENROUTER_API_KEY", value);
+        } else {
+            std::env::remove_var("OPENROUTER_API_KEY");
+        }
+    }
 }
 
 #[test]

@@ -29,7 +29,7 @@ pub enum MockCall {
     FollowUp { text: String },
     Steer { text: String },
     ListModels,
-    SwitchModel { id: String },
+    SwitchModel { provider: String, id: String },
     CycleModel { direction: Direction },
     ListSessions,
     SwitchSession { path: String },
@@ -119,8 +119,9 @@ impl AgentBackend for MockBackend {
         Ok(())
     }
 
-    async fn switch_model(&self, id: &str) -> BackendResult<()> {
+    async fn switch_model(&self, provider: &str, id: &str) -> BackendResult<()> {
         self.record(MockCall::SwitchModel {
+            provider: provider.to_string(),
             id: id.to_string(),
         });
         Ok(())

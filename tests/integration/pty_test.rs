@@ -175,7 +175,7 @@ fn pty_boot_and_render_header() {
     let mut client = client.expect("TUI should connect to socket");
 
     // 发送 state 消息
-    let msg = make_state_message("pi", "claude-sonnet-4");
+    let msg = make_state_message("rozsa", "claude-sonnet-4");
     writeln!(client, "{}", msg).expect("send state");
     client.flush().ok();
 
@@ -221,7 +221,7 @@ fn pty_shutdown_message_exits() {
     let mut client = client.expect("TUI should connect");
 
     // 先发 state 让 TUI 正常渲染
-    let msg = make_state_message("pi", "test-model");
+    let msg = make_state_message("rozsa", "test-model");
     writeln!(client, "{}", msg).ok();
     client.flush().ok();
     thread::sleep(Duration::from_millis(300));
@@ -275,7 +275,7 @@ fn pty_input_sends_message() {
     client.set_read_timeout(Some(Duration::from_secs(3))).ok();
 
     // 发送初始 state
-    let msg = make_state_message("pi", "test-model");
+    let msg = make_state_message("rozsa", "test-model");
     writeln!(client, "{}", msg).ok();
     client.flush().ok();
     thread::sleep(Duration::from_millis(300));
@@ -365,7 +365,7 @@ fn pty_slash_help_submits_to_backend() {
     client.set_read_timeout(Some(Duration::from_secs(2))).ok();
 
     // 发送初始 state
-    let msg = make_state_message("pi", "test-model");
+    let msg = make_state_message("rozsa", "test-model");
     writeln!(client, "{}", msg).ok();
     client.flush().ok();
     thread::sleep(Duration::from_millis(300));
@@ -420,7 +420,7 @@ fn pty_slash_model_submits_to_backend() {
     client.set_read_timeout(Some(Duration::from_secs(2))).ok();
 
     // 发送初始 state
-    let msg = make_state_message("pi", "test-model");
+    let msg = make_state_message("rozsa", "test-model");
     writeln!(client, "{}", msg).ok();
     client.flush().ok();
     thread::sleep(Duration::from_millis(300));
@@ -519,7 +519,7 @@ fn pty_tab_completion_preserves_slash_prefix() {
     client.set_read_timeout(Some(Duration::from_secs(2))).ok();
 
     // 发送初始 state
-    let msg = make_state_message("pi", "test-model");
+    let msg = make_state_message("rozsa", "test-model");
     writeln!(client, "{}", msg).ok();
     client.flush().ok();
     thread::sleep(Duration::from_millis(300));
@@ -591,7 +591,7 @@ fn pty_at_triggers_autocomplete_request() {
     let mut client = client.expect("TUI should connect");
     client.set_read_timeout(Some(Duration::from_secs(2))).ok();
 
-    let msg = make_state_message("pi", "test-model");
+    let msg = make_state_message("rozsa", "test-model");
     writeln!(client, "{}", msg).ok();
     client.flush().ok();
     thread::sleep(Duration::from_millis(300));

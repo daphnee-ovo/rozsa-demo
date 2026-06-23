@@ -8,8 +8,8 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
-import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/pi-tui";
+import type { ImageContent } from "@earendil-works/rozsa-model-types";
+import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/rozsa-tui";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
@@ -31,6 +31,7 @@ import { configureHttpDispatcher } from "./core/http-dispatcher.ts";
 import { KeybindingsManager } from "./core/keybindings.ts";
 import type { ModelRegistry } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
+import { modelsAreEqual } from "./core/model-utils.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import {

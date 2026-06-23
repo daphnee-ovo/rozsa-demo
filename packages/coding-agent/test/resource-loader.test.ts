@@ -62,7 +62,7 @@ Skill content here.`,
 		});
 
 		it("should ignore extra markdown files in auto-discovered skill dirs", async () => {
-			const skillDir = join(agentDir, "skills", "pi-skills", "browser-tools");
+			const skillDir = join(agentDir, "skills", "rozsa-skills", "browser-tools");
 			mkdirSync(skillDir, { recursive: true });
 			writeFileSync(
 				join(skillDir, "SKILL.md"),
@@ -102,7 +102,7 @@ Prompt content.`,
 
 		it("should prefer project resources over user on name collisions", async () => {
 			const userPromptsDir = join(agentDir, "prompts");
-			const projectPromptsDir = join(cwd, ".pi", "prompts");
+			const projectPromptsDir = join(cwd, ".rozsa", "prompts");
 			mkdirSync(userPromptsDir, { recursive: true });
 			mkdirSync(projectPromptsDir, { recursive: true });
 			const userPromptPath = join(userPromptsDir, "commit.md");
@@ -111,7 +111,7 @@ Prompt content.`,
 			writeFileSync(projectPromptPath, "Project prompt");
 
 			const userSkillDir = join(agentDir, "skills", "collision-skill");
-			const projectSkillDir = join(cwd, ".pi", "skills", "collision-skill");
+			const projectSkillDir = join(cwd, ".rozsa", "skills", "collision-skill");
 			mkdirSync(userSkillDir, { recursive: true });
 			mkdirSync(projectSkillDir, { recursive: true });
 			const userSkillPath = join(userSkillDir, "SKILL.md");
@@ -138,9 +138,9 @@ Project skill`,
 			) as { name: string; vars?: Record<string, string> };
 			baseTheme.name = "collision-theme";
 			const userThemePath = join(agentDir, "themes", "collision.json");
-			const projectThemePath = join(cwd, ".pi", "themes", "collision.json");
+			const projectThemePath = join(cwd, ".rozsa", "themes", "collision.json");
 			mkdirSync(join(agentDir, "themes"), { recursive: true });
-			mkdirSync(join(cwd, ".pi", "themes"), { recursive: true });
+			mkdirSync(join(cwd, ".rozsa", "themes"), { recursive: true });
 			writeFileSync(userThemePath, JSON.stringify(baseTheme, null, 2));
 			if (baseTheme.vars) {
 				baseTheme.vars.accent = "#ff00ff";
@@ -165,8 +165,8 @@ Project skill`,
 			mkdirSync(sharedExtDir, { recursive: true });
 			writeFileSync(
 				join(sharedExtDir, "shared.ts"),
-				`export default function(pi) {
-	pi.registerCommand("shared", {
+				`export default function(rozsa) {
+	rozsa.registerCommand("shared", {
 		description: "shared command",
 		handler: async () => {},
 	});
@@ -174,9 +174,9 @@ Project skill`,
 			);
 
 			mkdirSync(agentDir, { recursive: true });
-			mkdirSync(join(cwd, ".pi"), { recursive: true });
+			mkdirSync(join(cwd, ".rozsa"), { recursive: true });
 			symlinkSync(sharedExtDir, join(agentDir, "extensions"), "dir");
-			symlinkSync(sharedExtDir, join(cwd, ".pi", "extensions"), "dir");
+			symlinkSync(sharedExtDir, join(cwd, ".rozsa", "extensions"), "dir");
 
 			const loader = new DefaultResourceLoader({ cwd, agentDir });
 			await loader.reload();
@@ -188,23 +188,23 @@ Project skill`,
 
 			// mergePaths processes project paths before user paths, so the project
 			// alias is the canonical survivor.
-			expect(extensionsResult.extensions[0].path).toBe(join(cwd, ".pi", "extensions", "shared.ts"));
+			expect(extensionsResult.extensions[0].path).toBe(join(cwd, ".rozsa", "extensions", "shared.ts"));
 		});
 
 		it("should keep both extensions loaded when command names collide", async () => {
 			const userExtDir = join(agentDir, "extensions");
-			const projectExtDir = join(cwd, ".pi", "extensions");
+			const projectExtDir = join(cwd, ".rozsa", "extensions");
 			mkdirSync(userExtDir, { recursive: true });
 			mkdirSync(projectExtDir, { recursive: true });
 
 			writeFileSync(
 				join(projectExtDir, "project.ts"),
-				`export default function(pi) {
-	pi.registerCommand("deploy", {
+				`export default function(rozsa) {
+	rozsa.registerCommand("deploy", {
 		description: "project deploy",
 		handler: async () => {},
 	});
-	pi.registerCommand("project-only", {
+	rozsa.registerCommand("project-only", {
 		description: "project only",
 		handler: async () => {},
 	});
@@ -213,12 +213,12 @@ Project skill`,
 
 			writeFileSync(
 				join(userExtDir, "user.ts"),
-				`export default function(pi) {
-	pi.registerCommand("deploy", {
+				`export default function(rozsa) {
+	rozsa.registerCommand("deploy", {
 		description: "user deploy",
 		handler: async () => {},
 	});
-	pi.registerCommand("user-only", {
+	rozsa.registerCommand("user-only", {
 		description: "user only",
 		handler: async () => {},
 	});
@@ -323,8 +323,8 @@ Content`,
 			expect(agentsFiles).toEqual([]);
 		});
 
-		it("should discover SYSTEM.md from cwd/.pi", async () => {
-			const piDir = join(cwd, ".pi");
+		it("should discover SYSTEM.md from cwd/.rozsa", async () => {
+			const piDir = join(cwd, ".rozsa");
 			mkdirSync(piDir, { recursive: true });
 			writeFileSync(join(piDir, "SYSTEM.md"), "You are a helpful assistant.");
 
@@ -335,7 +335,7 @@ Content`,
 		});
 
 		it("should discover APPEND_SYSTEM.md", async () => {
-			const piDir = join(cwd, ".pi");
+			const piDir = join(cwd, ".rozsa");
 			mkdirSync(piDir, { recursive: true });
 			writeFileSync(join(piDir, "APPEND_SYSTEM.md"), "Additional instructions.");
 
@@ -544,10 +544,10 @@ Content`,
 			writeFileSync(
 				join(ext1Dir, "index.ts"),
 				`
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/rozsa-coding-agent";
 import { Type } from "typebox";
-export default function(pi: ExtensionAPI) {
-  pi.registerTool({
+export default function(rozsa: ExtensionAPI) {
+  rozsa.registerTool({
     name: "duplicate-tool",
     description: "First",
     parameters: Type.Object({}),
@@ -559,10 +559,10 @@ export default function(pi: ExtensionAPI) {
 			writeFileSync(
 				join(ext2Dir, "index.ts"),
 				`
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/rozsa-coding-agent";
 import { Type } from "typebox";
-export default function(pi: ExtensionAPI) {
-  pi.registerTool({
+export default function(rozsa: ExtensionAPI) {
+  rozsa.registerTool({
     name: "duplicate-tool",
     description: "Second",
     parameters: Type.Object({}),
@@ -586,16 +586,16 @@ export default function(pi: ExtensionAPI) {
 			writeFileSync(
 				join(globalExtDir, "global.ts"),
 				`
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/rozsa-coding-agent";
 import { Type } from "typebox";
-export default function(pi: ExtensionAPI) {
-  pi.registerTool({
+export default function(rozsa: ExtensionAPI) {
+  rozsa.registerTool({
     name: "duplicate-tool",
     description: "global tool",
     parameters: Type.Object({}),
     execute: async () => ({ result: "global" }),
   });
-  pi.registerCommand("deploy", {
+  rozsa.registerCommand("deploy", {
     description: "global command",
     handler: async () => {},
   });
@@ -605,16 +605,16 @@ export default function(pi: ExtensionAPI) {
 			writeFileSync(
 				explicitExtPath,
 				`
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/rozsa-coding-agent";
 import { Type } from "typebox";
-export default function(pi: ExtensionAPI) {
-  pi.registerTool({
+export default function(rozsa: ExtensionAPI) {
+  rozsa.registerTool({
     name: "duplicate-tool",
     description: "explicit tool",
     parameters: Type.Object({}),
     execute: async () => ({ result: "explicit" }),
   });
-  pi.registerCommand("deploy", {
+  rozsa.registerCommand("deploy", {
     description: "explicit command",
     handler: async () => {},
   });

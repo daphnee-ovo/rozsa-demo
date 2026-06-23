@@ -149,8 +149,8 @@ function redactHighEntropy(text: string): { text: string; modified: boolean } {
 	return { text: result, modified };
 }
 
-export const builtinOutputFilter: ExtensionFactory = (pi: ExtensionAPI) => {
-	pi.on("tool_result", async (event) => {
+export const builtinOutputFilter: ExtensionFactory = (rozsa: ExtensionAPI) => {
+	rozsa.on("tool_result", async (event) => {
 		if (event.isError) return undefined;
 
 		// 敏感文件整体屏蔽 — 对 read 工具按路径判断

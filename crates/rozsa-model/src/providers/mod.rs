@@ -14,4 +14,5 @@ pub fn register_builtin_providers() {
         openai_completions::OpenAICompletionsProvider::new(),
     ));
     register_provider(Box::new(bedrock::BedrockProvider::new()));
+    register_provider(Box::new(anthropic::AnthropicProvider::new()));
 }

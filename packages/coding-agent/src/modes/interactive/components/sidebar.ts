@@ -1,4 +1,4 @@
-import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/rozsa-tui";
 import type { ContextUsage } from "../../../core/extensions/types.ts";
 import type { RuntimeStateSnapshot } from "../../../core/runtime-state.ts";
 import { theme } from "../theme/theme.ts";

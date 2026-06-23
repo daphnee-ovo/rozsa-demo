@@ -237,7 +237,7 @@ pub enum ClientMessage<'a> {
     #[serde(rename = "switch_agent")]
     SwitchAgent { id: &'a str },
     #[serde(rename = "switch_model")]
-    SwitchModel { id: &'a str },
+    SwitchModel { provider: &'a str, id: &'a str },
     #[serde(rename = "switch_session")]
     SwitchSession { path: &'a str },
     #[serde(rename = "delete_session")]
