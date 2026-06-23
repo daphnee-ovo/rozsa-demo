@@ -118,7 +118,7 @@ pub enum SessionEntry {
 }
 
 impl SessionEntry {
-    fn id(&self) -> &str {
+    pub fn id(&self) -> &str {
         match self {
             SessionEntry::Message(e) => &e.base.id,
             SessionEntry::ThinkingLevelChange(e) => &e.base.id,

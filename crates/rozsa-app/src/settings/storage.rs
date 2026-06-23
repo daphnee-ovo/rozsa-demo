@@ -117,6 +117,18 @@ impl SettingsManager {
         self.resolved.default_thinking_level.as_deref()
     }
 
+    pub fn default_thinking_level_parsed(&self) -> rozsa_model::types::ThinkingLevel {
+        match self.resolved.default_thinking_level.as_deref() {
+            Some("off") => rozsa_model::types::ThinkingLevel::Off,
+            Some("minimal") => rozsa_model::types::ThinkingLevel::Minimal,
+            Some("low") => rozsa_model::types::ThinkingLevel::Low,
+            Some("medium") => rozsa_model::types::ThinkingLevel::Medium,
+            Some("high") => rozsa_model::types::ThinkingLevel::High,
+            Some("xhigh") => rozsa_model::types::ThinkingLevel::XHigh,
+            _ => rozsa_model::types::ThinkingLevel::Off,
+        }
+    }
+
     pub fn compaction(&self) -> &super::schema::CompactionSettings {
         &self.resolved.compaction
     }

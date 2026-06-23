@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::session::entry::SessionEntry;
+use crate::session::manager::SessionEntry;
 
 #[derive(Debug, Clone)]
 pub struct CompactionTrigger {
@@ -114,13 +114,12 @@ impl Default for CompactionEngine {
 
 fn estimate_entry_tokens(entry: &SessionEntry) -> u64 {
     let chars = match entry {
-        SessionEntry::Message { message, .. } => {
-            serde_json::to_string(message).unwrap_or_default().len()
+        SessionEntry::Message(e) => {
+            serde_json::to_string(&e.message).unwrap_or_default().len()
         }
-        SessionEntry::Compaction { summary, .. } => summary.len(),
-        SessionEntry::BranchSummary { summary, .. } => summary.len(),
-        SessionEntry::CustomMessage { content, .. } => {
-            serde_json::to_string(content).unwrap_or_default().len()
+        SessionEntry::Compaction(e) => e.summary.len(),
+        SessionEntry::Custom(e) => {
+            e.data.as_ref().map_or(0, |v| serde_json::to_string(v).unwrap_or_default().len())
         }
         _ => 0,
     };
@@ -129,11 +128,8 @@ fn estimate_entry_tokens(entry: &SessionEntry) -> u64 {
 
 fn entry_text_content(entry: &SessionEntry) -> Option<String> {
     match entry {
-        SessionEntry::Message { message, .. } => {
-            Some(serde_json::to_string(message).unwrap_or_default())
-        }
-        SessionEntry::CustomMessage { content, .. } => {
-            Some(serde_json::to_string(content).unwrap_or_default())
+        SessionEntry::Message(e) => {
+            Some(serde_json::to_string(&e.message).unwrap_or_default())
         }
         _ => None,
     }

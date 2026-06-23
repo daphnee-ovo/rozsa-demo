@@ -72,7 +72,7 @@ impl Default for RegistryModelCost {
     }
 }
 
-/// Model metadata shape shared with the TypeScript registry.
+/// Model metadata shape shared with the TypeScript registry (deserialization intermediate).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegistryModel {
     pub id: String,
@@ -96,6 +96,79 @@ pub struct RegistryModel {
     pub headers: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compat: Option<Value>,
+}
+
+impl RegistryModel {
+    /// Convert to the runtime Model type used by rozsa-model/rozsa-core.
+    pub fn to_model(&self) -> rozsa_model::types::Model {
+        use rozsa_model::types::{Api, InputModality, Model, ModelCost, Provider};
+
+        let api = match self.api.as_str() {
+            "anthropic-messages" => Api::AnthropicMessages,
+            "openai-completions" => Api::OpenAICompletions,
+            "openai-responses" => Api::OpenAIResponses,
+            "bedrock-converse-stream" => Api::BedrockConverseStream,
+            "google-generative-ai" => Api::GoogleGenerativeAI,
+            "google-vertex" => Api::GoogleVertex,
+            "mistral-conversations" => Api::MistralConversations,
+            other => Api::Custom(other.to_string()),
+        };
+
+        let provider = match self.provider.as_str() {
+            "anthropic" => Provider::Anthropic,
+            "openai" => Provider::OpenAI,
+            "amazon-bedrock" => Provider::AmazonBedrock,
+            "google" => Provider::Google,
+            "google-vertex" => Provider::GoogleVertex,
+            "deepseek" => Provider::DeepSeek,
+            "openrouter" => Provider::OpenRouter,
+            "xai" => Provider::XAI,
+            "groq" => Provider::Groq,
+            "cerebras" => Provider::Cerebras,
+            "mistral" => Provider::Mistral,
+            "nvidia" => Provider::Nvidia,
+            "zai" => Provider::Zai,
+            "together" => Provider::Together,
+            "moonshot-ai" => Provider::MoonshotAI,
+            "moonshot-ai-cn" => Provider::MoonshotAICn,
+            "huggingface" => Provider::HuggingFace,
+            "cloudflare-workers-ai" => Provider::CloudflareWorkersAI,
+            "cloudflare-ai-gateway" => Provider::CloudflareAIGateway,
+            "xiaomi" => Provider::Xiaomi,
+            other => Provider::Custom(other.to_string()),
+        };
+
+        let input_modalities = self
+            .input
+            .iter()
+            .filter_map(|s| match s.as_str() {
+                "text" => Some(InputModality::Text),
+                "image" => Some(InputModality::Image),
+                _ => None,
+            })
+            .collect();
+
+        Model {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            api,
+            provider,
+            base_url: self.base_url.clone(),
+            reasoning: self.reasoning,
+            input_modalities,
+            cost: ModelCost {
+                input: self.cost.input,
+                output: self.cost.output,
+                cache_read: self.cost.cache_read,
+                cache_write: self.cost.cache_write,
+            },
+            context_window: self.context_window,
+            max_tokens: self.max_tokens,
+            thinking_level_map: None,
+            headers: self.headers.clone(),
+            compat: self.compat.clone(),
+        }
+    }
 }
 
 /// Image model metadata shape shared with the TypeScript image registry.
@@ -213,16 +286,42 @@ impl ModelRegistry {
         })
     }
 
-    /// Return all merged model metadata.
+    /// Return all merged model metadata (raw registry entries).
     pub fn all(&self) -> &[RegistryModel] {
         &self.models
     }
 
-    /// Find a model by provider and model ID.
+    /// Find a model by provider and model ID (raw registry entry).
     pub fn find(&self, provider: &str, model_id: &str) -> Option<&RegistryModel> {
         self.models
             .iter()
             .find(|model| model.provider == provider && model.id == model_id)
+    }
+
+    /// Find a model by provider and ID, returning the runtime Model type.
+    pub fn resolve(&self, provider: &str, model_id: &str) -> Option<rozsa_model::types::Model> {
+        self.find(provider, model_id).map(|rm| rm.to_model())
+    }
+
+    /// Find a model by ID only (first match across all providers).
+    pub fn find_by_id(&self, model_id: &str) -> Option<rozsa_model::types::Model> {
+        self.models
+            .iter()
+            .find(|m| m.id == model_id)
+            .map(|rm| rm.to_model())
+    }
+
+    /// Return the first available model (one whose provider has an API key configured).
+    pub fn first_available(&self) -> Option<rozsa_model::types::Model> {
+        let available = self.provider_available();
+        self.models
+            .iter()
+            .find(|m| {
+                available
+                    .get(&m.provider)
+                    .is_some_and(|pa| pa.configured)
+            })
+            .map(|rm| rm.to_model())
     }
 
     /// Return whether this model was explicitly configured in `models.json`.
