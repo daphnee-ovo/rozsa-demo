@@ -792,8 +792,42 @@ async fn push_state_with(
 ) {
     let messages = crate::view_model::messages_to_view(&live.messages);
 
+    // 累积 token 统计
+    let mut input_tokens: u64 = 0;
+    let mut output_tokens: u64 = 0;
+    for msg in &live.messages {
+        if let Some(rozsa_model::types::Message::Assistant(a)) = msg.as_standard() {
+            input_tokens += a.usage.input;
+            output_tokens += a.usage.output;
+        }
+    }
+    let total_tokens = input_tokens + output_tokens;
+
     let model = session.model().await;
     let thinking = session.thinking_level().await;
+
+    // context usage: 输入 token 占 context window 的比例
+    let context_window = model.context_window as f64;
+    let context_percent = if context_window > 0.0 {
+        (input_tokens as f64 / context_window) * 100.0
+    } else {
+        0.0
+    };
+
+    let runtime_state = serde_json::json!({
+        "modelUsage": {
+            "promptTokens": input_tokens,
+            "completionTokens": output_tokens,
+            "sessionTotalTokens": total_tokens,
+        }
+    });
+
+    let context_usage = serde_json::json!({
+        "percent": context_percent,
+        "tokens": input_tokens,
+        "contextWindow": model.context_window,
+    });
+
     let state = NativeUiState {
         app_name: "rozsa".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -814,8 +848,8 @@ async fn push_state_with(
         widgets_above: BTreeMap::new(),
         widgets_below: BTreeMap::new(),
         stats: None,
-        runtime_state: None,
-        context_usage: None,
+        runtime_state: Some(runtime_state),
+        context_usage: Some(context_usage),
         keybindings: default_keybindings(),
         error: None,
     };
