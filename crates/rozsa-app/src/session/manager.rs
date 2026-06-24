@@ -26,8 +26,6 @@ pub struct SessionHeader {
 /// Base fields shared by all session entries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionEntryBase {
-    #[serde(rename = "type")]
-    pub typ: String,
     pub id: String,
     #[serde(rename = "parentId")]
     pub parent_id: Option<String>,
@@ -285,7 +283,6 @@ impl SessionManager {
         let id = self.generate_id();
         let entry = SessionEntry::Message(SessionMessageEntry {
             base: SessionEntryBase {
-                typ: "message".to_string(),
                 id,
                 parent_id: self.leaf_id.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -317,7 +314,6 @@ impl SessionManager {
         let id = self.generate_id();
         let entry = SessionEntry::Compaction(CompactionEntry {
             base: SessionEntryBase {
-                typ: "compaction".to_string(),
                 id,
                 parent_id: self.leaf_id.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -339,7 +335,6 @@ impl SessionManager {
         let id = self.generate_id();
         let entry = SessionEntry::ModelChange(ModelChangeEntry {
             base: SessionEntryBase {
-                typ: "model_change".to_string(),
                 id,
                 parent_id: self.leaf_id.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -358,7 +353,6 @@ impl SessionManager {
         let id = self.generate_id();
         let entry = SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
             base: SessionEntryBase {
-                typ: "thinking_level_change".to_string(),
                 id,
                 parent_id: self.leaf_id.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -380,7 +374,6 @@ impl SessionManager {
         let id = self.generate_id();
         let entry = SessionEntry::Custom(CustomEntry {
             base: SessionEntryBase {
-                typ: "custom".to_string(),
                 id,
                 parent_id: self.leaf_id.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -408,7 +401,6 @@ impl SessionManager {
         let id = self.generate_id();
         let entry = SessionEntry::Label(LabelEntry {
             base: SessionEntryBase {
-                typ: "label".to_string(),
                 id,
                 parent_id: self.leaf_id.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -434,13 +426,17 @@ impl SessionManager {
         &self.session_file
     }
 
+    /// Get all entries in the session (for compaction planning).
+    pub fn entries(&self) -> Vec<SessionEntry> {
+        self.by_id.values().cloned().collect()
+    }
+
     /// Append a session_info entry recording the user-facing display name.
     /// Pass `None` to clear the name. The latest entry wins on read.
     pub fn append_session_info(&mut self, name: Option<String>) -> Result<String> {
         let id = self.generate_id();
         let entry = SessionEntry::SessionInfo(SessionInfoEntry {
             base: SessionEntryBase {
-                typ: "session_info".to_string(),
                 id,
                 parent_id: self.leaf_id.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),

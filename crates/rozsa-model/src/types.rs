@@ -160,7 +160,7 @@ pub struct ToolCall {
 }
 
 /// Message content block shared across providers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum ContentBlock {
     Text {
         text: String,
@@ -200,7 +200,7 @@ pub struct Usage {
 }
 
 /// User message content in text-only or multimodal form.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum UserContent {
     Text(String),
     Blocks(Vec<ContentBlock>),
@@ -240,7 +240,7 @@ pub struct ToolResultMessage {
 }
 
 /// Conversation message accepted by providers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum Message {
     User(UserMessage),
     Assistant(AssistantMessage),

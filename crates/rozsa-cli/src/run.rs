@@ -60,7 +60,13 @@ pub async fn run(args: &Args) -> Result<()> {
     let resources = resource_loader.load().await.unwrap_or_default();
     let system_prompt = ResourceLoader::build_system_prompt(&resources);
 
-    let session_dir = cwd.join(".claude").join("sessions");
+    // Session 存储在 ~/.rozsa/agent/sessions/<cwd-encoded>/
+    let cwd_encoded = cwd
+        .to_string_lossy()
+        .replace('/', "-")
+        .trim_matches('-')
+        .to_string();
+    let session_dir = agent_dir.join("sessions").join(format!("-{cwd_encoded}-"));
     std::fs::create_dir_all(&session_dir)?;
     let session_id = uuid::Uuid::new_v4().to_string();
     let session_path = session_dir.join(format!("{session_id}.jsonl"));
@@ -80,6 +86,7 @@ pub async fn run(args: &Args) -> Result<()> {
         session_manager,
         settings_manager,
         resources,
+        pre_tool_use: None,
     };
 
     let session = AgentSession::new(config);
