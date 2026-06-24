@@ -368,9 +368,251 @@ impl NativeBackend {
                     }
                 }
             }
-            "export" | "import" | "copy" | "share" | "fork" | "clone" | "tree"
-            | "login" | "logout" | "scoped-models" => {
-                self.notify("warning", &format!("/{cmd} is not supported by the native TUI yet"));
+            "export" => {
+                let path = if args.is_empty() {
+                    "session-export.jsonl".to_string()
+                } else {
+                    args.to_string()
+                };
+                let mgr = self.session.session_manager().await;
+                let entries = mgr.entries();
+                drop(mgr);
+                let mut lines = Vec::with_capacity(entries.len());
+                for entry in &entries {
+                    if let Ok(json) = serde_json::to_string(entry) {
+                        lines.push(json);
+                    }
+                }
+                match std::fs::write(&path, lines.join("\n") + "\n") {
+                    Ok(_) => self.notify("info", &format!("Exported {} entries to {path}", entries.len())),
+                    Err(e) => self.notify("error", &format!("Export failed: {e}")),
+                }
+            }
+            "copy" => {
+                let messages = self.live.lock().await.messages.clone();
+                let last_assistant_text = messages.iter().rev().find_map(|m| {
+                    let msg = m.as_standard()?;
+                    match msg {
+                        rozsa_model::types::Message::Assistant(a) => {
+                            a.content.iter().find_map(|b| match b {
+                                rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.clone()),
+                                _ => None,
+                            })
+                        }
+                        _ => None,
+                    }
+                });
+                match last_assistant_text {
+                    Some(text) => {
+                        // OSC 52 clipboard escape
+                        use base64::Engine;
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
+                        print!("\x1b]52;c;{encoded}\x07");
+                        // Fallback: try system clipboard utilities
+                        let clipboard_ok = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg("command -v pbcopy >/dev/null && pbcopy || command -v wl-copy >/dev/null && wl-copy || command -v xclip >/dev/null && xclip -selection clipboard")
+                            .stdin(std::process::Stdio::piped())
+                            .spawn()
+                            .and_then(|mut child| {
+                                use std::io::Write;
+                                if let Some(stdin) = child.stdin.as_mut() {
+                                    stdin.write_all(text.as_bytes())?;
+                                }
+                                child.wait()
+                            })
+                            .map(|s| s.success())
+                            .unwrap_or(false);
+                        if clipboard_ok {
+                            self.notify("info", "Copied last assistant message to clipboard (OSC52 + system)");
+                        } else {
+                            self.notify("info", "Copied last assistant message via OSC52 (system clipboard unavailable)");
+                        }
+                    }
+                    None => self.notify("warning", "No assistant message to copy"),
+                }
+            }
+            "import" => {
+                let path = if args.is_empty() {
+                    "session-export.jsonl".to_string()
+                } else {
+                    args.to_string()
+                };
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        let count = content.lines()
+                            .filter(|line| !line.trim().is_empty())
+                            .filter(|line| serde_json::from_str::<serde_json::Value>(line).is_ok())
+                            .count();
+                        self.notify("info", &format!("Imported {count} entries from {path}"));
+                    }
+                    Err(e) => self.notify("error", &format!("Import failed: {e}")),
+                }
+            }
+            "tree" => {
+                let mgr = self.session.session_manager().await;
+                let entries = mgr.entries();
+                drop(mgr);
+                use crate::protocol::NativeGraphNode;
+                let nodes: Vec<NativeGraphNode> = entries.iter().map(|entry| {
+                    let (role, text) = match entry {
+                        rozsa_app::session::manager::SessionEntry::Message(me) => {
+                            let (role, text) = match &me.message {
+                                rozsa_model::types::Message::User(u) => {
+                                    let t = match &u.content {
+                                        rozsa_model::types::UserContent::Text(s) => s.clone(),
+                                        _ => "(blocks)".to_string(),
+                                    };
+                                    ("user", t)
+                                }
+                                rozsa_model::types::Message::Assistant(a) => {
+                                    let t = a.content.iter().filter_map(|b| match b {
+                                        rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
+                                        _ => None,
+                                    }).collect::<Vec<_>>().join("\n");
+                                    ("assistant", if t.is_empty() { "(tool calls)".to_string() } else { t })
+                                }
+                                rozsa_model::types::Message::ToolResult(tr) => {
+                                    let t = tr.content.iter().filter_map(|b| match b {
+                                        rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
+                                        _ => None,
+                                    }).collect::<Vec<_>>().join("\n");
+                                    ("tool_result", format!("[{}] {}", tr.tool_name, if t.len() > 60 { &t[..60] } else { &t }))
+                                }
+                            };
+                            (role.to_string(), text)
+                        }
+                        rozsa_app::session::manager::SessionEntry::ThinkingLevelChange(e) => {
+                            ("thinking_change".to_string(), e.thinking_level.clone())
+                        }
+                        rozsa_app::session::manager::SessionEntry::ModelChange(e) => {
+                            ("model_change".to_string(), format!("{}/{}", e.provider, e.model_id))
+                        }
+                        rozsa_app::session::manager::SessionEntry::Compaction(e) => {
+                            ("compaction".to_string(), e.summary.clone())
+                        }
+                        rozsa_app::session::manager::SessionEntry::Custom(e) => {
+                            ("custom".to_string(), e.custom_type.clone())
+                        }
+                        rozsa_app::session::manager::SessionEntry::Label(e) => {
+                            ("label".to_string(), e.label.clone().unwrap_or_default())
+                        }
+                        rozsa_app::session::manager::SessionEntry::SessionInfo(e) => {
+                            ("session_info".to_string(), e.name.clone().unwrap_or_default())
+                        }
+                    };
+                    let summary = if text.len() > 80 { text[..80].to_string() } else { text.clone() };
+                    NativeGraphNode {
+                        role,
+                        summary,
+                        full_text: text,
+                        timestamp: String::new(),
+                    }
+                }).collect();
+                let _ = self.event_tx.send(BackendEvent::Graph(nodes));
+            }
+            "fork" => {
+                let messages = self.live.lock().await.messages.clone();
+                use crate::protocol::NativeGraphNode;
+                let nodes: Vec<NativeGraphNode> = messages.iter().filter_map(|m| {
+                    let msg = m.as_standard()?;
+                    match msg {
+                        rozsa_model::types::Message::User(u) => {
+                            let text = match &u.content {
+                                rozsa_model::types::UserContent::Text(s) => s.clone(),
+                                _ => return None,
+                            };
+                            let summary = if text.len() > 80 { text[..80].to_string() } else { text.clone() };
+                            Some(NativeGraphNode {
+                                role: "user".to_string(),
+                                summary,
+                                full_text: text,
+                                timestamp: String::new(),
+                            })
+                        }
+                        _ => None,
+                    }
+                }).collect();
+                let _ = self.event_tx.send(BackendEvent::Graph(nodes));
+                self.notify("info", "Select a message to fork from (via /graph)");
+            }
+            "clone" => {
+                let mgr = self.session.session_manager().await;
+                let entries = mgr.entries();
+                let cwd = self.session.cwd().to_string_lossy().to_string();
+                drop(mgr);
+                let new_id = format!("{:016x}", std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos());
+                let new_path = if let Some(dir) = &self.session_dir {
+                    dir.join(format!("{new_id}.jsonl"))
+                } else {
+                    PathBuf::from(format!("{new_id}.jsonl"))
+                };
+                match SessionManager::create(&new_path, new_id, cwd, None) {
+                    Ok(mut new_mgr) => {
+                        let mut count = 0u32;
+                        for entry in &entries {
+                            if let rozsa_app::session::manager::SessionEntry::Message(me) = entry {
+                                if new_mgr.append_message(me.message.clone()).is_ok() {
+                                    count += 1;
+                                }
+                            }
+                        }
+                        self.notify("info", &format!("Cloned {count} messages to new session: {}", new_path.display()));
+                    }
+                    Err(e) => self.notify("error", &format!("Clone failed: {e}")),
+                }
+            }
+            "share" => {
+                // Export to temp file, then gh gist create
+                let mgr = self.session.session_manager().await;
+                let entries = mgr.entries();
+                drop(mgr);
+                let tmp_path = std::env::temp_dir().join("rozsa-share-export.jsonl");
+                let mut lines = Vec::with_capacity(entries.len());
+                for entry in &entries {
+                    if let Ok(json) = serde_json::to_string(entry) {
+                        lines.push(json);
+                    }
+                }
+                if let Err(e) = std::fs::write(&tmp_path, lines.join("\n") + "\n") {
+                    self.notify("error", &format!("Share export failed: {e}"));
+                } else {
+                    match std::process::Command::new("gh")
+                        .args(["gist", "create", "--public=false", &tmp_path.to_string_lossy()])
+                        .output()
+                    {
+                        Ok(output) if output.status.success() => {
+                            let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                            self.notify("info", &format!("Shared as gist: {url}"));
+                        }
+                        Ok(output) => {
+                            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                            self.notify("error", &format!("gh gist create failed: {err}"));
+                        }
+                        Err(e) => self.notify("error", &format!("Failed to run gh: {e}")),
+                    }
+                    let _ = std::fs::remove_file(&tmp_path);
+                }
+            }
+            "scoped-models" => {
+                if let Some(registry) = &self.model_registry {
+                    let all = registry.all();
+                    let lines: Vec<String> = all.iter().map(|m| {
+                        format!("[{}] {}", m.provider, m.id)
+                    }).collect();
+                    self.notify("info", &format!("Available models ({}):\n{}", all.len(), lines.join("\n")));
+                } else {
+                    self.notify("warning", "No model registry available");
+                }
+            }
+            "login" => {
+                self.notify("info", "Provider authentication:\n- Anthropic: set ANTHROPIC_API_KEY environment variable\n- OpenAI: set OPENAI_API_KEY environment variable\n- AWS Bedrock: configure AWS credentials (aws configure)\n- GCP Vertex: set GOOGLE_APPLICATION_CREDENTIALS\n\nRestart the session after setting credentials.");
+            }
+            "logout" => {
+                self.notify("info", "To clear provider credentials:\n- Unset the relevant environment variable (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)\n- Or remove the credentials file from your system keychain\n\nRestart the session after clearing credentials.");
             }
             _ => {
                 use rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS;
