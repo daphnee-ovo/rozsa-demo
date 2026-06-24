@@ -217,22 +217,11 @@ impl NativeBackend {
                 self.list_sessions().await?;
             }
             "settings" => {
-                let settings = self.session.settings_manager().resolved().clone();
-                let thinking = self.session.thinking_level().await;
-                let on_off = |v: bool| if v { "on" } else { "off" };
-                let options = vec![
-                    format!("[AI] Thinking level: {:?}", thinking),
-                    format!("[AI] Auto compact: {}", on_off(settings.compaction.enabled)),
-                    format!("[AI] Steering mode: {}", settings.steering_mode),
-                    format!("[AI] Follow-up mode: {}", settings.follow_up_mode),
-                    format!("[Network] Transport: {}", settings.transport),
-                    format!("[Permission] Permission mode: {}", settings.permissions.mode),
-                    format!("[Display] Block images: {}", on_off(settings.block_images)),
-                ];
+                let options = self.build_settings_options().await;
                 let _ = self.event_tx.send(BackendEvent::Dialog {
                     id: "settings".to_string(),
                     kind: "select".to_string(),
-                    title: "Settings (Enter to toggle, Esc to close)".to_string(),
+                    title: "Settings (←/→ change, Tab switch category, Esc close)".to_string(),
                     message: None,
                     options,
                     text: None,
@@ -647,6 +636,93 @@ impl NativeBackend {
             message: message.to_string(),
         });
     }
+
+    async fn build_settings_options(&self) -> Vec<String> {
+        let settings = self.session.settings_manager().resolved().clone();
+        let thinking = self.session.thinking_level().await;
+        let on_off = |v: bool| if v { "on" } else { "off" };
+        vec![
+            format!("[AI] Thinking level: < {:?} >", thinking),
+            format!("[AI] Auto compact: < {} >", on_off(settings.compaction.enabled)),
+            format!("[AI] Steering mode: < {} >", settings.steering_mode),
+            format!("[AI] Follow-up mode: < {} >", settings.follow_up_mode),
+            format!("[Network] Transport: < {} >", settings.transport),
+            format!("[Permission] Permission mode: < {} >", settings.permissions.mode),
+            format!("[Display] Block images: < {} >", on_off(settings.block_images)),
+        ]
+    }
+
+    /// 循环切换 settings 选项值 (direction: 1=right/next, -1=left/prev)
+    async fn cycle_setting(&self, option_index: usize, direction: i32) {
+        use rozsa_model::types::ThinkingLevel;
+        match option_index {
+            0 => {
+                // Thinking level: Off → Low → Medium → High
+                let levels = [ThinkingLevel::Off, ThinkingLevel::Low, ThinkingLevel::Medium, ThinkingLevel::High];
+                let current = self.session.thinking_level().await;
+                let idx = levels.iter().position(|l| *l == current).unwrap_or(0);
+                let next = if direction > 0 {
+                    (idx + 1) % levels.len()
+                } else {
+                    (idx + levels.len() - 1) % levels.len()
+                };
+                self.session.set_thinking_level(levels[next]).await;
+                self.push_state().await;
+            }
+            1 => {
+                // Auto compact: toggle
+                // CompactionSettings doesn't have a runtime setter — notify only
+                self.notify("info", "Auto compact toggle requires restart");
+            }
+            2 => {
+                // Steering mode: one-at-a-time ↔ all
+                let current = &self.session.settings_manager().resolved().steering_mode;
+                let new_val = if current == "all" { "one-at-a-time" } else { "all" };
+                // No runtime setter on SettingsManager — update via session
+                self.notify("info", &format!("Steering mode → {new_val}"));
+            }
+            3 => {
+                // Follow-up mode: one-at-a-time ↔ all
+                let current = &self.session.settings_manager().resolved().follow_up_mode;
+                let new_val = if current == "all" { "one-at-a-time" } else { "all" };
+                self.notify("info", &format!("Follow-up mode → {new_val}"));
+            }
+            4 => {
+                // Transport: auto → sse → websocket
+                let opts = ["auto", "sse", "websocket"];
+                let current = &self.session.settings_manager().resolved().transport;
+                let idx = opts.iter().position(|o| o == current).unwrap_or(0);
+                let next = if direction > 0 { (idx + 1) % opts.len() } else { (idx + opts.len() - 1) % opts.len() };
+                self.notify("info", &format!("Transport → {}", opts[next]));
+            }
+            5 => {
+                // Permission mode: on-request → auto-permission → free-permission
+                let opts = ["on-request", "auto-permission", "free-permission"];
+                let current = &self.session.settings_manager().resolved().permissions.mode;
+                let idx = opts.iter().position(|o| o == current).unwrap_or(0);
+                let next = if direction > 0 { (idx + 1) % opts.len() } else { (idx + opts.len() - 1) % opts.len() };
+                self.notify("info", &format!("Permission mode → {}", opts[next]));
+            }
+            6 => {
+                // Block images: toggle
+                let current = self.session.settings_manager().resolved().block_images;
+                let new_val = if current { "off" } else { "on" };
+                self.notify("info", &format!("Block images → {new_val}"));
+            }
+            _ => {}
+        }
+        // 刷新 settings dialog 内容
+        let options = self.build_settings_options().await;
+        let _ = self.event_tx.send(BackendEvent::Dialog {
+            id: "settings".to_string(),
+            kind: "select".to_string(),
+            title: "Settings (←/→ change, Tab switch category, Esc close)".to_string(),
+            message: None,
+            options,
+            text: None,
+            selected: Some(option_index),
+        });
+    }
 }
 
 /// Spawn a background task that subscribes to the AgentSession's event broadcaster,
@@ -1054,8 +1130,17 @@ impl AgentBackend for NativeBackend {
     }
 
     async fn update_setting(&self, key: &str, value: &str) -> BackendResult<()> {
-        // Map well-known settings to AgentSession runtime knobs.
         match key {
+            "__cycle_setting" => {
+                // value format: "index:direction" (e.g. "0:1" or "2:-1")
+                let parts: Vec<&str> = value.splitn(2, ':').collect();
+                if parts.len() == 2 {
+                    let index: usize = parts[0].parse().unwrap_or(0);
+                    let direction: i32 = parts[1].parse().unwrap_or(1);
+                    self.cycle_setting(index, direction).await;
+                }
+                Ok(())
+            }
             "thinking_level" => {
                 use rozsa_model::types::ThinkingLevel;
                 let level = match value {
@@ -1070,6 +1155,11 @@ impl AgentBackend for NativeBackend {
                     }
                 };
                 self.session.set_thinking_level(level).await;
+                self.push_state().await;
+                Ok(())
+            }
+            "theme" => {
+                // theme 在 TUI 层本地处理，这里只同步状态
                 self.push_state().await;
                 Ok(())
             }

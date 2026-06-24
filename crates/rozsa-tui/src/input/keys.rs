@@ -1392,6 +1392,23 @@ fn handle_dialog_key(
             dialog.selected += 1;
         }
         state.dialog = Some(dialog);
+    } else if (key.code == KeyCode::Left || key.code == KeyCode::Right) && dialog.id == "settings" {
+        // Settings dialog: Left/Right 循环切换当前选中项的值
+        let real_index = if dialog.has_tabs() {
+            dialog.filtered_indices.get(dialog.selected).copied().unwrap_or(0)
+        } else {
+            dialog.selected
+        };
+        let direction = if key.code == KeyCode::Right { "1" } else { "-1" };
+        let value = format!("{real_index}:{direction}");
+        send(
+            writer,
+            &ClientMessage::UpdateSetting {
+                key: "__cycle_setting",
+                value: &value,
+            },
+        )?;
+        state.dialog = Some(dialog);
     } else if matches_action(keybindings, key, "tui.editor.deleteCharBackward")
         || matches!(key.code, KeyCode::Backspace)
     {
