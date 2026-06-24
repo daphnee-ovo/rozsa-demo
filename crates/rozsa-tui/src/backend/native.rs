@@ -1006,14 +1006,40 @@ impl AgentBackend for NativeBackend {
         Ok(())
     }
 
-    async fn switch_session(&self, _path: &str) -> BackendResult<()> {
-        // Switching the active session in-place would require swapping the
-        // SessionManager held by AgentSession, which the current API does not
-        // support. Surface a friendly notify so the UI doesn't hang silently.
-        let _ = self.event_tx.send(BackendEvent::Notify {
-            level: "info".to_string(),
-            message: "session switching is not yet supported in native mode".into(),
-        });
+    async fn switch_session(&self, path: &str) -> BackendResult<()> {
+        match self.session.switch_session(path).await {
+            Ok(_old) => {
+                // Reload messages from new session into live state
+                let mgr = self.session.session_manager().await;
+                let entries = mgr.entries();
+                drop(mgr);
+
+                let mut messages = Vec::new();
+                for entry in entries {
+                    if let rozsa_app::session::manager::SessionEntry::Message(msg_entry) = entry {
+                        messages.push(AgentMessage::standard(msg_entry.message));
+                    }
+                }
+
+                let mut live = self.live.lock().await;
+                live.messages = messages;
+                live.turn_base = live.messages.len();
+                drop(live);
+
+                let _ = self.event_tx.send(BackendEvent::Notify {
+                    level: "info".to_string(),
+                    message: format!("Switched to session: {}", path),
+                });
+                // Refresh session list to update selection
+                self.list_sessions().await?;
+            }
+            Err(e) => {
+                let _ = self.event_tx.send(BackendEvent::Notify {
+                    level: "error".to_string(),
+                    message: format!("Failed to switch session: {e}"),
+                });
+            }
+        }
         Ok(())
     }
 

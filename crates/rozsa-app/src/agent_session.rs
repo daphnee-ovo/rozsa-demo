@@ -313,6 +313,19 @@ impl AgentSession {
         self.session_manager.lock().await
     }
 
+    /// Switch to a different session file. Replaces the internal SessionManager
+    /// and clears conversation history. Returns the old session path.
+    pub async fn switch_session(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<String> {
+        let new_mgr = SessionManager::open(&path)?;
+        let mut mgr = self.session_manager.lock().await;
+        let old_path = mgr.session_file().to_string_lossy().to_string();
+        *mgr = new_mgr;
+        drop(mgr);
+        // Clear in-memory conversation — the new session has its own history.
+        self.messages.lock().await.clear();
+        Ok(old_path)
+    }
+
     /// Get the settings manager (read-only, immutable for the session lifetime).
     pub fn settings_manager(&self) -> &SettingsManager {
         &self.static_config.settings_manager
