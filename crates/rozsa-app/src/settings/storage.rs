@@ -19,6 +19,7 @@ pub enum SettingsError {
 }
 
 /// Settings manager: loads, merges, and provides access to settings
+#[derive(Clone)]
 pub struct SettingsManager {
     global_path: PathBuf,
     project_path: Option<PathBuf>,
@@ -168,5 +169,10 @@ impl SettingsManager {
     /// Get the fully resolved settings
     pub fn resolved(&self) -> &Settings {
         &self.resolved
+    }
+
+    /// Mutable access to resolved settings for runtime changes.
+    pub fn resolved_mut(&mut self) -> &mut Settings {
+        &mut self.resolved
     }
 }

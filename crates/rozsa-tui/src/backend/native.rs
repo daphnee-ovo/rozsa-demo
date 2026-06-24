@@ -33,6 +33,7 @@ use tokio::sync::{mpsc, Mutex};
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::session::manager::SessionManager;
+use rozsa_app::settings::schema::Settings;
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 
@@ -70,6 +71,8 @@ pub struct NativeBackend {
     live: Arc<Mutex<LiveState>>,
     model_registry: Option<Arc<ModelRegistry>>,
     session_dir: Option<PathBuf>,
+    /// Runtime-mutable settings copy (mutated by /settings left/right cycling)
+    runtime_settings: Mutex<Settings>,
 }
 
 impl NativeBackend {
@@ -88,6 +91,8 @@ impl NativeBackend {
 
         spawn_event_forwarder(session.clone(), tx.clone(), live.clone());
 
+        let runtime_settings = session.settings_manager().resolved().clone();
+
         Self {
             session,
             event_tx: tx,
@@ -95,6 +100,7 @@ impl NativeBackend {
             live,
             model_registry: config.model_registry,
             session_dir: config.session_dir,
+            runtime_settings: Mutex::new(runtime_settings),
         }
     }
 
@@ -638,7 +644,7 @@ impl NativeBackend {
     }
 
     async fn build_settings_options(&self) -> Vec<String> {
-        let settings = self.session.settings_manager().resolved().clone();
+        let settings = self.runtime_settings.lock().await;
         let thinking = self.session.thinking_level().await;
         let on_off = |v: bool| if v { "on" } else { "off" };
         vec![
@@ -655,59 +661,49 @@ impl NativeBackend {
     /// 循环切换 settings 选项值 (direction: 1=right/next, -1=left/prev)
     async fn cycle_setting(&self, option_index: usize, direction: i32) {
         use rozsa_model::types::ThinkingLevel;
+
+        fn cycle_str<'a>(opts: &[&'a str], current: &str, dir: i32) -> &'a str {
+            let idx = opts.iter().position(|o| *o == current).unwrap_or(0);
+            let next = if dir > 0 { (idx + 1) % opts.len() } else { (idx + opts.len() - 1) % opts.len() };
+            opts[next]
+        }
+
         match option_index {
             0 => {
-                // Thinking level: Off → Low → Medium → High
                 let levels = [ThinkingLevel::Off, ThinkingLevel::Low, ThinkingLevel::Medium, ThinkingLevel::High];
                 let current = self.session.thinking_level().await;
                 let idx = levels.iter().position(|l| *l == current).unwrap_or(0);
-                let next = if direction > 0 {
-                    (idx + 1) % levels.len()
-                } else {
-                    (idx + levels.len() - 1) % levels.len()
-                };
+                let next = if direction > 0 { (idx + 1) % levels.len() } else { (idx + levels.len() - 1) % levels.len() };
                 self.session.set_thinking_level(levels[next]).await;
                 self.push_state().await;
             }
             1 => {
-                // Auto compact: toggle
-                // CompactionSettings doesn't have a runtime setter — notify only
-                self.notify("info", "Auto compact toggle requires restart");
+                let mut s = self.runtime_settings.lock().await;
+                s.compaction.enabled = !s.compaction.enabled;
             }
             2 => {
-                // Steering mode: one-at-a-time ↔ all
-                let current = &self.session.settings_manager().resolved().steering_mode;
-                let new_val = if current == "all" { "one-at-a-time" } else { "all" };
-                // No runtime setter on SettingsManager — update via session
-                self.notify("info", &format!("Steering mode → {new_val}"));
+                let mut s = self.runtime_settings.lock().await;
+                let new_val = cycle_str(&["one-at-a-time", "all"], &s.steering_mode, direction);
+                s.steering_mode = new_val.to_string();
             }
             3 => {
-                // Follow-up mode: one-at-a-time ↔ all
-                let current = &self.session.settings_manager().resolved().follow_up_mode;
-                let new_val = if current == "all" { "one-at-a-time" } else { "all" };
-                self.notify("info", &format!("Follow-up mode → {new_val}"));
+                let mut s = self.runtime_settings.lock().await;
+                let new_val = cycle_str(&["one-at-a-time", "all"], &s.follow_up_mode, direction);
+                s.follow_up_mode = new_val.to_string();
             }
             4 => {
-                // Transport: auto → sse → websocket
-                let opts = ["auto", "sse", "websocket"];
-                let current = &self.session.settings_manager().resolved().transport;
-                let idx = opts.iter().position(|o| o == current).unwrap_or(0);
-                let next = if direction > 0 { (idx + 1) % opts.len() } else { (idx + opts.len() - 1) % opts.len() };
-                self.notify("info", &format!("Transport → {}", opts[next]));
+                let mut s = self.runtime_settings.lock().await;
+                let new_val = cycle_str(&["auto", "sse", "websocket", "websocket-cached"], &s.transport, direction);
+                s.transport = new_val.to_string();
             }
             5 => {
-                // Permission mode: on-request → auto-permission → free-permission
-                let opts = ["on-request", "auto-permission", "free-permission"];
-                let current = &self.session.settings_manager().resolved().permissions.mode;
-                let idx = opts.iter().position(|o| o == current).unwrap_or(0);
-                let next = if direction > 0 { (idx + 1) % opts.len() } else { (idx + opts.len() - 1) % opts.len() };
-                self.notify("info", &format!("Permission mode → {}", opts[next]));
+                let mut s = self.runtime_settings.lock().await;
+                let new_val = cycle_str(&["on-request", "auto-permission", "free-permission"], &s.permissions.mode, direction);
+                s.permissions.mode = new_val.to_string();
             }
             6 => {
-                // Block images: toggle
-                let current = self.session.settings_manager().resolved().block_images;
-                let new_val = if current { "off" } else { "on" };
-                self.notify("info", &format!("Block images → {new_val}"));
+                let mut s = self.runtime_settings.lock().await;
+                s.block_images = !s.block_images;
             }
             _ => {}
         }
