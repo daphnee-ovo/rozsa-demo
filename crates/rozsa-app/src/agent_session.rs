@@ -68,6 +68,8 @@ pub struct AgentSessionConfig {
     pub settings_manager: SettingsManager,
     /// Loaded resources (CLAUDE.md, AGENTS.md, etc.).
     pub resources: LoadedResources,
+    /// Optional pre-tool-use hook for permission checking.
+    pub pre_tool_use: Option<Box<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>>,
 }
 
 /// Static (immutable per session) parts of AgentSessionConfig.
@@ -102,6 +104,16 @@ pub struct AgentSession {
     messages: Mutex<Vec<AgentMessage>>,
     /// Broadcast channel for AgentEvents — subscribers see every event the loop emits.
     event_tx: broadcast::Sender<AgentEvent>,
+    /// Whether compaction is in progress.
+    is_compacting: AtomicBool,
+    /// Runtime state: edit mode, tool stats, permission mode.
+    runtime_state: Arc<tokio::sync::Mutex<crate::runtime_state::RuntimeState>>,
+    /// Steering message queue — delivered between tool calls.
+    steering_queue: Arc<std::sync::Mutex<Vec<AgentMessage>>>,
+    /// Follow-up message queue — delivered when no steering/tool calls remain.
+    follow_up_queue: Arc<std::sync::Mutex<Vec<AgentMessage>>>,
+    /// Optional pre-tool-use hook (injected by backend for permissions).
+    pre_tool_use_hook: Option<Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>>,
 }
 
 impl AgentSession {
@@ -117,7 +129,9 @@ impl AgentSession {
             session_manager,
             settings_manager,
             resources,
+            pre_tool_use,
         } = config;
+        let permission_mode = settings_manager.resolved().permissions.mode.clone();
         Self {
             static_config: StaticConfig {
                 system_prompt,
@@ -135,6 +149,13 @@ impl AgentSession {
             is_running: AtomicBool::new(false),
             messages: Mutex::new(Vec::new()),
             event_tx,
+            is_compacting: AtomicBool::new(false),
+            runtime_state: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime_state::RuntimeState::new(&permission_mode),
+            )),
+            steering_queue: Arc::new(std::sync::Mutex::new(Vec::new())),
+            follow_up_queue: Arc::new(std::sync::Mutex::new(Vec::new())),
+            pre_tool_use_hook: pre_tool_use.map(|f| Arc::from(f) as Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>),
         }
     }
 
@@ -322,6 +343,248 @@ impl AgentSession {
         self.runtime.lock().await.thinking_level = level;
     }
 
+    // --- Phase A: State accessors ---
+
+    /// Get show_images setting.
+    pub fn show_images(&self) -> bool {
+        !self.static_config.settings_manager.resolved().block_images
+    }
+
+    /// Get hide_thinking flag (true when thinking is off).
+    pub async fn hide_thinking(&self) -> bool {
+        self.runtime.lock().await.thinking_level == ThinkingLevel::Off
+    }
+
+    // --- Phase B: Compaction ---
+
+    /// Whether compaction is currently running.
+    pub fn is_compacting(&self) -> bool {
+        self.is_compacting.load(Ordering::SeqCst)
+    }
+
+    /// Run compaction: abort loop, summarize old messages, replace history.
+    pub async fn compact(&self) -> Result<crate::compaction::CompactionResult> {
+        use crate::compaction::{CompactionEngine, CompactionTrigger};
+
+        self.is_compacting.store(true, Ordering::SeqCst);
+
+        // Abort running loop if any
+        if self.is_running() {
+            self.abort().await;
+            // Give the loop time to stop
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        let settings = self.static_config.settings_manager.resolved().clone();
+        let engine = CompactionEngine::new(CompactionTrigger {
+            threshold_tokens: settings.compaction.threshold_tokens,
+            target_tokens: settings.compaction.target_tokens,
+        });
+
+        let entries = self.session_manager.lock().await.entries();
+        let plan = engine.prepare(&entries);
+
+        let Some(plan) = plan else {
+            self.is_compacting.store(false, Ordering::SeqCst);
+            anyhow::bail!("Nothing to compact — token usage below threshold");
+        };
+
+        // Build summarize function using the current model
+        let runtime = self.runtime.lock().await;
+        let model = runtime.model.clone();
+        let thinking_level = runtime.thinking_level;
+        drop(runtime);
+
+        let api_key = resolve_api_key(&model);
+        let summarize_fn = |content: String| {
+            let model = model.clone();
+            let api_key = api_key.clone();
+            async move {
+                let prompt = format!(
+                    "Summarize the following conversation history concisely, \
+                     preserving key decisions, code changes, and context needed to continue:\n\n{}",
+                    content
+                );
+                let context = rozsa_model::types::Context {
+                    system_prompt: Some(
+                        "You are a conversation summarizer. Produce a concise summary.".to_string(),
+                    ),
+                    messages: vec![Message::User(UserMessage {
+                        content: UserContent::Text(prompt),
+                        display_text: None,
+                        timestamp: current_timestamp_ms(),
+                    })],
+                    tools: vec![],
+                };
+                let reasoning = match thinking_level {
+                    ThinkingLevel::Off => None,
+                    level => Some(level),
+                };
+                let options = SimpleStreamOptions {
+                    base: StreamOptions {
+                        temperature: None,
+                        max_tokens: Some(4096),
+                        api_key,
+                        transport: Transport::Auto,
+                        cache_retention: CacheRetention::Short,
+                        session_id: None,
+                        headers: model.headers.clone(),
+                        timeout_ms: None,
+                        max_retries: Some(2),
+                        max_retry_delay_ms: None,
+                        metadata: None,
+                    },
+                    reasoning,
+                    thinking_budgets: None,
+                    tool_choice: None,
+                };
+                let mut stream = rozsa_model::stream::stream_simple(&model, &context, &options);
+                let mut result_text = String::new();
+                while let Some(event) = stream.next().await {
+                    if let rozsa_model::types::StreamEvent::Done { message, .. } = event {
+                        for block in &message.content {
+                            if let rozsa_model::types::ContentBlock::Text { text, .. } = block {
+                                result_text.push_str(text);
+                            }
+                        }
+                        break;
+                    }
+                }
+                if result_text.is_empty() {
+                    anyhow::bail!("Compaction summarization returned empty result");
+                }
+                Ok(result_text)
+            }
+        };
+
+        let result = engine.execute(&plan, &entries, summarize_fn).await?;
+
+        // Persist compaction entry
+        let first_kept_id = if plan.cut_point_index < entries.len() {
+            entries[plan.cut_point_index].id().to_string()
+        } else {
+            String::new()
+        };
+        self.session_manager.lock().await.append_compaction(
+            result.summary.clone(),
+            first_kept_id,
+            plan.estimated_tokens_before,
+            None,
+            None,
+        )?;
+
+        // Rebuild messages: keep only messages from cut_point_index onwards
+        // plus prepend a summary message
+        let mut messages = self.messages.lock().await;
+        let kept_count = messages.len().saturating_sub(result.removed_count);
+        let kept_messages: Vec<AgentMessage> =
+            messages.iter().rev().take(kept_count).cloned().collect();
+        let summary_msg = AgentMessage::custom(
+            "compaction_summary".to_string(),
+            serde_json::json!({ "summary": &result.summary }),
+            current_timestamp_ms(),
+        );
+        *messages = std::iter::once(summary_msg)
+            .chain(kept_messages.into_iter().rev())
+            .collect();
+        drop(messages);
+
+        self.is_compacting.store(false, Ordering::SeqCst);
+        Ok(result)
+    }
+
+    // --- Phase D: Runtime state ---
+
+    /// Get a serializable snapshot of runtime state.
+    pub async fn runtime_state_snapshot(&self) -> crate::runtime_state::RuntimeStateSnapshot {
+        self.runtime_state.lock().await.snapshot()
+    }
+
+    /// Cycle edit mode and return the new mode.
+    pub async fn cycle_edit_mode(&self) -> crate::runtime_state::EditMode {
+        let mut state = self.runtime_state.lock().await;
+        state.edit_mode = state.edit_mode.cycle();
+        state.edit_mode
+    }
+
+    // --- Phase E: Queues ---
+
+    /// Enqueue a steering message (delivered between tool calls).
+    pub fn steer(&self, text: &str) {
+        let msg = AgentMessage::standard(Message::User(UserMessage {
+            content: UserContent::Text(text.to_string()),
+            display_text: Some(format!("[steer] {}", text)),
+            timestamp: current_timestamp_ms(),
+        }));
+        self.steering_queue.lock().unwrap().push(msg);
+    }
+
+    /// Enqueue a follow-up message (delivered after all tools/steering done).
+    pub fn follow_up(&self, text: &str) {
+        let msg = AgentMessage::standard(Message::User(UserMessage {
+            content: UserContent::Text(text.to_string()),
+            display_text: Some(format!("[follow-up] {}", text)),
+            timestamp: current_timestamp_ms(),
+        }));
+        self.follow_up_queue.lock().unwrap().push(msg);
+    }
+
+    /// Get pending message descriptions for UI display.
+    pub fn pending_messages(&self) -> Vec<String> {
+        let mut pending = Vec::new();
+        for msg in self.steering_queue.lock().unwrap().iter() {
+            if let Some(Message::User(u)) = msg.as_standard() {
+                if let UserContent::Text(t) = &u.content {
+                    pending.push(format!("[steer] {}", t));
+                }
+            }
+        }
+        for msg in self.follow_up_queue.lock().unwrap().iter() {
+            if let Some(Message::User(u)) = msg.as_standard() {
+                if let UserContent::Text(t) = &u.content {
+                    pending.push(format!("[follow-up] {}", t));
+                }
+            }
+        }
+        pending
+    }
+
+    /// Execute a bash command directly (not through agent loop).
+    pub async fn execute_bash(&self, command: &str) -> Result<String> {
+        let tools = self.tools.lock().await;
+        let bash_tool = tools.iter().find(|t| t.name() == "Bash");
+        let Some(tool) = bash_tool.cloned() else {
+            anyhow::bail!("Bash tool not registered");
+        };
+        drop(tools);
+
+        let args = serde_json::json!({ "command": command });
+        let result = tool
+            .execute("direct-bash", args, None, None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        let output: String = result
+            .content
+            .iter()
+            .filter_map(|b| match b {
+                rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Record as custom message in history
+        let msg = AgentMessage::custom(
+            "bash_execution".to_string(),
+            serde_json::json!({ "command": command, "output": &output }),
+            current_timestamp_ms(),
+        );
+        self.messages.lock().await.push(msg);
+
+        Ok(output)
+    }
+
     // --- Private helpers ---
 
     /// Build an AgentContext from the current session state.
@@ -386,6 +649,11 @@ impl AgentSession {
         let compaction_threshold = settings.compaction.threshold_tokens;
         let compaction_enabled = settings.compaction.enabled;
 
+        // Clone queues and state for closure capture
+        let steering_q = self.steering_queue.clone();
+        let follow_up_q = self.follow_up_queue.clone();
+        let runtime_state_for_post = self.runtime_state.clone();
+
         AgentLoopConfig {
             model: model.clone(),
             reasoning,
@@ -402,11 +670,33 @@ impl AgentSession {
                 None
             },
             prepare_next_turn: None,
-            get_steering_messages: None,
-            get_follow_up_messages: None,
+            get_steering_messages: Some(Box::new(move || {
+                std::mem::take(&mut *steering_q.lock().unwrap())
+            })),
+            get_follow_up_messages: Some(Box::new(move || {
+                std::mem::take(&mut *follow_up_q.lock().unwrap())
+            })),
             tool_execution: ToolExecutionMode::Parallel,
-            pre_tool_use: None,
-            post_tool_use: None,
+            pre_tool_use: self.pre_tool_use_hook.as_ref().map(|hook| {
+                let hook = hook.clone();
+                let boxed: Box<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync> =
+                    Box::new(move |ctx| hook(ctx));
+                boxed
+            }),
+            post_tool_use: {
+                let rs = runtime_state_for_post;
+                Some(Box::new(
+                    move |ctx: &rozsa_core::config::PostToolUseContext| -> Option<rozsa_core::config::PostToolUseResult> {
+                        let tool_name = ctx.tool_name.clone();
+                        let is_error = ctx.is_error;
+                        // Use try_lock to avoid blocking — if locked, skip recording
+                        if let Ok(mut state) = rs.try_lock() {
+                            state.record_tool_call(&tool_name, is_error);
+                        }
+                        None
+                    },
+                ))
+            },
             tools: self.tools.lock().await.clone(),
         }
     }

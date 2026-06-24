@@ -784,9 +784,11 @@ async fn pre_tool_use_blocks_tool() {
         });
         base.tools = vec![tool];
         base.pre_tool_use = Some(Box::new(|_ctx| {
-            Some(crate::config::PreToolUseResult {
-                block: true,
-                reason: Some("Permission denied".to_string()),
+            Box::pin(async {
+                Some(crate::config::PreToolUseResult {
+                    block: true,
+                    reason: Some("Permission denied".to_string()),
+                })
             })
         }));
         base.should_stop_after_turn = Some(Box::new(|_| true));

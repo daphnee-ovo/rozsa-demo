@@ -445,7 +445,7 @@ async fn execute_parallel(
                 args: call.arguments.clone(),
                 context: context.clone(),
             };
-            if let Some(result) = before(&ctx) {
+            if let Some(result) = before(ctx).await {
                 if result.block {
                     let reason = result.reason.unwrap_or_else(|| "Tool execution was blocked".to_string());
                     let finalized = make_error_finalized(call, reason);
@@ -588,7 +588,7 @@ async fn execute_single_tool(
             args: call.arguments.clone(),
             context: context.clone(),
         };
-        if let Some(result) = before(&ctx) {
+        if let Some(result) = before(ctx).await {
             if result.block {
                 let reason = result.reason.unwrap_or_else(|| "Tool execution was blocked".to_string());
                 return make_error_finalized(call, reason);

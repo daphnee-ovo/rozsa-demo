@@ -28,3 +28,4 @@ crossterm = { version = "0.29", features = ["bracketed-paste", "event-stream"] }
 sha2 = "0.10"
 base64 = "0.22"
 rand = "0.9"
+dashmap = "6"
