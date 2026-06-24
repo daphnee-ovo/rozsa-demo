@@ -74,57 +74,29 @@ impl<'de> serde::Deserialize<'de> for ContentBlock {
 }
 
 fn deserialize_content_block(value: &Value) -> Result<ContentBlock, String> {
-    if let Some(typ) = value.get("type").and_then(Value::as_str) {
-        return match typ {
-            "text" => Ok(ContentBlock::Text {
-                text: str_field(value, "text")?,
-                signature: opt_str(value, "textSignature"),
-            }),
-            "thinking" => Ok(ContentBlock::Thinking {
-                thinking: str_field(value, "thinking")?,
-                signature: opt_str(value, "thinkingSignature"),
-                redacted: value.get("redacted").and_then(Value::as_bool).unwrap_or(false),
-            }),
-            "image" => Ok(ContentBlock::Image {
-                data: str_field(value, "data")?,
-                mime_type: str_field(value, "mimeType")?,
-            }),
-            "toolCall" => Ok(ContentBlock::ToolCall(ToolCall {
-                id: str_field(value, "id")?,
-                name: str_field(value, "name")?,
-                arguments: value.get("arguments").cloned().unwrap_or(Value::Object(Default::default())),
-            })),
-            _ => Err(format!("unknown content block type: {typ}")),
-        };
+    let typ = value.get("type").and_then(Value::as_str)
+        .ok_or_else(|| format!("ContentBlock missing 'type': {value}"))?;
+    match typ {
+        "text" => Ok(ContentBlock::Text {
+            text: str_field(value, "text")?,
+            signature: opt_str(value, "textSignature"),
+        }),
+        "thinking" => Ok(ContentBlock::Thinking {
+            thinking: str_field(value, "thinking")?,
+            signature: opt_str(value, "thinkingSignature"),
+            redacted: value.get("redacted").and_then(Value::as_bool).unwrap_or(false),
+        }),
+        "image" => Ok(ContentBlock::Image {
+            data: str_field(value, "data")?,
+            mime_type: str_field(value, "mimeType")?,
+        }),
+        "toolCall" => Ok(ContentBlock::ToolCall(ToolCall {
+            id: str_field(value, "id")?,
+            name: str_field(value, "name")?,
+            arguments: value.get("arguments").cloned().unwrap_or(Value::Object(Default::default())),
+        })),
+        _ => Err(format!("unknown content block type: {typ}")),
     }
-
-    // 旧 Rust 格式
-    if let Some(inner) = value.get("Text") {
-        return Ok(ContentBlock::Text {
-            text: str_field(inner, "text")?,
-            signature: opt_str(inner, "signature"),
-        });
-    }
-    if let Some(inner) = value.get("Thinking") {
-        return Ok(ContentBlock::Thinking {
-            thinking: str_field(inner, "thinking")?,
-            signature: opt_str(inner, "signature"),
-            redacted: inner.get("redacted").and_then(Value::as_bool).unwrap_or(false),
-        });
-    }
-    if let Some(inner) = value.get("Image") {
-        return Ok(ContentBlock::Image {
-            data: str_field(inner, "data")?,
-            mime_type: str_field(inner, "mime_type")?,
-        });
-    }
-    if let Some(inner) = value.get("ToolCall") {
-        let tc: ToolCall = serde_json::from_value(inner.clone())
-            .map_err(|e| format!("failed to parse ToolCall: {e}"))?;
-        return Ok(ContentBlock::ToolCall(tc));
-    }
-
-    Err(format!("cannot parse ContentBlock from: {value}"))
 }
 
 // ─── UserContent Serialize ──────────────────────────────────────────────────
@@ -159,14 +131,6 @@ fn deserialize_user_content(value: &Value) -> Result<UserContent, String> {
         return Ok(UserContent::Text(text.to_string()));
     }
     if let Some(arr) = value.as_array() {
-        let blocks: Result<Vec<ContentBlock>, _> = arr.iter().map(deserialize_content_block).collect();
-        return Ok(UserContent::Blocks(blocks?));
-    }
-    // 旧 Rust 格式
-    if let Some(Value::String(text)) = value.get("Text") {
-        return Ok(UserContent::Text(text.clone()));
-    }
-    if let Some(arr) = value.get("Blocks").and_then(Value::as_array) {
         let blocks: Result<Vec<ContentBlock>, _> = arr.iter().map(deserialize_content_block).collect();
         return Ok(UserContent::Blocks(blocks?));
     }
@@ -233,54 +197,28 @@ impl<'de> serde::Deserialize<'de> for Message {
 }
 
 fn deserialize_message(value: &Value) -> Result<Message, String> {
-    // TS 格式: {"role":"user",...}
-    if let Some(role) = value.get("role").and_then(Value::as_str) {
-        return match role {
-            "user" => {
-                let content = value.get("content")
-                    .ok_or("user message missing content")?;
-                Ok(Message::User(UserMessage {
-                    content: deserialize_user_content(content)?,
-                    display_text: opt_str(value, "displayText"),
-                    timestamp: value.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
-                }))
-            }
-            "assistant" => Ok(Message::Assistant(deserialize_assistant(value)?)),
-            "toolResult" => Ok(Message::ToolResult(ToolResultMessage {
-                tool_call_id: str_field(value, "toolCallId")?,
-                tool_name: str_field(value, "toolName")?,
-                content: deserialize_content_blocks(value.get("content"))?,
-                is_error: value.get("isError").and_then(Value::as_bool).unwrap_or(false),
+    let role = value.get("role").and_then(Value::as_str)
+        .ok_or_else(|| format!("Message missing 'role': {value}"))?;
+    match role {
+        "user" => {
+            let content = value.get("content")
+                .ok_or("user message missing content")?;
+            Ok(Message::User(UserMessage {
+                content: deserialize_user_content(content)?,
+                display_text: opt_str(value, "displayText"),
                 timestamp: value.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
-            })),
-            _ => Err(format!("unknown message role: {role}")),
-        };
+            }))
+        }
+        "assistant" => Ok(Message::Assistant(deserialize_assistant(value)?)),
+        "toolResult" => Ok(Message::ToolResult(ToolResultMessage {
+            tool_call_id: str_field(value, "toolCallId")?,
+            tool_name: str_field(value, "toolName")?,
+            content: deserialize_content_blocks(value.get("content"))?,
+            is_error: value.get("isError").and_then(Value::as_bool).unwrap_or(false),
+            timestamp: value.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
+        })),
+        _ => Err(format!("unknown message role: {role}")),
     }
-
-    // 旧 Rust 格式
-    if let Some(inner) = value.get("User") {
-        let content = inner.get("content")
-            .ok_or("User message missing content")?;
-        return Ok(Message::User(UserMessage {
-            content: deserialize_user_content(content)?,
-            display_text: opt_str(inner, "display_text"),
-            timestamp: inner.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
-        }));
-    }
-    if let Some(inner) = value.get("Assistant") {
-        return Ok(Message::Assistant(deserialize_assistant_legacy(inner)?));
-    }
-    if let Some(inner) = value.get("ToolResult") {
-        return Ok(Message::ToolResult(ToolResultMessage {
-            tool_call_id: str_field(inner, "tool_call_id")?,
-            tool_name: str_field(inner, "tool_name")?,
-            content: deserialize_content_blocks(inner.get("content"))?,
-            is_error: inner.get("is_error").and_then(Value::as_bool).unwrap_or(false),
-            timestamp: inner.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
-        }));
-    }
-
-    Err(format!("cannot parse Message from: {value}"))
 }
 
 fn deserialize_assistant(value: &Value) -> Result<AssistantMessage, String> {
@@ -299,20 +237,6 @@ fn deserialize_assistant(value: &Value) -> Result<AssistantMessage, String> {
     })
 }
 
-fn deserialize_assistant_legacy(value: &Value) -> Result<AssistantMessage, String> {
-    Ok(AssistantMessage {
-        content: deserialize_content_blocks(value.get("content"))?,
-        api: deserialize_api_field(value.get("api")),
-        provider: deserialize_provider_field(value.get("provider")),
-        model: str_field(value, "model")?,
-        response_model: opt_str(value, "response_model"),
-        response_id: opt_str(value, "response_id"),
-        usage: deserialize_usage_legacy(value.get("usage")),
-        stop_reason: deserialize_stop_reason_field(value.get("stop_reason")),
-        error_message: opt_str(value, "error_message"),
-        timestamp: value.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
-    })
-}
 
 fn deserialize_content_blocks(value: Option<&Value>) -> Result<Vec<ContentBlock>, String> {
     match value {
@@ -339,57 +263,7 @@ fn deserialize_usage(value: Option<&Value>) -> Usage {
     Usage { input, output, cache_read, cache_write, total_tokens, cost }
 }
 
-fn deserialize_usage_legacy(value: Option<&Value>) -> Usage {
-    let input = value.and_then(|v| v.get("input")).and_then(Value::as_u64).unwrap_or(0);
-    let output = value.and_then(|v| v.get("output")).and_then(Value::as_u64).unwrap_or(0);
-    let cache_read = value.and_then(|v| v.get("cache_read")).and_then(Value::as_u64).unwrap_or(0);
-    let cache_write = value.and_then(|v| v.get("cache_write")).and_then(Value::as_u64).unwrap_or(0);
-    let total_tokens = value.and_then(|v| v.get("total_tokens")).and_then(Value::as_u64)
-        .unwrap_or(input + output + cache_read + cache_write);
-    let cost = value.and_then(|v| v.get("cost")).map(|c| UsageCost {
-        input: c.get("input").and_then(Value::as_f64).unwrap_or(0.0),
-        output: c.get("output").and_then(Value::as_f64).unwrap_or(0.0),
-        cache_read: c.get("cache_read").and_then(Value::as_f64).unwrap_or(0.0),
-        cache_write: c.get("cache_write").and_then(Value::as_f64).unwrap_or(0.0),
-        total: c.get("total").and_then(Value::as_f64).unwrap_or(0.0),
-    }).unwrap_or(UsageCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0, total: 0.0 });
-    Usage { input, output, cache_read, cache_write, total_tokens, cost }
-}
 
-fn deserialize_api_field(value: Option<&Value>) -> Api {
-    match value {
-        Some(Value::String(s)) => parse_api(s),
-        Some(Value::Object(map)) => {
-            if let Some(key) = map.keys().next() {
-                parse_api_legacy(key)
-            } else {
-                Api::AnthropicMessages
-            }
-        }
-        _ => Api::AnthropicMessages,
-    }
-}
-
-fn deserialize_provider_field(value: Option<&Value>) -> Provider {
-    match value {
-        Some(Value::String(s)) => parse_provider(s),
-        Some(Value::Object(map)) => {
-            if let Some(key) = map.keys().next() {
-                parse_provider_legacy(key)
-            } else {
-                Provider::Anthropic
-            }
-        }
-        _ => Provider::Anthropic,
-    }
-}
-
-fn deserialize_stop_reason_field(value: Option<&Value>) -> StopReason {
-    match value {
-        Some(Value::String(s)) => parse_stop_reason(s),
-        _ => StopReason::Stop,
-    }
-}
 
 // ─── Usage Serialize (camelCase wire format) ────────────────────────────────
 
@@ -475,18 +349,6 @@ fn parse_api(value: &str) -> Api {
     }
 }
 
-fn parse_api_legacy(value: &str) -> Api {
-    match value {
-        "AnthropicMessages" => Api::AnthropicMessages,
-        "OpenAICompletions" => Api::OpenAICompletions,
-        "OpenAIResponses" => Api::OpenAIResponses,
-        "BedrockConverseStream" => Api::BedrockConverseStream,
-        "GoogleGenerativeAI" => Api::GoogleGenerativeAI,
-        "GoogleVertex" => Api::GoogleVertex,
-        "MistralConversations" => Api::MistralConversations,
-        other => Api::Custom(other.to_string()),
-    }
-}
 
 fn parse_provider(value: &str) -> Provider {
     match value {
@@ -517,34 +379,6 @@ fn parse_provider(value: &str) -> Provider {
     }
 }
 
-fn parse_provider_legacy(value: &str) -> Provider {
-    match value {
-        "Anthropic" => Provider::Anthropic,
-        "OpenAI" => Provider::OpenAI,
-        "AmazonBedrock" => Provider::AmazonBedrock,
-        "Google" => Provider::Google,
-        "GoogleVertex" => Provider::GoogleVertex,
-        "DeepSeek" => Provider::DeepSeek,
-        "OpenRouter" => Provider::OpenRouter,
-        "XAI" => Provider::XAI,
-        "Groq" => Provider::Groq,
-        "Cerebras" => Provider::Cerebras,
-        "Mistral" => Provider::Mistral,
-        "Nvidia" => Provider::Nvidia,
-        "Zai" => Provider::Zai,
-        "Together" => Provider::Together,
-        "MoonshotAI" => Provider::MoonshotAI,
-        "MoonshotAICn" => Provider::MoonshotAICn,
-        "HuggingFace" => Provider::HuggingFace,
-        "CloudflareWorkersAI" => Provider::CloudflareWorkersAI,
-        "CloudflareAIGateway" => Provider::CloudflareAIGateway,
-        "Xiaomi" => Provider::Xiaomi,
-        "XiaomiTokenPlanCn" => Provider::XiaomiTokenPlanCn,
-        "XiaomiTokenPlanAms" => Provider::XiaomiTokenPlanAms,
-        "XiaomiTokenPlanSgp" => Provider::XiaomiTokenPlanSgp,
-        other => Provider::Custom(other.to_string()),
-    }
-}
 
 fn parse_stop_reason(value: &str) -> StopReason {
     match value {
@@ -616,18 +450,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn content_block_legacy_format() {
-        let legacy = json!({"Text": {"text": "hi", "signature": null}});
-        let block: ContentBlock = serde_json::from_value(legacy).unwrap();
-        match block {
-            ContentBlock::Text { text, signature } => {
-                assert_eq!(text, "hi");
-                assert!(signature.is_none());
-            }
-            _ => panic!("expected Text"),
-        }
-    }
 
     #[test]
     fn user_content_text_serializes_as_array() {
@@ -658,15 +480,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn user_content_legacy_format() {
-        let json = json!({"Text": "old format"});
-        let content: UserContent = serde_json::from_value(json).unwrap();
-        match content {
-            UserContent::Text(t) => assert_eq!(t, "old format"),
-            _ => panic!("expected Text"),
-        }
-    }
 
     #[test]
     fn message_user_roundtrip() {
@@ -688,27 +501,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn message_user_legacy_format() {
-        let legacy = json!({
-            "User": {
-                "content": {"Text": "old"},
-                "display_text": null,
-                "timestamp": 999
-            }
-        });
-        let msg: Message = serde_json::from_value(legacy).unwrap();
-        match msg {
-            Message::User(u) => {
-                assert_eq!(u.timestamp, 999);
-                match u.content {
-                    UserContent::Text(t) => assert_eq!(t, "old"),
-                    _ => panic!("expected Text"),
-                }
-            }
-            _ => panic!("expected User"),
-        }
-    }
 
     #[test]
     fn message_assistant_roundtrip() {

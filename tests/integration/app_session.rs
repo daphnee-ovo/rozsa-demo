@@ -94,6 +94,51 @@ async fn session_manager_persistence_round_trip() {
 }
 
 #[tokio::test]
+async fn session_list_dir_extracts_first_message() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let session_path = tmp_dir.path().join("test.jsonl");
+
+    let mut manager = SessionManager::create(
+        &session_path,
+        "list-test".to_string(),
+        "/tmp".to_string(),
+        None,
+    )
+    .unwrap();
+
+    let user_msg = rozsa_model::types::Message::User(rozsa_model::types::UserMessage {
+        content: rozsa_model::types::UserContent::Text("用 tui-test 测试".to_string()),
+        display_text: None,
+        timestamp: 2000,
+    });
+    manager.append_message(user_msg).unwrap();
+
+    let metas = SessionManager::list_dir(tmp_dir.path()).unwrap();
+    assert_eq!(metas.len(), 1);
+    assert_eq!(metas[0].first_message, "用 tui-test 测试");
+    assert_eq!(metas[0].message_count, 1);
+}
+
+#[tokio::test]
+async fn session_list_dir_parses_ts_format_file() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let session_path = tmp_dir.path().join("ts-session.jsonl");
+
+    // TS 版产生的真实 session 文件格式
+    let content = r#"{"type":"session","version":3,"id":"019ef3e4","timestamp":"2026-06-23T09:51:39.256Z","cwd":"/home/test"}
+{"type":"message","id":"218c7a06","parentId":null,"timestamp":"2026-06-23T09:51:42.193Z","message":{"role":"user","content":[{"type":"text","text":"hello world"}],"timestamp":1782208302191}}
+{"type":"message","id":"281bb95c","parentId":"218c7a06","timestamp":"2026-06-23T09:51:45.785Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}],"model":"claude-3","api":"anthropic-messages","provider":"anthropic","stopReason":"stop","timestamp":1782208302226,"usage":{"input":3,"output":10,"cacheRead":0,"cacheWrite":0,"totalTokens":13,"cost":{"input":0.0,"output":0.0,"cacheRead":0.0,"cacheWrite":0.0,"total":0.0}}}}
+"#;
+    std::fs::write(&session_path, content).unwrap();
+
+    let metas = SessionManager::list_dir(tmp_dir.path()).unwrap();
+    assert_eq!(metas.len(), 1);
+    assert_eq!(metas[0].first_message, "hello world");
+    assert_eq!(metas[0].message_count, 2);
+    assert_eq!(metas[0].id, "019ef3e4");
+}
+
+#[tokio::test]
 async fn settings_manager_default_values() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let manager = SettingsManager::load(
