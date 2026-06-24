@@ -23,7 +23,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 unicode-width = "0.2"
 unicode-segmentation = "1"
+dashmap = "6"
 tokio = { version = "1", features = ["rt", "macros", "net", "sync", "time"] }
+tokio-util = "0.7"
 tokio-stream = "0.1"
 futures-core = "0.3"
 async-trait = "0.1"
@@ -40,5 +42,17 @@ portable-pty = "0.9"
 vt100 = "0.16.2"
 
 [[test]]
+name = "unit_tui_autocomplete"
+path = "../../tests/unit/tui/autocomplete_test.rs"
+
+[[test]]
 name = "unit_tui_view_model"
 path = "../../tests/unit/tui/view_model_test.rs"
+
+[[test]]
+name = "unit_tui_native_apply_event"
+path = "../../tests/unit/tui/native_apply_event_test.rs"
+
+[[test]]
+name = "e2e_tmux_tui"
+path = "../../tests/e2e/tmux_tui_test.rs"

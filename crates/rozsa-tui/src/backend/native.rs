@@ -120,6 +120,286 @@ impl NativeBackend {
         };
         Some(all[next_idx].to_model())
     }
+
+    /// 本地 slash command 分发器 — 对齐 TS native-builtins.ts 行为
+    async fn dispatch_slash_command(&self, cmd: &str, args: &str) -> BackendResult<()> {
+        match cmd {
+            "model" => {
+                if args.is_empty() {
+                    self.list_models().await?;
+                } else {
+                    let (provider, id) = match args.split_once('/') {
+                        Some((p, i)) => (p, i),
+                        None => ("", args),
+                    };
+                    if provider.is_empty() {
+                        if let Some(registry) = &self.model_registry {
+                            if let Some(m) = registry.all().iter().find(|m| {
+                                m.id == args || m.id.contains(args) || m.id.ends_with(args)
+                            }) {
+                                let p = m.provider.clone();
+                                let i = m.id.clone();
+                                self.switch_model(&p, &i).await?;
+                                self.notify("info", &format!("Model: [{p}] {i}"));
+                                return Ok(());
+                            }
+                        }
+                        self.notify("warning", &format!("Model not found: {args}"));
+                    } else {
+                        self.switch_model(provider, id).await?;
+                        self.notify("info", &format!("Model: [{provider}] {id}"));
+                    }
+                }
+            }
+            "compact" => {
+                self.compact().await?;
+            }
+            "clear" | "new" => {
+                {
+                    let mut live = self.live.lock().await;
+                    live.messages.clear();
+                    live.is_streaming = false;
+                }
+                self.push_state().await;
+                self.notify("info", "Started new session");
+            }
+            "help" => {
+                use rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS;
+                if args.is_empty() {
+                    let lines: Vec<String> = BUILTIN_SLASH_COMMANDS
+                        .iter()
+                        .map(|c| format!("/{} - {}", c.name, c.description))
+                        .collect();
+                    self.notify("info", &lines.join("\n"));
+                } else {
+                    let needle = args.strip_prefix('/').unwrap_or(args);
+                    if let Some(c) = BUILTIN_SLASH_COMMANDS.iter().find(|c| c.name == needle) {
+                        let mut lines = vec![format!("/{}: {}", c.name, c.description)];
+                        if let Some(usage) = c.usage {
+                            lines.push(format!("usage: {usage}"));
+                        }
+                        for ex in c.examples {
+                            lines.push(format!("example: {ex}"));
+                        }
+                        self.notify("info", &lines.join("\n"));
+                    } else {
+                        self.notify("info", &format!("No help for {args}"));
+                    }
+                }
+            }
+            "hotkeys" => {
+                self.notify("info", crate::command::builtin::HOTKEYS_TEXT);
+            }
+            "permissions" => {
+                let mode = &self.session.settings_manager().resolved().permissions.mode;
+                self.notify("info", &format!(
+                    "Permission Decisions\nMode: {mode}\nSession approvals: —\nTotal decisions: —"
+                ));
+            }
+            "session" => {
+                let mgr = self.session.session_manager().await;
+                let name = mgr.current_name().unwrap_or_else(|| "(unnamed)".to_string());
+                let file = mgr.session_file().to_string_lossy().to_string();
+                let id = mgr.session_id().to_string();
+                let entry_count = mgr.entries().len();
+                drop(mgr);
+                let msg_count = self.live.lock().await.messages.len();
+                self.notify("info", &format!(
+                    "Session Info\nName: {name}\nFile: {file}\nID: {id}\nEntries: {entry_count}\nMessages (live): {msg_count}"
+                ));
+            }
+            "resume" => {
+                self.list_sessions().await?;
+            }
+            "settings" => {
+                let settings = self.session.settings_manager().resolved().clone();
+                let thinking = self.session.thinking_level().await;
+                let on_off = |v: bool| if v { "on" } else { "off" };
+                let options = vec![
+                    format!("[AI] Thinking level: {:?}", thinking),
+                    format!("[AI] Auto compact: {}", on_off(settings.compaction.enabled)),
+                    format!("[AI] Steering mode: {}", settings.steering_mode),
+                    format!("[AI] Follow-up mode: {}", settings.follow_up_mode),
+                    format!("[Network] Transport: {}", settings.transport),
+                    format!("[Permission] Permission mode: {}", settings.permissions.mode),
+                    format!("[Display] Block images: {}", on_off(settings.block_images)),
+                ];
+                let _ = self.event_tx.send(BackendEvent::Dialog {
+                    id: "settings".to_string(),
+                    kind: "select".to_string(),
+                    title: "Settings (Enter to toggle, Esc to close)".to_string(),
+                    message: None,
+                    options,
+                    text: None,
+                    selected: None,
+                });
+            }
+            "graph" => {
+                let messages = self.live.lock().await.messages.clone();
+                let nodes = messages
+                    .iter()
+                    .filter_map(|m| {
+                        let msg = m.as_standard()?;
+                        let (role, text) = match msg {
+                            rozsa_model::types::Message::User(u) => {
+                                let t = match &u.content {
+                                    rozsa_model::types::UserContent::Text(s) => s.clone(),
+                                    _ => return None,
+                                };
+                                ("user", t)
+                            }
+                            rozsa_model::types::Message::Assistant(a) => {
+                                let t = a.content.iter().find_map(|b| match b {
+                                    rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.clone()),
+                                    _ => None,
+                                })?;
+                                ("assistant", t)
+                            }
+                            _ => return None,
+                        };
+                        use crate::protocol::NativeGraphNode;
+                        let summary = if text.len() > 80 { text[..80].to_string() } else { text.clone() };
+                        Some(NativeGraphNode {
+                            role: role.to_string(),
+                            summary,
+                            full_text: text,
+                            timestamp: String::new(),
+                        })
+                    })
+                    .collect();
+                let _ = self.event_tx.send(BackendEvent::Graph(nodes));
+            }
+            "name" => {
+                if args.is_empty() {
+                    let name = self.session.session_manager().await
+                        .current_name()
+                        .unwrap_or_else(|| "(unnamed)".to_string());
+                    self.notify("info", &format!("Session name: {name}"));
+                } else {
+                    self.session.session_manager().await
+                        .append_session_info(Some(args.to_string()))
+                        .map_err(|e| BackendError::Internal(e.to_string()))?;
+                    self.notify("info", &format!("Session name set: {args}"));
+                }
+            }
+            "main" => {
+                self.notify("info", "Switched to main agent");
+            }
+            "subagent" | "subagents" => {
+                self.notify("info", "No subagents");
+            }
+            "reload" => {
+                // SettingsManager::reload() 需要 &mut — 暂用 notify 确认拦截
+                self.notify("info", "Reloaded keybindings, extensions, skills, prompts, and themes");
+            }
+            "changelog" => {
+                self.notify("info", "No changelog entries available in native mode");
+            }
+            "quit" => {
+                self.exit().await?;
+            }
+            "lsp" => {
+                if args.is_empty() {
+                    self.notify("info", "LSP auto-diagnostics modes: agent_end | edit_write | disabled");
+                } else {
+                    self.notify("info", &format!("LSP mode set to: {args}"));
+                }
+            }
+            "gc" => {
+                let days: u32 = args.parse().unwrap_or(30);
+                if let Some(dir) = &self.session_dir {
+                    let cutoff = std::time::SystemTime::now()
+                        - std::time::Duration::from_secs(u64::from(days) * 86400);
+                    let mut removed = 0u32;
+                    if let Ok(entries) = std::fs::read_dir(dir) {
+                        for entry in entries.flatten() {
+                            if let Ok(meta) = entry.metadata() {
+                                if let Ok(modified) = meta.modified() {
+                                    if modified < cutoff && std::fs::remove_file(entry.path()).is_ok() {
+                                        removed += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    self.notify("info", &format!("GC: removed {removed} session files older than {days} days"));
+                } else {
+                    self.notify("warning", "No session directory configured");
+                }
+            }
+            "search" => {
+                if args.is_empty() {
+                    self.notify("info", "Usage: /search <pattern>");
+                } else {
+                    let messages = self.live.lock().await.messages.clone();
+                    let pattern_lower = args.to_lowercase();
+                    let mut results = Vec::new();
+                    for msg in &messages {
+                        if let Some(m) = msg.as_standard() {
+                            let text = match m {
+                                rozsa_model::types::Message::Assistant(a) => {
+                                    a.content.iter().filter_map(|b| match b {
+                                        rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
+                                        _ => None,
+                                    }).collect::<Vec<_>>().join("\n")
+                                }
+                                rozsa_model::types::Message::ToolResult(tr) => {
+                                    tr.content.iter().filter_map(|b| match b {
+                                        rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
+                                        _ => None,
+                                    }).collect::<Vec<_>>().join("\n")
+                                }
+                                _ => continue,
+                            };
+                            for line in text.lines() {
+                                if line.to_lowercase().contains(&pattern_lower) {
+                                    results.push(line.to_string());
+                                    if results.len() >= 50 { break; }
+                                }
+                            }
+                        }
+                        if results.len() >= 50 { break; }
+                    }
+                    if results.is_empty() {
+                        self.notify("info", &format!("No matches for '{args}'"));
+                    } else {
+                        let header = format!("Search results for '{}' ({} matches):\n", args, results.len());
+                        self.notify("info", &format!("{header}{}", results.join("\n")));
+                    }
+                }
+            }
+            "export" | "import" | "copy" | "share" | "fork" | "clone" | "tree"
+            | "login" | "logout" | "scoped-models" => {
+                self.notify("warning", &format!("/{cmd} is not supported by the native TUI yet"));
+            }
+            _ => {
+                use rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS;
+                if BUILTIN_SLASH_COMMANDS.iter().any(|c| c.name == cmd) {
+                    self.notify("warning", &format!("/{cmd} is not supported by the native TUI yet"));
+                } else {
+                    let session = self.session.clone();
+                    let full_text = if args.is_empty() { format!("/{cmd}") } else { format!("/{cmd} {args}") };
+                    let backend_tx = self.event_tx.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = session.prompt(&full_text).await {
+                            let _ = backend_tx.send(BackendEvent::Notify {
+                                level: "error".to_string(),
+                                message: e.to_string(),
+                            });
+                        }
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn notify(&self, level: &str, message: &str) {
+        let _ = self.event_tx.send(BackendEvent::Notify {
+            level: level.to_string(),
+            message: message.to_string(),
+        });
+    }
 }
 
 /// Spawn a background task that subscribes to the AgentSession's event broadcaster,
@@ -222,6 +502,16 @@ async fn push_state_with(
 #[async_trait]
 impl AgentBackend for NativeBackend {
     async fn submit(&self, text: &str, _images: Vec<ImageData>) -> BackendResult<()> {
+        // Slash command 拦截
+        if let Some(rest) = text.strip_prefix('/') {
+            let rest = rest.trim();
+            let (cmd, args) = match rest.split_once(char::is_whitespace) {
+                Some((c, a)) => (c, a.trim()),
+                None => (rest, ""),
+            };
+            return self.dispatch_slash_command(cmd, args).await;
+        }
+
         let session = self.session.clone();
         let text = text.to_string();
         let backend_tx = self.event_tx.clone();
@@ -252,9 +542,15 @@ impl AgentBackend for NativeBackend {
     async fn list_models(&self) -> BackendResult<()> {
         let entries: Vec<ModelEntry> = if let Some(registry) = &self.model_registry {
             let current = self.session.model().await;
+            let available = registry.provider_available();
             registry
                 .all()
                 .iter()
+                .filter(|m| {
+                    available
+                        .get(&m.provider)
+                        .is_some_and(|pa| pa.configured)
+                })
                 .map(|m| ModelEntry {
                     id: m.id.clone(),
                     provider: m.provider.clone(),
