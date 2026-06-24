@@ -299,31 +299,23 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
 
 /// Run the TUI with a NativeBackend (pure Rust, no TS subprocess).
 pub async fn run_native(session: rozsa_app::agent_session::AgentSession) -> Result<(), Box<dyn Error>> {
+    run_native_with(session, crate::backend::native::NativeBackendConfig::default()).await
+}
+
+/// Run the TUI with a NativeBackend, supplying construction-time config
+/// (model registry, session directory) that unlocks model/session commands.
+pub async fn run_native_with(
+    session: rozsa_app::agent_session::AgentSession,
+    config: crate::backend::native::NativeBackendConfig,
+) -> Result<(), Box<dyn Error>> {
     use crate::backend::native::NativeBackend;
 
-    let native = NativeBackend::new(session);
+    let native = Arc::new(NativeBackend::with_config(session, config));
     let mut event_rx = native.events();
     let _ = native.connect().await;
 
-    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<NativeCommand>();
-    let writer: crate::input::Writer = Arc::new(NativeCommandSink { tx: cmd_tx });
-
-    let native = Arc::new(native);
-    let native_for_cmds = native.clone();
-
-    tokio::spawn(async move {
-        while let Some(cmd) = cmd_rx.recv().await {
-            match cmd {
-                NativeCommand::Submit(text) => { let _ = native_for_cmds.submit(&text, vec![]).await; }
-                NativeCommand::Abort => { let _ = native_for_cmds.abort().await; }
-                NativeCommand::Exit => { let _ = native_for_cmds.exit().await; break; }
-                NativeCommand::FollowUp(text) => { let _ = native_for_cmds.follow_up(&text, vec![]).await; }
-                NativeCommand::Steer(text) => { let _ = native_for_cmds.steer(&text, vec![]).await; }
-                NativeCommand::ListModels => { let _ = native_for_cmds.list_models().await; }
-                NativeCommand::ListSessions => { let _ = native_for_cmds.list_sessions().await; }
-                NativeCommand::Compact => { let _ = native_for_cmds.compact().await; }
-            }
-        }
+    let writer: crate::input::Writer = Arc::new(NativeCommandSink {
+        backend: native.clone(),
     });
 
     enable_raw_mode()?;
@@ -365,35 +357,122 @@ pub async fn run_native(session: rozsa_app::agent_session::AgentSession) -> Resu
     result
 }
 
-enum NativeCommand {
-    Submit(String),
-    Abort,
-    Exit,
-    FollowUp(String),
-    Steer(String),
-    ListModels,
-    ListSessions,
-    Compact,
-}
-
+/// Sink that bridges synchronous CommandSink::send_command into async AgentBackend method calls.
+///
+/// Holds an Arc<NativeBackend> and spawns a tokio task per ClientMessage so the UI render
+/// loop never blocks on backend IO. All ClientMessage variants are forwarded — adding a new
+/// variant means adding one branch here, never silently dropping.
 struct NativeCommandSink {
-    tx: tokio::sync::mpsc::UnboundedSender<NativeCommand>,
+    backend: Arc<crate::backend::native::NativeBackend>,
 }
 
 impl crate::input::CommandSink for NativeCommandSink {
     fn send_command(&self, msg: &ClientMessage<'_>) -> Result<(), Box<dyn Error>> {
-        let cmd = match msg {
-            ClientMessage::Submit { text, .. } => NativeCommand::Submit(text.to_string()),
-            ClientMessage::Abort => NativeCommand::Abort,
-            ClientMessage::Exit => NativeCommand::Exit,
-            ClientMessage::FollowUp { text, .. } => NativeCommand::FollowUp(text.to_string()),
-            ClientMessage::Steer { text, .. } => NativeCommand::Steer(text.to_string()),
-            ClientMessage::ListModels => NativeCommand::ListModels,
-            ClientMessage::ListSessions { .. } => NativeCommand::ListSessions,
-            ClientMessage::Compact => NativeCommand::Compact,
-            _ => return Ok(()),
-        };
-        let _ = self.tx.send(cmd);
+        use crate::backend::{AgentBackend, Direction};
+
+        let backend = self.backend.clone();
+        // Each branch clones the strings it needs, then spawns one task.
+        // The cost of an extra spawn per command is negligible vs. the alternative of
+        // routing through an enum + queue — and it removes the silent-drop trap.
+        match msg {
+            ClientMessage::Submit { text, .. } => {
+                let text = text.to_string();
+                tokio::spawn(async move { let _ = backend.submit(&text, vec![]).await; });
+            }
+            ClientMessage::Abort => {
+                tokio::spawn(async move { let _ = backend.abort().await; });
+            }
+            ClientMessage::Exit => {
+                tokio::spawn(async move { let _ = backend.exit().await; });
+            }
+            ClientMessage::FollowUp { text, .. } => {
+                let text = text.to_string();
+                tokio::spawn(async move { let _ = backend.follow_up(&text, vec![]).await; });
+            }
+            ClientMessage::Steer { text, .. } => {
+                let text = text.to_string();
+                tokio::spawn(async move { let _ = backend.steer(&text, vec![]).await; });
+            }
+            ClientMessage::Compact => {
+                tokio::spawn(async move { let _ = backend.compact().await; });
+            }
+            ClientMessage::AutocompleteRequest { text, cursor, force, .. } => {
+                let text = text.to_string();
+                let cursor = *cursor;
+                let force = *force;
+                tokio::spawn(async move {
+                    let _ = backend.autocomplete_request(&text, cursor, force).await;
+                });
+            }
+            ClientMessage::CycleModel { direction } => {
+                let dir = if *direction == "backward" { Direction::Backward } else { Direction::Forward };
+                tokio::spawn(async move { let _ = backend.cycle_model(dir).await; });
+            }
+            ClientMessage::CycleThinking => {
+                // No dedicated backend call yet; left as no-op until thinking-level cycling lands.
+            }
+            ClientMessage::CycleEditMode => {
+                tokio::spawn(async move { let _ = backend.cycle_edit_mode().await; });
+            }
+            ClientMessage::DialogResponse { id, value, confirmed, cancelled } => {
+                let id = id.to_string();
+                let value = value.map(|s| s.to_string());
+                let confirmed = *confirmed;
+                let cancelled = *cancelled;
+                tokio::spawn(async move {
+                    let _ = backend
+                        .dialog_response(&id, value.as_deref(), confirmed, cancelled)
+                        .await;
+                });
+            }
+            ClientMessage::PermissionResponse { id, choice, trust_key } => {
+                let id = id.to_string();
+                let choice = choice.to_string();
+                let trust_key = trust_key.map(|s| s.to_string());
+                tokio::spawn(async move {
+                    let _ = backend
+                        .respond_permission(&id, &choice, trust_key.as_deref())
+                        .await;
+                });
+            }
+            ClientMessage::Bash { command } => {
+                let command = command.to_string();
+                tokio::spawn(async move { let _ = backend.run_bash(&command).await; });
+            }
+            ClientMessage::SwitchAgent { id } => {
+                let id = id.to_string();
+                tokio::spawn(async move { let _ = backend.switch_agent(&id).await; });
+            }
+            ClientMessage::SwitchModel { provider, id } => {
+                let provider = provider.to_string();
+                let id = id.to_string();
+                tokio::spawn(async move { let _ = backend.switch_model(&provider, &id).await; });
+            }
+            ClientMessage::SwitchSession { path } => {
+                let path = path.to_string();
+                tokio::spawn(async move { let _ = backend.switch_session(&path).await; });
+            }
+            ClientMessage::DeleteSession { path } => {
+                let path = path.to_string();
+                tokio::spawn(async move { let _ = backend.delete_session(&path).await; });
+            }
+            ClientMessage::RenameSession { path, name } => {
+                let path = path.to_string();
+                let name = name.to_string();
+                tokio::spawn(async move { let _ = backend.rename_session(&path, &name).await; });
+            }
+            ClientMessage::ListSessions { .. } => {
+                tokio::spawn(async move { let _ = backend.list_sessions().await; });
+            }
+            ClientMessage::ListModels => {
+                tokio::spawn(async move { let _ = backend.list_models().await; });
+            }
+            ClientMessage::UpdateSetting { key, value } => {
+                let key = key.to_string();
+                let value = value.to_string();
+                tokio::spawn(async move { let _ = backend.update_setting(&key, &value).await; });
+            }
+        }
         Ok(())
     }
 }

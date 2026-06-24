@@ -3,8 +3,9 @@ use rozsa_model::types::Message;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write as _};
+use std::io::{BufRead, BufReader, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 const SESSION_VERSION: u32 = 3;
 
@@ -99,6 +100,16 @@ pub struct LabelEntry {
     pub label: Option<String>,
 }
 
+/// Session info entry — carries the user-facing display name. The latest
+/// session_info entry in a file wins.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionInfoEntry {
+    #[serde(flatten)]
+    pub base: SessionEntryBase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
 /// Union of all session entry types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -115,6 +126,8 @@ pub enum SessionEntry {
     Custom(CustomEntry),
     #[serde(rename = "label")]
     Label(LabelEntry),
+    #[serde(rename = "session_info")]
+    SessionInfo(SessionInfoEntry),
 }
 
 impl SessionEntry {
@@ -126,6 +139,7 @@ impl SessionEntry {
             SessionEntry::Compaction(e) => &e.base.id,
             SessionEntry::Custom(e) => &e.base.id,
             SessionEntry::Label(e) => &e.base.id,
+            SessionEntry::SessionInfo(e) => &e.base.id,
         }
     }
 
@@ -137,8 +151,30 @@ impl SessionEntry {
             SessionEntry::Compaction(e) => e.base.parent_id.as_deref(),
             SessionEntry::Custom(e) => e.base.parent_id.as_deref(),
             SessionEntry::Label(e) => e.base.parent_id.as_deref(),
+            SessionEntry::SessionInfo(e) => e.base.parent_id.as_deref(),
         }
     }
+}
+
+/// Lightweight session metadata for list views (Sessions selector UI).
+///
+/// Built by scanning a session file once: header + counting messages +
+/// extracting the first user message and the latest session_info name.
+#[derive(Debug, Clone)]
+pub struct SessionMeta {
+    pub path: PathBuf,
+    pub id: String,
+    pub cwd: String,
+    pub name: Option<String>,
+    pub parent_session_path: Option<String>,
+    /// RFC3339 timestamp from the session header.
+    pub created: String,
+    /// RFC3339 timestamp — latest activity (last entry timestamp) or fs mtime fallback.
+    pub modified: String,
+    pub message_count: u32,
+    pub first_message: String,
+    /// All assistant + user message text concatenated, used for fuzzy search in the UI.
+    pub all_messages_text: String,
 }
 
 /// Manages conversation sessions as append-only trees stored in JSONL files.
@@ -397,4 +433,277 @@ impl SessionManager {
     pub fn session_file(&self) -> &Path {
         &self.session_file
     }
+
+    /// Append a session_info entry recording the user-facing display name.
+    /// Pass `None` to clear the name. The latest entry wins on read.
+    pub fn append_session_info(&mut self, name: Option<String>) -> Result<String> {
+        let id = self.generate_id();
+        let entry = SessionEntry::SessionInfo(SessionInfoEntry {
+            base: SessionEntryBase {
+                typ: "session_info".to_string(),
+                id,
+                parent_id: self.leaf_id.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            name,
+        });
+        self.append_entry(entry)
+    }
+
+    /// Open an existing session file and rebuild internal state.
+    ///
+    /// Reads the header for `session_id` and replays all entries to rebuild
+    /// the `by_id` index and locate the most recent leaf.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let file = File::open(path)
+            .with_context(|| format!("Failed to open session file: {}", path.display()))?;
+        let reader = BufReader::new(file);
+
+        let mut header: Option<SessionHeader> = None;
+        let mut by_id: HashMap<String, SessionEntry> = HashMap::new();
+        let mut last_id: Option<String> = None;
+
+        for (idx, line) in reader.lines().enumerate() {
+            let line = line.with_context(|| format!("Failed to read line {} of {}", idx + 1, path.display()))?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            if header.is_none() {
+                let h: SessionHeader = serde_json::from_str(&line)
+                    .with_context(|| format!("Invalid session header in {}", path.display()))?;
+                if h.typ != "session" {
+                    anyhow::bail!("Missing 'session' header in {}", path.display());
+                }
+                header = Some(h);
+                continue;
+            }
+            // Skip malformed lines but keep going (best effort).
+            let Ok(entry) = serde_json::from_str::<SessionEntry>(&line) else {
+                continue;
+            };
+            let id = entry.id().to_string();
+            by_id.insert(id.clone(), entry);
+            last_id = Some(id);
+        }
+
+        let header = header.ok_or_else(|| {
+            anyhow::anyhow!("Session file {} is empty or has no header", path.display())
+        })?;
+
+        Ok(SessionManager {
+            session_id: header.id,
+            session_file: path.to_path_buf(),
+            by_id,
+            leaf_id: last_id,
+        })
+    }
+
+    /// Delete the session file at `path`.
+    pub fn delete(path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        std::fs::remove_file(path)
+            .with_context(|| format!("Failed to delete session file: {}", path.display()))
+    }
+
+    /// Rename a session by appending a `session_info` entry.
+    ///
+    /// `path` may point to the active session or a different file. For non-active
+    /// sessions we open them, append, and drop the manager. For an in-process
+    /// active rename, callers should use `append_session_info` directly.
+    pub fn rename(path: impl AsRef<Path>, new_name: Option<String>) -> Result<()> {
+        let mut mgr = SessionManager::open(path)?;
+        mgr.append_session_info(new_name)?;
+        Ok(())
+    }
+
+    /// Resolve the latest `session_info` name, walking entries by appended order.
+    pub fn current_name(&self) -> Option<String> {
+        // Iterate in reverse insertion order is not preserved by HashMap; we
+        // pick the entry with the largest timestamp instead.
+        let mut best: Option<(&str, &SessionInfoEntry)> = None;
+        for entry in self.by_id.values() {
+            if let SessionEntry::SessionInfo(info) = entry {
+                let ts = info.base.timestamp.as_str();
+                match best {
+                    None => best = Some((ts, info)),
+                    Some((cur, _)) if ts > cur => best = Some((ts, info)),
+                    _ => {}
+                }
+            }
+        }
+        best.and_then(|(_, info)| info.name.clone())
+    }
+
+    /// List all session files under a directory, returning lightweight metadata.
+    /// Files that fail to parse are skipped silently.
+    pub fn list_dir(dir: impl AsRef<Path>) -> Result<Vec<SessionMeta>> {
+        let dir = dir.as_ref();
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut metas = Vec::new();
+        for entry in std::fs::read_dir(dir)
+            .with_context(|| format!("Failed to read session dir: {}", dir.display()))?
+        {
+            let Ok(entry) = entry else { continue };
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+                continue;
+            }
+            if let Ok(meta) = build_session_meta(&path) {
+                metas.push(meta);
+            }
+        }
+        // Most recent first.
+        metas.sort_by(|a, b| b.modified.cmp(&a.modified));
+        Ok(metas)
+    }
+}
+
+/// Scan a single session file and produce its [`SessionMeta`] summary.
+/// Returns Err if the file is missing a valid header — caller may skip.
+fn build_session_meta(path: &Path) -> Result<SessionMeta> {
+    let file = File::open(path)
+        .with_context(|| format!("Failed to open {}", path.display()))?;
+    let reader = BufReader::new(file);
+
+    let mut header: Option<SessionHeader> = None;
+    let mut message_count: u32 = 0;
+    let mut first_message = String::new();
+    let mut all_messages_text = String::new();
+    let mut latest_name: Option<(String, Option<String>)> = None; // (timestamp, name)
+    let mut latest_activity: Option<String> = None;
+
+    for line in reader.lines() {
+        let Ok(line) = line else { continue };
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if header.is_none() {
+            let h: SessionHeader = serde_json::from_str(trimmed)
+                .with_context(|| format!("Invalid header in {}", path.display()))?;
+            if h.typ != "session" {
+                anyhow::bail!("Missing 'session' header in {}", path.display());
+            }
+            header = Some(h);
+            continue;
+        }
+
+        let Ok(entry) = serde_json::from_str::<SessionEntry>(trimmed) else {
+            continue;
+        };
+
+        // Track latest activity timestamp via base timestamp.
+        let ts = match &entry {
+            SessionEntry::Message(e) => &e.base.timestamp,
+            SessionEntry::ThinkingLevelChange(e) => &e.base.timestamp,
+            SessionEntry::ModelChange(e) => &e.base.timestamp,
+            SessionEntry::Compaction(e) => &e.base.timestamp,
+            SessionEntry::Custom(e) => &e.base.timestamp,
+            SessionEntry::Label(e) => &e.base.timestamp,
+            SessionEntry::SessionInfo(e) => &e.base.timestamp,
+        };
+        match &latest_activity {
+            None => latest_activity = Some(ts.clone()),
+            Some(prev) if ts.as_str() > prev.as_str() => latest_activity = Some(ts.clone()),
+            _ => {}
+        }
+
+        match entry {
+            SessionEntry::SessionInfo(info) => {
+                let info_ts = info.base.timestamp.clone();
+                match &latest_name {
+                    None => latest_name = Some((info_ts, info.name)),
+                    Some((prev_ts, _)) if info_ts.as_str() > prev_ts.as_str() => {
+                        latest_name = Some((info_ts, info.name));
+                    }
+                    _ => {}
+                }
+            }
+            SessionEntry::Message(msg_entry) => {
+                message_count += 1;
+                let text = extract_message_text(&msg_entry.message);
+                if !text.is_empty() {
+                    if first_message.is_empty() && matches!(msg_entry.message, Message::User(_)) {
+                        first_message = text.clone();
+                    }
+                    if !all_messages_text.is_empty() {
+                        all_messages_text.push(' ');
+                    }
+                    all_messages_text.push_str(&text);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let header = header.ok_or_else(|| {
+        anyhow::anyhow!("No session header in {}", path.display())
+    })?;
+
+    let modified = latest_activity.unwrap_or_else(|| {
+        // Fallback to fs mtime in RFC3339.
+        std::fs::metadata(path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .map(systemtime_to_rfc3339)
+            .unwrap_or_else(|| header.timestamp.clone())
+    });
+
+    Ok(SessionMeta {
+        path: path.to_path_buf(),
+        id: header.id.clone(),
+        cwd: header.cwd.clone(),
+        name: latest_name.and_then(|(_, n)| n).filter(|s| !s.trim().is_empty()),
+        parent_session_path: header.parent_session.clone(),
+        created: header.timestamp,
+        modified,
+        message_count,
+        first_message: if first_message.is_empty() {
+            "(no messages)".to_string()
+        } else {
+            first_message
+        },
+        all_messages_text,
+    })
+}
+
+/// Extract plain text from a Message for indexing/preview.
+fn extract_message_text(msg: &Message) -> String {
+    use rozsa_model::types::{AssistantMessage, ContentBlock, UserContent};
+    match msg {
+        Message::User(u) => match &u.content {
+            UserContent::Text(t) => t.clone(),
+            UserContent::Blocks(blocks) => blocks
+                .iter()
+                .filter_map(|b| {
+                    if let ContentBlock::Text { text, .. } = b {
+                        Some(text.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+        },
+        Message::Assistant(AssistantMessage { content, .. }) => content
+            .iter()
+            .filter_map(|b| {
+                if let ContentBlock::Text { text, .. } = b {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => String::new(),
+    }
+}
+
+fn systemtime_to_rfc3339(t: SystemTime) -> String {
+    let dt: chrono::DateTime<chrono::Utc> = t.into();
+    dt.to_rfc3339()
 }

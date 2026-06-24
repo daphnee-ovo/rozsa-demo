@@ -33,10 +33,10 @@ pub struct AgentLoopConfig {
     pub get_steering_messages: Option<Box<dyn Fn() -> Vec<AgentMessage> + Send + Sync>>,
     pub get_follow_up_messages: Option<Box<dyn Fn() -> Vec<AgentMessage> + Send + Sync>>,
     pub tool_execution: ToolExecutionMode,
-    pub before_tool_call:
-        Option<Box<dyn Fn(&BeforeToolCallContext) -> Option<BeforeToolCallResult> + Send + Sync>>,
-    pub after_tool_call:
-        Option<Box<dyn Fn(&AfterToolCallContext) -> Option<AfterToolCallResult> + Send + Sync>>,
+    pub pre_tool_use:
+        Option<Box<dyn Fn(&PreToolUseContext) -> Option<PreToolUseResult> + Send + Sync>>,
+    pub post_tool_use:
+        Option<Box<dyn Fn(&PostToolUseContext) -> Option<PostToolUseResult> + Send + Sync>>,
     pub tools: Vec<Arc<dyn Tool>>,
 }
 
@@ -56,7 +56,7 @@ pub struct TurnUpdate {
 }
 
 #[derive(Debug, Clone)]
-pub struct BeforeToolCallContext {
+pub struct PreToolUseContext {
     pub assistant_message: rozsa_model::types::AssistantMessage,
     pub tool_call_id: String,
     pub tool_name: String,
@@ -65,13 +65,13 @@ pub struct BeforeToolCallContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct BeforeToolCallResult {
+pub struct PreToolUseResult {
     pub block: bool,
     pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
-pub struct AfterToolCallContext {
+pub struct PostToolUseContext {
     pub assistant_message: rozsa_model::types::AssistantMessage,
     pub tool_call_id: String,
     pub tool_name: String,
@@ -82,7 +82,7 @@ pub struct AfterToolCallContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct AfterToolCallResult {
+pub struct PostToolUseResult {
     pub content: Option<Vec<rozsa_model::types::ContentBlock>>,
     pub is_error: Option<bool>,
     pub terminate: Option<bool>,

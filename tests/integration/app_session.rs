@@ -63,11 +63,11 @@ async fn agent_session_creates_and_registers_tools() {
         resources: LoadedResources::default(),
     };
 
-    let mut session = AgentSession::new(config);
-    session.register_default_tools(tmp_dir.path());
+    let session = AgentSession::new(config);
+    session.register_default_tools(tmp_dir.path()).await;
 
     assert!(!session.is_running());
-    assert!(session.messages().is_empty());
+    assert!(session.messages().await.is_empty());
 }
 
 #[tokio::test]

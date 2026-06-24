@@ -34,8 +34,8 @@ fn config_with_stream(
         get_steering_messages: None,
         get_follow_up_messages: None,
         tool_execution: ToolExecutionMode::Sequential,
-        before_tool_call: None,
-        after_tool_call: None,
+        pre_tool_use: None,
+        post_tool_use: None,
         tools: vec![],
     }
 }
@@ -756,7 +756,7 @@ async fn unknown_tool_returns_error_result() {
 }
 
 #[tokio::test]
-async fn before_tool_call_blocks_tool() {
+async fn pre_tool_use_blocks_tool() {
     let tool = Arc::new(FakeTool {
         name: "test_tool".to_string(),
         response: "should not see this".to_string(),
@@ -783,8 +783,8 @@ async fn before_tool_call_blocks_tool() {
             stream
         });
         base.tools = vec![tool];
-        base.before_tool_call = Some(Box::new(|_ctx| {
-            Some(crate::config::BeforeToolCallResult {
+        base.pre_tool_use = Some(Box::new(|_ctx| {
+            Some(crate::config::PreToolUseResult {
                 block: true,
                 reason: Some("Permission denied".to_string()),
             })
@@ -822,7 +822,7 @@ async fn before_tool_call_blocks_tool() {
 }
 
 #[tokio::test]
-async fn after_tool_call_overrides_result() {
+async fn post_tool_use_overrides_result() {
     let tool = Arc::new(FakeTool {
         name: "test_tool".to_string(),
         response: "original result".to_string(),
@@ -849,8 +849,8 @@ async fn after_tool_call_overrides_result() {
             stream
         });
         base.tools = vec![tool];
-        base.after_tool_call = Some(Box::new(|_ctx| {
-            Some(crate::config::AfterToolCallResult {
+        base.post_tool_use = Some(Box::new(|_ctx| {
+            Some(crate::config::PostToolUseResult {
                 content: Some(vec![ContentBlock::Text {
                     text: "overridden".to_string(),
                     signature: None,
@@ -885,7 +885,7 @@ async fn after_tool_call_overrides_result() {
             }
         }
     }
-    assert!(found_override, "after_tool_call should override result content");
+    assert!(found_override, "post_tool_use should override result content");
 }
 
 #[tokio::test]

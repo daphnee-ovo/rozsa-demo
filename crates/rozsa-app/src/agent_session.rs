@@ -23,9 +23,11 @@
 // - [Core Agent Loop](../../rozsa-core/src/agent_loop.rs)
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
+use tokio::sync::{broadcast, Mutex};
 use tokio_util::sync::CancellationToken;
 
 use rozsa_core::agent_loop::{agent_loop, agent_loop_continue};
@@ -68,6 +70,21 @@ pub struct AgentSessionConfig {
     pub resources: LoadedResources,
 }
 
+/// Static (immutable per session) parts of AgentSessionConfig.
+struct StaticConfig {
+    system_prompt: String,
+    cwd: PathBuf,
+    settings_manager: SettingsManager,
+    #[allow(dead_code)]
+    resources: LoadedResources,
+}
+
+/// Mutable runtime parameters: model and reasoning level can change between turns.
+struct RuntimeParams {
+    model: Model,
+    thinking_level: ThinkingLevel,
+}
+
 /// Top-level orchestrator that wires together the agent loop, tools,
 /// permissions, extensions, and session persistence.
 ///
@@ -75,33 +92,65 @@ pub struct AgentSessionConfig {
 /// It owns the tools, manages cancellation, and delegates to
 /// `rozsa_core::agent_loop` for the actual model interaction loop.
 pub struct AgentSession {
-    config: AgentSessionConfig,
-    tools: Vec<Arc<dyn Tool>>,
-    cancel_token: Option<CancellationToken>,
-    is_running: bool,
+    static_config: StaticConfig,
+    runtime: Mutex<RuntimeParams>,
+    session_manager: Mutex<SessionManager>,
+    tools: Mutex<Vec<Arc<dyn Tool>>>,
+    cancel_token: Mutex<Option<CancellationToken>>,
+    is_running: AtomicBool,
     /// Accumulated messages across turns (the conversation history).
-    messages: Vec<AgentMessage>,
+    messages: Mutex<Vec<AgentMessage>>,
+    /// Broadcast channel for AgentEvents — subscribers see every event the loop emits.
+    event_tx: broadcast::Sender<AgentEvent>,
 }
 
 impl AgentSession {
     /// Create a new agent session from configuration.
     pub fn new(config: AgentSessionConfig) -> Self {
+        // Capacity 256: enough headroom for token-stream bursts; slow subscribers will lag.
+        let (event_tx, _) = broadcast::channel(256);
+        let AgentSessionConfig {
+            model,
+            thinking_level,
+            system_prompt,
+            cwd,
+            session_manager,
+            settings_manager,
+            resources,
+        } = config;
         Self {
-            config,
-            tools: Vec::new(),
-            cancel_token: None,
-            is_running: false,
-            messages: Vec::new(),
+            static_config: StaticConfig {
+                system_prompt,
+                cwd,
+                settings_manager,
+                resources,
+            },
+            runtime: Mutex::new(RuntimeParams {
+                model,
+                thinking_level,
+            }),
+            session_manager: Mutex::new(session_manager),
+            tools: Mutex::new(Vec::new()),
+            cancel_token: Mutex::new(None),
+            is_running: AtomicBool::new(false),
+            messages: Mutex::new(Vec::new()),
+            event_tx,
         }
     }
 
+    /// Subscribe to AgentEvents emitted by `prompt` / `continue_session`.
+    /// Each subscriber sees every event from the moment of subscription onward.
+    pub fn subscribe(&self) -> broadcast::Receiver<AgentEvent> {
+        self.event_tx.subscribe()
+    }
+
     /// Register a single tool.
-    pub fn register_tool(&mut self, tool: Arc<dyn Tool>) {
-        self.tools.push(tool);
+    pub async fn register_tool(&self, tool: Arc<dyn Tool>) {
+        self.tools.lock().await.push(tool);
     }
 
     /// Register the default built-in tools (read, write, edit, bash, ls, grep, find).
-    pub fn register_default_tools(&mut self, cwd: &Path) {
+    pub async fn register_default_tools(&self, cwd: &Path) {
         let cwd_str = cwd.to_string_lossy().to_string();
         let defaults: Vec<Box<dyn Tool>> = vec![
             create_read_tool(),
@@ -112,8 +161,9 @@ impl AgentSession {
             create_grep_tool(),
             create_find_tool(),
         ];
+        let mut tools = self.tools.lock().await;
         for tool in defaults {
-            self.tools.push(Arc::from(tool));
+            tools.push(Arc::from(tool));
         }
     }
 
@@ -122,14 +172,18 @@ impl AgentSession {
     /// Builds the agent context from current session state, constructs a user
     /// message, runs the core loop, persists resulting messages, and returns
     /// the event stream collected as a Vec.
-    pub async fn prompt(&mut self, message: &str) -> Result<Vec<AgentEvent>> {
-        if self.is_running {
+    pub async fn prompt(&self, message: &str) -> Result<Vec<AgentEvent>> {
+        // Atomically claim the running slot — concurrent submits get rejected.
+        if self
+            .is_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             anyhow::bail!("Agent session is already running");
         }
 
-        self.is_running = true;
         let cancel_token = CancellationToken::new();
-        self.cancel_token = Some(cancel_token.clone());
+        *self.cancel_token.lock().await = Some(cancel_token.clone());
 
         // Build user message
         let user_msg = AgentMessage::standard(Message::User(UserMessage {
@@ -139,19 +193,18 @@ impl AgentSession {
         }));
 
         // Persist user message to session file
-        self.config
-            .session_manager
+        self.session_manager
+            .lock()
+            .await
             .append_message(Message::User(UserMessage {
                 content: UserContent::Text(message.to_string()),
                 display_text: None,
                 timestamp: current_timestamp_ms(),
             }))?;
 
-        // Build context and config for the core loop
-        let context = self.build_agent_context();
-        let loop_config = self.build_loop_config();
+        let context = self.build_agent_context().await;
+        let loop_config = self.build_loop_config().await;
 
-        // Run the agent loop
         let stream = agent_loop(
             vec![user_msg],
             context,
@@ -159,14 +212,11 @@ impl AgentSession {
             Some(cancel_token),
         );
 
-        // Collect all events
-        let events = collect_events(stream).await;
+        let events = self.drain_and_broadcast(stream).await;
+        self.persist_new_messages(&events).await?;
 
-        // Persist new assistant/tool messages to session
-        self.persist_new_messages(&events)?;
-
-        self.is_running = false;
-        self.cancel_token = None;
+        *self.cancel_token.lock().await = None;
+        self.is_running.store(false, Ordering::SeqCst);
 
         Ok(events)
     }
@@ -175,97 +225,111 @@ impl AgentSession {
     ///
     /// Used after interruptions or when the model needs to continue
     /// processing (e.g., after compaction).
-    pub async fn continue_session(&mut self) -> Result<Vec<AgentEvent>> {
-        if self.is_running {
+    pub async fn continue_session(&self) -> Result<Vec<AgentEvent>> {
+        if self
+            .is_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             anyhow::bail!("Agent session is already running");
         }
 
-        self.is_running = true;
         let cancel_token = CancellationToken::new();
-        self.cancel_token = Some(cancel_token.clone());
+        *self.cancel_token.lock().await = Some(cancel_token.clone());
 
-        let context = self.build_agent_context();
-        let loop_config = self.build_loop_config();
+        let context = self.build_agent_context().await;
+        let loop_config = self.build_loop_config().await;
 
         let stream = agent_loop_continue(context, loop_config, Some(cancel_token));
 
-        let events = collect_events(stream).await;
+        let events = self.drain_and_broadcast(stream).await;
+        self.persist_new_messages(&events).await?;
 
-        self.persist_new_messages(&events)?;
-
-        self.is_running = false;
-        self.cancel_token = None;
+        *self.cancel_token.lock().await = None;
+        self.is_running.store(false, Ordering::SeqCst);
 
         Ok(events)
+    }
+
+    /// Drain an EventStream while fan-out broadcasting each event to subscribers.
+    /// Returns the same Vec the old `collect_events` produced — callers see no behavior change.
+    async fn drain_and_broadcast(
+        &self,
+        mut stream: EventStream<AgentEvent>,
+    ) -> Vec<AgentEvent> {
+        let mut events = Vec::new();
+        while let Some(event) = stream.next().await {
+            // send() errors only when there are zero subscribers — not an error condition.
+            let _ = self.event_tx.send(event.clone());
+            events.push(event);
+        }
+        events
     }
 
     /// Abort the currently running loop.
     ///
     /// Signals the CancellationToken, causing the agent loop to terminate
-    /// gracefully at the next check point.
-    pub fn abort(&mut self) {
-        if let Some(token) = &self.cancel_token {
+    /// gracefully at the next check point. Safe to call concurrently with `prompt`.
+    pub async fn abort(&self) {
+        if let Some(token) = self.cancel_token.lock().await.as_ref() {
             token.cancel();
         }
-        self.is_running = false;
     }
 
     /// Whether the session is currently running an agent loop.
     pub fn is_running(&self) -> bool {
-        self.is_running
+        self.is_running.load(Ordering::SeqCst)
     }
 
-    /// Get the current accumulated messages.
-    pub fn messages(&self) -> &[AgentMessage] {
-        &self.messages
+    /// Snapshot the current accumulated messages.
+    pub async fn messages(&self) -> Vec<AgentMessage> {
+        self.messages.lock().await.clone()
     }
 
-    /// Get a reference to the session manager.
-    pub fn session_manager(&self) -> &SessionManager {
-        &self.config.session_manager
+    /// Lock and access the session manager. Holds the lock for the duration of the borrow —
+    /// keep usage short to avoid blocking concurrent operations.
+    pub async fn session_manager(&self) -> tokio::sync::MutexGuard<'_, SessionManager> {
+        self.session_manager.lock().await
     }
 
-    /// Get a mutable reference to the session manager.
-    pub fn session_manager_mut(&mut self) -> &mut SessionManager {
-        &mut self.config.session_manager
-    }
-
-    /// Get the settings manager.
+    /// Get the settings manager (read-only, immutable for the session lifetime).
     pub fn settings_manager(&self) -> &SettingsManager {
-        &self.config.settings_manager
+        &self.static_config.settings_manager
     }
 
     /// Get the working directory.
     pub fn cwd(&self) -> &Path {
-        &self.config.cwd
+        &self.static_config.cwd
     }
 
     /// Get the current thinking level.
-    pub fn thinking_level(&self) -> ThinkingLevel {
-        self.config.thinking_level
+    pub async fn thinking_level(&self) -> ThinkingLevel {
+        self.runtime.lock().await.thinking_level
     }
 
-    /// Get the current model.
-    pub fn model(&self) -> &Model {
-        &self.config.model
+    /// Get the current model (cloned snapshot).
+    pub async fn model(&self) -> Model {
+        self.runtime.lock().await.model.clone()
     }
 
     /// Update the model for subsequent turns.
-    pub fn set_model(&mut self, model: Model) {
-        self.config.model = model;
+    pub async fn set_model(&self, model: Model) {
+        self.runtime.lock().await.model = model;
     }
 
     /// Update the thinking level for subsequent turns.
-    pub fn set_thinking_level(&mut self, level: ThinkingLevel) {
-        self.config.thinking_level = level;
+    pub async fn set_thinking_level(&self, level: ThinkingLevel) {
+        self.runtime.lock().await.thinking_level = level;
     }
 
     // --- Private helpers ---
 
     /// Build an AgentContext from the current session state.
-    fn build_agent_context(&self) -> AgentContext {
+    async fn build_agent_context(&self) -> AgentContext {
         let tool_schemas: Vec<ToolSchema> = self
             .tools
+            .lock()
+            .await
             .iter()
             .map(|t| ToolSchema {
                 name: t.name().to_string(),
@@ -275,17 +339,19 @@ impl AgentSession {
             .collect();
 
         AgentContext {
-            system_prompt: Some(self.config.system_prompt.clone()),
-            messages: self.messages.clone(),
+            system_prompt: Some(self.static_config.system_prompt.clone()),
+            messages: self.messages.lock().await.clone(),
             tools: tool_schemas,
         }
     }
 
     /// Build the AgentLoopConfig wiring all hooks to this session's dependencies.
-    fn build_loop_config(&self) -> AgentLoopConfig {
-        let model = self.config.model.clone();
-        let thinking_level = self.config.thinking_level;
-        let settings = self.config.settings_manager.resolved().clone();
+    async fn build_loop_config(&self) -> AgentLoopConfig {
+        let runtime = self.runtime.lock().await;
+        let model = runtime.model.clone();
+        let thinking_level = runtime.thinking_level;
+        drop(runtime);
+        let settings = self.static_config.settings_manager.resolved().clone();
 
         // Build stream options from settings
         let reasoning = match thinking_level {
@@ -303,7 +369,7 @@ impl AgentSession {
                 transport: Transport::Auto,
                 cache_retention: CacheRetention::Short,
                 session_id: Some(
-                    self.config.session_manager.session_id().to_string(),
+                    self.session_manager.lock().await.session_id().to_string(),
                 ),
                 headers: model.headers.clone(),
                 timeout_ms: settings.retry.timeout_ms,
@@ -339,23 +405,23 @@ impl AgentSession {
             get_steering_messages: None,
             get_follow_up_messages: None,
             tool_execution: ToolExecutionMode::Parallel,
-            before_tool_call: None,
-            after_tool_call: None,
-            tools: self.tools.clone(),
+            pre_tool_use: None,
+            post_tool_use: None,
+            tools: self.tools.lock().await.clone(),
         }
     }
 
     /// Persist new messages from agent events into the session file and internal history.
-    fn persist_new_messages(&mut self, events: &[AgentEvent]) -> Result<()> {
+    async fn persist_new_messages(&self, events: &[AgentEvent]) -> Result<()> {
+        let mut messages = self.messages.lock().await;
+        let mut session_manager = self.session_manager.lock().await;
         for event in events {
-            if let AgentEvent::AgentEnd { messages } = event {
-                for msg in messages {
-                    // Add to in-memory history
-                    self.messages.push(msg.clone());
+            if let AgentEvent::AgentEnd { messages: new } = event {
+                for msg in new {
+                    messages.push(msg.clone());
 
-                    // Persist standard messages to session file
                     if let Some(message) = msg.as_standard() {
-                        self.config.session_manager.append_message(message.clone())?;
+                        session_manager.append_message(message.clone())?;
                     }
                 }
             }
@@ -398,15 +464,6 @@ fn build_model_stream_fn() -> ModelStreamFn {
             rozsa_model::stream::stream_simple(model, context, options)
         },
     )
-}
-
-/// Collect all events from an EventStream into a Vec.
-async fn collect_events(mut stream: EventStream<AgentEvent>) -> Vec<AgentEvent> {
-    let mut events = Vec::new();
-    while let Some(event) = stream.next().await {
-        events.push(event);
-    }
-    events
 }
 
 /// Resolve API key for a model from environment variables.

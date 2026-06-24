@@ -387,8 +387,8 @@ async fn handle_start_run(
         get_steering_messages: None,
         get_follow_up_messages: None,
         tool_execution: config.tool_execution,
-        before_tool_call: None,
-        after_tool_call: None,
+        pre_tool_use: None,
+        post_tool_use: None,
         tools,
     };
 

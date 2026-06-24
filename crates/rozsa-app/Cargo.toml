@@ -28,5 +28,9 @@ name = "unit_app_model_registry"
 path = "../../tests/unit/app/model_registry.rs"
 
 [[test]]
+name = "unit_app_slash_commands"
+path = "../../tests/unit/app/slash_commands.rs"
+
+[[test]]
 name = "integration_app_session"
 path = "../../tests/integration/app_session.rs"

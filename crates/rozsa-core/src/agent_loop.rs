@@ -437,8 +437,8 @@ async fn execute_parallel(
             continue;
         };
 
-        if let Some(ref before) = config.before_tool_call {
-            let ctx = crate::config::BeforeToolCallContext {
+        if let Some(ref before) = config.pre_tool_use {
+            let ctx = crate::config::PreToolUseContext {
                 assistant_message: assistant_message.clone(),
                 tool_call_id: call.id.clone(),
                 tool_name: call.name.clone(),
@@ -510,8 +510,8 @@ async fn execute_parallel(
                     terminate,
                 };
 
-                if let Some(ref after) = config.after_tool_call {
-                    let ctx = crate::config::AfterToolCallContext {
+                if let Some(ref after) = config.post_tool_use {
+                    let ctx = crate::config::PostToolUseContext {
                         assistant_message: assistant_message.clone(),
                         tool_call_id: call.id.clone(),
                         tool_name: call.name.clone(),
@@ -580,8 +580,8 @@ async fn execute_single_tool(
         return make_error_finalized(call, format!("Tool '{}' not found", call.name));
     };
 
-    if let Some(ref before) = config.before_tool_call {
-        let ctx = crate::config::BeforeToolCallContext {
+    if let Some(ref before) = config.pre_tool_use {
+        let ctx = crate::config::PreToolUseContext {
             assistant_message: assistant_message.clone(),
             tool_call_id: call.id.clone(),
             tool_name: call.name.clone(),
@@ -619,8 +619,8 @@ async fn execute_single_tool(
         terminate,
     };
 
-    if let Some(ref after) = config.after_tool_call {
-        let ctx = crate::config::AfterToolCallContext {
+    if let Some(ref after) = config.post_tool_use {
+        let ctx = crate::config::PostToolUseContext {
             assistant_message: assistant_message.clone(),
             tool_call_id: call.id.clone(),
             tool_name: call.name.clone(),

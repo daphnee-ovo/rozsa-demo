@@ -47,6 +47,7 @@ mod terminal_image;
 mod theme;
 mod ui;
 mod undo;
+mod view_model;
 
 /// 统一换行符：\r\n 和 \r 归一化为 \n
 fn normalize_newlines(text: &str) -> String {

@@ -38,3 +38,7 @@ tracing = "0.1"
 [dev-dependencies]
 portable-pty = "0.9"
 vt100 = "0.16.2"
+
+[[test]]
+name = "unit_tui_view_model"
+path = "../../tests/unit/tui/view_model_test.rs"

@@ -35,6 +35,7 @@ pub mod backend;
 #[allow(dead_code)]
 pub mod command;
 pub mod protocol;
+pub mod view_model;
 pub mod overlay;
 pub mod keymap;
 pub mod theme;

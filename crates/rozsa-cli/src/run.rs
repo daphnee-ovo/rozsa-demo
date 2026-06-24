@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 
@@ -81,8 +82,8 @@ pub async fn run(args: &Args) -> Result<()> {
         resources,
     };
 
-    let mut session = AgentSession::new(config);
-    session.register_default_tools(&cwd);
+    let session = AgentSession::new(config);
+    session.register_default_tools(&cwd).await;
 
     if let Some(ref prompt) = args.prompt {
         let events = session.prompt(prompt).await?;
@@ -106,8 +107,14 @@ pub async fn run(args: &Args) -> Result<()> {
     }
 
     // No prompt — launch interactive TUI
-    rozsa_tui::app::run_native(session)
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))
+    rozsa_tui::app::run_native_with(
+        session,
+        rozsa_tui::backend::native::NativeBackendConfig {
+            model_registry: Some(Arc::new(registry)),
+            session_dir: Some(session_dir),
+        },
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
