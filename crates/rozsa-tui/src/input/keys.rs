@@ -1399,16 +1399,37 @@ fn handle_dialog_key(
         } else {
             dialog.selected
         };
-        let direction = if key.code == KeyCode::Right { "1" } else { "-1" };
-        let value = format!("{real_index}:{direction}");
-        send(
-            writer,
-            &ClientMessage::UpdateSetting {
-                key: "__cycle_setting",
-                value: &value,
-            },
-        )?;
-        state.dialog = Some(dialog);
+        // Theme 选项由 TUI 本地处理
+        let selected_opt = dialog.options.get(real_index).map(String::as_str).unwrap_or("");
+        if selected_opt.contains("Theme:") {
+            let new_theme = crate::theme::toggle_theme();
+            send(
+                writer,
+                &ClientMessage::UpdateSetting {
+                    key: "theme",
+                    value: new_theme,
+                },
+            )?;
+            // 更新 dialog 中 Theme 选项的显示文本
+            let theme_label = format!(
+                "[Display] Theme: < {} >",
+                if crate::theme::is_dark_theme() { "dark" } else { "light" }
+            );
+            dialog.options[real_index] = theme_label;
+            state.needs_full_redraw = true;
+            state.dialog = Some(dialog);
+        } else {
+            let direction = if key.code == KeyCode::Right { "1" } else { "-1" };
+            let value = format!("{real_index}:{direction}");
+            send(
+                writer,
+                &ClientMessage::UpdateSetting {
+                    key: "__cycle_setting",
+                    value: &value,
+                },
+            )?;
+            state.dialog = Some(dialog);
+        }
     } else if matches_action(keybindings, key, "tui.editor.deleteCharBackward")
         || matches!(key.code, KeyCode::Backspace)
     {

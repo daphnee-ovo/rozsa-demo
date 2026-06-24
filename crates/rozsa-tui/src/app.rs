@@ -625,12 +625,22 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent) {
             // 在 settings 对话框中注入本地 theme 选项
             if title.to_lowercase().contains("settings") || title.to_lowercase().contains("设置")
             {
-                let theme_label = if crate::theme::is_dark_theme() {
-                    "Theme: dark → light"
-                } else {
-                    "Theme: light → dark"
-                };
-                options.push(theme_label.to_string());
+                let theme_label = format!(
+                    "[Display] Theme: < {} >",
+                    if crate::theme::is_dark_theme() { "dark" } else { "light" }
+                );
+                options.push(theme_label);
+            }
+            // 如果同 id dialog 已打开 — 只刷新 options，保留 tab 和 selected
+            if let Some(ref mut existing) = state.dialog {
+                if existing.id == id {
+                    existing.options = options;
+                    if let Some(sel) = selected {
+                        existing.selected = sel.min(existing.filtered_indices.len().saturating_sub(1));
+                    }
+                    existing.apply_tab_filter();
+                    return;
+                }
             }
             let max_sel = options.len().saturating_sub(1);
             let filtered_indices = (0..options.len()).collect::<Vec<_>>();
