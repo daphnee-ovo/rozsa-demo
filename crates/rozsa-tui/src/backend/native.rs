@@ -493,10 +493,35 @@ async fn push_state_with(
         stats: None,
         runtime_state: None,
         context_usage: None,
-        keybindings: BTreeMap::new(),
+        keybindings: default_keybindings(),
         error: None,
     };
     let _ = backend_tx.send(BackendEvent::State(state));
+}
+
+fn default_keybindings() -> BTreeMap<String, Vec<String>> {
+    let mut kb = BTreeMap::new();
+    kb.insert("tui.input.submit".into(), vec!["enter".into()]);
+    kb.insert("tui.select.cancel".into(), vec!["escape".into()]);
+    kb.insert("tui.select.confirm".into(), vec!["enter".into()]);
+    kb.insert("tui.select.up".into(), vec!["up".into()]);
+    kb.insert("tui.select.down".into(), vec!["down".into()]);
+    kb.insert("tui.select.pageUp".into(), vec!["pageup".into()]);
+    kb.insert("tui.select.pageDown".into(), vec!["pagedown".into()]);
+    kb.insert("app.interrupt".into(), vec!["escape".into()]);
+    kb.insert("app.exit".into(), vec!["ctrl+d".into()]);
+    kb.insert("app.model.cycleForward".into(), vec!["ctrl+p".into()]);
+    kb.insert("app.model.cycleBackward".into(), vec!["ctrl+shift+p".into()]);
+    kb.insert("app.model.select".into(), vec!["ctrl+l".into()]);
+    kb.insert("app.thinking.cycle".into(), vec!["ctrl+t".into()]);
+    kb.insert("app.suspend".into(), vec!["ctrl+z".into()]);
+    kb.insert("app.compact".into(), vec!["ctrl+o".into()]);
+    kb.insert("app.subagent.next".into(), vec!["ctrl+]".into()]);
+    kb.insert("app.subagent.prev".into(), vec!["alt+[".into()]);
+    kb.insert("app.editMode.cycle".into(), vec!["shift+tab".into()]);
+    kb.insert("app.theme.toggle".into(), vec!["alt+t".into()]);
+    kb.insert("app.editor.external".into(), vec!["ctrl+g".into()]);
+    kb
 }
 
 #[async_trait]
