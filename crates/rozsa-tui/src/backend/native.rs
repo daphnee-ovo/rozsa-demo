@@ -49,6 +49,9 @@ use super::{AgentBackend, BackendError, BackendEvent, BackendResult, Direction, 
 struct LiveState {
     messages: Vec<AgentMessage>,
     is_streaming: bool,
+    /// Index into `messages` where the current agent run began.
+    /// AgentEnd uses this to truncate+replace (not append), preventing duplication.
+    turn_base: usize,
 }
 
 /// Optional construction-time config. None of the fields are required for
@@ -80,6 +83,7 @@ impl NativeBackend {
         let live = Arc::new(Mutex::new(LiveState {
             messages: Vec::new(),
             is_streaming: false,
+            turn_base: 0,
         }));
 
         spawn_event_forwarder(session.clone(), tx.clone(), live.clone());
@@ -159,6 +163,7 @@ impl NativeBackend {
                     let mut live = self.live.lock().await;
                     live.messages.clear();
                     live.is_streaming = false;
+                    live.turn_base = 0;
                 }
                 self.push_state().await;
                 self.notify("info", "Started new session");
@@ -666,13 +671,17 @@ fn spawn_event_forwarder(
                 let mut live = live.lock().await;
                 match &event {
                     AgentEvent::AgentStart => {
+                        live.turn_base = live.messages.len();
                         live.is_streaming = true;
                         state_dirty = true;
                     }
                     AgentEvent::AgentEnd { messages } => {
-                        for msg in messages {
-                            live.messages.push(msg.clone());
-                        }
+                        // AgentEnd 携带本轮的权威消息列表（含 tool results 等
+                        // 未经 MessageStart 推送的）。用 truncate+extend 替代
+                        // append，避免与 MessageStart 已 push 的消息重复。
+                        let base = live.turn_base.min(live.messages.len());
+                        live.messages.truncate(base);
+                        live.messages.extend(messages.iter().cloned());
                         live.is_streaming = false;
                         state_dirty = true;
                     }
