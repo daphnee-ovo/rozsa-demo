@@ -596,8 +596,14 @@ async fn execute_single_tool(
         }
     }
 
+    let args = if call.arguments.is_null() {
+        serde_json::Value::Object(Default::default())
+    } else {
+        call.arguments.clone()
+    };
+
     let exec_result = tool
-        .execute(&call.id, call.arguments.clone(), signal.cloned(), None)
+        .execute(&call.id, args, signal.cloned(), None)
         .await;
 
     let (content, is_error, terminate) = match exec_result {
