@@ -5,10 +5,6 @@ edition = "2024"
 description = "Agent loop engine — state machine, event stream, tool dispatch"
 license = "MIT"
 
-[[bin]]
-name = "rozsa-core"
-path = "src/bin/bridge.rs"
-
 [[test]]
 name = "unit_core_parallel_null_args"
 path = "../../tests/unit/core/parallel_null_args_test.rs"

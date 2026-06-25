@@ -125,6 +125,21 @@ agent loop 正常处理错误。
 
 ---
 
+## 10. TS Bridge 层移除
+
+**TS 行为：** TS 通过三个 JSONL stdio bridge binary 调用 Rust 能力：
+- `rozsa-core` bridge（agent loop 执行）
+- `rozsa-model` bridge（model streaming + OAuth）
+- `rozsa-app` bridge（model registry 查询）
+
+**Rust 行为：** Bridge 层已完全移除。`rozsa-cli` 直接通过 Rust 函数调用
+`AgentSession`、`ModelRegistry`、`stream_simple()` 等，无进程间通信。
+
+**动机：** TS 代码不再运行，Native TUI 是唯一入口。三套独立协议
+是历史遗留，增加维护成本且引入不必要的序列化/反序列化开销。
+
+---
+
 ## 相关代码
 
 - Settings schema: `crates/rozsa-app/src/settings/schema.rs`
