@@ -1063,11 +1063,13 @@ async fn push_state_with(
         "contextWindow": model.context_window,
     });
 
+    let session_name = session.session_manager().await.current_name();
+
     let state = NativeUiState {
         app_name: "rozsa".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         cwd: session.cwd().to_string_lossy().to_string(),
-        session_name: None,
+        session_name,
         model: Some(ModelInfo {
             id: model.id.clone(),
             provider: format!("{:?}", model.provider),
@@ -1078,7 +1080,7 @@ async fn push_state_with(
         hide_thinking: live.hide_thinking || thinking == rozsa_model::types::ThinkingLevel::Off,
         show_images: session.show_images(),
         messages,
-        pending_messages: vec![],
+        pending_messages: session.pending_messages(),
         status: BTreeMap::new(),
         widgets_above: BTreeMap::new(),
         widgets_below: BTreeMap::new(),
@@ -1172,11 +1174,15 @@ impl AgentBackend for NativeBackend {
     }
 
     async fn follow_up(&self, text: &str, _images: Vec<ImageData>) -> BackendResult<()> {
-        self.submit(text, vec![]).await
+        self.session.follow_up(text);
+        self.push_state().await;
+        Ok(())
     }
 
     async fn steer(&self, text: &str, _images: Vec<ImageData>) -> BackendResult<()> {
-        self.submit(text, vec![]).await
+        self.session.steer(text);
+        self.push_state().await;
+        Ok(())
     }
 
     async fn list_models(&self) -> BackendResult<()> {

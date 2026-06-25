@@ -1,8 +1,11 @@
 //! Public stream entry points backed by the provider registry.
 
-use crate::event_stream::EventStream;
+use crate::event_stream::{create_event_stream, EventStream};
 use crate::registry::get_provider;
-use crate::types::{Context, Model, SimpleStreamOptions, StreamOptions};
+use crate::types::{
+    Api, AssistantMessage, Context, Model, Provider, SimpleStreamOptions, StopReason, StreamOptions,
+    Usage, UsageCost,
+};
 
 pub type StreamEvent = crate::types::StreamEvent;
 
@@ -12,8 +15,9 @@ pub fn stream(
     context: &Context,
     options: &StreamOptions,
 ) -> EventStream<StreamEvent> {
-    let provider = get_provider(&model.api)
-        .unwrap_or_else(|| panic!("No provider registered for api: {:?}", model.api));
+    let Some(provider) = get_provider(&model.api) else {
+        return emit_unsupported_error(&model.api, &model.provider, &model.id);
+    };
     provider.stream(model, context, options)
 }
 
@@ -23,7 +27,46 @@ pub fn stream_simple(
     context: &Context,
     options: &SimpleStreamOptions,
 ) -> EventStream<StreamEvent> {
-    let provider = get_provider(&model.api)
-        .unwrap_or_else(|| panic!("No provider registered for api: {:?}", model.api));
+    let Some(provider) = get_provider(&model.api) else {
+        return emit_unsupported_error(&model.api, &model.provider, &model.id);
+    };
     provider.stream_simple(model, context, options)
+}
+
+fn emit_unsupported_error(api: &Api, provider: &Provider, model_id: &str) -> EventStream<StreamEvent> {
+    let (tx, rx) = create_event_stream();
+    let error_msg = format!(
+        "Provider {:?} (api: {:?}) is not yet implemented. Model '{}' cannot be used.",
+        provider, api, model_id
+    );
+    let error = AssistantMessage {
+        content: vec![],
+        api: api.clone(),
+        provider: provider.clone(),
+        model: model_id.to_string(),
+        response_model: None,
+        response_id: None,
+        usage: Usage {
+            input: 0,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+            total_tokens: 0,
+            cost: UsageCost {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+                total: 0.0,
+            },
+        },
+        stop_reason: StopReason::Error,
+        error_message: Some(error_msg),
+        timestamp: 0,
+    };
+    tx.push(StreamEvent::Error {
+        reason: StopReason::Error,
+        error,
+    });
+    rx
 }

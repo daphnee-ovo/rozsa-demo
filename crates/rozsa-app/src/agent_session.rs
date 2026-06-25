@@ -759,19 +759,10 @@ fn convert_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
 
 /// Check if the total token usage has exceeded the compaction threshold.
 fn should_stop_for_compaction(ctx: &ShouldStopContext, threshold_tokens: u64) -> bool {
-    // Sum total tokens from all assistant messages in the conversation
-    let total_tokens: u64 = ctx
-        .context
-        .messages
-        .iter()
-        .filter_map(|msg| msg.as_standard())
-        .filter_map(|msg| match msg {
-            Message::Assistant(a) => Some(a.usage.total_tokens),
-            _ => None,
-        })
-        .sum();
-
-    total_tokens >= threshold_tokens
+    // Use the latest turn's input_tokens — it reflects the actual context window usage
+    // (system prompt + all history + tool schemas sent to the model this turn).
+    let latest_input = ctx.message.usage.input;
+    latest_input >= threshold_tokens
 }
 
 /// Build the model_stream function that delegates to rozsa_model's provider registry.

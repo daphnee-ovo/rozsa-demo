@@ -44,6 +44,10 @@ AI coding agent — Rust 重写中，TypeScript 遗留代码仍在运行。
 - 错误透明报告，快速失败，不隐藏问题
 - 信任已有测试
 
+## Rust 迁移差异
+
+Rust 版相较 TS 版的有意行为差异记录在 [`docs/RUST_DIFF_DECISIONS.md`](docs/RUST_DIFF_DECISIONS.md)。已记录的差异是设计改进，不要求一比一复现 TS 行为。新增有意差异时应同步更新该文档。
+
 ## 参考
 
 详细的开发规则、Git 规范、核心原则见 `AGENTS.md`。
