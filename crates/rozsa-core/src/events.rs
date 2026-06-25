@@ -1,5 +1,4 @@
 use crate::messages::AgentMessage;
-use crate::tool::ToolResult;
 use rozsa_model::types::{AssistantMessage, ToolResultMessage};
 use serde::{Deserialize, Serialize};
 
@@ -32,12 +31,6 @@ pub enum AgentEvent {
         tool_call_id: String,
         tool_name: String,
         args: serde_json::Value,
-    },
-    ToolExecutionUpdate {
-        tool_call_id: String,
-        tool_name: String,
-        args: serde_json::Value,
-        partial_result: ToolResult,
     },
     ToolExecutionEnd {
         tool_call_id: String,

@@ -62,7 +62,7 @@ impl Default for PermissionSettings {
 pub struct Settings {
     pub default_provider: Option<String>,
     pub default_model: Option<String>,
-    pub default_thinking_level: Option<String>,
+    pub default_thinking_level: Option<rozsa_model::types::ThinkingLevel>,
     pub compaction: CompactionSettings,
     pub retry: RetrySettings,
     pub transport: String,
@@ -102,7 +102,7 @@ pub struct PartialSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_thinking_level: Option<String>,
+    pub default_thinking_level: Option<rozsa_model::types::ThinkingLevel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compaction: Option<PartialCompactionSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]

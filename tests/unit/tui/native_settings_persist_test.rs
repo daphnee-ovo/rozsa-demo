@@ -63,6 +63,8 @@ fn create_backend(tmp_dir: &tempfile::TempDir) -> (NativeBackend, PathBuf) {
         model_registry: None,
         session_dir: None,
         global_settings_path: Some(global_settings_path.clone()),
+        pending_approvals: None,
+        permission_request_rx: None,
     };
 
     (NativeBackend::with_config(session, config), global_settings_path)

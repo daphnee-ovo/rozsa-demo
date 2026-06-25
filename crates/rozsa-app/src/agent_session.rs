@@ -114,6 +114,10 @@ pub struct AgentSession {
     follow_up_queue: Arc<std::sync::Mutex<Vec<AgentMessage>>>,
     /// Optional pre-tool-use hook (injected by backend for permissions).
     pre_tool_use_hook: Option<Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>>,
+    /// Extension lifecycle hooks.
+    extension_runner: tokio::sync::Mutex<crate::extensions::ExtensionRunner>,
+    /// Skill matcher for injecting skill prompts based on user input.
+    skill_matcher: crate::skills::SkillMatcher,
 }
 
 impl AgentSession {
@@ -156,7 +160,19 @@ impl AgentSession {
             steering_queue: Arc::new(std::sync::Mutex::new(Vec::new())),
             follow_up_queue: Arc::new(std::sync::Mutex::new(Vec::new())),
             pre_tool_use_hook: pre_tool_use.map(|f| Arc::from(f) as Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>),
+            extension_runner: tokio::sync::Mutex::new(crate::extensions::ExtensionRunner::new()),
+            skill_matcher: crate::skills::SkillMatcher::new(Vec::new()),
         }
+    }
+
+    /// Register an extension that receives lifecycle hooks.
+    pub async fn register_extension(&self, extension: Box<dyn crate::extensions::Extension>) {
+        self.extension_runner.lock().await.register(extension);
+    }
+
+    /// Access the skill matcher (e.g. to check matches before submitting).
+    pub fn skill_matcher(&self) -> &crate::skills::SkillMatcher {
+        &self.skill_matcher
     }
 
     /// Subscribe to AgentEvents emitted by `prompt` / `continue_session`.

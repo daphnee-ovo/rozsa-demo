@@ -60,11 +60,25 @@ struct LiveState {
 /// Optional construction-time config. None of the fields are required for
 /// the basic streaming flow; supplying them unlocks model / session
 /// switching commands that would otherwise return early.
-#[derive(Default)]
 pub struct NativeBackendConfig {
     pub model_registry: Option<Arc<ModelRegistry>>,
     pub session_dir: Option<PathBuf>,
     pub global_settings_path: Option<PathBuf>,
+    pub pending_approvals: Option<rozsa_app::permissions::PendingApprovals>,
+    /// Receiver for permission approval requests from the pre_tool_use hook.
+    pub permission_request_rx: Option<mpsc::UnboundedReceiver<(String, rozsa_app::permissions::ApprovalInfo)>>,
+}
+
+impl Default for NativeBackendConfig {
+    fn default() -> Self {
+        Self {
+            model_registry: None,
+            session_dir: None,
+            global_settings_path: None,
+            pending_approvals: None,
+            permission_request_rx: None,
+        }
+    }
 }
 
 pub struct NativeBackend {
@@ -79,6 +93,8 @@ pub struct NativeBackend {
     runtime_settings: Mutex<Settings>,
     /// Monotonic autocomplete response id (防止乱序响应覆盖)
     autocomplete_id: std::sync::atomic::AtomicU64,
+    /// Pending permission approval requests (shared with pre_tool_use hook).
+    pending_approvals: Option<rozsa_app::permissions::PendingApprovals>,
 }
 
 impl NativeBackend {
@@ -99,6 +115,39 @@ impl NativeBackend {
 
         spawn_event_forwarder(session.clone(), tx.clone(), live.clone());
 
+        if let Some(mut perm_rx) = config.permission_request_rx {
+            let event_tx = tx.clone();
+            tokio::spawn(async move {
+                while let Some((request_id, info)) = perm_rx.recv().await {
+                    let prompt = crate::protocol::NativePermissionPrompt {
+                        id: request_id,
+                        request: serde_json::json!({
+                            "tool": info.tool_name,
+                            "summary": info.args_summary,
+                            "risk": format!("{:?}", info.risk),
+                            "trustKey": info.trust_key,
+                        }),
+                        context: serde_json::json!({}),
+                        trust_levels: vec![
+                            crate::protocol::NativeTrustLevel {
+                                label: "Allow once".to_string(),
+                                key: "allow".to_string(),
+                            },
+                            crate::protocol::NativeTrustLevel {
+                                label: "Allow for session".to_string(),
+                                key: "allow-session".to_string(),
+                            },
+                            crate::protocol::NativeTrustLevel {
+                                label: "Deny".to_string(),
+                                key: "deny".to_string(),
+                            },
+                        ],
+                    };
+                    let _ = event_tx.send(BackendEvent::Permission(prompt));
+                }
+            });
+        }
+
         let runtime_settings = session.settings_manager().resolved().clone();
 
         Self {
@@ -111,6 +160,7 @@ impl NativeBackend {
             global_settings_path: config.global_settings_path,
             runtime_settings: Mutex::new(runtime_settings),
             autocomplete_id: std::sync::atomic::AtomicU64::new(0),
+            pending_approvals: config.pending_approvals,
         }
     }
 
@@ -277,14 +327,14 @@ impl NativeBackend {
         let current = self.session.model().await;
         let idx = all
             .iter()
-            .position(|m| m.id == current.id && m.provider == format!("{:?}", current.provider).to_ascii_lowercase())
+            .position(|m| m.id == current.id && m.provider == current.provider)
             .or_else(|| all.iter().position(|m| m.id == current.id))
             .unwrap_or(0);
         let next_idx = match direction {
             Direction::Forward => (idx + 1) % all.len(),
             Direction::Backward => (idx + all.len() - 1) % all.len(),
         };
-        Some(all[next_idx].to_model())
+        Some(all[next_idx].clone())
     }
 
     /// 本地 slash command 分发器 — 对齐 TS native-builtins.ts 行为
@@ -303,9 +353,9 @@ impl NativeBackend {
                             if let Some(m) = registry.all().iter().find(|m| {
                                 m.id == args || m.id.contains(args) || m.id.ends_with(args)
                             }) {
-                                let p = m.provider.clone();
-                                let i = m.id.clone();
-                                self.switch_model(&p, &i).await?;
+                                let p = m.provider.as_str();
+                                let i = &m.id;
+                                self.switch_model(p, i).await?;
                                 self.notify("info", &format!("Model: [{p}] {i}"));
                                 return Ok(());
                             }
@@ -337,7 +387,7 @@ impl NativeBackend {
                 // 持久化到 settings
                 {
                     let mut s = self.runtime_settings.lock().await;
-                    s.default_thinking_level = Some(format!("{:?}", level).to_lowercase());
+                    s.default_thinking_level = Some(level);
                 }
                 self.persist_settings().await;
                 self.push_state().await;
@@ -856,7 +906,7 @@ impl NativeBackend {
                 self.session.set_thinking_level(levels[next]).await;
                 {
                     let mut s = self.runtime_settings.lock().await;
-                    s.default_thinking_level = Some(format!("{:?}", levels[next]).to_lowercase());
+                    s.default_thinking_level = Some(levels[next]);
                 }
                 self.push_state().await;
             }
@@ -1093,6 +1143,15 @@ impl AgentBackend for NativeBackend {
             return self.execute_bang_command(command, exclude_from_context).await;
         }
 
+        // Check for skill matches and inject as steering if found.
+        let matches = self.session.skill_matcher().match_input(text);
+        if !matches.is_empty() {
+            let fragment = self.session.skill_matcher().build_system_prompt_fragment(&matches);
+            if !fragment.is_empty() {
+                self.session.steer(&fragment);
+            }
+        }
+
         let session = self.session.clone();
         let text = text.to_string();
         let backend_tx = self.event_tx.clone();
@@ -1129,14 +1188,13 @@ impl AgentBackend for NativeBackend {
                 .iter()
                 .filter(|m| {
                     available
-                        .get(&m.provider)
+                        .get(m.provider.as_str())
                         .is_some_and(|pa| pa.configured)
                 })
                 .map(|m| ModelEntry {
                     id: m.id.clone(),
-                    provider: m.provider.clone(),
-                    is_current: m.id == current.id
-                        && m.provider == format!("{:?}", current.provider).to_ascii_lowercase(),
+                    provider: m.provider.to_string(),
+                    is_current: m.id == current.id && m.provider == current.provider,
                 })
                 .collect()
         } else {
@@ -1311,12 +1369,33 @@ impl AgentBackend for NativeBackend {
 
     async fn respond_permission(
         &self,
-        _id: &str,
-        _choice: &str,
-        _trust_key: Option<&str>,
+        id: &str,
+        choice: &str,
+        trust_key: Option<&str>,
     ) -> BackendResult<()> {
-        // Permissions are not yet wired to the agent loop in native mode.
-        // Silently accept so the UI can clear its prompt.
+        use rozsa_app::permissions::PermissionResponse;
+
+        let Some(ref approvals) = self.pending_approvals else {
+            return Ok(());
+        };
+
+        let response = match choice {
+            "allow" => PermissionResponse::Allow,
+            "allow-session" => {
+                if let Some(key) = trust_key {
+                    PermissionResponse::AllowSession {
+                        trust_key: key.to_string(),
+                    }
+                } else {
+                    PermissionResponse::Allow
+                }
+            }
+            _ => PermissionResponse::Deny,
+        };
+
+        if let Some((_, sender)) = approvals.remove(id) {
+            let _ = sender.send(response);
+        }
         Ok(())
     }
 
@@ -1325,44 +1404,67 @@ impl AgentBackend for NativeBackend {
     }
 
     async fn compact(&self) -> BackendResult<()> {
-        // Compaction triggering lives in rozsa-app::compaction; not yet wired
-        // to a one-shot entrypoint. Toggle the indicator so UI feedback is honest.
         let _ = self.event_tx.send(BackendEvent::Compacting(true));
-        let _ = self.event_tx.send(BackendEvent::Notify {
-            level: "info".to_string(),
-            message: "manual compaction is not yet supported in native mode".into(),
+        let session = self.session.clone();
+        let event_tx = self.event_tx.clone();
+        tokio::spawn(async move {
+            match session.compact().await {
+                Ok(result) => {
+                    let _ = event_tx.send(BackendEvent::Notify {
+                        level: "info".to_string(),
+                        message: format!(
+                            "Compacted: removed {} messages, summary generated",
+                            result.removed_count
+                        ),
+                    });
+                }
+                Err(e) => {
+                    let _ = event_tx.send(BackendEvent::Notify {
+                        level: "warn".to_string(),
+                        message: format!("Compaction failed: {e}"),
+                    });
+                }
+            }
+            let _ = event_tx.send(BackendEvent::Compacting(false));
         });
-        let _ = self.event_tx.send(BackendEvent::Compacting(false));
         Ok(())
     }
 
     async fn cycle_edit_mode(&self) -> BackendResult<()> {
-        // Edit mode (accept-all / ask) is a permission-policy concern; surface
-        // a notify until the policy module exposes a setter.
+        let new_mode = self.session.cycle_edit_mode().await;
         let _ = self.event_tx.send(BackendEvent::Notify {
             level: "info".to_string(),
-            message: "edit mode cycling is not yet supported in native mode".into(),
+            message: format!("Edit mode: {:?}", new_mode),
         });
+        self.push_state().await;
         Ok(())
     }
 
     async fn switch_agent(&self, _id: &str) -> BackendResult<()> {
         let _ = self.event_tx.send(BackendEvent::Notify {
-            level: "info".to_string(),
-            message: "subagent switching is not yet supported in native mode".into(),
+            level: "warn".to_string(),
+            message: "Subagent switching requires multi-agent support (not available)".into(),
         });
         Ok(())
     }
 
     async fn dialog_response(
         &self,
-        _id: &str,
-        _value: Option<&str>,
+        id: &str,
+        value: Option<&str>,
         _confirmed: Option<bool>,
-        _cancelled: Option<bool>,
+        cancelled: Option<bool>,
     ) -> BackendResult<()> {
-        // The TUI emits dialog responses for built-in dialogs (settings, gc, etc.).
-        // None of them are wired to native handlers yet — accept and let UI close.
+        if cancelled == Some(true) {
+            return Ok(());
+        }
+        // Route dialog responses to specific handlers based on dialog id prefix.
+        if id.starts_with("setting:") {
+            if let Some(val) = value {
+                let key = id.strip_prefix("setting:").unwrap_or(id);
+                self.update_setting(key, val).await?;
+            }
+        }
         Ok(())
     }
 
@@ -1425,7 +1527,7 @@ impl AgentBackend for NativeBackend {
                 self.session.set_thinking_level(level).await;
                 {
                     let mut s = self.runtime_settings.lock().await;
-                    s.default_thinking_level = Some(format!("{:?}", level).to_lowercase());
+                    s.default_thinking_level = Some(level);
                 }
                 self.persist_settings().await;
                 self.push_state().await;

@@ -74,7 +74,7 @@ impl Default for RegistryModelCost {
 
 /// Model metadata shape shared with the TypeScript registry (deserialization intermediate).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RegistryModel {
+pub(crate) struct RegistryModel {
     pub id: String,
     pub name: String,
     pub api: String,
@@ -215,9 +215,14 @@ impl ImageModelRegistry {
         })
     }
 
-    /// Return all image model metadata.
+    /// Return all image model entries.
     pub fn all(&self) -> &[RegistryImageModel] {
         &self.models
+    }
+
+    /// Return all image model metadata as JSON (for bridge).
+    pub fn all_json(&self) -> serde_json::Value {
+        serde_json::json!(&self.models)
     }
 
     /// Find an image model by provider and model ID.
@@ -286,21 +291,27 @@ impl ModelRegistry {
         })
     }
 
-    /// Return all merged model metadata (raw registry entries).
-    pub fn all(&self) -> &[RegistryModel] {
-        &self.models
+    /// Return all models as runtime Model types.
+    pub fn all(&self) -> Vec<rozsa_model::types::Model> {
+        self.models.iter().map(|rm| rm.to_model()).collect()
     }
 
-    /// Find a model by provider and model ID (raw registry entry).
-    pub fn find(&self, provider: &str, model_id: &str) -> Option<&RegistryModel> {
+    /// Return all models serializable as JSON (TS bridge compatibility).
+    pub fn all_json(&self) -> serde_json::Value {
+        serde_json::json!(&self.models)
+    }
+
+    /// Find a model by provider and model ID (internal).
+    pub fn find(&self, provider: &str, model_id: &str) -> Option<rozsa_model::types::Model> {
         self.models
             .iter()
             .find(|model| model.provider == provider && model.id == model_id)
+            .map(|rm| rm.to_model())
     }
 
     /// Find a model by provider and ID, returning the runtime Model type.
     pub fn resolve(&self, provider: &str, model_id: &str) -> Option<rozsa_model::types::Model> {
-        self.find(provider, model_id).map(|rm| rm.to_model())
+        self.find(provider, model_id)
     }
 
     /// Find a model by ID only (first match across all providers).

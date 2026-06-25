@@ -678,8 +678,15 @@ fn finalized_to_result_message(f: &FinalizedToolCall) -> ToolResultMessage {
         tool_name: f.tool_call.name.clone(),
         content: f.content.clone(),
         is_error: f.is_error,
-        timestamp: 0,
+        timestamp: current_timestamp_ms(),
     }
+}
+
+fn current_timestamp_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 fn should_terminate_batch(calls: &[FinalizedToolCall]) -> bool {

@@ -44,18 +44,16 @@ fn loads_generated_model_metadata() {
     let model = registry.find("openai", "gpt-test").unwrap();
 
     assert_eq!(model.name, "GPT Test");
-    assert_eq!(model.api, "openai-completions");
+    assert_eq!(model.api, rozsa_model::types::Api::OpenAICompletions);
     assert_eq!(model.base_url, "https://api.openai.com/v1");
-    assert_eq!(model.input, vec!["text", "image"]);
     assert_eq!(
-        model.cost,
-        RegistryModelCost {
-            input: 1.0,
-            output: 2.0,
-            cache_read: 0.1,
-            cache_write: 0.2,
-        }
+        model.input_modalities,
+        vec![rozsa_model::types::InputModality::Text, rozsa_model::types::InputModality::Image]
     );
+    assert_eq!(model.cost.input, 1.0);
+    assert_eq!(model.cost.output, 2.0);
+    assert_eq!(model.cost.cache_read, 0.1);
+    assert_eq!(model.cost.cache_write, 0.2);
 }
 
 #[test]
@@ -252,7 +250,7 @@ fn merges_discovered_nvidia_models() {
     );
 
     let model = registry.find("nvidia", "nvidia/nemotron").unwrap();
-    assert_eq!(model.api, "openai-completions");
+    assert_eq!(model.api, rozsa_model::types::Api::OpenAICompletions);
     assert_eq!(model.base_url, "https://integrate.api.nvidia.com/v1");
     assert_eq!(
         model

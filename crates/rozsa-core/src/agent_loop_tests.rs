@@ -130,7 +130,6 @@ fn event_name(event: &AgentEvent) -> &'static str {
         AgentEvent::MessageUpdate { .. } => "message_update",
         AgentEvent::MessageEnd { .. } => "message_end",
         AgentEvent::ToolExecutionStart { .. } => "tool_execution_start",
-        AgentEvent::ToolExecutionUpdate { .. } => "tool_execution_update",
         AgentEvent::ToolExecutionEnd { .. } => "tool_execution_end",
     }
 }

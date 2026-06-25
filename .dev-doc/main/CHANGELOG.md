@@ -9,3 +9,6 @@
 - 17:56 Merge branch 'refactor/app' — rozsa-app full runtime implementation
 - 18:10 feat: Implement NativeBackend in rozsa-tui
 - 19:04 refactor: Unify duplicated types (Model, SessionEntry, ThinkingLevel)
+
+## 2026-06-25
+- 16:29 fix: NativeBackend 多项 bug 修复 + settings 持久化 + 回归测试

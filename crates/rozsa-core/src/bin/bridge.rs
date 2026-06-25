@@ -334,7 +334,10 @@ async fn handle_start_run(
         },
         stop_reason: rozsa_model::types::StopReason::Stop,
         error_message: None,
-        timestamp: 0,
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64,
     }));
     let shared_context = Arc::new(Mutex::new(context.clone()));
 

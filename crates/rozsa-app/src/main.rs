@@ -121,7 +121,7 @@ async fn handle_line(line: &str, stdout: &mut Stdout) {
                 stdout,
                 AppBridgeOutput::Models {
                     id,
-                    models: serde_json::json!(registry.all()),
+                    models: registry.all_json(),
                     provider_available,
                     errors,
                 },
@@ -149,7 +149,7 @@ async fn handle_line(line: &str, stdout: &mut Stdout) {
                 stdout,
                 AppBridgeOutput::ImageModels {
                     id,
-                    image_models: serde_json::json!(registry.all()),
+                    image_models: registry.all_json(),
                     provider_available,
                 },
             )

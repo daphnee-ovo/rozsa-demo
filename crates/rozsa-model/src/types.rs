@@ -43,6 +43,43 @@ pub enum Provider {
     Custom(String),
 }
 
+impl std::fmt::Display for Provider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Provider {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::OpenAI => "openai",
+            Self::AmazonBedrock => "amazon-bedrock",
+            Self::Google => "google",
+            Self::GoogleVertex => "google-vertex",
+            Self::DeepSeek => "deepseek",
+            Self::OpenRouter => "openrouter",
+            Self::XAI => "xai",
+            Self::Groq => "groq",
+            Self::Cerebras => "cerebras",
+            Self::Mistral => "mistral",
+            Self::Nvidia => "nvidia",
+            Self::Zai => "zai",
+            Self::Together => "together",
+            Self::MoonshotAI => "moonshot-ai",
+            Self::MoonshotAICn => "moonshot-ai-cn",
+            Self::HuggingFace => "huggingface",
+            Self::CloudflareWorkersAI => "cloudflare-workers-ai",
+            Self::CloudflareAIGateway => "cloudflare-ai-gateway",
+            Self::Xiaomi => "xiaomi",
+            Self::XiaomiTokenPlanCn => "xiaomi-token-plan-cn",
+            Self::XiaomiTokenPlanAms => "xiaomi-token-plan-ams",
+            Self::XiaomiTokenPlanSgp => "xiaomi-token-plan-sgp",
+            Self::Custom(s) => s.as_str(),
+        }
+    }
+}
+
 /// Input modality supported by a model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InputModality {
@@ -61,12 +98,14 @@ pub struct ModelCost {
 
 /// Unified reasoning control exposed to callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ThinkingLevel {
     Off,
     Minimal,
     Low,
     Medium,
     High,
+    #[serde(rename = "xhigh")]
     XHigh,
 }
 

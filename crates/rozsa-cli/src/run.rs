@@ -2,9 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
+use dashmap::DashMap;
 
 use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::model_registry::ModelRegistry;
+use rozsa_app::permissions::{
+    ApprovalInfo, PendingApprovals, PermissionMode, PermissionPolicy, PermissionResponse,
+    PolicyVerdict,
+};
 use rozsa_app::resources::ResourceLoader;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
@@ -79,6 +84,72 @@ pub async fn run(args: &Args) -> Result<()> {
 
     let thinking_level = settings_manager.default_thinking_level_parsed();
 
+    // Permission system setup
+    let permission_mode = PermissionMode::parse(&settings_manager.resolved().permissions.mode)
+        .unwrap_or(PermissionMode::OnRequest);
+
+    let auto_approve_patterns = settings_manager
+        .resolved()
+        .permissions
+        .auto_approve_patterns
+        .clone();
+
+    let policy = Arc::new(PermissionPolicy::new(permission_mode, auto_approve_patterns));
+    let pending_approvals: PendingApprovals = Arc::new(DashMap::new());
+    let (perm_req_tx, perm_req_rx) =
+        tokio::sync::mpsc::unbounded_channel::<(String, ApprovalInfo)>();
+
+    let pre_tool_use_hook = {
+        let policy = policy.clone();
+        let pending = pending_approvals.clone();
+        let perm_req_tx = perm_req_tx.clone();
+        let hook: Box<
+            dyn Fn(
+                    rozsa_core::config::PreToolUseContext,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>>
+                + Send
+                + Sync,
+        > = Box::new(move |ctx| {
+            let policy = policy.clone();
+            let pending = pending.clone();
+            let perm_req_tx = perm_req_tx.clone();
+            Box::pin(async move {
+                let verdict = policy.evaluate(&ctx.tool_name, &ctx.args);
+                match verdict {
+                    PolicyVerdict::Allow => None,
+                    PolicyVerdict::Block { reason } => {
+                        Some(rozsa_core::config::PreToolUseResult {
+                            block: true,
+                            reason: Some(reason),
+                        })
+                    }
+                    PolicyVerdict::NeedApproval { info } => {
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        let request_id = ctx.tool_call_id.clone();
+                        pending.insert(request_id.clone(), tx);
+                        let _ = perm_req_tx.send((request_id, info));
+
+                        match rx.await {
+                            Ok(PermissionResponse::Allow) => None,
+                            Ok(PermissionResponse::AllowSession { trust_key }) => {
+                                policy.record_session_approval(trust_key);
+                                None
+                            }
+                            Ok(PermissionResponse::Deny) | Err(_) => {
+                                Some(rozsa_core::config::PreToolUseResult {
+                                    block: true,
+                                    reason: Some("Permission denied by user".to_string()),
+                                })
+                            }
+                        }
+                    }
+                }
+            })
+        });
+        hook
+    };
+
     let config = AgentSessionConfig {
         model,
         thinking_level,
@@ -87,7 +158,7 @@ pub async fn run(args: &Args) -> Result<()> {
         session_manager,
         settings_manager,
         resources,
-        pre_tool_use: None,
+        pre_tool_use: Some(pre_tool_use_hook),
     };
 
     let session = AgentSession::new(config);
@@ -121,6 +192,8 @@ pub async fn run(args: &Args) -> Result<()> {
             model_registry: Some(Arc::new(registry)),
             session_dir: Some(session_dir),
             global_settings_path: Some(global_settings_path),
+            pending_approvals: Some(pending_approvals),
+            permission_request_rx: Some(perm_req_rx),
         },
     )
     .await

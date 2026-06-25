@@ -3,7 +3,6 @@
 pub mod anthropic;
 pub mod bedrock;
 pub mod common;
-pub mod faux;
 pub mod openai_completions;
 
 use crate::registry::register_provider;

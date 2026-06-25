@@ -9,10 +9,6 @@ pub struct Args {
     /// Model to use
     #[arg(short, long)]
     pub model: Option<String>,
-
-    /// Print mode (non-interactive)
-    #[arg(short, long)]
-    pub print: bool,
 }
 
 pub fn parse() -> Args {
