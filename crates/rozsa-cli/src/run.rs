@@ -24,7 +24,7 @@ pub async fn run(args: &Args) -> Result<()> {
     let project_settings_path = cwd.join(".claude").join("settings.json");
 
     let settings_manager = SettingsManager::load(
-        global_settings_path,
+        global_settings_path.clone(),
         Some(project_settings_path),
         None,
     )
@@ -119,6 +119,7 @@ pub async fn run(args: &Args) -> Result<()> {
         rozsa_tui::backend::native::NativeBackendConfig {
             model_registry: Some(Arc::new(registry)),
             session_dir: Some(session_dir),
+            global_settings_path: Some(global_settings_path),
         },
     )
     .await

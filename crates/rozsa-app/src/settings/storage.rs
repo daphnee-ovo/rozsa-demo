@@ -175,4 +175,23 @@ impl SettingsManager {
     pub fn resolved_mut(&mut self) -> &mut Settings {
         &mut self.resolved
     }
+
+    /// Persist current resolved settings to the global settings file.
+    pub fn save_global(&self) -> Result<(), SettingsError> {
+        if let Some(parent) = self.global_path.parent() {
+            fs::create_dir_all(parent).map_err(|source| SettingsError::ReadError {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
+        let json = serde_json::to_string_pretty(&self.resolved)
+            .map_err(|source| SettingsError::ParseError {
+                path: self.global_path.clone(),
+                source,
+            })?;
+        fs::write(&self.global_path, json).map_err(|source| SettingsError::ReadError {
+            path: self.global_path.clone(),
+            source,
+        })
+    }
 }

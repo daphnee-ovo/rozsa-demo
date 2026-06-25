@@ -62,6 +62,7 @@ struct LiveState {
 pub struct NativeBackendConfig {
     pub model_registry: Option<Arc<ModelRegistry>>,
     pub session_dir: Option<PathBuf>,
+    pub global_settings_path: Option<PathBuf>,
 }
 
 pub struct NativeBackend {
@@ -71,6 +72,7 @@ pub struct NativeBackend {
     live: Arc<Mutex<LiveState>>,
     model_registry: Option<Arc<ModelRegistry>>,
     session_dir: Option<PathBuf>,
+    global_settings_path: Option<PathBuf>,
     /// Runtime-mutable settings copy (mutated by /settings left/right cycling)
     runtime_settings: Mutex<Settings>,
 }
@@ -100,6 +102,7 @@ impl NativeBackend {
             live,
             model_registry: config.model_registry,
             session_dir: config.session_dir,
+            global_settings_path: config.global_settings_path,
             runtime_settings: Mutex::new(runtime_settings),
         }
     }
@@ -707,6 +710,14 @@ impl NativeBackend {
             }
             _ => {}
         }
+        // 持久化到 global settings 文件
+        if let Some(ref path) = self.global_settings_path {
+            let s = self.runtime_settings.lock().await;
+            if let Ok(json) = serde_json::to_string_pretty(&*s) {
+                let _ = std::fs::write(path, json);
+            }
+        }
+
         // 刷新 settings dialog 内容
         let options = self.build_settings_options().await;
         let _ = self.event_tx.send(BackendEvent::Dialog {
