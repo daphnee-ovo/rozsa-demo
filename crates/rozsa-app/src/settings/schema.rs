@@ -67,6 +67,7 @@ pub struct Settings {
     pub retry: RetrySettings,
     pub transport: String,
     pub block_images: bool,
+    pub hide_thinking: bool,
     pub steering_mode: String,
     pub follow_up_mode: String,
     pub permissions: PermissionSettings,
@@ -83,6 +84,7 @@ impl Default for Settings {
             retry: RetrySettings::default(),
             transport: "auto".to_string(),
             block_images: false,
+            hide_thinking: false,
             steering_mode: "one-at-a-time".to_string(),
             follow_up_mode: "one-at-a-time".to_string(),
             permissions: PermissionSettings::default(),
@@ -109,6 +111,8 @@ pub struct PartialSettings {
     pub transport: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_images: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hide_thinking: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steering_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

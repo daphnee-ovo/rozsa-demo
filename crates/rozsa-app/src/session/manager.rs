@@ -183,6 +183,12 @@ pub struct SessionManager {
     by_id: HashMap<String, SessionEntry>,
     /// Current leaf pointer (last entry in current branch).
     leaf_id: Option<String>,
+    /// CWD stored for lazy header write.
+    cwd: String,
+    /// Parent session path for lazy header write.
+    parent_session: Option<String>,
+    /// Whether the session file has been materialized (header written).
+    materialized: bool,
 }
 
 impl SessionManager {
@@ -220,8 +226,8 @@ impl SessionManager {
             version: SESSION_VERSION,
             id: session_id.clone(),
             timestamp: chrono::Utc::now().to_rfc3339(),
-            cwd,
-            parent_session,
+            cwd: cwd.clone(),
+            parent_session: parent_session.clone(),
         };
 
         let header_json = serde_json::to_string(&header)
@@ -236,7 +242,28 @@ impl SessionManager {
             session_file: path.to_path_buf(),
             by_id: HashMap::new(),
             leaf_id: None,
+            cwd,
+            parent_session,
+            materialized: true,
         })
+    }
+
+    /// Create a lazy session manager — file is only created when the first entry is written.
+    pub fn create_lazy(
+        path: impl AsRef<Path>,
+        session_id: String,
+        cwd: String,
+        parent_session: Option<String>,
+    ) -> Self {
+        SessionManager {
+            session_id,
+            session_file: path.as_ref().to_path_buf(),
+            by_id: HashMap::new(),
+            leaf_id: None,
+            cwd,
+            parent_session,
+            materialized: false,
+        }
     }
 
     /// Generate a short UUID (8 hex chars) that doesn't collide with existing entries.
@@ -252,8 +279,45 @@ impl SessionManager {
         uuid::Uuid::new_v4().to_string()
     }
 
+    /// Materialize the session file (write header) if not yet created.
+    fn ensure_materialized(&mut self) -> Result<()> {
+        if self.materialized {
+            return Ok(());
+        }
+
+        if let Some(parent) = self.session_file.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create session directory: {}", parent.display()))?;
+        }
+
+        let file = File::create(&self.session_file)
+            .with_context(|| format!("Failed to create session file: {}", self.session_file.display()))?;
+        let mut writer = BufWriter::new(file);
+
+        let header = SessionHeader {
+            typ: "session".to_string(),
+            version: SESSION_VERSION,
+            id: self.session_id.clone(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            cwd: self.cwd.clone(),
+            parent_session: self.parent_session.clone(),
+        };
+
+        let header_json = serde_json::to_string(&header)
+            .context("Failed to serialize session header")?;
+        writeln!(writer, "{}", header_json)
+            .context("Failed to write session header")?;
+        writer.flush()
+            .context("Failed to flush session file")?;
+
+        self.materialized = true;
+        Ok(())
+    }
+
     /// Append an entry to the session file and update internal state.
     fn append_entry(&mut self, entry: SessionEntry) -> Result<String> {
+        self.ensure_materialized()?;
+
         let id = entry.id().to_string();
 
         // Serialize and append to file
@@ -492,6 +556,9 @@ impl SessionManager {
             session_file: path.to_path_buf(),
             by_id,
             leaf_id: last_id,
+            cwd: header.cwd,
+            parent_session: header.parent_session,
+            materialized: true,
         })
     }
 

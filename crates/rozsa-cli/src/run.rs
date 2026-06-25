@@ -9,7 +9,6 @@ use rozsa_app::resources::ResourceLoader;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
 use rozsa_core::events::AgentEvent;
-use rozsa_model::types::ThinkingLevel;
 
 use crate::args::Args;
 
@@ -71,16 +70,18 @@ pub async fn run(args: &Args) -> Result<()> {
     let session_id = uuid::Uuid::new_v4().to_string();
     let session_path = session_dir.join(format!("{session_id}.jsonl"));
 
-    let session_manager = SessionManager::create(
+    let session_manager = SessionManager::create_lazy(
         &session_path,
         session_id,
         cwd.to_string_lossy().to_string(),
         None,
-    )?;
+    );
+
+    let thinking_level = settings_manager.default_thinking_level_parsed();
 
     let config = AgentSessionConfig {
         model,
-        thinking_level: ThinkingLevel::Off,
+        thinking_level,
         system_prompt,
         cwd: cwd.clone(),
         session_manager,

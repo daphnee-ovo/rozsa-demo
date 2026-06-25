@@ -53,6 +53,8 @@ struct LiveState {
     /// Index into `messages` where the current agent run began.
     /// AgentEnd uses this to truncate+replace (not append), preventing duplication.
     turn_base: usize,
+    /// User preference: hide thinking display (persisted via Ctrl+T / settings).
+    hide_thinking: bool,
 }
 
 /// Optional construction-time config. None of the fields are required for
@@ -75,6 +77,8 @@ pub struct NativeBackend {
     global_settings_path: Option<PathBuf>,
     /// Runtime-mutable settings copy (mutated by /settings left/right cycling)
     runtime_settings: Mutex<Settings>,
+    /// Monotonic autocomplete response id (防止乱序响应覆盖)
+    autocomplete_id: std::sync::atomic::AtomicU64,
 }
 
 impl NativeBackend {
@@ -85,10 +89,12 @@ impl NativeBackend {
     pub fn with_config(session: AgentSession, config: NativeBackendConfig) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         let session = Arc::new(session);
+        let hide_thinking = session.settings_manager().resolved().hide_thinking;
         let live = Arc::new(Mutex::new(LiveState {
             messages: Vec::new(),
             is_streaming: false,
             turn_base: 0,
+            hide_thinking,
         }));
 
         spawn_event_forwarder(session.clone(), tx.clone(), live.clone());
@@ -104,12 +110,159 @@ impl NativeBackend {
             session_dir: config.session_dir,
             global_settings_path: config.global_settings_path,
             runtime_settings: Mutex::new(runtime_settings),
+            autocomplete_id: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
     async fn push_state(&self) {
         let live = self.live.lock().await;
         push_state_with(&self.session, &live, &self.event_tx).await;
+    }
+
+    async fn persist_settings(&self) {
+        if let Some(ref path) = self.global_settings_path {
+            let s = self.runtime_settings.lock().await;
+            if let Ok(json) = serde_json::to_string_pretty(&*s) {
+                let _ = std::fs::write(path, json);
+            }
+        }
+    }
+
+    /// 执行 `!command` bang escape：直接在 shell 运行，流式输出到对话区。
+    /// `exclude_from_context=true`（`!!` 前缀）时不将结果加入 session 持久化历史。
+    async fn execute_bang_command(&self, command: &str, exclude_from_context: bool) -> BackendResult<()> {
+        use std::process::Stdio;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let cwd = self.session.cwd().to_string_lossy().to_string();
+        let command = command.to_string();
+        let live = self.live.clone();
+        let session = self.session.clone();
+        let backend_tx = self.event_tx.clone();
+
+        tokio::spawn(async move {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+
+            // 先 push 一个空输出的占位消息，后续流式更新
+            let make_msg = |output: &str, exit_code: Option<i32>| {
+                rozsa_core::messages::AgentMessage::custom(
+                    "bashExecution".to_string(),
+                    serde_json::json!({
+                        "command": command,
+                        "output": output,
+                        "exitCode": exit_code,
+                        "cancelled": false,
+                        "excludeFromContext": exclude_from_context,
+                    }),
+                    timestamp,
+                )
+            };
+
+            {
+                let mut state = live.lock().await;
+                state.messages.push(make_msg("", None));
+            }
+            {
+                let live_guard = live.lock().await;
+                push_state_with(&session, &live_guard, &backend_tx).await;
+            }
+
+            // 启动子进程，pipe stdout/stderr
+            let child = tokio::process::Command::new("bash")
+                .arg("-c")
+                .arg(&command)
+                .current_dir(&cwd)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn();
+
+            let mut child = match child {
+                Ok(c) => c,
+                Err(e) => {
+                    let mut state = live.lock().await;
+                    if let Some(last) = state.messages.last_mut() {
+                        *last = make_msg(&format!("Failed to execute: {e}"), Some(-1));
+                    }
+                    push_state_with(&session, &state, &backend_tx).await;
+                    return;
+                }
+            };
+
+            let stdout = child.stdout.take().unwrap();
+            let stderr = child.stderr.take().unwrap();
+            let mut stdout_reader = BufReader::new(stdout).lines();
+            let mut stderr_reader = BufReader::new(stderr).lines();
+
+            let mut output_buf = String::new();
+            let mut stdout_done = false;
+            let mut stderr_done = false;
+
+            // 流式读取输出，每行更新 UI
+            loop {
+                if stdout_done && stderr_done {
+                    break;
+                }
+                tokio::select! {
+                    line = stdout_reader.next_line(), if !stdout_done => {
+                        match line {
+                            Ok(Some(line)) => {
+                                if !output_buf.is_empty() { output_buf.push('\n'); }
+                                output_buf.push_str(&line);
+                            }
+                            _ => { stdout_done = true; continue; }
+                        }
+                    }
+                    line = stderr_reader.next_line(), if !stderr_done => {
+                        match line {
+                            Ok(Some(line)) => {
+                                if !output_buf.is_empty() { output_buf.push('\n'); }
+                                output_buf.push_str(&line);
+                            }
+                            _ => { stderr_done = true; continue; }
+                        }
+                    }
+                }
+                // 更新消息并推送 state
+                let mut state = live.lock().await;
+                if let Some(last) = state.messages.last_mut() {
+                    *last = make_msg(&output_buf, None);
+                }
+                push_state_with(&session, &state, &backend_tx).await;
+            }
+
+            // 等待退出码
+            let exit_code = child.wait().await.ok().and_then(|s| s.code());
+
+            // 最终状态
+            {
+                let mut state = live.lock().await;
+                if let Some(last) = state.messages.last_mut() {
+                    *last = make_msg(&output_buf, exit_code);
+                }
+                push_state_with(&session, &state, &backend_tx).await;
+            }
+
+            // 非 exclude 模式下持久化
+            if !exclude_from_context {
+                let mut mgr = session.session_manager().await;
+                let _ = mgr.append_custom(
+                    "bashExecution".to_string(),
+                    Some(serde_json::json!({
+                        "command": command,
+                        "output": output_buf,
+                        "exitCode": exit_code,
+                        "cancelled": false,
+                    })),
+                );
+            }
+        });
+
+        Ok(())
     }
 
     /// Resolve "next" / "previous" model in the registry relative to the
@@ -166,6 +319,29 @@ impl NativeBackend {
             }
             "compact" => {
                 self.compact().await?;
+            }
+            "thinking" => {
+                use rozsa_model::types::ThinkingLevel;
+                let level_str = args.to_lowercase();
+                let level = match level_str.as_str() {
+                    "off" | "" => ThinkingLevel::Off,
+                    "low" | "l" => ThinkingLevel::Low,
+                    "medium" | "med" | "m" => ThinkingLevel::Medium,
+                    "high" | "h" => ThinkingLevel::High,
+                    other => {
+                        self.notify("error", &format!("Unknown thinking level: {other}. Use: off/low/medium/high"));
+                        return Ok(());
+                    }
+                };
+                self.session.set_thinking_level(level).await;
+                // 持久化到 settings
+                {
+                    let mut s = self.runtime_settings.lock().await;
+                    s.default_thinking_level = Some(format!("{:?}", level).to_lowercase());
+                }
+                self.persist_settings().await;
+                self.push_state().await;
+                self.notify("info", &format!("Thinking: {args}"));
             }
             "clear" | "new" => {
                 {
@@ -678,6 +854,10 @@ impl NativeBackend {
                 let idx = levels.iter().position(|l| *l == current).unwrap_or(0);
                 let next = if direction > 0 { (idx + 1) % levels.len() } else { (idx + levels.len() - 1) % levels.len() };
                 self.session.set_thinking_level(levels[next]).await;
+                {
+                    let mut s = self.runtime_settings.lock().await;
+                    s.default_thinking_level = Some(format!("{:?}", levels[next]).to_lowercase());
+                }
                 self.push_state().await;
             }
             1 => {
@@ -710,13 +890,7 @@ impl NativeBackend {
             }
             _ => {}
         }
-        // 持久化到 global settings 文件
-        if let Some(ref path) = self.global_settings_path {
-            let s = self.runtime_settings.lock().await;
-            if let Ok(json) = serde_json::to_string_pretty(&*s) {
-                let _ = std::fs::write(path, json);
-            }
-        }
+        self.persist_settings().await;
 
         // 刷新 settings dialog 内容
         let options = self.build_settings_options().await;
@@ -850,9 +1024,9 @@ async fn push_state_with(
         }),
         thinking_level: format!("{:?}", thinking),
         is_streaming: live.is_streaming,
-        is_compacting: false,
-        hide_thinking: false,
-        show_images: true,
+        is_compacting: session.is_compacting(),
+        hide_thinking: live.hide_thinking || thinking == rozsa_model::types::ThinkingLevel::Off,
+        show_images: session.show_images(),
         messages,
         pending_messages: vec![],
         status: BTreeMap::new(),
@@ -903,6 +1077,20 @@ impl AgentBackend for NativeBackend {
                 None => (rest, ""),
             };
             return self.dispatch_slash_command(cmd, args).await;
+        }
+
+        // Bang command 拦截：`!command` 直接在 shell 执行，不发给 agent
+        if let Some(rest) = text.strip_prefix('!') {
+            let exclude_from_context = rest.starts_with('!');
+            let command = if exclude_from_context {
+                rest.strip_prefix('!').unwrap_or(rest).trim()
+            } else {
+                rest.trim()
+            };
+            if command.is_empty() {
+                return Ok(());
+            }
+            return self.execute_bang_command(command, exclude_from_context).await;
         }
 
         let session = self.session.clone();
@@ -970,13 +1158,27 @@ impl AgentBackend for NativeBackend {
             )));
         };
         self.session.set_model(model).await;
+        {
+            let mut s = self.runtime_settings.lock().await;
+            s.default_provider = Some(provider.to_string());
+            s.default_model = Some(id.to_string());
+        }
+        self.persist_settings().await;
         self.push_state().await;
         Ok(())
     }
 
     async fn cycle_model(&self, direction: Direction) -> BackendResult<()> {
         if let Some(model) = self.neighbor_model(direction).await {
+            let model_id = model.id.clone();
+            let provider = format!("{:?}", model.provider).to_lowercase();
             self.session.set_model(model).await;
+            {
+                let mut s = self.runtime_settings.lock().await;
+                s.default_provider = Some(provider);
+                s.default_model = Some(model_id);
+            }
+            self.persist_settings().await;
             self.push_state().await;
         }
         Ok(())
@@ -1035,14 +1237,12 @@ impl AgentBackend for NativeBackend {
                 let mut live = self.live.lock().await;
                 live.messages = messages;
                 live.turn_base = live.messages.len();
+                live.is_streaming = false;
                 drop(live);
 
-                let _ = self.event_tx.send(BackendEvent::Notify {
-                    level: "info".to_string(),
-                    message: format!("Switched to session: {}", path),
-                });
-                // Refresh session list to update selection
-                self.list_sessions().await?;
+                // 刷新 UI 显示新 session 的对话
+                self.push_state().await;
+                self.notify("info", &format!("Switched to session: {}", path));
             }
             Err(e) => {
                 let _ = self.event_tx.send(BackendEvent::Notify {
@@ -1188,8 +1388,9 @@ impl AgentBackend for NativeBackend {
         // Echo back the prefix for the UI to verify staleness.
         let prefix = text.get(..cursor).unwrap_or("").to_string();
 
+        let id = self.autocomplete_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _ = self.event_tx.send(BackendEvent::Autocomplete {
-            id: 0,
+            id,
             prefix,
             items,
         });
@@ -1222,6 +1423,29 @@ impl AgentBackend for NativeBackend {
                     }
                 };
                 self.session.set_thinking_level(level).await;
+                {
+                    let mut s = self.runtime_settings.lock().await;
+                    s.default_thinking_level = Some(format!("{:?}", level).to_lowercase());
+                }
+                self.persist_settings().await;
+                self.push_state().await;
+                Ok(())
+            }
+            "hide_thinking" => {
+                let new_val = {
+                    let mut s = self.runtime_settings.lock().await;
+                    if value == "toggle" {
+                        s.hide_thinking = !s.hide_thinking;
+                    } else {
+                        s.hide_thinking = value == "true";
+                    }
+                    s.hide_thinking
+                };
+                {
+                    let mut live = self.live.lock().await;
+                    live.hide_thinking = new_val;
+                }
+                self.persist_settings().await;
                 self.push_state().await;
                 Ok(())
             }

@@ -40,6 +40,7 @@ tracing = "0.1"
 [dev-dependencies]
 portable-pty = "0.9"
 vt100 = "0.16.2"
+tempfile = "3"
 
 [[test]]
 name = "unit_tui_autocomplete"
@@ -52,6 +53,14 @@ path = "../../tests/unit/tui/view_model_test.rs"
 [[test]]
 name = "unit_tui_native_apply_event"
 path = "../../tests/unit/tui/native_apply_event_test.rs"
+
+[[test]]
+name = "unit_tui_native_bang_command"
+path = "../../tests/unit/tui/native_bang_command_test.rs"
+
+[[test]]
+name = "unit_tui_native_settings_persist"
+path = "../../tests/unit/tui/native_settings_persist_test.rs"
 
 [[test]]
 name = "e2e_tmux_tui"

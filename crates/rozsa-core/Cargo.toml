@@ -9,6 +9,10 @@ license = "MIT"
 name = "rozsa-core"
 path = "src/bin/bridge.rs"
 
+[[test]]
+name = "unit_core_parallel_null_args"
+path = "../../tests/unit/core/parallel_null_args_test.rs"
+
 [dependencies]
 rozsa-model = { path = "../rozsa-model" }
 tokio = { workspace = true }

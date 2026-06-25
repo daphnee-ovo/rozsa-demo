@@ -464,10 +464,15 @@ async fn execute_parallel(
         let call_clone = call.clone();
         let signal_clone = signal.cloned();
         let handle = tokio::spawn(async move {
+            let args = if call_clone.arguments.is_null() {
+                serde_json::Value::Object(Default::default())
+            } else {
+                call_clone.arguments.clone()
+            };
             let exec_result = tool_clone
                 .execute(
                     &call_clone.id,
-                    call_clone.arguments.clone(),
+                    args,
                     signal_clone,
                     None,
                 )

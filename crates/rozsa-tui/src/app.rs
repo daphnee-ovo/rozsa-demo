@@ -189,6 +189,8 @@ pub struct AppState {
     pub needs_full_redraw: bool,
     /// Overlay 焦点栈 — 管理 permission/dialog/graph 等浮层的焦点优先级
     pub overlay_stack: crate::overlay::OverlayStack,
+    /// 最近接受的 autocomplete 响应 id（用于丢弃乱序到达的旧响应）
+    pub last_autocomplete_id: u64,
 }
 
 impl AppState {
@@ -409,7 +411,9 @@ impl crate::input::CommandSink for NativeCommandSink {
                 tokio::spawn(async move { let _ = backend.cycle_model(dir).await; });
             }
             ClientMessage::CycleThinking => {
-                // No dedicated backend call yet; left as no-op until thinking-level cycling lands.
+                tokio::spawn(async move {
+                    let _ = backend.update_setting("hide_thinking", "toggle").await;
+                });
             }
             ClientMessage::CycleEditMode => {
                 tokio::spawn(async move { let _ = backend.cycle_edit_mode().await; });
@@ -554,7 +558,7 @@ async fn run_with_socket(socket_path: String) -> Result<(), Box<dyn Error>> {
 }
 
 /// 将 BackendEvent 映射到 AppState 变更
-fn apply_backend_event(state: &mut AppState, event: BackendEvent) {
+fn apply_backend_event(state: &mut AppState, event: BackendEvent, editor: &crate::input::InputState) {
     match event {
         BackendEvent::State(ui) => {
             if !state.auto_scroll && state.ui.is_streaming {
@@ -672,7 +676,13 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent) {
             state.input_override = Some(text);
         }
         BackendEvent::Autocomplete { prefix, items, .. } => {
-            if items.is_empty() {
+            // Staleness check：响应的 prefix 必须与当前输入完全匹配。
+            // 快速输入时旧请求的响应迟到，prefix 比当前输入短就是过期的。
+            let current_input = editor.text();
+            let stale = !prefix.is_empty() && prefix != current_input;
+            if stale {
+                // 忽略过期响应
+            } else if items.is_empty() {
                 state.autocomplete = None;
                 state.input_has_valid_match = false;
             } else {
@@ -827,7 +837,7 @@ async fn run_app(
             maybe_msg = event_rx.recv() => {
                 match maybe_msg {
                     Some(event) => {
-                        apply_backend_event(&mut state, event);
+                        apply_backend_event(&mut state, event, &editor);
                         needs_redraw = true;
                     }
                     None => {

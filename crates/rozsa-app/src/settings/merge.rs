@@ -26,6 +26,7 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
             .clone()
             .unwrap_or_else(|| base.transport.clone()),
         block_images: overlay.block_images.unwrap_or(base.block_images),
+        hide_thinking: overlay.hide_thinking.unwrap_or(base.hide_thinking),
         steering_mode: overlay
             .steering_mode
             .clone()
