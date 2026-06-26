@@ -49,6 +49,9 @@ pub struct GraphState {
     query: String,
     mode: GraphMode,
     detail_scroll: usize,
+    fork_mode: bool,
+    /// Set when user confirms a selection in fork mode (original node index).
+    pub fork_confirmed: Option<usize>,
 }
 
 impl GraphState {
@@ -62,6 +65,23 @@ impl GraphState {
             query: String::new(),
             mode: GraphMode::List,
             detail_scroll: 0,
+            fork_mode: false,
+            fork_confirmed: None,
+        }
+    }
+
+    pub fn new_fork(nodes: Vec<NativeGraphNode>) -> Self {
+        let filtered = (0..nodes.len()).collect::<Vec<_>>();
+        let selected = filtered.len().saturating_sub(1);
+        Self {
+            nodes,
+            filtered,
+            selected,
+            query: String::new(),
+            mode: GraphMode::List,
+            detail_scroll: 0,
+            fork_mode: true,
+            fork_confirmed: None,
         }
     }
 
@@ -133,9 +153,14 @@ fn handle_list_key(
         graph.selected = (graph.selected + 5).min(graph.filtered.len().saturating_sub(1));
         Some(graph)
     } else if matches_action(keybindings, key, "tui.select.confirm") {
-        graph.mode = GraphMode::Detail;
-        graph.detail_scroll = 0;
-        Some(graph)
+        if graph.fork_mode {
+            graph.fork_confirmed = graph.filtered.get(graph.selected).copied();
+            Some(graph)
+        } else {
+            graph.mode = GraphMode::Detail;
+            graph.detail_scroll = 0;
+            Some(graph)
+        }
     } else if matches_action(keybindings, key, "tui.editor.deleteCharBackward") {
         graph.query.pop();
         graph.apply_filter();

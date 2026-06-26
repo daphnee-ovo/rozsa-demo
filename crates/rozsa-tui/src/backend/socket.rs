@@ -126,6 +126,10 @@ impl AgentBackend for SocketBackend {
         self.send_msg(&ClientMessage::RenameSession { path, name })
     }
 
+    async fn fork_session(&self, message_index: usize) -> BackendResult<()> {
+        self.send_msg(&ClientMessage::ForkSession { message_index })
+    }
+
     async fn respond_permission(
         &self,
         id: &str,

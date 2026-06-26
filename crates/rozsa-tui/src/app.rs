@@ -476,6 +476,10 @@ impl crate::input::CommandSink for NativeCommandSink {
                 let value = value.to_string();
                 tokio::spawn(async move { let _ = backend.update_setting(&key, &value).await; });
             }
+            ClientMessage::ForkSession { message_index } => {
+                let idx = *message_index;
+                tokio::spawn(async move { let _ = backend.fork_session(idx).await; });
+            }
         }
         Ok(())
     }
@@ -695,6 +699,9 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent, editor: &crate
         }
         BackendEvent::Graph(nodes) => {
             state.graph = Some(GraphState::new(nodes));
+        }
+        BackendEvent::ForkGraph(nodes) => {
+            state.graph = Some(GraphState::new_fork(nodes));
         }
         BackendEvent::Sessions {
             entries,

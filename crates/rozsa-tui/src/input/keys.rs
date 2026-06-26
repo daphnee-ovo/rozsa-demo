@@ -665,6 +665,13 @@ pub fn handle_key(
 
     if let Some(graph_state) = state.graph.take() {
         let next = handle_graph_key(key, graph_state, &keybindings);
+        if let Some(ref gs) = next {
+            if let Some(idx) = gs.fork_confirmed {
+                send(writer, &ClientMessage::ForkSession { message_index: idx })?;
+                state.graph = None;
+                return Ok(());
+            }
+        }
         state.graph = next;
         return Ok(());
     }

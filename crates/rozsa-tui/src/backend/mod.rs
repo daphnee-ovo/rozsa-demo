@@ -90,6 +90,7 @@ pub enum BackendEvent {
     Permission(NativePermissionPrompt),
     /// 会话历史图
     Graph(Vec<NativeGraphNode>),
+    ForkGraph(Vec<NativeGraphNode>),
     /// 会话列表
     Sessions {
         entries: Vec<SessionEntry>,
@@ -133,6 +134,7 @@ pub trait AgentBackend: Send + Sync {
     async fn switch_session(&self, path: &str) -> BackendResult<()>;
     async fn delete_session(&self, path: &str) -> BackendResult<()>;
     async fn rename_session(&self, path: &str, name: &str) -> BackendResult<()>;
+    async fn fork_session(&self, message_index: usize) -> BackendResult<()>;
 
     // --- 权限审批 ---
     async fn respond_permission(

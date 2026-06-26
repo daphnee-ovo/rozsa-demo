@@ -253,6 +253,8 @@ pub enum ClientMessage<'a> {
         key: &'a str,
         value: &'a str,
     },
+    #[serde(rename = "fork_session")]
+    ForkSession { message_index: usize },
     #[serde(rename = "exit")]
     Exit,
 }

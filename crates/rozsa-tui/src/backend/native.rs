@@ -533,9 +533,20 @@ impl NativeBackend {
             }
             "lsp" => {
                 if args.is_empty() {
-                    self.notify("info", "LSP auto-diagnostics modes: agent_end | edit_write | disabled");
+                    let current = self.runtime_settings.lock().await.lsp_mode.clone();
+                    self.notify("info", &format!("LSP auto-diagnostics mode: {current}\nOptions: agent_end | edit_write | disabled"));
                 } else {
-                    self.notify("info", &format!("LSP mode set to: {args}"));
+                    let mode = args.trim().to_string();
+                    match mode.as_str() {
+                        "agent_end" | "edit_write" | "disabled" => {
+                            self.runtime_settings.lock().await.lsp_mode = mode.clone();
+                            self.persist_settings().await;
+                            self.notify("info", &format!("LSP mode set to: {mode}"));
+                        }
+                        _ => {
+                            self.notify("warning", &format!("Unknown LSP mode '{mode}'. Options: agent_end | edit_write | disabled"));
+                        }
+                    }
                 }
             }
             "gc" => {
@@ -766,8 +777,7 @@ impl NativeBackend {
                         _ => None,
                     }
                 }).collect();
-                let _ = self.event_tx.send(BackendEvent::Graph(nodes));
-                self.notify("info", "Select a message to fork from (via /graph)");
+                let _ = self.event_tx.send(BackendEvent::ForkGraph(nodes));
             }
             "clone" => {
                 let mgr = self.session.session_manager().await;
@@ -1375,6 +1385,66 @@ impl AgentBackend for NativeBackend {
             });
         }
         self.list_sessions().await
+    }
+
+    async fn fork_session(&self, message_index: usize) -> BackendResult<()> {
+        let mgr = self.session.session_manager().await;
+        let entries = mgr.entries();
+        let cwd = self.session.cwd().to_string_lossy().to_string();
+        drop(mgr);
+
+        // Collect messages up to and including the selected index
+        let messages: Vec<_> = entries
+            .iter()
+            .filter_map(|e| {
+                if let rozsa_app::session::manager::SessionEntry::Message(me) = e {
+                    Some(me.message.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let fork_messages = if message_index < messages.len() {
+            &messages[..=message_index]
+        } else {
+            &messages[..]
+        };
+
+        let new_id = format!(
+            "{:016x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let new_path = if let Some(dir) = &self.session_dir {
+            dir.join(format!("{new_id}.jsonl"))
+        } else {
+            PathBuf::from(format!("{new_id}.jsonl"))
+        };
+
+        match SessionManager::create(&new_path, new_id, cwd, None) {
+            Ok(mut new_mgr) => {
+                let mut count = 0u32;
+                for msg in fork_messages {
+                    if new_mgr.append_message(msg.clone()).is_ok() {
+                        count += 1;
+                    }
+                }
+                drop(new_mgr);
+                self.notify(
+                    "info",
+                    &format!(
+                        "Forked {count} messages to new session: {}",
+                        new_path.display()
+                    ),
+                );
+                self.switch_session(&new_path.to_string_lossy()).await?;
+            }
+            Err(e) => self.notify("error", &format!("Fork failed: {e}")),
+        }
+        Ok(())
     }
 
     async fn respond_permission(

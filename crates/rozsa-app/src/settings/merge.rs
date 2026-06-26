@@ -40,6 +40,10 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
             .context_window_preferences
             .clone()
             .unwrap_or_else(|| base.context_window_preferences.clone()),
+        lsp_mode: overlay
+            .lsp_mode
+            .clone()
+            .unwrap_or_else(|| base.lsp_mode.clone()),
     }
 }
 

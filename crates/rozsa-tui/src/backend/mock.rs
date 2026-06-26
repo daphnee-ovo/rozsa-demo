@@ -159,6 +159,10 @@ impl AgentBackend for MockBackend {
         Ok(())
     }
 
+    async fn fork_session(&self, _message_index: usize) -> BackendResult<()> {
+        Ok(())
+    }
+
     async fn respond_permission(
         &self,
         id: &str,

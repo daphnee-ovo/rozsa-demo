@@ -72,6 +72,7 @@ pub struct Settings {
     pub follow_up_mode: String,
     pub permissions: PermissionSettings,
     pub context_window_preferences: HashMap<String, u64>,
+    pub lsp_mode: String,
 }
 
 impl Default for Settings {
@@ -89,6 +90,7 @@ impl Default for Settings {
             follow_up_mode: "one-at-a-time".to_string(),
             permissions: PermissionSettings::default(),
             context_window_preferences: HashMap::new(),
+            lsp_mode: "disabled".to_string(),
         }
     }
 }
@@ -121,6 +123,8 @@ pub struct PartialSettings {
     pub permissions: Option<PartialPermissionSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window_preferences: Option<HashMap<String, u64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lsp_mode: Option<String>,
 }
 
 /// Partial compaction settings
