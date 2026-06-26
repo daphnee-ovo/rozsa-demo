@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@earendil-works/rozsa-coding-agent": ["./src/index.ts"],
+			"@earendil-works/rozsa-coding-agent/hooks": ["./src/core/hooks/index.ts"],
+			"@earendil-works/rozsa-tui": ["../tui/src/index.ts"],
+			"@earendil-works/rozsa-ai": ["../ai/src/index.ts"],
+			"typebox": ["../../node_modules/typebox"]
+		},
+		"skipLibCheck": true
+	},
+	"include": ["examples/**/*.ts"],
+	"exclude": ["node_modules", "dist"]
+}

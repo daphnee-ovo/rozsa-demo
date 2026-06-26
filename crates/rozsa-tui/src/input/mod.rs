@@ -11,12 +11,16 @@
 
 pub mod keys;
 pub mod mouse;
+pub mod keymap;
+pub mod kill_ring;
+pub mod undo;
+pub mod editor;
 
 pub use keys::handle_key;
 
 use std::sync::Arc;
 
-use crate::{
+use crate::input::{
     kill_ring::KillRing,
     undo::{EditorSnapshot, UndoStack},
 };
@@ -60,7 +64,7 @@ pub struct InputState {
     pub history_index: Option<usize>,
     pub undo_stack: UndoStack<EditorSnapshot>,
     pub kill_ring: KillRing,
-    pub last_action: Option<crate::kill_ring::LastAction>,
+    pub last_action: Option<crate::input::kill_ring::LastAction>,
     /// yank 操作插入的文本长度（用于 yank-pop 删除）
     pub(crate) yank_len: usize,
     /// Jump 模式：等待下一个字符输入后跳转

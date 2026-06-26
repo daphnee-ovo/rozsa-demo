@@ -34,15 +34,15 @@ use tokio_stream::StreamExt;
 
 use crate::{
     backend::{AgentBackend, BackendEvent, socket::SocketBackend},
-    components::autocomplete::AutocompleteState,
-    components::graph::GraphState,
-    components::model_selector::ModelSelectorState,
-    components::permission::PermissionState,
-    components::session_selector::SessionSelectorState,
+    panels::autocomplete::AutocompleteState,
+    panels::graph::GraphState,
+    panels::model_selector::ModelSelectorState,
+    panels::permission::PermissionState,
+    panels::session_selector::SessionSelectorState,
     input::{InputState, handle_key},
-    keymap::KeybindingsManager,
+    input::keymap::KeybindingsManager,
     protocol::{ClientMessage, NativeUiState},
-    ui::render,
+    render::render,
 };
 
 #[derive(Clone, Debug)]
@@ -188,7 +188,7 @@ pub struct AppState {
     /// 需要强制全量重绘（从外部编辑器/suspend 返回后）
     pub needs_full_redraw: bool,
     /// Overlay 焦点栈 — 管理 permission/dialog/graph 等浮层的焦点优先级
-    pub overlay_stack: crate::overlay::OverlayStack,
+    pub overlay_stack: crate::render::overlay::OverlayStack,
     /// 最近接受的 autocomplete 响应 id（用于丢弃乱序到达的旧响应）
     pub last_autocomplete_id: u64,
 }
@@ -343,7 +343,8 @@ pub async fn run_native_with(
     let backend_term = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend_term)?;
 
-    let result = run_app(&mut terminal, &mut event_rx, &writer).await;
+    let agents_view: &dyn crate::backend::SubagentView = native.as_ref();
+    let result = run_app(&mut terminal, &mut event_rx, &writer, Some(agents_view)).await;
 
     if kitty_keyboard_enabled {
         let _ = execute!(terminal.backend_mut(), crossterm::event::PopKeyboardEnhancementFlags);
@@ -539,7 +540,7 @@ async fn run_with_socket(socket_path: String) -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let result = run_app(&mut terminal, &mut event_rx, &writer).await;
+    let result = run_app(&mut terminal, &mut event_rx, &writer, None).await;
 
     // 恢复 Kitty 键盘协议
     if kitty_keyboard_enabled {
@@ -579,17 +580,11 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent, editor: &crate
             let was_compacting = state.compacting;
             state.compacting = ui.is_compacting;
             // compaction 完成 — 重置滚动到底部
-            let new_has_compaction = ui
-                .messages
-                .first()
-                .and_then(|m| m.get("role").and_then(|v| v.as_str()))
-                == Some("compactionSummary");
-            let old_has_compaction = state
-                .ui
-                .messages
-                .first()
-                .and_then(|m| m.get("role").and_then(|v| v.as_str()))
-                == Some("compactionSummary");
+            let is_compaction = |m: &rozsa_core::messages::AgentMessage| {
+                matches!(m, rozsa_core::messages::AgentMessage::Custom { message } if message.message_type == "compactionSummary")
+            };
+            let new_has_compaction = ui.messages.first().is_some_and(is_compaction);
+            let old_has_compaction = state.ui.messages.first().is_some_and(&is_compaction);
             if (was_compacting && !ui.is_compacting)
                 || ui.messages.len() < state.ui.messages.len().saturating_sub(2)
                 || (new_has_compaction && !old_has_compaction)
@@ -759,6 +754,7 @@ async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     event_rx: &mut mpsc::UnboundedReceiver<BackendEvent>,
     writer: &crate::input::Writer,
+    agents: Option<&dyn crate::backend::SubagentView>,
 ) -> Result<(), Box<dyn Error>> {
     let mut state = AppState::new();
     let mut editor = InputState::default();
@@ -790,7 +786,7 @@ async fn run_app(
         }
 
         if needs_redraw && last_draw.elapsed() >= min_frame_interval {
-            terminal.draw(|frame| render(frame, &state, &editor))?;
+            terminal.draw(|frame| render(frame, &state, &editor, agents))?;
             last_draw = Instant::now();
             needs_redraw = false;
         }
@@ -864,66 +860,11 @@ async fn run_app(
     Ok(())
 }
 
-fn should_process_key_event(key: KeyEvent) -> bool {
+pub fn should_process_key_event(key: KeyEvent) -> bool {
     // 仅处理 Press 和 Repeat 事件；Release 事件忽略。
     // IME 组合输入由终端自身处理——crossterm 将最终确认的字符作为
     // Press 事件传递（可能包含多字节 CJK 字符），我们通过 grapheme-aware
     // 编辑逻辑正确处理。光标位置通过 set_cursor_position 发送给终端，
     // 供 IME 候选窗口定位使用。
     matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{
-        KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind,
-    };
-
-    #[test]
-    fn ignores_key_release_events() {
-        assert!(should_process_key_event(KeyEvent::new_with_kind(
-            KeyCode::Char('w'),
-            KeyModifiers::NONE,
-            KeyEventKind::Press,
-        )));
-        assert!(should_process_key_event(KeyEvent::new_with_kind(
-            KeyCode::Char('w'),
-            KeyModifiers::NONE,
-            KeyEventKind::Repeat,
-        )));
-        assert!(!should_process_key_event(KeyEvent::new_with_kind(
-            KeyCode::Char('w'),
-            KeyModifiers::NONE,
-            KeyEventKind::Release,
-        )));
-    }
-
-    #[test]
-    fn mouse_wheel_scrolls_one_line_per_tick() {
-        let mut state = AppState::new();
-        crate::input::mouse::handle_mouse(
-            MouseEvent {
-                kind: MouseEventKind::ScrollUp,
-                column: 0,
-                row: 0,
-                modifiers: KeyModifiers::NONE,
-            },
-            &mut state,
-        );
-        assert_eq!(state.scroll, 1);
-        assert!(!state.auto_scroll);
-
-        crate::input::mouse::handle_mouse(
-            MouseEvent {
-                kind: MouseEventKind::ScrollDown,
-                column: 0,
-                row: 0,
-                modifiers: KeyModifiers::NONE,
-            },
-            &mut state,
-        );
-        assert_eq!(state.scroll, 0);
-        assert!(state.auto_scroll);
-    }
 }

@@ -6,7 +6,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use serde::{Deserialize, Serialize};
+use rozsa_core::messages::{AgentMessage, CustomAgentMessage};
+use rozsa_model::types::Message;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -29,7 +31,8 @@ pub struct NativeUiState {
     pub hide_thinking: bool,
     #[serde(rename = "showImages", default = "default_true")]
     pub show_images: bool,
-    pub messages: Vec<Value>,
+    #[serde(deserialize_with = "deserialize_messages_flat", default)]
+    pub messages: Vec<AgentMessage>,
     #[serde(rename = "pendingMessages")]
     pub pending_messages: Vec<String>,
     pub status: BTreeMap<String, String>,
@@ -48,6 +51,56 @@ pub struct NativeUiState {
 
 fn default_true() -> bool {
     true
+}
+
+/// Wire format: each message is a flat camelCase JSON object with a `role`
+/// field that's either a standard role (`user` / `assistant` / `toolResult`)
+/// or a custom message type (`bashExecution` / `compactionSummary` /
+/// `branchSummary` / `custom` / ...). Convert each entry to an `AgentMessage`
+/// — standard roles via `Message`'s existing deserializer, custom roles by
+/// stripping `role` + `timestamp` from the payload and wrapping the rest.
+fn deserialize_messages_flat<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<AgentMessage>, D::Error> {
+    use serde::de::Error;
+    let raw: Vec<Value> = Vec::deserialize(deserializer)?;
+    let mut out = Vec::with_capacity(raw.len());
+    for value in raw {
+        out.push(value_to_agent_message(value).map_err(D::Error::custom)?);
+    }
+    Ok(out)
+}
+
+fn value_to_agent_message(mut value: Value) -> Result<AgentMessage, String> {
+    let role = value
+        .get("role")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("message missing role: {value}"))?
+        .to_string();
+    match role.as_str() {
+        "user" | "assistant" | "toolResult" => {
+            let msg: Message = serde_json::from_value(value)
+                .map_err(|e| format!("standard message parse failed: {e}"))?;
+            Ok(AgentMessage::Standard { message: msg })
+        }
+        _ => {
+            let timestamp = value
+                .get("timestamp")
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            if let Value::Object(ref mut map) = value {
+                map.remove("role");
+                map.remove("timestamp");
+            }
+            Ok(AgentMessage::Custom {
+                message: CustomAgentMessage {
+                    message_type: role,
+                    payload: value,
+                    timestamp,
+                },
+            })
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -92,7 +145,7 @@ pub enum HostMessage {
     Graph { nodes: Vec<NativeGraphNode> },
     #[serde(rename = "sessions")]
     Sessions {
-        entries: Vec<crate::components::session_selector::SessionEntry>,
+        entries: Vec<crate::panels::session_selector::SessionEntry>,
         #[serde(rename = "currentSessionPath", default)]
         current_session_path: String,
     },
@@ -104,7 +157,7 @@ pub enum HostMessage {
     },
     #[serde(rename = "models")]
     Models {
-        entries: Vec<crate::components::model_selector::ModelEntry>,
+        entries: Vec<crate::panels::model_selector::ModelEntry>,
     },
     #[serde(rename = "retry")]
     Retry { seconds: u32, reason: String },
@@ -136,6 +189,9 @@ pub struct NativeGraphNode {
     #[serde(rename = "fullText")]
     pub full_text: String,
     pub timestamp: String,
+    /// 节点所属的 agent id；None 表示主 agent。
+    #[serde(rename = "agentId", default)]
+    pub agent_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
