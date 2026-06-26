@@ -116,8 +116,8 @@ pub struct AgentSession {
     pre_tool_use_hook: Option<Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>>,
     /// Extension lifecycle hooks.
     extension_runner: tokio::sync::Mutex<crate::extensions::ExtensionRunner>,
-    /// Skill matcher for injecting skill prompts based on user input.
-    skill_matcher: crate::skills::SkillMatcher,
+    /// Skill registry — loaded from filesystem at startup, reloadable.
+    skill_registry: std::sync::RwLock<crate::skills::SkillRegistry>,
 }
 
 impl AgentSession {
@@ -136,6 +136,7 @@ impl AgentSession {
             pre_tool_use,
         } = config;
         let permission_mode = settings_manager.resolved().permissions.mode.clone();
+        let skill_registry = crate::skills::SkillRegistry::load_from_defaults(&cwd);
         Self {
             static_config: StaticConfig {
                 system_prompt,
@@ -161,7 +162,7 @@ impl AgentSession {
             follow_up_queue: Arc::new(std::sync::Mutex::new(Vec::new())),
             pre_tool_use_hook: pre_tool_use.map(|f| Arc::from(f) as Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>),
             extension_runner: tokio::sync::Mutex::new(crate::extensions::ExtensionRunner::new()),
-            skill_matcher: crate::skills::SkillMatcher::new(Vec::new()),
+            skill_registry: std::sync::RwLock::new(skill_registry),
         }
     }
 
@@ -170,9 +171,19 @@ impl AgentSession {
         self.extension_runner.lock().await.register(extension);
     }
 
-    /// Access the skill matcher (e.g. to check matches before submitting).
-    pub fn skill_matcher(&self) -> &crate::skills::SkillMatcher {
-        &self.skill_matcher
+    /// Access the skill registry (read lock).
+    pub fn skill_registry(&self) -> std::sync::RwLockReadGuard<'_, crate::skills::SkillRegistry> {
+        self.skill_registry.read().unwrap()
+    }
+
+    /// Reload skills from filesystem.
+    /// Returns diagnostics for skills that failed to load.
+    pub fn reload_skills(&self) -> Vec<crate::skills::loader::SkillDiagnostic> {
+        let cwd = &self.static_config.cwd;
+        let (new_registry, diagnostics) =
+            crate::skills::SkillRegistry::load_from_defaults_with_diagnostics(cwd);
+        *self.skill_registry.write().unwrap() = new_registry;
+        diagnostics
     }
 
     /// Subscribe to AgentEvents emitted by `prompt` / `continue_session`.
@@ -222,10 +233,13 @@ impl AgentSession {
         let cancel_token = CancellationToken::new();
         *self.cancel_token.lock().await = Some(cancel_token.clone());
 
+        // Expand /skill:name commands
+        let (expanded_text, display_text) = self.expand_skill_command(message);
+
         // Build user message
         let user_msg = AgentMessage::standard(Message::User(UserMessage {
-            content: UserContent::Text(message.to_string()),
-            display_text: None,
+            content: UserContent::Text(expanded_text.clone()),
+            display_text: display_text.clone(),
             timestamp: current_timestamp_ms(),
         }));
 
@@ -234,8 +248,8 @@ impl AgentSession {
             .lock()
             .await
             .append_message(Message::User(UserMessage {
-                content: UserContent::Text(message.to_string()),
-                display_text: None,
+                content: UserContent::Text(expanded_text),
+                display_text,
                 timestamp: current_timestamp_ms(),
             }))?;
 
@@ -616,6 +630,45 @@ impl AgentSession {
 
     // --- Private helpers ---
 
+    /// Expand `/skill:name [args]` into XML block, returning (expanded_text, display_text).
+    /// If not a skill command or skill not found, returns (original, None).
+    fn expand_skill_command(&self, text: &str) -> (String, Option<String>) {
+        if !text.starts_with("/skill:") {
+            return (text.to_string(), None);
+        }
+
+        let space_idx = text.find(' ');
+        let skill_name = match space_idx {
+            Some(idx) => &text[7..idx],
+            None => &text[7..],
+        };
+        let args = space_idx.map(|idx| text[idx + 1..].trim()).unwrap_or("");
+
+        let registry = self.skill_registry.read().unwrap();
+        let Some(skill) = registry.find_by_name(skill_name) else {
+            return (text.to_string(), None);
+        };
+
+        let content = match std::fs::read_to_string(&skill.file_path) {
+            Ok(c) => c,
+            Err(_) => return (text.to_string(), None),
+        };
+
+        let body = crate::skills::loader::strip_frontmatter(&content).trim();
+        let base_dir = skill.base_dir.display();
+        let mut expanded = format!(
+            "<skill>\n<name>{}</name>\n<content>\n{}\n</content>\n<base_dir>{}</base_dir>\n</skill>",
+            skill_name, body, base_dir
+        );
+
+        if !args.is_empty() {
+            expanded.push_str("\n\n");
+            expanded.push_str(args);
+        }
+
+        (expanded, Some(text.to_string()))
+    }
+
     /// Build an AgentContext from the current session state.
     async fn build_agent_context(&self) -> AgentContext {
         let tool_schemas: Vec<ToolSchema> = self
@@ -630,8 +683,15 @@ impl AgentSession {
             })
             .collect();
 
+        let mut system_prompt = self.static_config.system_prompt.clone();
+        let skill_fragment = self.skill_registry.read().unwrap().format_for_prompt();
+        if !skill_fragment.is_empty() {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(&skill_fragment);
+        }
+
         AgentContext {
-            system_prompt: Some(self.static_config.system_prompt.clone()),
+            system_prompt: Some(system_prompt),
             messages: self.messages.lock().await.clone(),
             tools: tool_schemas,
         }

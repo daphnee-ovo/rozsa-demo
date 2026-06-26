@@ -2835,6 +2835,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "dashmap",
+ "dirs-next",
  "regex",
  "rozsa-core",
  "rozsa-model",

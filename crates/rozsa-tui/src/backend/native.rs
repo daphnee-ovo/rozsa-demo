@@ -518,8 +518,12 @@ impl NativeBackend {
                 self.notify("info", "No subagents");
             }
             "reload" => {
-                // SettingsManager::reload() 需要 &mut — 暂用 notify 确认拦截
-                self.notify("info", "Reloaded keybindings, extensions, skills, prompts, and themes");
+                let diagnostics = self.session.reload_skills();
+                for diag in &diagnostics {
+                    self.notify("warning", &format!("Skill load warning: {} — {}", diag.path.display(), diag.message));
+                }
+                let count = self.session.skill_registry().list().len();
+                self.notify("info", &format!("Reloaded skills ({count} loaded), keybindings, extensions, prompts, and themes"));
             }
             "changelog" => {
                 self.notify("info", "No changelog entries available in native mode");
@@ -849,7 +853,16 @@ impl NativeBackend {
                     self.notify("warning", &format!("/{cmd} is not supported by the native TUI yet"));
                 } else {
                     let session = self.session.clone();
-                    let full_text = if args.is_empty() { format!("/{cmd}") } else { format!("/{cmd} {args}") };
+                    // Normalize: if cmd matches a skill name (or is already skill:name), use /skill:name
+                    let full_text = if cmd.starts_with("skill:") {
+                        // Already normalized
+                        if args.is_empty() { format!("/{cmd}") } else { format!("/{cmd} {args}") }
+                    } else if session.skill_registry().find_by_name(cmd).is_some() {
+                        // Skill name without prefix → normalize to /skill:name
+                        if args.is_empty() { format!("/skill:{cmd}") } else { format!("/skill:{cmd} {args}") }
+                    } else {
+                        if args.is_empty() { format!("/{cmd}") } else { format!("/{cmd} {args}") }
+                    };
                     let backend_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         if let Err(e) = session.prompt(&full_text).await {
@@ -1143,15 +1156,6 @@ impl AgentBackend for NativeBackend {
                 return Ok(());
             }
             return self.execute_bang_command(command, exclude_from_context).await;
-        }
-
-        // Check for skill matches and inject as steering if found.
-        let matches = self.session.skill_matcher().match_input(text);
-        if !matches.is_empty() {
-            let fragment = self.session.skill_matcher().build_system_prompt_fragment(&matches);
-            if !fragment.is_empty() {
-                self.session.steer(&fragment);
-            }
         }
 
         let session = self.session.clone();
@@ -1480,8 +1484,32 @@ impl AgentBackend for NativeBackend {
         cursor: usize,
         _force: bool,
     ) -> BackendResult<()> {
-        use rozsa_app::slash_commands::AutocompleteEngine;
-        let engine = AutocompleteEngine::new();
+        use rozsa_app::slash_commands::{AutocompleteEngine, SlashCommandInfo, SlashCommandSource};
+
+        // Build dynamic commands from skills
+        let skill_commands: Vec<SlashCommandInfo> = self
+            .session
+            .skill_registry()
+            .list()
+            .iter()
+            .map(|skill| {
+                let builtin_conflict = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
+                    .iter()
+                    .any(|c| c.name == skill.name);
+                let name = if builtin_conflict {
+                    format!("skill:{}", skill.name)
+                } else {
+                    skill.name.clone()
+                };
+                SlashCommandInfo {
+                    name,
+                    description: Some(skill.description.clone()),
+                    source: SlashCommandSource::Skill,
+                }
+            })
+            .collect();
+
+        let engine = AutocompleteEngine::with_dynamic(skill_commands);
         let items: Vec<crate::protocol::NativeAutocompleteItem> = engine
             .complete(text, cursor)
             .unwrap_or_default()
