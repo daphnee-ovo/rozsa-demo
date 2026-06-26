@@ -88,7 +88,8 @@ pub async fn login(
     exchange_code(&code, &verifier).await
 }
 
-fn build_auth_url(challenge: &str, state: &str) -> String {
+#[doc(hidden)]
+pub fn build_auth_url(challenge: &str, state: &str) -> String {
     let scope_encoded = SCOPE.replace(' ', "%20");
     format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=pi",
@@ -111,7 +112,8 @@ fn url_encode_component(s: &str) -> String {
         .collect()
 }
 
-fn generate_random_state() -> String {
+#[doc(hidden)]
+pub fn generate_random_state() -> String {
     let mut bytes = [0u8; 16];
     rand::rng().fill(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
@@ -119,7 +121,8 @@ fn generate_random_state() -> String {
 
 /// Parse user input as either a full URL, query string, or raw code.
 /// Returns (code, state).
-fn parse_authorization_input(
+#[doc(hidden)]
+pub fn parse_authorization_input(
     input: &str,
     expected_state: &str,
 ) -> Result<(String, String), OAuthLoginError> {
@@ -249,7 +252,8 @@ async fn exchange_code(
 
 /// Extract accountId from JWT without verification.
 /// OpenAI JWT payload contains "https://api.openai.com/auth.chatgpt_account_id".
-fn extract_account_id_from_jwt(token: &str) -> Option<String> {
+#[doc(hidden)]
+pub fn extract_account_id_from_jwt(token: &str) -> Option<String> {
     // JWT format: header.payload.signature
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
@@ -273,106 +277,3 @@ struct TokenResponse {
     expires_in: u64,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_build_auth_url() {
-        let challenge = "test_challenge";
-        let state = "test_state";
-        let url = build_auth_url(challenge, state);
-        assert!(url.contains("code_challenge=test_challenge"));
-        assert!(url.contains("state=test_state"));
-        assert!(url.contains("client_id="));
-        assert!(url.contains("response_type=code"));
-        assert!(url.contains("id_token_add_organizations=true"));
-        assert!(url.contains("codex_cli_simplified_flow=true"));
-        assert!(url.contains("originator=pi"));
-    }
-
-    #[test]
-    fn test_parse_authorization_input_raw_code() {
-        let result = parse_authorization_input("abc123", "expected_state");
-        assert!(result.is_ok());
-        let (code, state) = result.unwrap();
-        assert_eq!(code, "abc123");
-        assert_eq!(state, "expected_state");
-    }
-
-    #[test]
-    fn test_parse_authorization_input_query_string() {
-        let result = parse_authorization_input("code=abc123&state=test_state", "test_state");
-        assert!(result.is_ok());
-        let (code, state) = result.unwrap();
-        assert_eq!(code, "abc123");
-        assert_eq!(state, "test_state");
-    }
-
-    #[test]
-    fn test_parse_authorization_input_hash_format() {
-        let result = parse_authorization_input("abc123#test_state", "test_state");
-        assert!(result.is_ok());
-        let (code, state) = result.unwrap();
-        assert_eq!(code, "abc123");
-        assert_eq!(state, "test_state");
-    }
-
-    #[test]
-    fn test_parse_authorization_input_url() {
-        let result = parse_authorization_input(
-            "http://localhost:1455/auth/callback?code=abc123&state=test_state",
-            "test_state",
-        );
-        assert!(result.is_ok());
-        let (code, state) = result.unwrap();
-        assert_eq!(code, "abc123");
-        assert_eq!(state, "test_state");
-    }
-
-    #[test]
-    fn test_parse_authorization_input_state_mismatch() {
-        let result = parse_authorization_input("code=abc123&state=wrong", "expected");
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            OAuthLoginError::CallbackServer(msg) => assert!(msg.contains("state mismatch")),
-            _ => panic!("expected CallbackServer error"),
-        }
-    }
-
-    #[test]
-    fn test_extract_account_id_from_jwt() {
-        // Valid JWT with accountId
-        let payload = r#"{"https://api.openai.com/auth.chatgpt_account_id":"test-account-123"}"#;
-        let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
-        let token = format!("header.{}.signature", payload_b64);
-
-        let account_id = extract_account_id_from_jwt(&token);
-        assert_eq!(account_id, Some("test-account-123".to_string()));
-    }
-
-    #[test]
-    fn test_extract_account_id_missing_field() {
-        // JWT without accountId field
-        let payload = r#"{"sub":"user123"}"#;
-        let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
-        let token = format!("header.{}.signature", payload_b64);
-
-        let account_id = extract_account_id_from_jwt(&token);
-        assert_eq!(account_id, None);
-    }
-
-    #[test]
-    fn test_extract_account_id_invalid_jwt() {
-        let account_id = extract_account_id_from_jwt("not.a.valid.jwt");
-        assert_eq!(account_id, None);
-    }
-
-    #[test]
-    fn test_generate_random_state() {
-        let state1 = generate_random_state();
-        let state2 = generate_random_state();
-        assert_eq!(state1.len(), 32); // 16 bytes -> 32 hex chars
-        assert_ne!(state1, state2);
-    }
-}

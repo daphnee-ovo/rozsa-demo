@@ -20,10 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
-const GENERATED_MODELS_JSON: &str =
-    include_str!("../../../../packages/ai/src/models.generated.json");
-const GENERATED_IMAGE_MODELS_JSON: &str =
-    include_str!("../../../../packages/ai/src/image-models.generated.json");
+const GENERATED_MODELS_JSON: &str = include_str!("models.generated.json");
+const GENERATED_IMAGE_MODELS_JSON: &str = include_str!("image-models.generated.json");
 const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 const DEFAULT_MAX_TOKENS: usize = 16_384;
 

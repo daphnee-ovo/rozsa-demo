@@ -1,8 +1,8 @@
-use crate::agent_loop::*;
-use crate::config::{AgentContext, AgentLoopConfig, TurnUpdate};
-use crate::events::AgentEvent;
-use crate::messages::AgentMessage;
-use crate::tool::{Tool, ToolError, ToolExecutionMode, ToolResult};
+use rozsa_core::agent_loop::*;
+use rozsa_core::config::{AgentContext, AgentLoopConfig, TurnUpdate};
+use rozsa_core::events::AgentEvent;
+use rozsa_core::messages::AgentMessage;
+use rozsa_core::tool::{Tool, ToolError, ToolExecutionMode, ToolResult};
 use rozsa_model::event_stream::{EventStream, create_event_stream};
 use rozsa_model::types::{
     Api, CacheRetention, ContentBlock, InputModality, Message, ModelCost, Provider,
@@ -784,7 +784,7 @@ async fn pre_tool_use_blocks_tool() {
         base.tools = vec![tool];
         base.pre_tool_use = Some(Box::new(|_ctx| {
             Box::pin(async {
-                Some(crate::config::PreToolUseResult {
+                Some(rozsa_core::config::PreToolUseResult {
                     block: true,
                     reason: Some("Permission denied".to_string()),
                 })
@@ -851,7 +851,7 @@ async fn post_tool_use_overrides_result() {
         });
         base.tools = vec![tool];
         base.post_tool_use = Some(Box::new(|_ctx| {
-            Some(crate::config::PostToolUseResult {
+            Some(rozsa_core::config::PostToolUseResult {
                 content: Some(vec![ContentBlock::Text {
                     text: "overridden".to_string(),
                     signature: None,

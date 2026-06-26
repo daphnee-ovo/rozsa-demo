@@ -245,6 +245,24 @@ pub enum UserContent {
     Blocks(Vec<ContentBlock>),
 }
 
+impl UserContent {
+    /// Extract plain text from either variant.
+    /// Blocks 中的非文本 block（如 Image / ToolCall）被忽略，多个文本块以换行连接。
+    pub fn text(&self) -> String {
+        match self {
+            Self::Text(s) => s.clone(),
+            Self::Blocks(blocks) => blocks
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        }
+    }
+}
+
 /// Message sent by a user.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserMessage {

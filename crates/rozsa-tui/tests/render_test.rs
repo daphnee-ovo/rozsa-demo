@@ -2,10 +2,15 @@
 //
 // 不需要真终端，不启动 socket，直接构造 AppState 然后断言渲染帧内容。
 
+use ratatui::{backend::TestBackend, buffer::Buffer, Terminal};
+use rozsa_core::messages::{AgentMessage, CustomAgentMessage};
+use rozsa_model::types::{
+    Api, AssistantMessage, ContentBlock, Message, Provider as ModelProvider, StopReason, ToolCall,
+    ToolResultMessage, Usage, UsageCost, UserContent, UserMessage,
+};
 use rozsa_tui::{
     app::AppState, input::InputState, protocol::NativeUiState, render::render, theme::THEME,
 };
-use ratatui::{backend::TestBackend, buffer::Buffer, Terminal};
 
 fn make_terminal(width: u16, height: u16) -> Terminal<TestBackend> {
     let backend = TestBackend::new(width, height);
@@ -30,6 +35,80 @@ fn default_ui_state() -> NativeUiState {
     }"#,
     )
     .unwrap()
+}
+
+fn empty_usage() -> Usage {
+    Usage {
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_write: 0,
+        total_tokens: 0,
+        cost: UsageCost {
+            input: 0.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+            total: 0.0,
+        },
+    }
+}
+
+fn user_text(text: &str) -> AgentMessage {
+    AgentMessage::Standard {
+        message: Message::User(UserMessage {
+            content: UserContent::Text(text.to_string()),
+            display_text: None,
+            timestamp: 0,
+        }),
+    }
+}
+
+fn assistant_blocks(blocks: Vec<ContentBlock>) -> AgentMessage {
+    AgentMessage::Standard {
+        message: Message::Assistant(AssistantMessage {
+            content: blocks,
+            api: Api::AnthropicMessages,
+            provider: ModelProvider::Anthropic,
+            model: "claude-sonnet-4".to_string(),
+            response_model: None,
+            response_id: None,
+            usage: empty_usage(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        }),
+    }
+}
+
+fn assistant_text(text: &str) -> AgentMessage {
+    assistant_blocks(vec![ContentBlock::Text {
+        text: text.to_string(),
+        signature: None,
+    }])
+}
+
+fn tool_result(tool_name: &str, text: &str, is_error: bool) -> AgentMessage {
+    AgentMessage::Standard {
+        message: Message::ToolResult(ToolResultMessage {
+            tool_call_id: format!("call_{tool_name}"),
+            tool_name: tool_name.to_string(),
+            content: vec![ContentBlock::Text {
+                text: text.to_string(),
+                signature: None,
+            }],
+            is_error,
+            timestamp: 0,
+        }),
+    }
+}
+
+fn tool_call(name: &str, arguments: serde_json::Value) -> ContentBlock {
+    ContentBlock::ToolCall(ToolCall {
+        id: format!("call_{name}"),
+        name: name.to_string(),
+        arguments,
+    })
 }
 
 fn render_to_string(state: &AppState, input: &InputState, width: u16, height: u16) -> String {
@@ -66,8 +145,8 @@ fn test_sidebar_shows_app_name_and_model() {
     });
     let input = InputState::default();
     let output = render_to_string(&state, &input, 120, 30);
-    // app name 和 model 信息在侧边栏显示
-    assert!(output.contains("PI"), "sidebar should show app name");
+    // app name 和 model 信息在侧边栏显示（大写）
+    assert!(output.contains("ROZSA"), "sidebar should show app name");
     assert!(
         output.contains("claude-sonnet-4"),
         "sidebar should show model"
@@ -88,13 +167,7 @@ fn test_empty_state_no_crash() {
 fn test_messages_render_user_and_assistant() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
-    state.ui.messages = serde_json::from_str(
-        r#"[
-        {"role": "user", "content": [{"type": "text", "text": "Hello world"}]},
-        {"role": "assistant", "content": [{"type": "text", "text": "Hi there!"}]}
-    ]"#,
-    )
-    .unwrap();
+    state.ui.messages = vec![user_text("Hello world"), assistant_text("Hi there!")];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 120, 30);
     assert!(output.contains("Hello world"), "should show user message");
@@ -108,14 +181,10 @@ fn test_messages_render_user_and_assistant() {
 fn test_tool_call_shows_name_and_preview() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
-    state.ui.messages = serde_json::from_str(
-        r#"[
-        {"role": "assistant", "content": [
-            {"type": "toolCall", "name": "bash", "arguments": {"command": "ls -la"}}
-        ]}
-    ]"#,
-    )
-    .unwrap();
+    state.ui.messages = vec![assistant_blocks(vec![tool_call(
+        "bash",
+        serde_json::json!({"command": "ls -la"}),
+    )])];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 120, 30);
     // Bash 工具用 Box 背景色 + $ command 格式渲染
@@ -130,15 +199,17 @@ fn test_thinking_hidden_when_disabled() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
     state.thinking_visible = false;
-    state.ui.messages = serde_json::from_str(
-        r#"[
-        {"role": "assistant", "content": [
-            {"type": "thinking", "thinking": "secret thoughts here"},
-            {"type": "text", "text": "visible answer"}
-        ]}
-    ]"#,
-    )
-    .unwrap();
+    state.ui.messages = vec![assistant_blocks(vec![
+        ContentBlock::Thinking {
+            thinking: "secret thoughts here".to_string(),
+            signature: None,
+            redacted: false,
+        },
+        ContentBlock::Text {
+            text: "visible answer".to_string(),
+            signature: None,
+        },
+    ])];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 120, 30);
     assert!(
@@ -157,15 +228,17 @@ fn test_thinking_visible_when_enabled() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
     state.thinking_visible = true;
-    state.ui.messages = serde_json::from_str(
-        r#"[
-        {"role": "assistant", "content": [
-            {"type": "thinking", "thinking": "reasoning about stuff"},
-            {"type": "text", "text": "final answer"}
-        ]}
-    ]"#,
-    )
-    .unwrap();
+    state.ui.messages = vec![assistant_blocks(vec![
+        ContentBlock::Thinking {
+            thinking: "reasoning about stuff".to_string(),
+            signature: None,
+            redacted: false,
+        },
+        ContentBlock::Text {
+            text: "final answer".to_string(),
+            signature: None,
+        },
+    ])];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 120, 30);
     assert!(
@@ -279,22 +352,10 @@ fn test_input_multiline_renders() {
 #[test]
 fn test_user_message_has_prefix_and_wraps() {
     let mut state = AppState::new();
-    state.ui = serde_json::from_str(r#"{
-        "appName": "rozsa",
-        "version": "0.1.0",
-        "cwd": "/home/user/project",
-        "thinkingLevel": "medium",
-        "isStreaming": false,
-        "isCompacting": false,
-        "messages": [
-            {"role": "user", "content": [{"type": "text", "text": "Hello world, this is a longer message to test word wrapping behavior in the TUI"}]}
-        ],
-        "pendingMessages": [],
-        "status": {},
-        "widgetsAbove": {},
-        "widgetsBelow": {},
-        "keybindings": {"tui.input.submit": ["enter"]}
-    }"#).unwrap();
+    state.ui = default_ui_state();
+    state.ui.messages = vec![user_text(
+        "Hello world, this is a longer message to test word wrapping behavior in the TUI",
+    )];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 50, 12);
     assert!(output.contains("›"), "should have › prefix on first line");
@@ -310,12 +371,13 @@ fn test_user_message_has_prefix_and_wraps() {
 fn test_non_bash_tool_call_box_style() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
-    state.ui.messages = serde_json::from_str(r#"[
-        {"role": "assistant", "content": [
-            {"type": "toolCall", "name": "Read", "arguments": {"file_path": "/src/main.rs"}},
-            {"type": "toolResult", "content": [{"type": "text", "text": "fn main() {\n    println!(\"hello\");\n}"}], "isError": false}
-        ]}
-    ]"#).unwrap();
+    state.ui.messages = vec![
+        assistant_blocks(vec![tool_call(
+            "Read",
+            serde_json::json!({"file_path": "/src/main.rs"}),
+        )]),
+        tool_result("Read", "fn main() {\n    println!(\"hello\");\n}", false),
+    ];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 60, 15);
     assert!(output.contains("Read"), "should show tool name");
@@ -330,13 +392,7 @@ fn test_streaming_status_position() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
     state.ui.is_streaming = true;
-    state.ui.messages = serde_json::from_str(
-        r#"[
-        {"role": "user", "content": [{"type": "text", "text": "hello"}]},
-        {"role": "assistant", "content": [{"type": "text", "text": "I'm working on th"}]}
-    ]"#,
-    )
-    .unwrap();
+    state.ui.messages = vec![user_text("hello"), assistant_text("I'm working on th")];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 60, 15);
     std::fs::write("/tmp/tui_streaming_debug.txt", &output).unwrap();
@@ -356,12 +412,17 @@ fn test_streaming_status_position() {
 fn test_bash_tool_box_style_dump() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
-    state.ui.messages = serde_json::from_str(r#"[
-        {"role": "assistant", "content": [
-            {"type": "toolCall", "name": "bash", "arguments": {"command": "ls -la"}},
-            {"type": "toolResult", "content": [{"type": "text", "text": "total 8\ndrwxr-xr-x 2 user user 4096 file1.txt\n-rw-r--r-- 1 user user  100 file2.rs"}], "isError": false}
-        ]}
-    ]"#).unwrap();
+    state.ui.messages = vec![
+        assistant_blocks(vec![tool_call(
+            "bash",
+            serde_json::json!({"command": "ls -la"}),
+        )]),
+        tool_result(
+            "bash",
+            "total 8\ndrwxr-xr-x 2 user user 4096 file1.txt\n-rw-r--r-- 1 user user  100 file2.rs",
+            false,
+        ),
+    ];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 60, 18);
     assert!(output.contains("$ ls -la"), "should show command");
@@ -378,12 +439,13 @@ fn test_bash_tool_box_style_dump() {
 fn test_tool_result_error_line_fills_full_row_background() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
-    state.ui.messages = serde_json::from_str(r#"[
-        {"role": "assistant", "content": [
-            {"type": "toolCall", "name": "bash", "arguments": {"command": "false"}},
-            {"type": "toolResult", "content": [{"type": "text", "text": "permission denied"}], "isError": true}
-        ]}
-    ]"#).unwrap();
+    state.ui.messages = vec![
+        assistant_blocks(vec![tool_call(
+            "bash",
+            serde_json::json!({"command": "false"}),
+        )]),
+        tool_result("bash", "permission denied", true),
+    ];
     let input = InputState::default();
     let buf = render_to_buffer(&state, &input, 60, 18);
     let output = buffer_to_string(&buf);
@@ -405,12 +467,13 @@ fn test_tool_result_error_line_fills_full_row_background() {
 fn test_tool_result_ansi_line_fills_full_row_background() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
-    state.ui.messages = serde_json::from_str(r#"[
-        {"role": "assistant", "content": [
-            {"type": "toolCall", "name": "bash", "arguments": {"command": "printf color"}},
-            {"type": "toolResult", "content": [{"type": "text", "text": "\u001b[31mred\u001b[0m output"}], "isError": false}
-        ]}
-    ]"#).unwrap();
+    state.ui.messages = vec![
+        assistant_blocks(vec![tool_call(
+            "bash",
+            serde_json::json!({"command": "printf color"}),
+        )]),
+        tool_result("bash", "\u{1b}[31mred\u{1b}[0m output", false),
+    ];
     let input = InputState::default();
     let buf = render_to_buffer(&state, &input, 60, 18);
     let output = buffer_to_string(&buf);
@@ -432,9 +495,9 @@ fn test_tool_result_ansi_line_fills_full_row_background() {
 fn test_assistant_text_wraps_with_sidebar_visible() {
     let mut state = AppState::new();
     state.ui = default_ui_state();
-    state.ui.messages = serde_json::from_str(r#"[
-        {"role": "assistant", "content": [{"type": "text", "text": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau omega"}]}
-    ]"#).unwrap();
+    state.ui.messages = vec![assistant_text(
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau omega",
+    )];
     let input = InputState::default();
     let output = render_to_string(&state, &input, 120, 24);
 
@@ -463,4 +526,16 @@ fn test_input_border_uses_ts_editor_muted_color() {
         THEME.border_muted,
         "native input border should match the TS editor muted border"
     );
+}
+
+#[test]
+#[allow(dead_code)]
+fn _ensure_custom_message_constructor_compiles() {
+    let _ = AgentMessage::Custom {
+        message: CustomAgentMessage {
+            message_type: "bashExecution".to_string(),
+            payload: serde_json::json!({"command": "echo hi", "output": "hi\n", "exitCode": 0}),
+            timestamp: 0,
+        },
+    };
 }
