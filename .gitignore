@@ -45,3 +45,4 @@ plans/
 collect.sh
 tmp/
 temp/
+.dev-doc/**/claim.lock
