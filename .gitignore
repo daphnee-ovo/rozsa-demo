@@ -3,10 +3,9 @@ dist/
 *.log
 .DS_Store
 *.tsbuildinfo
-# packages/*/node_modules/
-packages/*/dist/
-packages/*/dist-chrome/
-packages/*/dist-firefox/
+legacy-ts/packages/*/dist/
+legacy-ts/packages/*/dist-chrome/
+legacy-ts/packages/*/dist-firefox/
 *.cpuprofile
 
 # Environment
@@ -35,8 +34,8 @@ syntax.jsonl
 out.jsonl
 rozsa-*.html
 out.html
-packages/coding-agent/binaries/
-packages/tui-rs/target/
+legacy-ts/packages/coding-agent/binaries/
+legacy-ts/packages/tui-rs/target/
 target/
 todo.md
 plans/

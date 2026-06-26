@@ -1,26 +1,21 @@
 # Rózsa
 
-AI coding agent — Rust 重写中，TypeScript 遗留代码仍在运行。
+AI coding agent — Rust 实现。TypeScript 遗留代码归档在 `legacy-ts/`，仅作参考。
 
 ## 开发
 
-- 检查：`npm run check`（biome + ts + pinned-deps + shrinkwrap）
-- 测试：`./devtools/before/test.sh`（不要直接跑全量 vitest）
+- 检查：`cargo build && cargo clippy && cargo test`
+- 测试：`./devtools/before/test.sh`（如脚本仍存在；否则直接 `cargo test`）
 - Rust 构建：`cargo build`
-- TS 构建：`npm run build`
 
 ## 技术栈
 
 - Rust (Cargo workspace, 5 crates)
-- TypeScript (Node, ESM) — 迁移中
-- Biome (lint/format)
-- tsgo (type check)
-- npm workspaces
 
 ## 项目结构
 
 - `crates/` — Rust workspace crates (rozsa-model, rozsa-core, rozsa-app, rozsa-tui, rozsa-cli)
-- `packages/` — TypeScript 遗留包（迁移源）
+- `legacy-ts/` — 已归档的 TypeScript 遗留实现（仅作参考，禁止新增开发）
 - `docs/` — 文档
 - `devtools/` — 构建/检查脚本
 - `tests/` — 集成测试
@@ -28,9 +23,8 @@ AI coding agent — Rust 重写中，TypeScript 遗留代码仍在运行。
 ## 代码风格
 
 - Rust: rustfmt + clippy
-- TypeScript: Biome 管理 lint 和 format，erasable syntax only
 - 无 inline imports，仅 top-level
-- 提交前必须 `npm run check` 全通过
+- 提交前必须 `cargo build && cargo clippy && cargo test` 全通过
 
 ## 核心原则
 

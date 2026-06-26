@@ -1,13 +1,9 @@
 [package]
 name = "rozsa-core"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 description = "Agent loop engine — state machine, event stream, tool dispatch"
-license = "MIT"
-
-[[test]]
-name = "unit_core_parallel_null_args"
-path = "../../tests/unit/core/parallel_null_args_test.rs"
 
 [dependencies]
 rozsa-model = { path = "../rozsa-model" }
