@@ -97,7 +97,7 @@ pub struct AgentSession {
     static_config: StaticConfig,
     runtime: Mutex<RuntimeParams>,
     session_manager: Mutex<SessionManager>,
-    tools: Mutex<Vec<Arc<dyn Tool>>>,
+    tools: Arc<Mutex<Vec<Arc<dyn Tool>>>>,
     cancel_token: Mutex<Option<CancellationToken>>,
     is_running: AtomicBool,
     /// Accumulated messages across turns (the conversation history).
@@ -118,6 +118,10 @@ pub struct AgentSession {
     extension_runner: tokio::sync::Mutex<crate::extensions::ExtensionRunner>,
     /// Skill registry — loaded from filesystem at startup, reloadable.
     skill_registry: std::sync::RwLock<crate::skills::SkillRegistry>,
+    /// Subagent manager — owns spawned subagents (lazy init on first access).
+    subagent_manager: tokio::sync::Mutex<crate::subagent::SubagentManager>,
+    /// Currently-viewed subagent in the UI (None = main session).
+    viewing_subagent_id: tokio::sync::Mutex<Option<String>>,
 }
 
 impl AgentSession {
@@ -137,6 +141,26 @@ impl AgentSession {
         } = config;
         let permission_mode = settings_manager.resolved().permissions.mode.clone();
         let skill_registry = crate::skills::SkillRegistry::load_from_defaults(&cwd);
+
+        let tools_arc: Arc<Mutex<Vec<Arc<dyn Tool>>>> = Arc::new(Mutex::new(Vec::new()));
+        let main_session_uuid = session_manager.session_id().to_string();
+        let main_session_file = Some(session_manager.session_file().to_path_buf());
+        let session_dir = main_session_file
+            .as_ref()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+        let shared = crate::subagent::SharedResources {
+            model_stream: Arc::new(|m, c, o| rozsa_model::stream::stream_simple(m, c, o)),
+            convert_to_llm: Arc::new(convert_to_llm),
+            main_tools: tools_arc.clone(),
+            main_model: model.clone(),
+            main_thinking_level: thinking_level,
+            cwd: cwd.clone(),
+            session_dir,
+            main_session_uuid,
+            main_session_file,
+        };
+        let subagent_manager = crate::subagent::SubagentManager::new(shared);
+
         Self {
             static_config: StaticConfig {
                 system_prompt,
@@ -149,7 +173,7 @@ impl AgentSession {
                 thinking_level,
             }),
             session_manager: Mutex::new(session_manager),
-            tools: Mutex::new(Vec::new()),
+            tools: tools_arc,
             cancel_token: Mutex::new(None),
             is_running: AtomicBool::new(false),
             messages: Mutex::new(Vec::new()),
@@ -163,6 +187,8 @@ impl AgentSession {
             pre_tool_use_hook: pre_tool_use.map(|f| Arc::from(f) as Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>),
             extension_runner: tokio::sync::Mutex::new(crate::extensions::ExtensionRunner::new()),
             skill_registry: std::sync::RwLock::new(skill_registry),
+            subagent_manager: tokio::sync::Mutex::new(subagent_manager),
+            viewing_subagent_id: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -335,6 +361,34 @@ impl AgentSession {
     /// Snapshot the current accumulated messages.
     pub async fn messages(&self) -> Vec<AgentMessage> {
         self.messages.lock().await.clone()
+    }
+
+    /// Access the subagent manager (lock-guarded).
+    pub async fn subagent_manager(&self) -> tokio::sync::MutexGuard<'_, crate::subagent::SubagentManager> {
+        self.subagent_manager.lock().await
+    }
+
+    /// Non-blocking access to the subagent manager — returns None if locked.
+    /// Used by the synchronous render path to avoid blocking the UI thread.
+    pub fn subagent_manager_try_lock(&self) -> Option<tokio::sync::MutexGuard<'_, crate::subagent::SubagentManager>> {
+        self.subagent_manager.try_lock().ok()
+    }
+
+    /// Get the ID of the subagent currently being viewed (None = main session).
+    pub async fn viewing_subagent_id(&self) -> Option<String> {
+        self.viewing_subagent_id.lock().await.clone()
+    }
+
+    /// Non-blocking read of the viewing-subagent id. Returns the inner Option<String>
+    /// on successful try_lock; returns None when the lock is held (treated as
+    /// "no view information available right now").
+    pub fn viewing_subagent_id_try_lock(&self) -> Option<String> {
+        self.viewing_subagent_id.try_lock().ok().and_then(|g| g.clone())
+    }
+
+    /// Set the subagent currently being viewed.
+    pub async fn set_viewing_subagent(&self, id: Option<String>) {
+        *self.viewing_subagent_id.lock().await = id;
     }
 
     /// Lock and access the session manager. Holds the lock for the duration of the borrow —
@@ -577,14 +631,16 @@ impl AgentSession {
         let mut pending = Vec::new();
         for msg in self.steering_queue.lock().unwrap().iter() {
             if let Some(Message::User(u)) = msg.as_standard() {
-                if let UserContent::Text(t) = &u.content {
+                let t = u.content.text();
+                if !t.is_empty() {
                     pending.push(format!("[steer] {}", t));
                 }
             }
         }
         for msg in self.follow_up_queue.lock().unwrap().iter() {
             if let Some(Message::User(u)) = msg.as_standard() {
-                if let UserContent::Text(t) = &u.content {
+                let t = u.content.text();
+                if !t.is_empty() {
                     pending.push(format!("[follow-up] {}", t));
                 }
             }
@@ -766,12 +822,32 @@ impl AgentSession {
                 std::mem::take(&mut *follow_up_q.lock().unwrap())
             })),
             tool_execution: ToolExecutionMode::Parallel,
-            pre_tool_use: self.pre_tool_use_hook.as_ref().map(|hook| {
-                let hook = hook.clone();
+            pre_tool_use: {
+                let runtime_state_for_pre = self.runtime_state.clone();
+                let external_hook = self.pre_tool_use_hook.clone();
                 let boxed: Box<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync> =
-                    Box::new(move |ctx| hook(ctx));
-                boxed
-            }),
+                    Box::new(move |ctx| {
+                        let rs = runtime_state_for_pre.clone();
+                        let hook = external_hook.clone();
+                        Box::pin(async move {
+                            // Edit mode gate: block tools when in think_first mode.
+                            if let Ok(state) = rs.try_lock() {
+                                if let Some(reason) = state.edit_mode.check_tool_blocked(&ctx.tool_name, &ctx.args) {
+                                    return Some(rozsa_core::config::PreToolUseResult {
+                                        block: true,
+                                        reason: Some(reason),
+                                    });
+                                }
+                            }
+                            // Then run external permission hook if present.
+                            if let Some(ref h) = hook {
+                                return h(ctx).await;
+                            }
+                            None
+                        })
+                    });
+                Some(boxed)
+            },
             post_tool_use: {
                 let rs = runtime_state_for_post;
                 Some(Box::new(

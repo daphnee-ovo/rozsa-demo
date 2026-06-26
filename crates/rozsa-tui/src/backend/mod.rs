@@ -12,6 +12,9 @@
 pub mod mock;
 pub mod native;
 pub mod socket;
+pub mod subagent_view;
+
+pub use subagent_view::SubagentView;
 
 use std::pin::Pin;
 
@@ -21,9 +24,9 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::{
-    components::model_selector::ModelEntry,
+    panels::model_selector::ModelEntry,
     protocol::{NativeGraphNode, NativePermissionPrompt, NativeUiState},
-    components::session_selector::SessionEntry,
+    panels::session_selector::SessionEntry,
 };
 
 // --- 类型定义 ---

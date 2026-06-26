@@ -2,7 +2,7 @@
 //
 // Internal Framework:
 // runtime_state.rs
-// ├── EditMode                 # normal / think_first, with cycle()
+// ├── EditMode                 # normal / think_first, with cycle() + check_tool_blocked()
 // ├── ToolCallStats            # per-tool call/error counters
 // ├── RuntimeState             # mutable session state
 // └── RuntimeStateSnapshot     # serializable UI snapshot
@@ -39,6 +39,46 @@ impl fmt::Display for EditMode {
             Self::Normal => write!(f, "normal"),
             Self::ThinkFirst => write!(f, "think_first"),
         }
+    }
+}
+
+/// Tools blocked outright in think_first mode (edit/write).
+const THINK_FIRST_BLOCKED_TOOLS: &[&str] = &["edit", "write"];
+
+/// Bash command prefixes allowed in think_first mode (read-only commands).
+const THINK_FIRST_BASH_ALLOWED_PREFIXES: &[&str] = &[
+    "ls", "cat", "head", "tail", "wc", "sort", "diff", "grep", "find",
+    "which", "type", "pwd", "echo", "git status", "git log", "git diff",
+    "git show", "git branch", "git blame", "git tag",
+];
+
+impl EditMode {
+    /// Check whether a tool call should be blocked under the current edit mode.
+    /// Returns `Some(reason)` if blocked, `None` if allowed.
+    pub fn check_tool_blocked(&self, tool_name: &str, args: &serde_json::Value) -> Option<String> {
+        if *self != Self::ThinkFirst {
+            return None;
+        }
+        if THINK_FIRST_BLOCKED_TOOLS.contains(&tool_name) {
+            return Some(format!(
+                "edit mode is think_first: {tool_name} tool is disabled. Switch to normal mode (shift+tab) to enable editing."
+            ));
+        }
+        if tool_name == "bash" {
+            let cmd = args.get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if !cmd.is_empty()
+                && !THINK_FIRST_BASH_ALLOWED_PREFIXES.iter().any(|p| cmd.starts_with(p))
+            {
+                let truncated: String = cmd.chars().take(60).collect();
+                return Some(format!(
+                    "edit mode is think_first: bash command \"{truncated}\" is not in the read-only allowlist. Switch to normal mode (shift+tab) to run it."
+                ));
+            }
+        }
+        None
     }
 }
 

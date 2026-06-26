@@ -37,24 +37,76 @@ use rozsa_app::settings::schema::Settings;
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 
-use crate::components::model_selector::ModelEntry;
-use crate::components::session_selector::SessionEntry;
+use crate::panels::model_selector::ModelEntry;
+use crate::panels::session_selector::SessionEntry;
 use crate::protocol::{ModelInfo, NativeUiState};
 
-use super::{AgentBackend, BackendError, BackendEvent, BackendResult, Direction, ImageData};
+use super::{AgentBackend, BackendError, BackendEvent, BackendResult, Direction, ImageData, SubagentView};
+use rozsa_app::subagent::SubagentInfo;
 
 /// Live snapshot of session state used to build NativeUiState payloads.
 ///
 /// Maintained by the background forwarder task as AgentEvents arrive — the UI
 /// thread never has to lock the AgentSession to render.
-struct LiveState {
-    messages: Vec<AgentMessage>,
-    is_streaming: bool,
+pub struct LiveState {
+    pub messages: Vec<AgentMessage>,
+    pub is_streaming: bool,
     /// Index into `messages` where the current agent run began.
     /// AgentEnd uses this to truncate+replace (not append), preventing duplication.
-    turn_base: usize,
+    pub turn_base: usize,
     /// User preference: hide thinking display (persisted via Ctrl+T / settings).
-    hide_thinking: bool,
+    pub hide_thinking: bool,
+}
+
+impl LiveState {
+    pub fn empty() -> Self {
+        Self {
+            messages: Vec::new(),
+            is_streaming: false,
+            turn_base: 0,
+            hide_thinking: false,
+        }
+    }
+}
+
+/// Apply an `AgentEvent` to a `LiveState`, mutating it the same way the
+/// background forwarder does. Pure; no IO. Returns `true` when the event
+/// produced a state change that the UI should re-render.
+pub fn apply_event(live: &mut LiveState, event: &AgentEvent) -> bool {
+    match event {
+        AgentEvent::AgentStart => {
+            live.turn_base = live.messages.len();
+            live.is_streaming = true;
+            true
+        }
+        AgentEvent::AgentEnd { messages } => {
+            // AgentEnd 携带本轮的权威消息列表（含 tool results 等未经
+            // MessageStart 推送的）。用 truncate+extend 替代 append，避免与
+            // MessageStart 已 push 的消息重复。
+            let base = live.turn_base.min(live.messages.len());
+            live.messages.truncate(base);
+            live.messages.extend(messages.iter().cloned());
+            live.is_streaming = false;
+            true
+        }
+        AgentEvent::MessageStart { message } => {
+            live.messages.push(message.clone());
+            true
+        }
+        AgentEvent::MessageUpdate { message, .. } => {
+            if let Some(last) = live.messages.last_mut() {
+                *last = message.clone();
+            }
+            true
+        }
+        AgentEvent::MessageEnd { message } => {
+            if let Some(last) = live.messages.last_mut() {
+                *last = message.clone();
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Optional construction-time config. None of the fields are required for
@@ -464,38 +516,191 @@ impl NativeBackend {
                 });
             }
             "graph" => {
+                use crate::protocol::NativeGraphNode;
+                use std::collections::HashMap;
                 let messages = self.live.lock().await.messages.clone();
-                let nodes = messages
+
+                // Index tool results by tool_call_id for merging into assistant ToolCall blocks.
+                let mut tool_results: HashMap<String, &rozsa_model::types::ToolResultMessage> =
+                    HashMap::new();
+                let standard: Vec<rozsa_model::types::Message> = messages
                     .iter()
-                    .filter_map(|m| {
-                        let msg = m.as_standard()?;
-                        let (role, text) = match msg {
+                    .filter_map(|m| m.as_standard().cloned())
+                    .collect();
+                for msg in &standard {
+                    if let rozsa_model::types::Message::ToolResult(tr) = msg {
+                        tool_results.insert(tr.tool_call_id.clone(), tr);
+                    }
+                }
+
+                fn truncate_chars(s: &str, max: usize) -> String {
+                    let mut out = String::new();
+                    for (i, ch) in s.chars().enumerate() {
+                        if i >= max {
+                            break;
+                        }
+                        out.push(ch);
+                    }
+                    out
+                }
+
+                fn extract_text(blocks: &[rozsa_model::types::ContentBlock]) -> String {
+                    blocks
+                        .iter()
+                        .filter_map(|b| match b {
+                            rozsa_model::types::ContentBlock::Text { text, .. } => {
+                                Some(text.as_str())
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+
+                let mut nodes: Vec<NativeGraphNode> = Vec::new();
+                for msg in &standard {
+                    match msg {
+                        rozsa_model::types::Message::User(u) => {
+                            let t = u.content.text();
+                            if t.is_empty() {
+                                continue;
+                            }
+                            let summary = truncate_chars(&t, 80);
+                            nodes.push(NativeGraphNode {
+                                role: "user".to_string(),
+                                summary,
+                                full_text: t,
+                                timestamp: String::new(),
+                                agent_id: None,
+                            });
+                        }
+                        rozsa_model::types::Message::Assistant(a) => {
+                            if let Some(text) = a.content.iter().find_map(|b| match b {
+                                rozsa_model::types::ContentBlock::Text { text, .. } => {
+                                    Some(text.clone())
+                                }
+                                _ => None,
+                            }) {
+                                let summary = truncate_chars(&text, 80);
+                                nodes.push(NativeGraphNode {
+                                    role: "assistant".to_string(),
+                                    summary,
+                                    full_text: text,
+                                    timestamp: String::new(),
+                                    agent_id: None,
+                                });
+                            }
+                            for block in &a.content {
+                                if let rozsa_model::types::ContentBlock::ToolCall(tc) = block {
+                                    let args_preview = serde_json::to_string(&tc.arguments)
+                                        .unwrap_or_else(|_| "{}".to_string());
+                                    let args_preview = truncate_chars(&args_preview, 200);
+                                    let result_text = tool_results
+                                        .get(&tc.id)
+                                        .map(|tr| extract_text(&tr.content))
+                                        .unwrap_or_default();
+                                    let result_preview = truncate_chars(&result_text, 60);
+                                    let summary = format!("{}: {}", tc.name, result_preview);
+                                    let full_text = format!(
+                                        "Tool: {}\nArgs: {}\n---\nResult:\n{}",
+                                        tc.name, args_preview, result_text
+                                    );
+                                    nodes.push(NativeGraphNode {
+                                        role: "tool".to_string(),
+                                        summary,
+                                        full_text,
+                                        timestamp: String::new(),
+                                        agent_id: None,
+                                    });
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                // 注入 subagent spawn 节点（主时间线，agent_id: None）+ 各 subagent 的消息节点（agent_id: Some(id)）。
+                let mgr = self.session.subagent_manager().await;
+                let subagents = mgr.list().await;
+                for agent in &subagents {
+                    nodes.push(NativeGraphNode {
+                        role: "agent_spawn".to_string(),
+                        summary: format!("⊕ {} ({})", agent.name, agent.id),
+                        full_text: format!(
+                            "Agent: {}\nID: {}\nModel: {}/{}\nStatus: {:?}\nCreated: {}",
+                            agent.name,
+                            agent.id,
+                            agent.model_provider,
+                            agent.model_id,
+                            agent.status,
+                            agent.created_at,
+                        ),
+                        timestamp: String::new(),
+                        agent_id: None,
+                    });
+                    let Some(sub_msgs) = mgr.get_messages(&agent.id).await else {
+                        continue;
+                    };
+                    for msg in sub_msgs.iter().filter_map(|m| m.as_standard()) {
+                        match msg {
                             rozsa_model::types::Message::User(u) => {
-                                let t = match &u.content {
-                                    rozsa_model::types::UserContent::Text(s) => s.clone(),
-                                    _ => return None,
-                                };
-                                ("user", t)
+                                let t = u.content.text();
+                                if t.is_empty() {
+                                    continue;
+                                }
+                                let summary = truncate_chars(&t, 80);
+                                nodes.push(NativeGraphNode {
+                                    role: "user".to_string(),
+                                    summary,
+                                    full_text: t,
+                                    timestamp: String::new(),
+                                    agent_id: Some(agent.id.clone()),
+                                });
                             }
                             rozsa_model::types::Message::Assistant(a) => {
-                                let t = a.content.iter().find_map(|b| match b {
-                                    rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.clone()),
+                                if let Some(text) = a.content.iter().find_map(|b| match b {
+                                    rozsa_model::types::ContentBlock::Text { text, .. } => {
+                                        Some(text.clone())
+                                    }
                                     _ => None,
-                                })?;
-                                ("assistant", t)
+                                }) {
+                                    let summary = truncate_chars(&text, 80);
+                                    nodes.push(NativeGraphNode {
+                                        role: "assistant".to_string(),
+                                        summary,
+                                        full_text: text,
+                                        timestamp: String::new(),
+                                        agent_id: Some(agent.id.clone()),
+                                    });
+                                }
+                                for block in &a.content {
+                                    if let rozsa_model::types::ContentBlock::ToolCall(tc) = block {
+                                        let args_preview =
+                                            serde_json::to_string(&tc.arguments)
+                                                .unwrap_or_else(|_| "{}".to_string());
+                                        let args_preview = truncate_chars(&args_preview, 200);
+                                        let summary =
+                                            format!("{}: {}", tc.name, args_preview);
+                                        let full_text = format!(
+                                            "Tool: {}\nArgs: {}",
+                                            tc.name, args_preview
+                                        );
+                                        nodes.push(NativeGraphNode {
+                                            role: "tool".to_string(),
+                                            summary,
+                                            full_text,
+                                            timestamp: String::new(),
+                                            agent_id: Some(agent.id.clone()),
+                                        });
+                                    }
+                                }
                             }
-                            _ => return None,
-                        };
-                        use crate::protocol::NativeGraphNode;
-                        let summary = if text.len() > 80 { text[..80].to_string() } else { text.clone() };
-                        Some(NativeGraphNode {
-                            role: role.to_string(),
-                            summary,
-                            full_text: text,
-                            timestamp: String::new(),
-                        })
-                    })
-                    .collect();
+                            _ => {}
+                        }
+                    }
+                }
+                drop(mgr);
+
                 let _ = self.event_tx.send(BackendEvent::Graph(nodes));
             }
             "name" => {
@@ -512,10 +717,23 @@ impl NativeBackend {
                 }
             }
             "main" => {
+                self.session.set_viewing_subagent(None).await;
+                self.push_state().await;
                 self.notify("info", "Switched to main agent");
             }
             "subagent" | "subagents" => {
-                self.notify("info", "No subagents");
+                let mgr = self.session.subagent_manager().await;
+                let list = mgr.list().await;
+                drop(mgr);
+                if list.is_empty() {
+                    self.notify("info", "No subagents");
+                } else {
+                    let names: Vec<String> = list
+                        .iter()
+                        .map(|a| format!("{} ({})", a.name, a.id))
+                        .collect();
+                    self.notify("info", &format!("Subagents: {}", names.join(", ")));
+                }
             }
             "reload" => {
                 let diagnostics = self.session.reload_skills();
@@ -703,10 +921,7 @@ impl NativeBackend {
                         rozsa_app::session::manager::SessionEntry::Message(me) => {
                             let (role, text) = match &me.message {
                                 rozsa_model::types::Message::User(u) => {
-                                    let t = match &u.content {
-                                        rozsa_model::types::UserContent::Text(s) => s.clone(),
-                                        _ => "(blocks)".to_string(),
-                                    };
+                                    let t = u.content.text();
                                     ("user", t)
                                 }
                                 rozsa_model::types::Message::Assistant(a) => {
@@ -751,6 +966,7 @@ impl NativeBackend {
                         summary,
                         full_text: text,
                         timestamp: String::new(),
+                        agent_id: None,
                     }
                 }).collect();
                 let _ = self.event_tx.send(BackendEvent::Graph(nodes));
@@ -762,16 +978,17 @@ impl NativeBackend {
                     let msg = m.as_standard()?;
                     match msg {
                         rozsa_model::types::Message::User(u) => {
-                            let text = match &u.content {
-                                rozsa_model::types::UserContent::Text(s) => s.clone(),
-                                _ => return None,
-                            };
+                            let text = u.content.text();
+                            if text.is_empty() {
+                                return None;
+                            }
                             let summary = if text.len() > 80 { text[..80].to_string() } else { text.clone() };
                             Some(NativeGraphNode {
                                 role: "user".to_string(),
                                 summary,
                                 full_text: text,
                                 timestamp: String::new(),
+                                agent_id: None,
                             })
                         }
                         _ => None,
@@ -996,44 +1213,10 @@ fn spawn_event_forwarder(
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
 
-            let mut state_dirty = false;
-            {
+            let state_dirty = {
                 let mut live = live.lock().await;
-                match &event {
-                    AgentEvent::AgentStart => {
-                        live.turn_base = live.messages.len();
-                        live.is_streaming = true;
-                        state_dirty = true;
-                    }
-                    AgentEvent::AgentEnd { messages } => {
-                        // AgentEnd 携带本轮的权威消息列表（含 tool results 等
-                        // 未经 MessageStart 推送的）。用 truncate+extend 替代
-                        // append，避免与 MessageStart 已 push 的消息重复。
-                        let base = live.turn_base.min(live.messages.len());
-                        live.messages.truncate(base);
-                        live.messages.extend(messages.iter().cloned());
-                        live.is_streaming = false;
-                        state_dirty = true;
-                    }
-                    AgentEvent::MessageStart { message } => {
-                        live.messages.push(message.clone());
-                        state_dirty = true;
-                    }
-                    AgentEvent::MessageUpdate { message, .. } => {
-                        if let Some(last) = live.messages.last_mut() {
-                            *last = message.clone();
-                        }
-                        state_dirty = true;
-                    }
-                    AgentEvent::MessageEnd { message } => {
-                        if let Some(last) = live.messages.last_mut() {
-                            *last = message.clone();
-                        }
-                        state_dirty = true;
-                    }
-                    _ => {}
-                }
-            }
+                apply_event(&mut live, &event)
+            };
 
             if state_dirty {
                 let live = live.lock().await;
@@ -1048,7 +1231,7 @@ async fn push_state_with(
     live: &LiveState,
     backend_tx: &mpsc::UnboundedSender<BackendEvent>,
 ) {
-    let messages = crate::view_model::messages_to_view(&live.messages);
+    let messages = live.messages.clone();
 
     // 累积 token 统计
     let mut input_tokens: u64 = 0;
@@ -1520,11 +1703,21 @@ impl AgentBackend for NativeBackend {
         Ok(())
     }
 
-    async fn switch_agent(&self, _id: &str) -> BackendResult<()> {
-        let _ = self.event_tx.send(BackendEvent::Notify {
-            level: "warn".to_string(),
-            message: "Subagent switching requires multi-agent support (not available)".into(),
-        });
+    async fn switch_agent(&self, id: &str) -> BackendResult<()> {
+        if id == "main" {
+            self.session.set_viewing_subagent(None).await;
+        } else {
+            let mgr = self.session.subagent_manager().await;
+            if mgr.snapshot(id).await.is_none() {
+                return Err(BackendError::Internal(format!(
+                    "Subagent '{}' not found",
+                    id
+                )));
+            }
+            drop(mgr);
+            self.session.set_viewing_subagent(Some(id.to_string())).await;
+        }
+        self.push_state().await;
         Ok(())
     }
 
@@ -1690,6 +1883,19 @@ impl AgentBackend for NativeBackend {
             .ok()
             .and_then(|mut guard| guard.take())
             .expect("events() called more than once")
+    }
+}
+
+impl SubagentView for NativeBackend {
+    fn list_subagents_sync(&self) -> Vec<SubagentInfo> {
+        match self.session.subagent_manager_try_lock() {
+            Some(mgr) => mgr.list_sync(),
+            None => Vec::new(),
+        }
+    }
+
+    fn viewing_subagent_id_sync(&self) -> Option<String> {
+        self.session.viewing_subagent_id_try_lock()
     }
 }
 
