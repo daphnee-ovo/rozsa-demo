@@ -11,3 +11,6 @@
 - 02:54 fix: ISSUE-I009：单元测试迁移到 crate/tests/ + 禁止内嵌测试 pre-commit hook
 - 03:46 fix: ISSUE-I010：模型列表/价格动态分发 — 替代 include_str 硬编码 JSON
 - 03:55 fix: ISSUE-I011：为各 Rust crate 编写详细接口文档
+
+## 2026-06-28
+- 18:19 fix: ISSUE-I013：TUI 消息区虚拟滚动 — 只渲染可见消息

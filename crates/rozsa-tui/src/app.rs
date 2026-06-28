@@ -803,7 +803,7 @@ async fn run_app(
                     writer,
                     &ClientMessage::PermissionResponse {
                         id: &id,
-                        choice: "reject",
+                        choice: "deny",
                         trust_key: None,
                     },
                 );

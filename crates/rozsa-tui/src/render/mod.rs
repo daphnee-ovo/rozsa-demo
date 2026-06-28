@@ -3,9 +3,11 @@
 // Internal Framework:
 // render/
 // ├── mod.rs .............. 模块入口, 缓存基础设施, render() 主入口
-// │   ├── MSG_CACHE       thread_local LRU 缓存
+// │   ├── MSG_CACHE       thread_local LRU 缓存（消息 → Lines）
+// │   ├── HEIGHT_CACHE    thread_local LRU 缓存（消息 → 行数，虚拟滚动用）
 // │   ├── hash_message()  AgentMessage → u64 hash (基于 JSON 序列化)
 // │   ├── cached_message_lines()  缓存层
+// │   ├── cached_message_height() 行数缓存层（虚拟滚动用，不 clone Lines）
 // │   └── render()        pub 主渲染入口
 // ├── layout.rs ........... 布局计算 (notification_height, pending_height, widget_height)
 // ├── messages.rs ......... render_messages + message_lines + 消息格式化辅助函数
@@ -56,6 +58,10 @@ use std::cell::RefCell;
 thread_local! {
     static MSG_CACHE: RefCell<lru::LruCache<u64, Vec<Line<'static>>>> =
         RefCell::new(lru::LruCache::new(std::num::NonZeroUsize::new(500).unwrap()));
+    // 行高缓存：消息 → 渲染行数。键包含 width，宽度变化自动失效。
+    // 用于虚拟滚动定位可见窗口，无需 clone Lines。
+    static HEIGHT_CACHE: RefCell<lru::LruCache<u64, usize>> =
+        RefCell::new(lru::LruCache::new(std::num::NonZeroUsize::new(2000).unwrap()));
 }
 
 /// Hash an AgentMessage by serializing to JSON. AgentMessage and its inner
@@ -91,6 +97,24 @@ fn hash_message(m: &AgentMessage) -> u64 {
     hasher.finish()
 }
 
+fn message_render_key(
+    message: &AgentMessage,
+    tools_expanded: bool,
+    thinking_visible: bool,
+    show_images: bool,
+    compaction_collapsed: bool,
+    width: usize,
+) -> u64 {
+    let mut hasher = std::hash::DefaultHasher::new();
+    hash_message(message).hash(&mut hasher);
+    tools_expanded.hash(&mut hasher);
+    thinking_visible.hash(&mut hasher);
+    show_images.hash(&mut hasher);
+    compaction_collapsed.hash(&mut hasher);
+    width.hash(&mut hasher);
+    hasher.finish()
+}
+
 pub(crate) fn cached_message_lines(
     message: &AgentMessage,
     tools_expanded: bool,
@@ -113,23 +137,75 @@ pub(crate) fn cached_message_lines(
         );
     }
 
-    let mut hasher = std::hash::DefaultHasher::new();
-    hash_message(message).hash(&mut hasher);
-    tools_expanded.hash(&mut hasher);
-    thinking_visible.hash(&mut hasher);
-    show_images.hash(&mut hasher);
-    compaction_collapsed.hash(&mut hasher);
-    width.hash(&mut hasher);
-    let key = hasher.finish();
+    let key = message_render_key(
+        message,
+        tools_expanded,
+        thinking_visible,
+        show_images,
+        compaction_collapsed,
+        width,
+    );
     MSG_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         if let Some(lines) = cache.get(&key) {
             return lines.clone();
         }
         let lines = messages::message_lines(message, tools_expanded, thinking_visible, show_images, compaction_collapsed, false, width);
+        // 同步更新 height cache（顺手缓存，避免下次单独算）
+        HEIGHT_CACHE.with(|hc| {
+            hc.borrow_mut().put(key, lines.len());
+        });
         cache.put(key, lines.clone());
         lines
     })
+}
+
+/// 返回消息渲染后的行数，不构造 Lines。供虚拟滚动定位可见窗口使用。
+///
+/// is_last_streaming 时不缓存，每帧重算（内容仍在增长）。
+pub(crate) fn cached_message_height(
+    message: &AgentMessage,
+    tools_expanded: bool,
+    thinking_visible: bool,
+    show_images: bool,
+    compaction_collapsed: bool,
+    is_last_streaming: bool,
+    width: usize,
+) -> usize {
+    if is_last_streaming {
+        return messages::message_lines(
+            message,
+            tools_expanded,
+            thinking_visible,
+            show_images,
+            compaction_collapsed,
+            is_last_streaming,
+            width,
+        )
+        .len();
+    }
+    let key = message_render_key(
+        message,
+        tools_expanded,
+        thinking_visible,
+        show_images,
+        compaction_collapsed,
+        width,
+    );
+    if let Some(h) = HEIGHT_CACHE.with(|hc| hc.borrow_mut().get(&key).copied()) {
+        return h;
+    }
+    // miss：构造一次行（同时填充两个 cache）— 走 cached_message_lines 复用逻辑
+    cached_message_lines(
+        message,
+        tools_expanded,
+        thinking_visible,
+        show_images,
+        compaction_collapsed,
+        false,
+        width,
+    )
+    .len()
 }
 
 pub fn render(

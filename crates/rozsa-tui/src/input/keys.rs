@@ -1167,11 +1167,13 @@ pub fn handle_key(
             input.cursor_col = grapheme_count(&input.lines[input.cursor_row]);
         }
         KeyCode::PageUp => {
-            state.scroll = state.scroll.saturating_add(10);
+            let half_page = crossterm::terminal::size().map(|(_, h)| h / 2).unwrap_or(10) as usize;
+            state.scroll = state.scroll.saturating_add(half_page);
             state.auto_scroll = false;
         }
         KeyCode::PageDown => {
-            state.scroll = state.scroll.saturating_sub(10);
+            let half_page = crossterm::terminal::size().map(|(_, h)| h / 2).unwrap_or(10) as usize;
+            state.scroll = state.scroll.saturating_sub(half_page);
             if state.scroll == 0 {
                 state.auto_scroll = true;
             }

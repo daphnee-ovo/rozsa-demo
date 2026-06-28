@@ -43,7 +43,7 @@ use rozsa_model::types::{
 
 use crate::{app::AppState, theme::THEME};
 
-use super::cached_message_lines;
+use super::{cached_message_height, cached_message_lines};
 
 /// 将后端的 messages 数组重排为 UI 展示顺序。
 /// 后端为了 LLM 上下文将 compactionSummary 放在 index 0，
@@ -94,17 +94,27 @@ fn message_timestamp(message: &AgentMessage) -> i64 {
 }
 
 pub(super) fn render_messages(frame: &mut ratatui::Frame<'_>, area: Rect, state: &AppState) {
-    let mut all_lines = Vec::<Line<'static>>::new();
     let msg_width = area.width as usize;
+    let visible_height = area.height as usize;
+    if visible_height == 0 {
+        return;
+    }
 
     // 按时间顺序重排消息：后端把 compactionSummary 放在 index 0（LLM 需要先读摘要），
     // 但 UI 展示时应按时间戳插入正确位置（preserved msgs → compaction → new msgs）
     let messages = reorder_messages_for_display(&state.ui.messages);
     let msg_count = messages.len();
 
+    // 收集"尾部附加内容"（消息之后）：长通知 + error。
+    // 它们行数固定且短，直接构造，参与滚动总高计算。
+    let tail_lines = build_tail_lines(state);
+
+    // ── 1. 算每条消息高度（虚拟滚动）──
+    // streaming 时最后一条消息不缓存
+    let mut heights: Vec<usize> = Vec::with_capacity(msg_count);
     for (i, message) in messages.iter().enumerate() {
         let is_last_streaming = state.ui.is_streaming && i == msg_count - 1;
-        all_lines.extend(cached_message_lines(
+        heights.push(cached_message_height(
             message,
             state.tools_expanded,
             state.thinking_visible,
@@ -114,7 +124,105 @@ pub(super) fn render_messages(frame: &mut ratatui::Frame<'_>, area: Rect, state:
             msg_width,
         ));
     }
-    // 长通知（>3行）作为消息区域内容渲染
+    let msg_lines_total: usize = heights.iter().sum();
+    let total_lines = msg_lines_total + tail_lines.len();
+
+    // ── 2. 计算滚动窗口（scroll 从底部向上的行数偏移）──
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let scroll = state.scroll.min(max_scroll);
+    let view_start_line = total_lines.saturating_sub(visible_height + scroll);
+    let view_end_line = total_lines.saturating_sub(scroll);
+    let has_above = view_start_line > 0;
+    let has_below = scroll > 0;
+    let indicator_lines = (has_above as usize) + (has_below as usize);
+    let content_capacity = visible_height.saturating_sub(indicator_lines);
+
+    // ── 3. 累加 heights 定位首个可见消息 ──
+    // collected_lines 是 view_start_line 之后已收集到 visible_lines 的累计行数（不含 indicator）
+    let mut visible_lines: Vec<Line<'static>> = Vec::with_capacity(visible_height);
+    if has_above {
+        visible_lines.push(Line::styled(
+            format!("↑ {} lines above", view_start_line),
+            Style::default().fg(THEME.muted),
+        ));
+    }
+
+    // 找到包含 view_start_line 的消息（如可见区域起点落在消息中部，需 skip 该消息开头若干行）
+    let mut accumulated = 0usize;
+    let mut first_msg_idx = msg_count; // 未找到 → 视口完全在 tail
+    let mut first_msg_line_offset = 0usize;
+    for (i, &h) in heights.iter().enumerate() {
+        if accumulated + h > view_start_line {
+            first_msg_idx = i;
+            first_msg_line_offset = view_start_line - accumulated;
+            break;
+        }
+        accumulated += h;
+    }
+
+    // ── 4. 渲染可见消息 ──
+    let mut produced = 0usize;
+    let mut line_cursor = if first_msg_idx < msg_count {
+        accumulated
+    } else {
+        msg_lines_total
+    };
+    for i in first_msg_idx..msg_count {
+        if produced >= content_capacity {
+            break;
+        }
+        let is_last_streaming = state.ui.is_streaming && i == msg_count - 1;
+        let lines = cached_message_lines(
+            messages[i],
+            state.tools_expanded,
+            state.thinking_visible,
+            state.show_images,
+            state.compaction_collapsed,
+            is_last_streaming,
+            msg_width,
+        );
+        let skip = if i == first_msg_idx { first_msg_line_offset } else { 0 };
+        for line in lines.into_iter().skip(skip) {
+            if produced >= content_capacity {
+                break;
+            }
+            // 仅纳入落在 [view_start_line, view_end_line) 内的行
+            if line_cursor < view_end_line {
+                visible_lines.push(line);
+                produced += 1;
+            }
+            line_cursor += 1;
+        }
+        // 消息整体被全收完，line_cursor 应跨过整段；上面循环自然推进
+    }
+
+    // ── 5. 渲染可见 tail（notifications + error）──
+    // tail 在所有消息之后；它的第一行对应全局 line = msg_lines_total
+    if produced < content_capacity && line_cursor >= msg_lines_total {
+        let tail_start = line_cursor.saturating_sub(msg_lines_total);
+        let tail_end = view_end_line.saturating_sub(msg_lines_total).min(tail_lines.len());
+        for line in tail_lines.iter().take(tail_end).skip(tail_start) {
+            if produced >= content_capacity {
+                break;
+            }
+            visible_lines.push(line.clone());
+            produced += 1;
+        }
+    }
+
+    if has_below {
+        visible_lines.push(Line::styled(
+            format!("↓ {scroll} lines below"),
+            Style::default().fg(THEME.muted),
+        ));
+    }
+    frame.render_widget(Paragraph::new(visible_lines), area);
+}
+
+/// 构造消息列表之后追加的 lines（长通知 + error）。
+/// 这些内容行数较少且每帧固定，直接构造不进缓存。
+fn build_tail_lines(state: &AppState) -> Vec<Line<'static>> {
+    let mut tail = Vec::<Line<'static>>::new();
     for notification in state
         .notifications
         .iter()
@@ -125,52 +233,19 @@ pub(super) fn render_messages(frame: &mut ratatui::Frame<'_>, area: Rect, state:
             "warning" => THEME.warning,
             _ => THEME.text,
         };
-        all_lines.push(Line::raw(""));
+        tail.push(Line::raw(""));
         for line in notification.message.lines() {
-            all_lines.push(Line::styled(line.to_string(), Style::default().fg(color)));
+            tail.push(Line::styled(line.to_string(), Style::default().fg(color)));
         }
     }
 
     if let Some(error) = &state.ui.error {
-        all_lines.push(Line::styled(
+        tail.push(Line::styled(
             error.clone(),
             Style::default().fg(THEME.error),
         ));
     }
-    // streaming/compacting/retry 指示器移到输入框上方独立渲染
-
-    // 行级滚动
-    let visible_height = area.height as usize;
-    let total = all_lines.len();
-    let max_scroll = total.saturating_sub(visible_height);
-    let scroll = state.scroll.min(max_scroll);
-    let start = total.saturating_sub(visible_height + scroll);
-    let end = total.saturating_sub(scroll);
-    let has_above = start > 0;
-    let has_below = scroll > 0;
-    // 指示器占行，需要从内容中扣除对应空间
-    let indicator_lines = (has_above as usize) + (has_below as usize);
-    let content_take = (end.saturating_sub(start)).saturating_sub(indicator_lines);
-    let content_skip = if has_above {
-        start + (end.saturating_sub(start)).saturating_sub(content_take)
-    } else {
-        start
-    };
-    let mut visible_lines: Vec<Line<'static>> = Vec::new();
-    if has_above {
-        visible_lines.push(Line::styled(
-            format!("↑ {} lines above", content_skip),
-            Style::default().fg(THEME.muted),
-        ));
-    }
-    visible_lines.extend(all_lines.into_iter().skip(content_skip).take(content_take));
-    if has_below {
-        visible_lines.push(Line::styled(
-            format!("↓ {scroll} lines below"),
-            Style::default().fg(THEME.muted),
-        ));
-    }
-    frame.render_widget(Paragraph::new(visible_lines), area);
+    tail
 }
 
 /// 计算字符串显示宽度（CJK 字符占 2 列）

@@ -21,11 +21,11 @@ pub fn handle_mouse(mouse: MouseEvent, state: &mut AppState) {
     use crossterm::event::MouseEventKind;
     match mouse.kind {
         MouseEventKind::ScrollUp => {
-            state.scroll = state.scroll.saturating_add(1);
+            state.scroll = state.scroll.saturating_add(3);
             state.auto_scroll = false;
         }
         MouseEventKind::ScrollDown => {
-            state.scroll = state.scroll.saturating_sub(1);
+            state.scroll = state.scroll.saturating_sub(3);
             if state.scroll == 0 {
                 state.auto_scroll = true;
             }

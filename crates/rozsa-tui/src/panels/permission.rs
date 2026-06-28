@@ -75,13 +75,13 @@ fn handle_main_key(
     keybindings: &BTreeMap<String, Vec<String>>,
 ) -> Result<Option<PermissionState>, Box<dyn Error>> {
     if shortcut(key, 'y') {
-        send_permission(writer, &permission.prompt.id, "approve_once", None)?;
+        send_permission(writer, &permission.prompt.id, "allow", None)?;
         Ok(None)
     } else if shortcut(key, 'n') || matches_action(keybindings, key, "tui.select.cancel") {
-        send_permission(writer, &permission.prompt.id, "reject", None)?;
+        send_permission(writer, &permission.prompt.id, "deny", None)?;
         Ok(None)
     } else if shortcut(key, 'a') {
-        send_permission(writer, &permission.prompt.id, "reject_alternative", None)?;
+        send_permission(writer, &permission.prompt.id, "deny", None)?;
         Ok(None)
     } else if shortcut(key, 't') {
         enter_trust(permission, writer)
@@ -96,16 +96,16 @@ fn handle_main_key(
     } else if matches_action(keybindings, key, "tui.select.confirm") {
         match permission.selected {
             0 => {
-                send_permission(writer, &permission.prompt.id, "approve_once", None)?;
+                send_permission(writer, &permission.prompt.id, "allow", None)?;
                 Ok(None)
             }
             1 => enter_trust(permission, writer),
             2 => {
-                send_permission(writer, &permission.prompt.id, "reject", None)?;
+                send_permission(writer, &permission.prompt.id, "deny", None)?;
                 Ok(None)
             }
             _ => {
-                send_permission(writer, &permission.prompt.id, "reject_alternative", None)?;
+                send_permission(writer, &permission.prompt.id, "deny", None)?;
                 Ok(None)
             }
         }
@@ -118,17 +118,17 @@ fn shortcut(key: KeyEvent, target: char) -> bool {
     matches!(key.code, KeyCode::Char(ch) if ch.to_ascii_lowercase() == target)
 }
 
+fn get_trust_key(prompt: &NativePermissionPrompt) -> Option<&str> {
+    prompt.request.get("trustKey").and_then(|v| v.as_str())
+}
+
 fn enter_trust(
     mut permission: PermissionState,
     writer: &crate::input::Writer,
 ) -> Result<Option<PermissionState>, Box<dyn Error>> {
     if permission.prompt.trust_levels.len() <= 1 {
-        let key = permission
-            .prompt
-            .trust_levels
-            .first()
-            .map(|level| level.key.as_str());
-        send_permission(writer, &permission.prompt.id, "approve_session", key)?;
+        let key = get_trust_key(&permission.prompt);
+        send_permission(writer, &permission.prompt.id, "allow-session", key)?;
         return Ok(None);
     }
     permission.trust_mode = true;
@@ -154,23 +154,20 @@ fn handle_trust_key(
             (permission.selected + 1).min(permission.prompt.trust_levels.len().saturating_sub(1));
         Ok(Some(permission))
     } else if matches_action(keybindings, key, "tui.select.confirm") {
-        let trust_key = permission
-            .prompt
-            .trust_levels
-            .get(permission.selected)
-            .map(|level| level.key.as_str());
-        send_permission(writer, &permission.prompt.id, "approve_session", trust_key)?;
+        let trust_key = get_trust_key(&permission.prompt);
+        send_permission(writer, &permission.prompt.id, "allow-session", trust_key)?;
         Ok(None)
     } else {
         match key.code {
             KeyCode::Char(ch) if ch.is_ascii_digit() => {
                 let index = ch.to_digit(10).unwrap_or(0).saturating_sub(1) as usize;
-                if let Some(level) = permission.prompt.trust_levels.get(index) {
+                if index < permission.prompt.trust_levels.len() {
+                    let trust_key = get_trust_key(&permission.prompt);
                     send_permission(
                         writer,
                         &permission.prompt.id,
-                        "approve_session",
-                        Some(&level.key),
+                        "allow-session",
+                        trust_key,
                     )?;
                     Ok(None)
                 } else {
@@ -244,7 +241,7 @@ pub fn render_permission(frame: &mut ratatui::Frame<'_>, area: Rect, permission:
         let options = [
             ("y", "approve"),
             ("t", "trust for session"),
-            ("n", "reject"),
+            ("n", "deny"),
             ("a", "reject and ask for alternative"),
         ];
         for (index, (key, label)) in options.iter().enumerate() {
