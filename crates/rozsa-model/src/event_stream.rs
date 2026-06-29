@@ -8,6 +8,7 @@ pub struct EventStream<T> {
 }
 
 /// Sender side used by provider tasks to emit stream events.
+#[derive(Clone)]
 pub struct EventStreamSender<T> {
     tx: mpsc::UnboundedSender<T>,
 }

@@ -143,6 +143,7 @@ async fn parallel_null_arguments_normalized_to_empty_object() {
             prepare_next_turn: None,
             get_steering_messages: None,
             get_follow_up_messages: None,
+            max_turns: None,
             tool_execution: ToolExecutionMode::Parallel,
             pre_tool_use: None,
             post_tool_use: None,

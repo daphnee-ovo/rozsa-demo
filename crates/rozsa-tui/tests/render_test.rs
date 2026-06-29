@@ -97,6 +97,7 @@ fn tool_result(tool_name: &str, text: &str, is_error: bool) -> AgentMessage {
                 text: text.to_string(),
                 signature: None,
             }],
+            details: serde_json::Value::Null,
             is_error,
             timestamp: 0,
         }),

@@ -218,7 +218,7 @@ pub enum ContentBlock {
 }
 
 /// Monetary usage cost derived from model cost metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageCost {
     pub input: f64,
     pub output: f64,
@@ -228,7 +228,7 @@ pub struct UsageCost {
 }
 
 /// Token usage reported by a provider or derived by the model layer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Usage {
     pub input: u64,
     pub output: u64,
@@ -292,6 +292,8 @@ pub struct ToolResultMessage {
     pub tool_call_id: String,
     pub tool_name: String,
     pub content: Vec<ContentBlock>,
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub details: serde_json::Value,
     pub is_error: bool,
     pub timestamp: i64,
 }

@@ -33,6 +33,7 @@ fn config_with_stream(
         prepare_next_turn: None,
         get_steering_messages: None,
         get_follow_up_messages: None,
+        max_turns: None,
         tool_execution: ToolExecutionMode::Sequential,
         pre_tool_use: None,
         post_tool_use: None,
@@ -130,6 +131,7 @@ fn event_name(event: &AgentEvent) -> &'static str {
         AgentEvent::MessageUpdate { .. } => "message_update",
         AgentEvent::MessageEnd { .. } => "message_end",
         AgentEvent::ToolExecutionStart { .. } => "tool_execution_start",
+        AgentEvent::ToolExecutionUpdate { .. } => "tool_execution_update",
         AgentEvent::ToolExecutionEnd { .. } => "tool_execution_end",
     }
 }
@@ -622,14 +624,38 @@ async fn multi_turn_with_tools() {
     assert_eq!(turn_starts, 2, "should have 2 turns: tool call then final response");
 
     let mut found_tool_result = false;
+    let mut found_final_response = false;
     for event in &events {
         if let AgentEvent::MessageEnd { message } = event {
             if let Some(Message::ToolResult(_)) = message.as_standard() {
                 found_tool_result = true;
             }
+            if let Some(Message::Assistant(a)) = message.as_standard() {
+                for block in &a.content {
+                    if let ContentBlock::Text { text, .. } = block {
+                        if text == "final response" {
+                            found_final_response = true;
+                        }
+                    }
+                }
+            }
         }
     }
     assert!(found_tool_result, "tool result should appear in messages");
+    assert!(found_final_response, "second-turn assistant text should be visible via MessageEnd");
+
+    // Verify AgentEnd.messages contains the final response
+    let agent_end = events.iter().find_map(|e| {
+        if let AgentEvent::AgentEnd { messages } = e { Some(messages) } else { None }
+    }).expect("should have AgentEnd");
+    let has_final_in_end = agent_end.iter().any(|m| {
+        if let Some(Message::Assistant(a)) = m.as_standard() {
+            a.content.iter().any(|b| matches!(b, ContentBlock::Text { text, .. } if text == "final response"))
+        } else {
+            false
+        }
+    });
+    assert!(has_final_in_end, "AgentEnd.messages must contain the final assistant response");
 }
 
 #[tokio::test]
@@ -1007,4 +1033,120 @@ async fn error_stop_reason_exits_immediately() {
         1,
         "should have only one turn"
     );
+}
+
+#[tokio::test]
+async fn parallel_panic_produces_error_result_not_silent_drop() {
+    struct PanicTool {
+        schema: serde_json::Value,
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for PanicTool {
+        fn name(&self) -> &str { "panic_tool" }
+        fn description(&self) -> &str { "panics" }
+        fn label(&self) -> &str { "panic" }
+        fn parameters_schema(&self) -> &serde_json::Value { &self.schema }
+        async fn execute(
+            &self,
+            _tool_call_id: &str,
+            _params: serde_json::Value,
+            _signal: Option<CancellationToken>,
+            _on_update: Option<&(dyn Fn(ToolResult) + Send + Sync)>,
+        ) -> Result<ToolResult, rozsa_core::tool::ToolError> {
+            panic!("deliberate panic in tool");
+        }
+    }
+
+    let panic_tool: Arc<dyn Tool> = Arc::new(PanicTool {
+        schema: serde_json::json!({ "type": "object" }),
+    });
+    let ok_tool: Arc<dyn Tool> = Arc::new(FakeTool {
+        name: "ok_tool".to_string(),
+        response: "ok".to_string(),
+        schema: serde_json::json!({ "type": "object" }),
+    });
+
+    let config = {
+        let mut base = config_with_stream(|| {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![
+                ContentBlock::ToolCall(ToolCall {
+                    id: "call_panic".to_string(),
+                    name: "panic_tool".to_string(),
+                    arguments: serde_json::json!({}),
+                }),
+                ContentBlock::ToolCall(ToolCall {
+                    id: "call_ok".to_string(),
+                    name: "ok_tool".to_string(),
+                    arguments: serde_json::json!({}),
+                }),
+            ]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.tools = vec![panic_tool, ok_tool];
+        base.tool_execution = ToolExecutionMode::Parallel;
+        base.should_stop_after_turn = Some(Box::new(|_| true));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, None);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    // Both ToolExecutionStart events should have matching ToolExecutionEnd events
+    let starts: Vec<_> = events.iter().filter_map(|e| {
+        if let AgentEvent::ToolExecutionStart { tool_call_id, .. } = e {
+            Some(tool_call_id.clone())
+        } else {
+            None
+        }
+    }).collect();
+    let ends: Vec<_> = events.iter().filter_map(|e| {
+        if let AgentEvent::ToolExecutionEnd { tool_call_id, .. } = e {
+            Some(tool_call_id.clone())
+        } else {
+            None
+        }
+    }).collect();
+    assert_eq!(starts.len(), 2, "should have 2 tool execution starts");
+    assert_eq!(ends.len(), 2, "should have 2 tool execution ends (panic recovered)");
+    assert_eq!(starts, ends, "start/end ids should match in order");
+
+    // The panicked tool should produce an error result
+    let panic_result = events.iter().find_map(|e| {
+        if let AgentEvent::ToolExecutionEnd { tool_call_id, result, .. } = e {
+            if tool_call_id == "call_panic" {
+                Some(result)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }).expect("should have end event for panic tool");
+    assert!(panic_result.is_error);
+    let has_panic_msg = panic_result.content.iter().any(|b| {
+        matches!(b, ContentBlock::Text { text, .. } if text.contains("panicked"))
+    });
+    assert!(has_panic_msg, "error should mention panic");
+
+    // AgentEnd should be reached
+    assert!(events.iter().any(|e| matches!(e, AgentEvent::AgentEnd { .. })));
 }

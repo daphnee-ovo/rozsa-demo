@@ -456,6 +456,7 @@ fn build_loop_config(
         prepare_next_turn: None,
         get_steering_messages: None,
         get_follow_up_messages: None,
+        max_turns: Some(100),
         tool_execution: ToolExecutionMode::Parallel,
         pre_tool_use,
         post_tool_use: None,

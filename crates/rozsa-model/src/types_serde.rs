@@ -214,6 +214,7 @@ fn deserialize_message(value: &Value) -> Result<Message, String> {
             tool_call_id: str_field(value, "toolCallId")?,
             tool_name: str_field(value, "toolName")?,
             content: deserialize_content_blocks(value.get("content"))?,
+            details: value.get("details").cloned().unwrap_or(Value::Null),
             is_error: value.get("isError").and_then(Value::as_bool).unwrap_or(false),
             timestamp: value.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
         })),

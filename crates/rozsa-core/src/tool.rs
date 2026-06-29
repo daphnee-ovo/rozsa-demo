@@ -39,6 +39,10 @@ pub trait Tool: Send + Sync {
         on_update: Option<&(dyn Fn(ToolResult) + Send + Sync)>,
     ) -> Result<ToolResult, ToolError>;
 
+    fn prepare_arguments(&self, args: serde_json::Value) -> serde_json::Value {
+        args
+    }
+
     fn execution_mode(&self) -> Option<ToolExecutionMode> {
         None
     }

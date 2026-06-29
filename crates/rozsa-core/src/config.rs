@@ -7,6 +7,7 @@ use rozsa_model::types::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 pub type ModelStreamFn = Box<
     dyn Fn(&Model, &ModelContext, &SimpleStreamOptions) -> EventStream<StreamEvent> + Send + Sync,
@@ -27,11 +28,12 @@ pub struct AgentLoopConfig {
     pub convert_to_llm: Box<dyn Fn(&[AgentMessage]) -> Vec<Message> + Send + Sync>,
     pub transform_context: Option<Box<dyn Fn(&[AgentMessage]) -> Vec<AgentMessage> + Send + Sync>>,
     pub get_api_key: Option<Box<dyn Fn(&str) -> Option<String> + Send + Sync>>,
-    pub should_stop_after_turn: Option<Box<dyn Fn(&ShouldStopContext) -> bool + Send + Sync>>,
+    pub should_stop_after_turn: Option<Box<dyn Fn(&ShouldStopContext<'_>) -> bool + Send + Sync>>,
     pub prepare_next_turn:
-        Option<Box<dyn Fn(&ShouldStopContext) -> Option<TurnUpdate> + Send + Sync>>,
+        Option<Box<dyn Fn(&ShouldStopContext<'_>) -> Option<TurnUpdate> + Send + Sync>>,
     pub get_steering_messages: Option<Box<dyn Fn() -> Vec<AgentMessage> + Send + Sync>>,
     pub get_follow_up_messages: Option<Box<dyn Fn() -> Vec<AgentMessage> + Send + Sync>>,
+    pub max_turns: Option<u32>,
     pub tool_execution: ToolExecutionMode,
     pub pre_tool_use:
         Option<Box<dyn Fn(PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<PreToolUseResult>> + Send>> + Send + Sync>>,
@@ -40,12 +42,12 @@ pub struct AgentLoopConfig {
     pub tools: Vec<Arc<dyn Tool>>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ShouldStopContext {
-    pub message: rozsa_model::types::AssistantMessage,
-    pub tool_results: Vec<rozsa_model::types::ToolResultMessage>,
-    pub context: AgentContext,
-    pub new_messages: Vec<AgentMessage>,
+#[derive(Debug)]
+pub struct ShouldStopContext<'a> {
+    pub message: &'a rozsa_model::types::AssistantMessage,
+    pub tool_results: &'a [rozsa_model::types::ToolResultMessage],
+    pub context: &'a AgentContext,
+    pub new_messages: &'a [AgentMessage],
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +64,7 @@ pub struct PreToolUseContext {
     pub tool_name: String,
     pub args: serde_json::Value,
     pub context: AgentContext,
+    pub signal: Option<CancellationToken>,
 }
 
 #[derive(Debug, Clone)]

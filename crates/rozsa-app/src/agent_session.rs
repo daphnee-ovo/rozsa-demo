@@ -127,8 +127,8 @@ pub struct AgentSession {
 impl AgentSession {
     /// Create a new agent session from configuration.
     pub fn new(config: AgentSessionConfig) -> Self {
-        // Capacity 256: enough headroom for token-stream bursts; slow subscribers will lag.
-        let (event_tx, _) = broadcast::channel(256);
+        // Capacity 2048: headroom for token-stream bursts and tool update events.
+        let (event_tx, _) = broadcast::channel(2048);
         let AgentSessionConfig {
             model,
             thinking_level,
@@ -821,6 +821,7 @@ impl AgentSession {
             get_follow_up_messages: Some(Box::new(move || {
                 std::mem::take(&mut *follow_up_q.lock().unwrap())
             })),
+            max_turns: Some(200),
             tool_execution: ToolExecutionMode::Parallel,
             pre_tool_use: {
                 let runtime_state_for_pre = self.runtime_state.clone();
@@ -894,9 +895,12 @@ fn convert_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
 }
 
 /// Check if the total token usage has exceeded the compaction threshold.
+/// Never stops after a tool-use turn — the model must get one more turn to
+/// synthesize an answer from the tool results before compaction fires.
 fn should_stop_for_compaction(ctx: &ShouldStopContext, threshold_tokens: u64) -> bool {
-    // Use the latest turn's input_tokens — it reflects the actual context window usage
-    // (system prompt + all history + tool schemas sent to the model this turn).
+    if !ctx.tool_results.is_empty() {
+        return false;
+    }
     let latest_input = ctx.message.usage.input;
     latest_input >= threshold_tokens
 }

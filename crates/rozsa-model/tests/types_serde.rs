@@ -133,6 +133,7 @@ fn message_tool_result_roundtrip() {
         tool_call_id: "tc_1".to_string(),
         tool_name: "read".to_string(),
         content: vec![],
+        details: serde_json::Value::Null,
         is_error: false,
         timestamp: 111,
     });
