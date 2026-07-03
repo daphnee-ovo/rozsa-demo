@@ -1313,14 +1313,16 @@ fn default_keybindings() -> BTreeMap<String, Vec<String>> {
     kb.insert("app.model.cycleForward".into(), vec!["ctrl+p".into()]);
     kb.insert("app.model.cycleBackward".into(), vec!["ctrl+shift+p".into()]);
     kb.insert("app.model.select".into(), vec!["ctrl+l".into()]);
-    kb.insert("app.thinking.cycle".into(), vec!["ctrl+t".into()]);
+    kb.insert("app.thinking.toggle".into(), vec!["ctrl+t".into()]);
     kb.insert("app.suspend".into(), vec!["ctrl+z".into()]);
-    kb.insert("app.compact".into(), vec!["ctrl+o".into()]);
+    kb.insert("app.tools.expand".into(), vec!["ctrl+o".into()]);
     kb.insert("app.subagent.next".into(), vec!["ctrl+]".into()]);
-    kb.insert("app.subagent.prev".into(), vec!["alt+[".into()]);
+    kb.insert("app.subagent.previous".into(), vec!["alt+[".into()]);
     kb.insert("app.editMode.cycle".into(), vec!["shift+tab".into()]);
     kb.insert("app.theme.toggle".into(), vec!["alt+t".into()]);
     kb.insert("app.editor.external".into(), vec!["ctrl+g".into()]);
+    kb.insert("tui.editor.cursorWordRight".into(), vec!["alt+f".into()]);
+    kb.insert("tui.editor.cursorWordLeft".into(), vec!["alt+b".into()]);
     kb
 }
 

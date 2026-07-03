@@ -22,7 +22,7 @@ fn ignores_key_release_events() {
 }
 
 #[test]
-fn mouse_wheel_scrolls_one_line_per_tick() {
+fn mouse_wheel_scrolls_three_lines_per_tick() {
     let mut state = AppState::new();
     handle_mouse(
         MouseEvent {
@@ -33,7 +33,7 @@ fn mouse_wheel_scrolls_one_line_per_tick() {
         },
         &mut state,
     );
-    assert_eq!(state.scroll, 1);
+    assert_eq!(state.scroll, 3);
     assert!(!state.auto_scroll);
 
     handle_mouse(

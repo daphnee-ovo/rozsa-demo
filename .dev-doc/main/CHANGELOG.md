@@ -18,3 +18,6 @@
 - 19:45 fix: ISSUE-I030：agent loop: hook panic 导致整个 loop task crash — 无 panic 保护
 - 20:37 fix: ISSUE-I026：agent loop: 缺失 tool_execution_update 事件 — 长时间 tool 无进度反馈
 - 20:56 fix: ISSUE-I033：agent loop: 关键 hook 全为同步 — 限制 async compaction/context transform 等场景
+
+## 2026-07-03
+- 22:48 fix: ISSUE-I052：Provider: 缺少 OpenAI Responses / Google / Vertex / Mistral / Azure / Cloudflare 共 7 个 provider

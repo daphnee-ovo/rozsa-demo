@@ -240,8 +240,11 @@ impl SubagentManager {
             if rt.info.status == SubagentStatus::Running {
                 return Err(format!("subagent '{}' is already running", id));
             }
+            if rt.info.status == SubagentStatus::Aborted {
+                return Err(format!("subagent '{}' was aborted — create a new one", id));
+            }
 
-            // Reset cancel token if previously cancelled.
+            // Reset cancel token if previously cancelled (e.g. after Done).
             if rt.cancel_token.is_cancelled() {
                 rt.cancel_token = CancellationToken::new();
             }

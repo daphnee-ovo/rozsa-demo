@@ -69,15 +69,14 @@ pub fn render_tab_bar(frame: &mut ratatui::Frame<'_>, area: Rect, state: &TabBar
         r
     };
 
-    // 先确保 active 单独能放下
-    while right > left
+    // 先确保 active 单独能放下 — 如果 active 已是唯一 tab 且仍放不下，直接截断显示
+    if right > left
         && total_with_separators(left, right)
             + reserve(left > 0, right < state.tabs.len())
             > max_width
         && right - left > 1
     {
-        // active 已经是唯一，且仍然放不下 — 退出
-        break;
+        // noop: active tab 已是唯一可见项
     }
 
     loop {

@@ -63,10 +63,15 @@ impl InputState {
     /// 获取选区范围：(start_row, start_col, end_row, end_col)，保证 start <= end
     pub fn selection_range(&self) -> Option<(usize, usize, usize, usize)> {
         let anchor = self.selection_anchor.as_ref()?;
-        let (sr, sc, er, ec) = if (anchor.row, anchor.col) <= (self.cursor_row, self.cursor_col) {
-            (anchor.row, anchor.col, self.cursor_row, self.cursor_col)
+        let max_row = self.lines.len().saturating_sub(1);
+        let ar = anchor.row.min(max_row);
+        let ac = anchor.col.min(grapheme_count(&self.lines[ar]));
+        let cr = self.cursor_row.min(max_row);
+        let cc = self.cursor_col.min(grapheme_count(&self.lines[cr]));
+        let (sr, sc, er, ec) = if (ar, ac) <= (cr, cc) {
+            (ar, ac, cr, cc)
         } else {
-            (self.cursor_row, self.cursor_col, anchor.row, anchor.col)
+            (cr, cc, ar, ac)
         };
         if sr == er && sc == ec {
             return None;
@@ -844,6 +849,14 @@ pub fn handle_key(
         undo(input);
         return Ok(());
     }
+    if matches_action(&keybindings, key, "tui.editor.cursorWordRight") {
+        move_word_forward(input);
+        return Ok(());
+    }
+    if matches_action(&keybindings, key, "tui.editor.cursorWordLeft") {
+        move_word_backward(input);
+        return Ok(());
+    }
 
     match key.code {
         // app.clear: ctrl+c — 清空编辑器；双击 500ms 内退出
@@ -997,11 +1010,11 @@ pub fn handle_key(
         KeyCode::Char('}') if key.modifiers.contains(KeyModifiers::ALT) => {
             input.unfold_at(input.cursor_row);
         }
-        // tui.editor.wordForward: alt+f — 前进一个 word（标点感知）
+        // tui.editor.cursorWordRight: alt+f — 前进一个 word（标点感知）
         KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
             move_word_forward(input);
         }
-        // tui.editor.wordBackward: alt+b — 后退一个 word（标点感知）
+        // tui.editor.cursorWordLeft: alt+b — 后退一个 word（标点感知）
         KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
             move_word_backward(input);
         }
