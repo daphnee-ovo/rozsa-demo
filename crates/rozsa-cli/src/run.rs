@@ -94,7 +94,20 @@ pub async fn run(args: &Args) -> Result<()> {
         .auto_approve_patterns
         .clone();
 
-    let policy = Arc::new(PermissionPolicy::new(permission_mode, auto_approve_patterns));
+    let mut policy = PermissionPolicy::new(permission_mode, auto_approve_patterns);
+
+    // Persist session approvals to settings file for cross-session reuse.
+    let settings_for_persist = Arc::new(std::sync::Mutex::new(settings_manager.clone()));
+    {
+        let settings_for_cb = settings_for_persist.clone();
+        policy.set_on_approval(Box::new(move |trust_key| {
+            if let Ok(mut mgr) = settings_for_cb.lock() {
+                mgr.add_trusted_pattern(trust_key);
+            }
+        }));
+    }
+
+    let policy = Arc::new(policy);
     let pending_approvals: PendingApprovals = Arc::new(DashMap::new());
     let (perm_req_tx, perm_req_rx) =
         tokio::sync::mpsc::unbounded_channel::<(String, ApprovalInfo)>();

@@ -8,11 +8,14 @@
 // ├── ApprovalInfo             # data for UI prompt
 // ├── PermissionResponse       # user's decision (allow / allow-session / deny)
 // ├── PendingApprovals         # Arc<DashMap<id, oneshot::Sender>>
-// └── PermissionPolicy         # pure logic: blacklist + pattern + session memory
+// ├── PermissionPolicy         # pure logic: blacklist + pattern + session memory
+// └── split_shell_segments()   # pipe/&&/|| command splitting
 //
 // Related Docs:
 // - [Gap Audit](../../../docs/NATIVE_TUI_GAP_AUDIT.md)
 // - [Settings Schema](./settings/schema.rs)
+
+pub mod audit;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -65,7 +68,13 @@ pub enum RiskLevel {
     Write,
     /// Shell 命令执行。
     Shell,
-    /// 未知工具或已知高风险操作。
+    /// 网络操作（curl, wget, npm install）。
+    Network,
+    /// Git 操作。
+    Git,
+    /// 未知工具。
+    Unknown,
+    /// 已知高风险操作（rm -rf, secret files, outside workspace）。
     Destructive,
 }
 
@@ -120,8 +129,17 @@ pub enum PermissionResponse {
 pub type PendingApprovals = Arc<DashMap<String, oneshot::Sender<PermissionResponse>>>;
 
 // ---------------------------------------------------------------------------
+// Read-only tool whitelist (auto-allow without prompting)
+// ---------------------------------------------------------------------------
+
+const WORKSPACE_READ_TOOLS: &[&str] = &["Read", "Grep", "Ls", "Find", "read", "grep", "ls", "find"];
+
+// ---------------------------------------------------------------------------
 // PermissionPolicy
 // ---------------------------------------------------------------------------
+
+/// Callback invoked when a session approval is recorded — used to persist to settings.
+pub type OnApprovalCallback = Box<dyn Fn(&str) + Send + Sync>;
 
 /// 纯逻辑权限策略：黑名单 + 自动审批模式 + 会话记忆。
 ///
@@ -131,6 +149,7 @@ pub struct PermissionPolicy {
     blacklist: Vec<(Regex, &'static str)>,
     auto_approve_patterns: Vec<Regex>,
     session_approvals: Mutex<HashSet<String>>,
+    on_approval: Option<OnApprovalCallback>,
 }
 
 impl PermissionPolicy {
@@ -138,29 +157,7 @@ impl PermissionPolicy {
     ///
     /// `auto_approve_patterns` 中的字符串会编译为正则，匹配 trust_key。
     pub fn new(mode: PermissionMode, auto_approve_patterns: Vec<String>) -> Self {
-        // 硬编码黑名单：匹配 Bash 工具的 command 参数。
-        let blacklist: Vec<(Regex, &'static str)> = vec![
-            (
-                Regex::new(r"rm\s+-rf\s+/").unwrap(),
-                "rm -rf on root is always blocked",
-            ),
-            (
-                Regex::new(r"\bsudo\b").unwrap(),
-                "sudo requires manual execution",
-            ),
-            (
-                Regex::new(r"git\s+reset\s+--hard").unwrap(),
-                "destructive: git reset --hard",
-            ),
-            (
-                Regex::new(r"git\s+push\s+--force").unwrap(),
-                "destructive: force push",
-            ),
-            (
-                Regex::new(r"\bmkfs\b").unwrap(),
-                "destructive: filesystem format",
-            ),
-        ];
+        let blacklist = build_hardcoded_blacklist();
 
         let auto_approve_patterns = auto_approve_patterns
             .iter()
@@ -172,7 +169,14 @@ impl PermissionPolicy {
             blacklist,
             auto_approve_patterns,
             session_approvals: Mutex::new(HashSet::new()),
+            on_approval: None,
         }
+    }
+
+    /// Set a callback that will be invoked with each trust_key when session approval is recorded.
+    /// Used to persist approvals to settings files.
+    pub fn set_on_approval(&mut self, callback: OnApprovalCallback) {
+        self.on_approval = Some(callback);
     }
 
     /// 评估一次工具调用是否允许执行。
@@ -182,26 +186,28 @@ impl PermissionPolicy {
             return PolicyVerdict::Allow;
         }
 
-        // 黑名单检查（仅对 Bash 工具的 command 参数）。
-        if tool_name == "Bash" {
-            if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
-                for (pattern, reason) in &self.blacklist {
-                    if pattern.is_match(cmd) {
-                        return PolicyVerdict::Block {
-                            reason: reason.to_string(),
-                        };
-                    }
-                }
-            }
+        // 黑名单检查（仅对 Bash/bash 工具的 command 参数）。
+        if (tool_name == "Bash" || tool_name == "bash")
+            && let Some(cmd) = args.get("command").and_then(|v| v.as_str())
+            && let Some(reason) = check_blacklist_with_segments(cmd, &self.blacklist)
+        {
+            return PolicyVerdict::Block {
+                reason: reason.to_string(),
+            };
+        }
+
+        // 工作区只读工具自动放行（不需要用户审批）。
+        if WORKSPACE_READ_TOOLS.contains(&tool_name) {
+            return PolicyVerdict::Allow;
         }
 
         // 生成 trust_key。
         let trust_key = build_trust_key(tool_name, args);
 
-        // 检查会话审批记忆。
+        // 检查会话审批记忆（prefix match：批准 "Bash:cargo" → "Bash:cargo test" 也通过）。
         {
             let approvals = self.session_approvals.lock().unwrap();
-            if approvals.contains(&trust_key) {
+            if matches_session_approval(&approvals, &trust_key) {
                 return PolicyVerdict::Allow;
             }
         }
@@ -216,7 +222,7 @@ impl PermissionPolicy {
         }
 
         // 其余情况需要审批。
-        let risk = classify_risk(tool_name);
+        let risk = infer_risk_level(tool_name, args);
         let args_summary = summarize_args(tool_name, args);
 
         PolicyVerdict::NeedApproval {
@@ -230,9 +236,15 @@ impl PermissionPolicy {
     }
 
     /// 记录会话级审批：后续相同 trust_key 自动放行。
+    /// 如果设置了 on_approval 回调，同时触发持久化。
     pub fn record_session_approval(&self, trust_key: String) {
-        let mut approvals = self.session_approvals.lock().unwrap();
-        approvals.insert(trust_key);
+        {
+            let mut approvals = self.session_approvals.lock().unwrap();
+            approvals.insert(trust_key.clone());
+        }
+        if let Some(ref callback) = self.on_approval {
+            callback(&trust_key);
+        }
     }
 
     /// 获取当前权限模式。
@@ -242,18 +254,348 @@ impl PermissionPolicy {
 }
 
 // ---------------------------------------------------------------------------
-// Private helpers
+// Hardcoded blacklist (aligned with TS HARDCODED_BLACKLIST)
 // ---------------------------------------------------------------------------
 
-/// 根据工具名称判定风险等级。
+fn build_hardcoded_blacklist() -> Vec<(Regex, &'static str)> {
+    vec![
+        // rm -rf with dangerous targets (/, ~, $HOME, ., *)
+        (
+            Regex::new(r"\brm\s+-[^\n;]*r[^\n;]*f[^\n;]*(/|~|\$HOME|\.|\*)(\b|$)").unwrap(),
+            "destructive: rm -rf on dangerous path",
+        ),
+        // rm with wildcards
+        (
+            Regex::new(r"\brm\s+[^\n;]*\*").unwrap(),
+            "destructive: rm with wildcards",
+        ),
+        // rm targeting current directory
+        (
+            Regex::new(r"\brm\s+-[^\n;]*\s+\.(?:\b|$|/)").unwrap(),
+            "destructive: rm on current directory",
+        ),
+        // sudo
+        (
+            Regex::new(r"^\s*sudo\b").unwrap(),
+            "sudo requires manual execution",
+        ),
+        // git reset --hard
+        (
+            Regex::new(r"\bgit\s+reset\s+--hard\b").unwrap(),
+            "destructive: git reset --hard",
+        ),
+        // git clean -fd
+        (
+            Regex::new(r"\bgit\s+clean\s+-fd\b").unwrap(),
+            "destructive: git clean -fd",
+        ),
+        // git push --force / -f
+        (
+            Regex::new(r"\bgit\s+push\b[^\n;]*(--force|-f)\b").unwrap(),
+            "destructive: force push",
+        ),
+        // dd (disk dump)
+        (
+            Regex::new(r"\bdd\b").unwrap(),
+            "destructive: dd disk utility",
+        ),
+        // mkfs (filesystem format)
+        (
+            Regex::new(r"\bmkfs\b").unwrap(),
+            "destructive: filesystem format",
+        ),
+        // diskutil erase (macOS)
+        (
+            Regex::new(r"\bdiskutil\s+erase\b").unwrap(),
+            "destructive: diskutil erase",
+        ),
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Shell segment splitting (I038)
+// ---------------------------------------------------------------------------
+
+/// 将 shell 命令按 pipe (|) 和逻辑运算符 (&&, ||, ;) 拆分为独立段。
+///
+/// 每段独立检查黑名单，防止通过 `innocent | dangerous` 绕过。
+pub fn split_shell_segments(command: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let bytes = command.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        match bytes[i] {
+            // Skip quoted strings
+            b'\'' => {
+                i += 1;
+                while i < len && bytes[i] != b'\'' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            b'"' => {
+                i += 1;
+                while i < len {
+                    if bytes[i] == b'\\' {
+                        i += 2;
+                    } else if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            // Pipe
+            b'|' => {
+                if i + 1 < len && bytes[i + 1] == b'|' {
+                    // ||
+                    segments.push(command[start..i].trim());
+                    i += 2;
+                    start = i;
+                } else {
+                    // |
+                    segments.push(command[start..i].trim());
+                    i += 1;
+                    start = i;
+                }
+            }
+            // &&
+            b'&' => {
+                if i + 1 < len && bytes[i + 1] == b'&' {
+                    segments.push(command[start..i].trim());
+                    i += 2;
+                    start = i;
+                } else {
+                    i += 1;
+                }
+            }
+            // ;
+            b';' => {
+                segments.push(command[start..i].trim());
+                i += 1;
+                start = i;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    let last = command[start..].trim();
+    if !last.is_empty() {
+        segments.push(last);
+    }
+
+    segments
+}
+
+/// 对完整命令及其各段逐一检查黑名单，返回第一个命中的 reason。
+fn check_blacklist_with_segments<'a>(
+    command: &str,
+    blacklist: &'a [(Regex, &'static str)],
+) -> Option<&'a str> {
+    // Check full command first
+    for (pattern, reason) in blacklist {
+        if pattern.is_match(command) {
+            return Some(reason);
+        }
+    }
+
+    // Split and check each segment independently
+    let segments = split_shell_segments(command);
+    if segments.len() > 1 {
+        for segment in &segments {
+            for (pattern, reason) in blacklist {
+                if pattern.is_match(segment) {
+                    return Some(reason);
+                }
+            }
+        }
+    }
+
+    // Deep analysis: check subcommands and sensitive patterns
+    if let Some(reason) = check_command_deep(command, blacklist) {
+        return Some(reason);
+    }
+
+    None
+}
+
+// ---------------------------------------------------------------------------
+// Deep command analysis (I042)
+// ---------------------------------------------------------------------------
+
+/// Sensitive environment variable patterns — leaking these is blocked.
+static SENSITIVE_ENV_VARS: &[&str] = &[
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "GOOGLE_API_KEY",
+    "API_KEY",
+    "API_SECRET",
+    "SECRET_KEY",
+    "PRIVATE_KEY",
+    "DATABASE_URL",
+    "DB_PASSWORD",
+    "NPM_TOKEN",
+    "PYPI_TOKEN",
+];
+
+/// Deep command analysis: detects subcommand injection and env var leaks.
+fn check_command_deep<'a>(
+    command: &str,
+    blacklist: &'a [(Regex, &'static str)],
+) -> Option<&'a str> {
+    // 1. Extract $(...) subcommands and check each against blacklist.
+    for subcmd in extract_subcommands(command) {
+        for (pattern, reason) in blacklist {
+            if pattern.is_match(&subcmd) {
+                return Some(reason);
+            }
+        }
+    }
+
+    // 2. Detect sensitive env var leaks (echo $SECRET_KEY, curl ... $API_KEY).
+    if has_sensitive_env_leak(command) {
+        return Some("blocked: potential sensitive environment variable leak");
+    }
+
+    None
+}
+
+/// Extract subcommands from $(...) and `...` constructs.
+fn extract_subcommands(command: &str) -> Vec<String> {
+    let mut subs = Vec::new();
+    let bytes = command.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        // $(...) — nested parentheses
+        if i + 1 < len && bytes[i] == b'$' && bytes[i + 1] == b'(' {
+            i += 2;
+            let start = i;
+            let mut depth = 1;
+            while i < len && depth > 0 {
+                if bytes[i] == b'(' {
+                    depth += 1;
+                } else if bytes[i] == b')' {
+                    depth -= 1;
+                }
+                if depth > 0 {
+                    i += 1;
+                }
+            }
+            if start < i {
+                subs.push(command[start..i].to_string());
+            }
+            i += 1; // skip closing )
+        }
+        // `...` backtick substitution
+        else if bytes[i] == b'`' {
+            i += 1;
+            let start = i;
+            while i < len && bytes[i] != b'`' {
+                i += 1;
+            }
+            if start < i {
+                subs.push(command[start..i].to_string());
+            }
+            i += 1; // skip closing `
+        } else {
+            i += 1;
+        }
+    }
+
+    subs
+}
+
+/// Check if command leaks sensitive environment variables.
+fn has_sensitive_env_leak(command: &str) -> bool {
+    for var in SENSITIVE_ENV_VARS {
+        // Check $VAR and ${VAR} patterns in context of echo/printf/curl/wget
+        let dollar_var = format!("${}", var);
+        let brace_var = format!("${{{}}}", var);
+        if command.contains(&dollar_var) || command.contains(&brace_var) {
+            // Only flag if in a context that would expose it (echo, curl, wget, etc.)
+            let leak_prefixes = ["echo", "printf", "curl", "wget", "cat", "tee"];
+            for prefix in leak_prefixes {
+                if command.contains(prefix) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
+// Public helpers
+// ---------------------------------------------------------------------------
+
+/// 根据工具名称和参数判定风险等级。
 #[doc(hidden)]
 pub fn classify_risk(tool_name: &str) -> RiskLevel {
     match tool_name {
-        "Bash" => RiskLevel::Shell,
-        "Write" | "Edit" => RiskLevel::Write,
-        "Read" | "Grep" | "Ls" | "Find" => RiskLevel::Read,
-        _ => RiskLevel::Destructive,
+        "Bash" | "bash" => RiskLevel::Shell,
+        "Write" | "Edit" | "write" | "edit" => RiskLevel::Write,
+        "Read" | "Grep" | "Ls" | "Find" | "read" | "grep" | "ls" | "find" => RiskLevel::Read,
+        "subagent" => RiskLevel::Unknown,
+        _ => RiskLevel::Unknown,
     }
+}
+
+/// 精细风险推断：基于工具名称和参数内容。
+/// 用于审批 UI 展示更精确的风险标签。
+#[doc(hidden)]
+pub fn infer_risk_level(tool_name: &str, args: &Value) -> RiskLevel {
+    let base = classify_risk(tool_name);
+
+    if (tool_name == "Bash" || tool_name == "bash")
+        && let Some(cmd) = args.get("command").and_then(|v| v.as_str())
+    {
+        // Git commands
+        if cmd.trim_start().starts_with("git ") {
+            return RiskLevel::Git;
+        }
+        // Network commands
+        let network_prefixes = ["curl ", "wget ", "npm install", "npm publish",
+            "pnpm ", "yarn ", "bun install", "pip install", "cargo install"];
+        for prefix in network_prefixes {
+            if cmd.contains(prefix) {
+                return RiskLevel::Network;
+            }
+        }
+    }
+
+    // File tools: check if path is a secret file
+    if (tool_name == "Read" || tool_name == "Write" || tool_name == "Edit"
+        || tool_name == "read" || tool_name == "write" || tool_name == "edit")
+        && let Some(path) = args.get("file_path").and_then(|v| v.as_str())
+        && is_secret_path(path)
+    {
+        return RiskLevel::Destructive;
+    }
+
+    base
+}
+
+/// 检测路径是否指向敏感文件。
+fn is_secret_path(path: &str) -> bool {
+    let secret_patterns = [
+        ".env", "id_rsa", "id_ed25519", ".npmrc", ".pypirc",
+        "credentials", "secrets", ".aws/credentials",
+        "token", ".netrc",
+    ];
+    let lower = path.to_lowercase();
+    secret_patterns.iter().any(|pat| lower.contains(pat))
 }
 
 /// 生成 trust_key："{tool_name}:{first_arg_prefix}"。
@@ -264,12 +606,12 @@ pub fn classify_risk(tool_name: &str) -> RiskLevel {
 #[doc(hidden)]
 pub fn build_trust_key(tool_name: &str, args: &Value) -> String {
     let prefix = match tool_name {
-        "Bash" => args
+        "Bash" | "bash" => args
             .get("command")
             .and_then(|v| v.as_str())
             .map(|s| truncate_str(s, 40))
             .unwrap_or_default(),
-        "Read" | "Write" | "Edit" => args
+        "Read" | "Write" | "Edit" | "read" | "write" | "edit" => args
             .get("file_path")
             .and_then(|v| v.as_str())
             .unwrap_or("")
@@ -287,20 +629,89 @@ pub fn build_trust_key(tool_name: &str, args: &Value) -> String {
     format!("{tool_name}:{prefix}")
 }
 
+/// 生成多级 trust keys — 从精确到宽泛。
+///
+/// 对于 Bash 命令，生成各级前缀（按空格截断）以及复合命令各段。
+/// 对于文件工具，生成路径和目录前缀。
+/// 审批时保存最精确的 key，匹配时检查所有 session approvals 是否是当前 key 的前缀。
+#[doc(hidden)]
+pub fn generate_trust_levels(tool_name: &str, args: &Value) -> Vec<String> {
+    let mut levels = Vec::new();
+    let exact_key = build_trust_key(tool_name, args);
+    levels.push(exact_key.clone());
+
+    match tool_name {
+        "Bash" | "bash" => {
+            if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
+                // Generate progressively shorter prefix keys.
+                let words: Vec<&str> = cmd.split_whitespace().collect();
+                for i in (1..words.len()).rev() {
+                    let prefix_cmd = words[..i].join(" ");
+                    let key = format!("{}:{}", tool_name, truncate_str(&prefix_cmd, 40));
+                    if key != exact_key && !levels.contains(&key) {
+                        levels.push(key);
+                    }
+                }
+
+                // For compound commands, add keys for each segment.
+                let segments = split_shell_segments(cmd);
+                if segments.len() > 1 {
+                    for segment in &segments {
+                        let seg_key = format!("{}:{}", tool_name, truncate_str(segment, 40));
+                        if !levels.contains(&seg_key) {
+                            levels.push(seg_key);
+                        }
+                    }
+                }
+            }
+        }
+        "Read" | "Write" | "Edit" | "read" | "write" | "edit" => {
+            if let Some(path) = args.get("file_path").and_then(|v| v.as_str()) {
+                // Add directory-level trust key.
+                if let Some(dir) = std::path::Path::new(path).parent() {
+                    let dir_key = format!("{}:{}/", tool_name, dir.display());
+                    if !levels.contains(&dir_key) {
+                        levels.push(dir_key);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    levels
+}
+
+/// 检查是否有任何 session approval 是给定 trust_key 的前缀匹配。
+///
+/// 例如 session 中批准了 "Bash:cargo test"，则 "Bash:cargo test --release" 也匹配。
+fn matches_session_approval(approvals: &HashSet<String>, trust_key: &str) -> bool {
+    if approvals.contains(trust_key) {
+        return true;
+    }
+    // Check if any approved key is a prefix of this trust_key.
+    for approved in approvals {
+        if trust_key.starts_with(approved.as_str()) {
+            return true;
+        }
+    }
+    false
+}
+
 /// 生成参数摘要用于审批 UI 展示。
 fn summarize_args(tool_name: &str, args: &Value) -> String {
     match tool_name {
-        "Bash" => args
+        "Bash" | "bash" => args
             .get("command")
             .and_then(|v| v.as_str())
             .map(|s| truncate_str(s, 80))
             .unwrap_or_else(|| "(no command)".to_string()),
-        "Read" => args
+        "Read" | "read" => args
             .get("file_path")
             .and_then(|v| v.as_str())
             .unwrap_or("(unknown)")
             .to_string(),
-        "Write" | "Edit" => args
+        "Write" | "Edit" | "write" | "edit" => args
             .get("file_path")
             .and_then(|v| v.as_str())
             .unwrap_or("(unknown)")
@@ -324,4 +735,3 @@ fn truncate_str(s: &str, max_len: usize) -> String {
         format!("{}...", &s[..end])
     }
 }
-

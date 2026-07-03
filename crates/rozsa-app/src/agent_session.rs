@@ -46,7 +46,7 @@ use crate::session::manager::SessionManager;
 use crate::settings::SettingsManager;
 use crate::tools::{
     create_bash_tool, create_edit_tool, create_find_tool, create_grep_tool, create_ls_tool,
-    create_read_tool, create_write_tool,
+    create_read_tool, create_subagent_tool, create_write_tool,
 };
 
 /// Configuration bundle for creating an AgentSession.
@@ -119,7 +119,7 @@ pub struct AgentSession {
     /// Skill registry — loaded from filesystem at startup, reloadable.
     skill_registry: std::sync::RwLock<crate::skills::SkillRegistry>,
     /// Subagent manager — owns spawned subagents (lazy init on first access).
-    subagent_manager: tokio::sync::Mutex<crate::subagent::SubagentManager>,
+    subagent_manager: Arc<tokio::sync::Mutex<crate::subagent::SubagentManager>>,
     /// Currently-viewed subagent in the UI (None = main session).
     viewing_subagent_id: tokio::sync::Mutex<Option<String>>,
 }
@@ -148,6 +148,10 @@ impl AgentSession {
         let session_dir = main_session_file
             .as_ref()
             .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+        // Arc-wrap the permission hook early so it can be shared with subagents.
+        let pre_tool_use_arc: Option<Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>> =
+            pre_tool_use.map(|f| Arc::from(f) as _);
+
         let shared = crate::subagent::SharedResources {
             model_stream: Arc::new(|m, c, o| rozsa_model::stream::stream_simple(m, c, o)),
             convert_to_llm: Arc::new(convert_to_llm),
@@ -158,8 +162,11 @@ impl AgentSession {
             session_dir,
             main_session_uuid,
             main_session_file,
+            permission_hook: pre_tool_use_arc.clone(),
         };
-        let subagent_manager = crate::subagent::SubagentManager::new(shared);
+        let subagent_manager = Arc::new(tokio::sync::Mutex::new(
+            crate::subagent::SubagentManager::new(shared),
+        ));
 
         Self {
             static_config: StaticConfig {
@@ -184,10 +191,10 @@ impl AgentSession {
             )),
             steering_queue: Arc::new(std::sync::Mutex::new(Vec::new())),
             follow_up_queue: Arc::new(std::sync::Mutex::new(Vec::new())),
-            pre_tool_use_hook: pre_tool_use.map(|f| Arc::from(f) as Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>),
+            pre_tool_use_hook: pre_tool_use_arc,
             extension_runner: tokio::sync::Mutex::new(crate::extensions::ExtensionRunner::new()),
             skill_registry: std::sync::RwLock::new(skill_registry),
-            subagent_manager: tokio::sync::Mutex::new(subagent_manager),
+            subagent_manager,
             viewing_subagent_id: tokio::sync::Mutex::new(None),
         }
     }
@@ -223,7 +230,7 @@ impl AgentSession {
         self.tools.lock().await.push(tool);
     }
 
-    /// Register the default built-in tools (read, write, edit, bash, ls, grep, find).
+    /// Register the default built-in tools (read, write, edit, bash, ls, grep, find, subagent).
     pub async fn register_default_tools(&self, cwd: &Path) {
         let cwd_str = cwd.to_string_lossy().to_string();
         let defaults: Vec<Box<dyn Tool>> = vec![
@@ -234,6 +241,7 @@ impl AgentSession {
             create_ls_tool(),
             create_grep_tool(),
             create_find_tool(),
+            create_subagent_tool(self.subagent_manager.clone()),
         ];
         let mut tools = self.tools.lock().await;
         for tool in defaults {

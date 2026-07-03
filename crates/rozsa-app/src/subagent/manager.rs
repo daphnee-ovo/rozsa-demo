@@ -66,6 +66,13 @@ pub type ModelStreamArc = Arc<
         + Sync,
 >;
 
+/// Pre-tool-use hook type shared with subagents (same signature as main agent's hook).
+pub type PreToolUseHook = Arc<
+    dyn Fn(PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<PreToolUseResult>> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// Shared resources cloned into each subagent's agent_loop call.
 pub struct SharedResources {
     pub model_stream: ModelStreamArc,
@@ -81,6 +88,8 @@ pub struct SharedResources {
     pub main_session_uuid: String,
     /// Path to the main session file (referenced as parent_session in subagent headers).
     pub main_session_file: Option<PathBuf>,
+    /// Main agent's permission hook — subagents chain this after scope checks.
+    pub permission_hook: Option<PreToolUseHook>,
 }
 
 pub struct SpawnConfig {
@@ -429,17 +438,24 @@ fn build_loop_config(
     > = {
         let scope = scope.clone();
         let cwd = cwd.clone();
+        let permission_hook = shared.permission_hook.clone();
         Some(Box::new(move |ctx: PreToolUseContext| {
             let scope = scope.clone();
             let cwd = cwd.clone();
+            let permission_hook = permission_hook.clone();
             Box::pin(async move {
-                match scope.check_tool_allowed(&ctx.tool_name, &ctx.args, &cwd) {
-                    Ok(()) => None,
-                    Err(reason) => Some(PreToolUseResult {
+                // 1. Scope check first (subagent-specific restrictions).
+                if let Err(reason) = scope.check_tool_allowed(&ctx.tool_name, &ctx.args, &cwd) {
+                    return Some(PreToolUseResult {
                         block: true,
                         reason: Some(reason),
-                    }),
+                    });
                 }
+                // 2. Then run main permission policy (blacklist + user approval).
+                if let Some(hook) = permission_hook {
+                    return hook(ctx).await;
+                }
+                None
             })
         }))
     };

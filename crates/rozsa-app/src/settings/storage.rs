@@ -170,6 +170,16 @@ impl SettingsManager {
         &mut self.resolved
     }
 
+    /// Add a trust_key as an auto-approve pattern and persist to settings.
+    /// Converts the trust_key into a regex pattern (exact prefix match).
+    pub fn add_trusted_pattern(&mut self, trust_key: &str) {
+        let pattern = format!("^{}", regex::escape(trust_key));
+        if !self.resolved.permissions.auto_approve_patterns.contains(&pattern) {
+            self.resolved.permissions.auto_approve_patterns.push(pattern);
+            let _ = self.save_global();
+        }
+    }
+
     /// Persist current resolved settings to the global settings file.
     pub fn save_global(&self) -> Result<(), SettingsError> {
         if let Some(parent) = self.global_path.parent() {

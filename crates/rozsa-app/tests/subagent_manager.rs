@@ -48,6 +48,7 @@ fn make_manager() -> SubagentManager {
         session_dir: None,
         main_session_uuid: "test-session".to_string(),
         main_session_file: None,
+        permission_hook: None,
     };
     SubagentManager::new(shared)
 }
