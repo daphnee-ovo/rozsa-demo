@@ -1069,10 +1069,123 @@ impl NativeBackend {
                 }
             }
             "login" => {
-                self.notify("info", "Provider authentication:\n- Anthropic: set ANTHROPIC_API_KEY environment variable\n- OpenAI: set OPENAI_API_KEY environment variable\n- AWS Bedrock: configure AWS credentials (aws configure)\n- GCP Vertex: set GOOGLE_APPLICATION_CREDENTIALS\n\nRestart the session after setting credentials.");
+                let event_tx_clone = self.event_tx.clone();
+                tokio::spawn(async move {
+                    use rozsa_model::oauth::openai_codex;
+                    use rozsa_model::oauth::types::OAuthFlowEvent;
+                    use rozsa_model::credentials::store_oauth_credentials;
+                    use tokio::sync::mpsc as tokio_mpsc;
+                    use tokio_util::sync::CancellationToken;
+
+                    let notify = |level: &str, msg: &str| {
+                        let _ = event_tx_clone.send(BackendEvent::Notify {
+                            level: level.to_string(),
+                            message: msg.to_string(),
+                        });
+                    };
+
+                    notify("info", "Starting codex-oauth login...");
+
+                    let (flow_event_tx, mut flow_event_rx) = tokio_mpsc::unbounded_channel();
+                    let (_response_tx, response_rx) = tokio_mpsc::unbounded_channel();
+                    let cancel = CancellationToken::new();
+
+                    // Spawn the login flow
+                    let login_handle = tokio::spawn(openai_codex::login(flow_event_tx, response_rx, cancel.clone()));
+
+                    // Process flow events (show URL to user)
+                    while let Some(event) = flow_event_rx.recv().await {
+                        match event {
+                            OAuthFlowEvent::AuthUrl { url, instructions } => {
+                                let msg = if let Some(inst) = instructions {
+                                    format!("{inst}\n\nURL: {url}")
+                                } else {
+                                    format!("Open this URL to login:\n{url}")
+                                };
+                                notify("info", &msg);
+                                // Try to open browser via xdg-open / open
+                                let _ = std::process::Command::new("xdg-open")
+                                    .arg(&url)
+                                    .stdin(std::process::Stdio::null())
+                                    .stdout(std::process::Stdio::null())
+                                    .stderr(std::process::Stdio::null())
+                                    .spawn()
+                                    .or_else(|_| {
+                                        std::process::Command::new("open")
+                                            .arg(&url)
+                                            .stdin(std::process::Stdio::null())
+                                            .stdout(std::process::Stdio::null())
+                                            .stderr(std::process::Stdio::null())
+                                            .spawn()
+                                    });
+                            }
+                            OAuthFlowEvent::Progress { message } => {
+                                notify("info", &message);
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // Wait for login result
+                    match login_handle.await {
+                        Ok(Ok(credentials)) => {
+                            let home = match dirs::home_dir() {
+                                Some(h) => h,
+                                None => {
+                                    notify("error", "Cannot determine home directory");
+                                    return;
+                                }
+                            };
+                            let models_dir = home.join(".rozsa").join("models");
+                            let _ = std::fs::create_dir_all(&models_dir);
+                            let auth_path = models_dir.join("auth.json");
+
+                            match store_oauth_credentials(
+                                auth_path.to_str().unwrap_or(""),
+                                "codex-oauth",
+                                &credentials,
+                            ) {
+                                Ok(()) => {
+                                    notify("info", "Login successful! Credentials saved.");
+                                    // Auto-create codex-oauth.json if not exists
+                                    ensure_codex_oauth_models_config(&models_dir);
+                                }
+                                Err(e) => {
+                                    notify("error", &format!("Failed to save credentials: {e}"));
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            notify("error", &format!("Login failed: {e}"));
+                        }
+                        Err(e) => {
+                            notify("error", &format!("Login task panicked: {e}"));
+                        }
+                    }
+                });
             }
             "logout" => {
                 self.notify("info", "To clear provider credentials:\n- Unset the relevant environment variable (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)\n- Or remove the credentials file from your system keychain\n\nRestart the session after clearing credentials.");
+            }
+            "usage" => {
+                let event_tx_clone = self.event_tx.clone();
+                tokio::spawn(async move {
+                    let notify = |level: &str, msg: &str| {
+                        let _ = event_tx_clone.send(BackendEvent::Notify {
+                            level: level.to_string(),
+                            message: msg.to_string(),
+                        });
+                    };
+                    match rozsa_app::rate_limit::get_rate_limits().await {
+                        Ok(snapshot) => {
+                            let display = rozsa_app::rate_limit::format_rate_limit_display(&snapshot);
+                            notify("info", &display);
+                        }
+                        Err(e) => {
+                            notify("warning", &format!("Rate limit query failed: {e}"));
+                        }
+                    }
+                });
             }
             _ => {
                 use rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS;
@@ -1899,6 +2012,74 @@ impl SubagentView for NativeBackend {
     fn viewing_subagent_id_sync(&self) -> Option<String> {
         self.session.viewing_subagent_id_try_lock()
     }
+}
+
+/// Auto-create ~/.rozsa/models/codex-oauth.json with default GPT models if not exists.
+fn ensure_codex_oauth_models_config(models_dir: &std::path::Path) {
+    let config_path = models_dir.join("codex-oauth.json");
+    if config_path.exists() {
+        return;
+    }
+    let default_config = serde_json::json!({
+        "providers": {
+            "codex-oauth": {
+                "baseUrl": "https://api.openai.com/v1",
+                "api": "openai-responses",
+                "authHeader": true,
+                "models": [
+                    {
+                        "id": "gpt-4o",
+                        "name": "GPT-4o",
+                        "contextWindow": 128000,
+                        "maxTokens": 16384,
+                        "reasoning": false,
+                        "input": ["text", "image"],
+                        "cost": { "input": 2.5, "output": 10.0, "cacheRead": 1.25, "cacheWrite": 0.0 }
+                    },
+                    {
+                        "id": "gpt-4o-mini",
+                        "name": "GPT-4o Mini",
+                        "contextWindow": 128000,
+                        "maxTokens": 16384,
+                        "reasoning": false,
+                        "input": ["text", "image"],
+                        "cost": { "input": 0.15, "output": 0.6, "cacheRead": 0.075, "cacheWrite": 0.0 }
+                    },
+                    {
+                        "id": "o3",
+                        "name": "o3",
+                        "contextWindow": 200000,
+                        "maxTokens": 100000,
+                        "reasoning": true,
+                        "input": ["text", "image"],
+                        "cost": { "input": 2.0, "output": 8.0, "cacheRead": 1.0, "cacheWrite": 0.0 }
+                    },
+                    {
+                        "id": "o4-mini",
+                        "name": "o4-mini",
+                        "contextWindow": 200000,
+                        "maxTokens": 100000,
+                        "reasoning": true,
+                        "input": ["text", "image"],
+                        "cost": { "input": 1.1, "output": 4.4, "cacheRead": 0.55, "cacheWrite": 0.0 }
+                    },
+                    {
+                        "id": "codex-mini-latest",
+                        "name": "Codex Mini",
+                        "contextWindow": 200000,
+                        "maxTokens": 100000,
+                        "reasoning": true,
+                        "input": ["text"],
+                        "cost": { "input": 1.5, "output": 6.0, "cacheRead": 0.75, "cacheWrite": 0.0 }
+                    }
+                ]
+            }
+        }
+    });
+    let _ = std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&default_config).unwrap_or_default(),
+    );
 }
 
 // Suppress unused warnings on imports retained for future use:

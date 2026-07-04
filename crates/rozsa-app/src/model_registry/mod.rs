@@ -900,7 +900,7 @@ fn nvidia_openai_compat(provider: &str, base_url: &str) -> Option<Value> {
 fn provider_from_str(name: &str) -> Option<Provider> {
     match name {
         "anthropic" => Some(Provider::Anthropic),
-        "openai" | "azure-openai-responses" | "openai-codex" | "github-copilot" => {
+        "openai" | "azure-openai-responses" | "codex-oauth" | "github-copilot" => {
             Some(Provider::OpenAI)
         }
         "amazon-bedrock" => Some(Provider::AmazonBedrock),

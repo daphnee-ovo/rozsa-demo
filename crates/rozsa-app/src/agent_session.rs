@@ -924,24 +924,49 @@ fn build_model_stream_fn() -> ModelStreamFn {
     )
 }
 
-/// Resolve API key for a model from environment variables.
+/// Resolve API key for a model from environment variables, then auth.json fallback.
 fn resolve_api_key(model: &Model) -> Option<String> {
     use rozsa_model::types::Provider;
+
+    // 1. Try environment variable first
     let env_var = match &model.provider {
-        Provider::Anthropic => "ANTHROPIC_API_KEY",
-        Provider::OpenAI => "OPENAI_API_KEY",
-        Provider::Google | Provider::GoogleVertex => "GOOGLE_API_KEY",
-        Provider::DeepSeek => "DEEPSEEK_API_KEY",
-        Provider::OpenRouter => "OPENROUTER_API_KEY",
-        Provider::XAI => "XAI_API_KEY",
-        Provider::Groq => "GROQ_API_KEY",
-        Provider::Mistral => "MISTRAL_API_KEY",
-        Provider::Together => "TOGETHER_API_KEY",
-        Provider::HuggingFace => "HF_TOKEN",
-        Provider::Custom(_) => return std::env::var("LLM_API_KEY").ok(),
-        _ => return None,
+        Provider::Anthropic => Some("ANTHROPIC_API_KEY"),
+        Provider::OpenAI => Some("OPENAI_API_KEY"),
+        Provider::Google | Provider::GoogleVertex => Some("GOOGLE_API_KEY"),
+        Provider::DeepSeek => Some("DEEPSEEK_API_KEY"),
+        Provider::OpenRouter => Some("OPENROUTER_API_KEY"),
+        Provider::XAI => Some("XAI_API_KEY"),
+        Provider::Groq => Some("GROQ_API_KEY"),
+        Provider::Mistral => Some("MISTRAL_API_KEY"),
+        Provider::Together => Some("TOGETHER_API_KEY"),
+        Provider::HuggingFace => Some("HF_TOKEN"),
+        Provider::Custom(_) => Some("LLM_API_KEY"),
+        _ => None,
     };
-    std::env::var(env_var).ok()
+    if let Some(var) = env_var
+        && let Ok(key) = std::env::var(var)
+        && !key.is_empty()
+    {
+        return Some(key);
+    }
+
+    // 2. Try auth.json (for OAuth providers like codex-oauth)
+    let home = dirs_next::home_dir()?;
+    let auth_path = home.join(".rozsa").join("models").join("auth.json");
+    if auth_path.exists() {
+        let provider_name = rozsa_model::providers::common::provider_id(&model.provider);
+        let path_str = auth_path.to_string_lossy().to_string();
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            let result = rt.block_on(async {
+                rozsa_model::credentials::resolve_auth_json_api_key_pub(&path_str, &provider_name).await
+            });
+            if let Ok(Some(key)) = result {
+                return Some(key);
+            }
+        }
+    }
+
+    None
 }
 
 /// Current timestamp in milliseconds since UNIX epoch.

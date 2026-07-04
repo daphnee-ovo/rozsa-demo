@@ -143,6 +143,19 @@ async fn resolve_auth_json_api_key(path: &str, provider: &str) -> Result<Option<
     ))
 }
 
+/// Public wrapper for resolving API key from auth.json.
+pub async fn resolve_auth_json_api_key_pub(path: &str, provider: &str) -> Result<Option<String>, String> {
+    resolve_auth_json_api_key(path, provider).await
+}
+
+/// Read the ChatGPT account ID from an OAuth credential in auth.json.
+pub fn read_account_id(path: &str, provider: &str) -> Option<String> {
+    let input = std::fs::read_to_string(path).ok()?;
+    let auth: Map<String, Value> = serde_json::from_str(&input).ok()?;
+    let credential = auth.get(provider)?;
+    credential.get("accountId").and_then(|v| v.as_str()).map(String::from)
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -227,7 +240,7 @@ async fn refresh_oauth_credential(
 ) -> Result<OAuthCredential, String> {
     match provider {
         "anthropic" => refresh_anthropic_oauth(credential).await,
-        "openai-codex" => refresh_openai_codex_oauth(credential).await,
+        "codex-oauth" => refresh_openai_codex_oauth(credential).await,
         "github-copilot" => refresh_github_copilot_oauth(credential).await,
         _ => Err(format!(
             "OAuth credential for `{provider}` is expired and Rust refresh is not supported for this provider"
@@ -486,7 +499,7 @@ fn execute_command(command: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn strip_json_comments(input: &str) -> String {
+pub(crate) fn strip_json_comments(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
     let mut in_string = false;

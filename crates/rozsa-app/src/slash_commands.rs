@@ -183,6 +183,12 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
         examples: &[],
     },
     BuiltinSlashCommand {
+        name: "usage",
+        description: "Show rate limit usage for codex-oauth",
+        usage: None,
+        examples: &[],
+    },
+    BuiltinSlashCommand {
         name: "new",
         description: "Start a new session",
         usage: None,

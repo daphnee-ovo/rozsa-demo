@@ -4,6 +4,7 @@ pub mod extensions;
 pub mod messages;
 pub mod model_registry;
 pub mod permissions;
+pub mod rate_limit;
 pub mod resources;
 pub mod runtime_state;
 pub mod session;

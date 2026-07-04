@@ -15,7 +15,7 @@ const AUTHORIZE_URL: &str = "https://auth.openai.com/oauth/authorize";
 const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const CALLBACK_PORT: u16 = 1455;
 const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
-const SCOPE: &str = "openid profile email offline_access";
+const SCOPE: &str = "openid profile email offline_access api.connectors.read api.connectors.invoke";
 
 /// Execute the OpenAI Codex OAuth login flow.
 /// Emits OAuthFlowEvents through `event_tx` for the bridge to forward to TS.
