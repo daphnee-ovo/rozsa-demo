@@ -34,6 +34,8 @@ pub struct LoadedResources {
     pub resources: Vec<Resource>,
 }
 
+const BASE_SYSTEM_PROMPT: &str = include_str!("../../../../resource/system-prompt.md");
+
 /// 资源加载器
 pub struct ResourceLoader {
     /// 当前工作目录
@@ -137,11 +139,9 @@ impl ResourceLoader {
     ///
     /// 将加载的资源内容拼接为系统提示
     pub fn build_system_prompt(resources: &LoadedResources) -> String {
-        if resources.resources.is_empty() {
-            return String::new();
-        }
+        let mut parts = Vec::with_capacity(resources.resources.len() + 1);
 
-        let mut parts = Vec::new();
+        parts.push(BASE_SYSTEM_PROMPT.to_string());
 
         for resource in &resources.resources {
             let source_label = match &resource.source {
