@@ -84,6 +84,14 @@ fn merge_permissions(
                 .auto_approve_patterns
                 .clone()
                 .unwrap_or_else(|| base.auto_approve_patterns.clone()),
+            allowed_tools: o
+                .allowed_tools
+                .clone()
+                .unwrap_or_else(|| base.allowed_tools.clone()),
+            blocked_commands: o
+                .blocked_commands
+                .clone()
+                .unwrap_or_else(|| base.blocked_commands.clone()),
         },
     }
 }

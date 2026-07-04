@@ -140,6 +140,32 @@ agent loop 正常处理错误。
 
 ---
 
+## 11. 模型注册：用户目录配置替代编译时嵌入
+
+**TS 行为：** `models.generated.ts` 在构建时生成并嵌入所有 provider 的模型列表
+（名称、pricing、context window、capability flags）。更新模型需发布新版本。
+
+**Rust 行为（规划中）：** 去除 `include_str!("models.generated.json")`（498KB），
+改为运行时扫描 `~/.rozsa/models/*.json`。每个 JSON 文件描述一组模型：
+```json
+{
+  "provider": "minimax",
+  "protocol": "openai-completions",
+  "base_url": "https://api.minimax.chat/v1",
+  "api_key_env": "MINIMAX_API_KEY",
+  "models": [
+    {"id": "abab6.5s-chat", "context_window": 245760}
+  ]
+}
+```
+`protocol` 字段路由到已实现的协议处理器（anthropic / openai-completions / openai-responses）。
+用户新建 JSON 即可接入任意兼容 provider，无需重新编译。
+
+**动机：** 嵌入 498KB JSON 增大二进制体积且更新滞后。模型列表变化频率远高于
+协议实现变化频率，解耦两者让用户可以即时接入新 provider。
+
+---
+
 ## 相关代码
 
 - Settings schema: `crates/rozsa-app/src/settings/schema.rs`
@@ -148,3 +174,4 @@ agent loop 正常处理错误。
 - Session manager: `crates/rozsa-app/src/session/manager.rs`
 - Stream entry: `crates/rozsa-model/src/stream.rs`
 - Compaction: `crates/rozsa-app/src/compaction/mod.rs`
+- Model registry: `crates/rozsa-app/src/model_registry/mod.rs`

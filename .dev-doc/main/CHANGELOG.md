@@ -21,3 +21,10 @@
 
 ## 2026-07-03
 - 22:48 fix: ISSUE-I052：Provider: 缺少 OpenAI Responses / Google / Vertex / Mistral / Azure / Cloudflare 共 7 个 provider
+- 23:14 fix: ISSUE-I053：CLI: 缺少 print mode (--print/-p) — 非交互式单次执行不可用
+- 23:22 fix: ISSUE-I052：CLI: 缺少 print mode (--print/-p) — 非交互式单次执行不可用
+
+## 2026-07-04
+- 00:52 fix: ISSUE-I053：CLI: 缺少 RPC mode — IDE 集成/程序化 API 不可用
+- 14:54 fix: ISSUE-I058：App: 缺少 Package Manager — 无法从 npm/git 安装扩展/技能
+- 14:55 fix: ISSUE-I057：App: 缺少 Package Manager — 无法从 npm/git 安装扩展/技能

@@ -22,3 +22,5 @@ anyhow = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 dirs-next = "2"
 dashmap = "6"
+serde_json = { workspace = true }
+reqwest = { workspace = true }

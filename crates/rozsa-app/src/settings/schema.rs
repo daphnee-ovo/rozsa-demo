@@ -45,6 +45,8 @@ impl Default for RetrySettings {
 pub struct PermissionSettings {
     pub mode: String,
     pub auto_approve_patterns: Vec<String>,
+    pub allowed_tools: Vec<String>,
+    pub blocked_commands: Vec<String>,
 }
 
 impl Default for PermissionSettings {
@@ -52,6 +54,8 @@ impl Default for PermissionSettings {
         Self {
             mode: "on-request".to_string(),
             auto_approve_patterns: Vec::new(),
+            allowed_tools: Vec::new(),
+            blocked_commands: Vec::new(),
         }
     }
 }
@@ -159,4 +163,8 @@ pub struct PartialPermissionSettings {
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_patterns: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_commands: Option<Vec<String>>,
 }

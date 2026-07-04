@@ -20,8 +20,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
-const GENERATED_MODELS_JSON: &str = include_str!("models.generated.json");
-const GENERATED_IMAGE_MODELS_JSON: &str = include_str!("image-models.generated.json");
 const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 const DEFAULT_MAX_TOKENS: usize = 16_384;
 
@@ -201,11 +199,6 @@ pub struct ImageModelRegistry {
 }
 
 impl ImageModelRegistry {
-    /// Load the checked-in generated image model metadata.
-    pub fn from_generated() -> Result<Self, ModelRegistryError> {
-        Self::from_generated_json(GENERATED_IMAGE_MODELS_JSON)
-    }
-
     /// Load image model metadata from generated JSON text.
     pub fn from_generated_json(input: &str) -> Result<Self, ModelRegistryError> {
         Ok(Self {
@@ -256,28 +249,53 @@ impl ImageModelRegistry {
 }
 
 impl ModelRegistry {
-    /// Load the checked-in generated model metadata.
-    pub fn from_generated() -> Result<Self, ModelRegistryError> {
-        Self::from_generated_json(GENERATED_MODELS_JSON)
+    /// Load models from multiple directories (later directories override earlier ones).
+    /// Typical order: user-level (`~/.rozsa/models/`) then project-level (`.rozsa/models/`).
+    /// Project-level takes priority because it's loaded last.
+    pub fn load_from_dirs(dirs: &[&Path]) -> Result<Self, ModelRegistryError> {
+        let mut registry = Self {
+            models: Vec::new(),
+            user_configured_model_keys: HashSet::new(),
+            provider_api_keys: HashMap::new(),
+        };
+
+        for dir in dirs {
+            registry.apply_dir(dir)?;
+        }
+
+        Ok(registry)
     }
 
-    /// Load generated metadata and merge an optional `models.json` file.
-    pub fn from_generated_with_models_json_path(
-        models_json_path: Option<&Path>,
-    ) -> Result<Self, ModelRegistryError> {
-        let mut registry = Self::from_generated()?;
-        if let Some(path) = models_json_path {
-            if path
-                .try_exists()
-                .map_err(|error| ModelRegistryError::ModelsJsonRead {
-                    path: path.display().to_string(),
-                    message: error.to_string(),
-                })?
-            {
-                registry.apply_models_config_file(path)?;
-            }
+    /// Load models from a single directory of JSON config files.
+    pub fn load_from_dir(dir: &Path) -> Result<Self, ModelRegistryError> {
+        Self::load_from_dirs(&[dir])
+    }
+
+    /// Scan a directory for `*.json` files and apply each as a models config.
+    /// Silently skips if the directory doesn't exist.
+    fn apply_dir(&mut self, dir: &Path) -> Result<(), ModelRegistryError> {
+        if !dir.is_dir() {
+            return Ok(());
         }
-        Ok(registry)
+
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .map_err(|e| ModelRegistryError::ModelsJsonRead {
+                path: dir.display().to_string(),
+                message: e.to_string(),
+            })?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
+            })
+            .collect();
+
+        entries.sort_by_key(|e| e.file_name());
+
+        for entry in entries {
+            self.apply_models_config_file(&entry.path())?;
+        }
+
+        Ok(())
     }
 
     /// Load model metadata from generated JSON text.

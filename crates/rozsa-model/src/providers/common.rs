@@ -40,12 +40,19 @@ pub fn unix_timestamp_ms() -> i64 {
 }
 
 /// Build a reqwest client with optional per-request timeout.
+///
+/// Uses the shared HTTP client by default. If a custom timeout is specified in options,
+/// creates a new client with that timeout (because timeouts cannot be changed per-request
+/// on an existing client).
 pub fn build_http_client(options: &StreamOptions) -> ProviderResult<reqwest::Client> {
-    let mut builder = reqwest::Client::builder();
     if let Some(timeout_ms) = options.timeout_ms {
-        builder = builder.timeout(Duration::from_millis(timeout_ms));
+        // Custom timeout requested — create a new client with that timeout
+        let builder = reqwest::Client::builder().timeout(Duration::from_millis(timeout_ms));
+        Ok(builder.build()?)
+    } else {
+        // Use the shared client for standard requests
+        Ok(crate::http_client::shared_client().clone())
     }
-    Ok(builder.build()?)
 }
 
 /// Resolve an API key from request options first, then known provider env vars.

@@ -5,6 +5,7 @@ use serde_json::json;
 use std::path::Path;
 use tokio::fs;
 use tokio_util::sync::CancellationToken;
+use super::file_lock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WriteParams {
@@ -22,59 +23,63 @@ impl WriteTool {
 
     async fn write_file(file_path: &str, content: &str) -> Result<String, String> {
         let path = Path::new(file_path);
+        let path_buf = path.to_path_buf();
 
-        // Create parent directories if needed
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| match e.kind() {
-                        std::io::ErrorKind::PermissionDenied => {
-                            format!("Permission denied: cannot create parent directory for {}", file_path)
-                        }
-                        _ => format!("Failed to create parent directory: {}", e),
-                    })?;
+        file_lock::with_file_lock(&path_buf, async move {
+            // Create parent directories if needed
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    fs::create_dir_all(parent)
+                        .await
+                        .map_err(|e| match e.kind() {
+                            std::io::ErrorKind::PermissionDenied => {
+                                format!("Permission denied: cannot create parent directory for {}", file_path)
+                            }
+                            _ => format!("Failed to create parent directory: {}", e),
+                        })?;
+                }
             }
-        }
 
-        // Write to temporary file first (atomic write)
-        let tmp_path = path.with_extension("tmp");
+            // Write to temporary file first (atomic write)
+            let tmp_path = path.with_extension("tmp");
 
-        fs::write(&tmp_path, content)
-            .await
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::PermissionDenied => {
-                    format!("Permission denied: {}", file_path)
-                }
-                std::io::ErrorKind::OutOfMemory => {
-                    format!("Out of memory while writing to {}", file_path)
-                }
-                _ => format!("Failed to write file: {}", e),
-            })?;
-
-        // Atomic rename
-        fs::rename(&tmp_path, path)
-            .await
-            .map_err(|e| {
-                // Clean up tmp file on rename failure
-                let _ = std::fs::remove_file(&tmp_path);
-                match e.kind() {
+            fs::write(&tmp_path, content)
+                .await
+                .map_err(|e| match e.kind() {
                     std::io::ErrorKind::PermissionDenied => {
-                        format!("Permission denied: cannot rename temporary file to {}", file_path)
+                        format!("Permission denied: {}", file_path)
                     }
-                    _ => format!("Failed to rename temporary file: {}", e),
-                }
-            })?;
+                    std::io::ErrorKind::OutOfMemory => {
+                        format!("Out of memory while writing to {}", file_path)
+                    }
+                    _ => format!("Failed to write file: {}", e),
+                })?;
 
-        // Count lines
-        let line_count = content.lines().count();
+            // Atomic rename
+            fs::rename(&tmp_path, path)
+                .await
+                .map_err(|e| {
+                    // Clean up tmp file on rename failure
+                    let _ = std::fs::remove_file(&tmp_path);
+                    match e.kind() {
+                        std::io::ErrorKind::PermissionDenied => {
+                            format!("Permission denied: cannot rename temporary file to {}", file_path)
+                        }
+                        _ => format!("Failed to rename temporary file: {}", e),
+                    }
+                })?;
 
-        Ok(format!(
-            "Successfully wrote {} to {} ({} lines)",
-            Self::format_size(content.len()),
-            file_path,
-            line_count
-        ))
+            // Count lines
+            let line_count = content.lines().count();
+
+            Ok(format!(
+                "Successfully wrote {} to {} ({} lines)",
+                Self::format_size(content.len()),
+                file_path,
+                line_count
+            ))
+        })
+        .await
     }
 
     fn format_size(bytes: usize) -> String {

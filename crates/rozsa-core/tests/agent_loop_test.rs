@@ -1150,3 +1150,138 @@ async fn parallel_panic_produces_error_result_not_silent_drop() {
     // AgentEnd should be reached
     assert!(events.iter().any(|e| matches!(e, AgentEvent::AgentEnd { .. })));
 }
+
+#[tokio::test]
+async fn parallel_cancel_aborts_pending_handles() {
+    struct SlowTool {
+        name: String,
+        schema: serde_json::Value,
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for SlowTool {
+        fn name(&self) -> &str { &self.name }
+        fn description(&self) -> &str { "slow tool" }
+        fn label(&self) -> &str { "slow" }
+        fn parameters_schema(&self) -> &serde_json::Value { &self.schema }
+        async fn execute(
+            &self,
+            _tool_call_id: &str,
+            _params: serde_json::Value,
+            signal: Option<CancellationToken>,
+            _on_update: Option<&(dyn Fn(ToolResult) + Send + Sync)>,
+        ) -> Result<ToolResult, ToolError> {
+            // Simulate long-running operation that respects cancellation
+            tokio::select! {
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(10)) => {
+                    Ok(ToolResult {
+                        content: vec![ContentBlock::Text {
+                            text: "completed".to_string(),
+                            signature: None,
+                        }],
+                        details: serde_json::Value::Null,
+                        terminate: false,
+                    })
+                }
+                _ = async {
+                    if let Some(token) = signal {
+                        token.cancelled().await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    Err(ToolError::Cancelled)
+                }
+            }
+        }
+    }
+
+    let tool1: Arc<dyn Tool> = Arc::new(SlowTool {
+        name: "slow1".to_string(),
+        schema: serde_json::json!({ "type": "object" }),
+    });
+    let tool2: Arc<dyn Tool> = Arc::new(SlowTool {
+        name: "slow2".to_string(),
+        schema: serde_json::json!({ "type": "object" }),
+    });
+
+    let config = {
+        let mut base = config_with_stream(|| {
+            let (sender, stream) = create_event_stream();
+            let message = assistant_message(vec![
+                ContentBlock::ToolCall(ToolCall {
+                    id: "call1".to_string(),
+                    name: "slow1".to_string(),
+                    arguments: serde_json::json!({}),
+                }),
+                ContentBlock::ToolCall(ToolCall {
+                    id: "call2".to_string(),
+                    name: "slow2".to_string(),
+                    arguments: serde_json::json!({}),
+                }),
+            ]);
+            tokio::spawn(async move {
+                sender.push(StreamEvent::Start {
+                    partial: assistant_message(Vec::new()),
+                });
+                sender.push(StreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message,
+                });
+            });
+            stream
+        });
+        base.tools = vec![tool1, tool2];
+        base.tool_execution = ToolExecutionMode::Parallel;
+        base.should_stop_after_turn = Some(Box::new(|_| true));
+        base
+    };
+
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+
+    let cancel_token = CancellationToken::new();
+    let cancel_clone = cancel_token.clone();
+
+    // Cancel after a short delay
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        cancel_clone.cancel();
+    });
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, Some(cancel_token));
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    // Both tools should have start events
+    let starts: Vec<_> = events.iter().filter_map(|e| {
+        if let AgentEvent::ToolExecutionStart { tool_call_id, .. } = e {
+            Some(tool_call_id.clone())
+        } else {
+            None
+        }
+    }).collect();
+    assert_eq!(starts.len(), 2, "should have 2 tool execution starts");
+
+    // Both tools should have end events (cancelled tools produce error results)
+    let ends: Vec<_> = events.iter().filter_map(|e| {
+        if let AgentEvent::ToolExecutionEnd { tool_call_id, result, .. } = e {
+            Some((tool_call_id.clone(), result.is_error))
+        } else {
+            None
+        }
+    }).collect();
+    assert_eq!(ends.len(), 2, "should have 2 tool execution ends (cancelled tools produce errors)");
+
+    // At least one should be an error (from cancellation)
+    let error_count = ends.iter().filter(|(_, is_error)| *is_error).count();
+    assert!(error_count >= 1, "at least one tool should have error result from cancellation");
+
+    // Agent should complete
+    assert!(events.iter().any(|e| matches!(e, AgentEvent::AgentEnd { .. })));
+}

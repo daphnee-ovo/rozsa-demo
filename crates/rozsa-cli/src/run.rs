@@ -37,14 +37,28 @@ pub async fn run(args: &Args) -> Result<()> {
             .expect("fallback settings")
     });
 
-    // Resolve model from registry (reads generated models + models.json + env API keys)
-    let models_json_path = agent_dir.join("models.json");
-    let registry = ModelRegistry::from_generated_with_models_json_path(
-        Some(&models_json_path),
-    )?;
+    // Spawn non-blocking version check
+    if std::env::var("ROZSA_SKIP_VERSION_CHECK").unwrap_or_default() != "1" {
+        tokio::spawn(async {
+            check_version().await;
+        });
+    }
+
+    // Resolve model from registry: user-level then project-level (project overrides user)
+    let user_models_dir = home.join(".rozsa").join("models");
+    let project_models_dir = cwd.join(".rozsa").join("models");
+    let registry =
+        ModelRegistry::load_from_dirs(&[&user_models_dir, &project_models_dir])?;
 
     let model = if let Some(ref model_arg) = args.model {
         registry.find_by_id(model_arg)
+    } else if let Some(ref provider_arg) = args.provider {
+        // Use --provider to override provider selection
+        if let Some(model_id) = settings_manager.default_model() {
+            registry.resolve(provider_arg, model_id)
+        } else {
+            registry.first_available()
+        }
     } else if let (Some(provider), Some(model_id)) = (
         settings_manager.default_provider(),
         settings_manager.default_model(),
@@ -62,7 +76,12 @@ pub async fn run(args: &Args) -> Result<()> {
 
     let resource_loader = ResourceLoader::new(cwd.clone(), agent_dir.clone());
     let resources = resource_loader.load().await.unwrap_or_default();
-    let system_prompt = ResourceLoader::build_system_prompt(&resources);
+    let system_prompt = if let Some(ref custom_prompt) = args.system_prompt {
+        // Use --system-prompt to override
+        custom_prompt.clone()
+    } else {
+        ResourceLoader::build_system_prompt(&resources)
+    };
 
     // Session 存储在 ~/.rozsa/agent/sessions/<cwd-encoded>/
     let cwd_encoded = cwd
@@ -72,17 +91,75 @@ pub async fn run(args: &Args) -> Result<()> {
         .to_string();
     let session_dir = agent_dir.join("sessions").join(format!("-{cwd_encoded}-"));
     std::fs::create_dir_all(&session_dir)?;
-    let session_id = uuid::Uuid::new_v4().to_string();
-    let session_path = session_dir.join(format!("{session_id}.jsonl"));
+
+    // Handle --continue and --resume
+    let (session_id, session_path, parent_id) = if args.continue_session {
+        // Find the most recent session file
+        let mut entries: Vec<_> = std::fs::read_dir(&session_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s == "jsonl")
+                    .unwrap_or(false)
+            })
+            .collect();
+        entries.sort_by_key(|e| e.metadata().ok().and_then(|m| m.modified().ok()));
+
+        if let Some(last_entry) = entries.last() {
+            let path = last_entry.path();
+            let old_session_id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            let new_session_id = uuid::Uuid::new_v4().to_string();
+            let new_path = session_dir.join(format!("{new_session_id}.jsonl"));
+            (new_session_id, new_path, Some(old_session_id))
+        } else {
+            anyhow::bail!("No previous session found to continue");
+        }
+    } else if let Some(ref resume_id) = args.resume {
+        // Resume a specific session by ID
+        let existing_path = session_dir.join(format!("{resume_id}.jsonl"));
+        if !existing_path.exists() {
+            anyhow::bail!("Session {} not found", resume_id);
+        }
+        let new_session_id = uuid::Uuid::new_v4().to_string();
+        let new_path = session_dir.join(format!("{new_session_id}.jsonl"));
+        (new_session_id, new_path, Some(resume_id.clone()))
+    } else {
+        // Create new session
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let session_path = session_dir.join(format!("{session_id}.jsonl"));
+        (session_id, session_path, None)
+    };
 
     let session_manager = SessionManager::create_lazy(
         &session_path,
         session_id,
         cwd.to_string_lossy().to_string(),
-        None,
+        parent_id,
     );
 
-    let thinking_level = settings_manager.default_thinking_level_parsed();
+    let thinking_level = if let Some(ref thinking_arg) = args.thinking {
+        // Parse --thinking argument
+        match thinking_arg.to_lowercase().as_str() {
+            "off" => rozsa_model::types::ThinkingLevel::Off,
+            "minimal" => rozsa_model::types::ThinkingLevel::Minimal,
+            "low" => rozsa_model::types::ThinkingLevel::Low,
+            "medium" => rozsa_model::types::ThinkingLevel::Medium,
+            "high" => rozsa_model::types::ThinkingLevel::High,
+            "xhigh" => rozsa_model::types::ThinkingLevel::XHigh,
+            _ => anyhow::bail!(
+                "Invalid thinking level: {}. Valid values: off, minimal, low, medium, high, xhigh",
+                thinking_arg
+            ),
+        }
+    } else {
+        settings_manager.default_thinking_level_parsed()
+    };
 
     // Permission system setup
     let permission_mode = PermissionMode::parse(&settings_manager.resolved().permissions.mode)
@@ -94,7 +171,24 @@ pub async fn run(args: &Args) -> Result<()> {
         .auto_approve_patterns
         .clone();
 
-    let mut policy = PermissionPolicy::new(permission_mode, auto_approve_patterns);
+    let allowed_tools = settings_manager
+        .resolved()
+        .permissions
+        .allowed_tools
+        .clone();
+
+    let blocked_commands = settings_manager
+        .resolved()
+        .permissions
+        .blocked_commands
+        .clone();
+
+    let mut policy = PermissionPolicy::new(
+        permission_mode,
+        auto_approve_patterns,
+        allowed_tools,
+        blocked_commands,
+    );
 
     // Persist session approvals to settings file for cross-session reuse.
     let settings_for_persist = Arc::new(std::sync::Mutex::new(settings_manager.clone()));
@@ -177,20 +271,35 @@ pub async fn run(args: &Args) -> Result<()> {
     let session = AgentSession::new(config);
     session.register_default_tools(&cwd).await;
 
+    if args.print && args.prompt.is_none() {
+        anyhow::bail!("--print requires a prompt argument");
+    }
+
     if let Some(ref prompt) = args.prompt {
         let events = session.prompt(prompt).await?;
 
-        for event in &events {
-            if let AgentEvent::MessageEnd { message } = event {
-                if let Some(rozsa_model::types::Message::Assistant(assistant)) =
-                    message.as_standard()
-                {
-                    for block in &assistant.content {
-                        if let rozsa_model::types::ContentBlock::Text { text, .. } = block {
-                            print!("{text}");
+        match args.output_format {
+            crate::args::OutputFormat::Text => {
+                for event in &events {
+                    if let AgentEvent::MessageEnd { message } = event {
+                        if let Some(rozsa_model::types::Message::Assistant(assistant)) =
+                            message.as_standard()
+                        {
+                            for block in &assistant.content {
+                                if let rozsa_model::types::ContentBlock::Text { text, .. } = block {
+                                    print!("{text}");
+                                }
+                            }
+                            println!();
                         }
                     }
-                    println!();
+                }
+            }
+            crate::args::OutputFormat::Json => {
+                for event in &events {
+                    let json = serde_json::to_string(event)
+                        .unwrap_or_else(|_| "{}".to_string());
+                    println!("{json}");
                 }
             }
         }
@@ -211,5 +320,22 @@ pub async fn run(args: &Args) -> Result<()> {
     )
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+async fn check_version() {
+    let Ok(resp) = reqwest::get("https://rozsa.dev/api/latest-version").await else {
+        return;
+    };
+    let Ok(text) = resp.text().await else {
+        return;
+    };
+    let latest = text.trim();
+    let current = env!("CARGO_PKG_VERSION");
+    if latest != current && !latest.is_empty() {
+        eprintln!(
+            "\x1b[33mNew version available: {} (current: {})\x1b[0m",
+            latest, current
+        );
+    }
 }
 

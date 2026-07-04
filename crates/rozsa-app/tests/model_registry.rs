@@ -78,15 +78,11 @@ fn loads_generated_image_model_metadata() {
 }
 
 #[test]
-fn loads_checked_in_generated_image_models() {
-    let registry = ImageModelRegistry::from_generated().unwrap();
+fn loads_image_models_from_json() {
+    let registry = ImageModelRegistry::from_generated_json(generated_image_json()).unwrap();
 
     assert!(!registry.all().is_empty());
-    assert!(
-        registry
-            .find("openrouter", "google/gemini-2.5-flash-image")
-            .is_some()
-    );
+    assert!(registry.find("openrouter", "image-test").is_some());
 }
 
 #[test]
@@ -115,13 +111,12 @@ fn reports_image_provider_auth_from_env() {
 }
 
 #[test]
-fn missing_models_json_path_is_ignored() {
-    let registry = ModelRegistry::from_generated_with_models_json_path(Some(std::path::Path::new(
-        "temp/missing-models-json-for-test.json",
-    )))
-    .unwrap();
+fn load_from_nonexistent_dir_returns_empty() {
+    let registry =
+        ModelRegistry::load_from_dir(std::path::Path::new("/tmp/rozsa-test-nonexistent-dir"))
+            .unwrap();
 
-    assert!(!registry.all().is_empty());
+    assert!(registry.all().is_empty());
 }
 
 #[test]

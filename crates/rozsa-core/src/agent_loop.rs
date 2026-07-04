@@ -7,6 +7,7 @@ use rozsa_model::types::{
     AssistantMessage, ContentBlock, Context as ModelContext, Message, StopReason, StreamEvent,
     ThinkingLevel, ToolCall, ToolResultMessage,
 };
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 pub fn agent_loop(
@@ -66,6 +67,7 @@ async fn run_loop(
     let mut new_messages = Vec::new();
     let mut first_turn = true;
     let mut turn_count: u32 = 0;
+    let mut auth_retried = false;
 
     emit.push(AgentEvent::AgentStart);
     emit.push(AgentEvent::TurnStart);
@@ -131,6 +133,39 @@ async fn run_loop(
             };
 
             new_messages.push(assistant_agent_message(message.clone()));
+
+            // Auth retry: if 401/auth error and get_api_key hook exists, try refresh once
+            if message.stop_reason == StopReason::Error && !auth_retried {
+                if let Some(ref err_msg) = message.error_message {
+                    let err_lower = err_msg.to_lowercase();
+                    if err_lower.contains("401")
+                        || err_lower.contains("unauthorized")
+                        || err_lower.contains("authentication")
+                    {
+                        if let Some(ref refresh) = config.get_api_key {
+                            auth_retried = true;
+                            // Call the hook to refresh credentials (provider is extracted from model)
+                            let provider = message.provider.as_str();
+                            if let Some(_new_key) = refresh(provider) {
+                                tracing::info!(
+                                    "Auth error detected, refreshed credentials for provider '{}', retrying...",
+                                    provider
+                                );
+                                // Remove the error message from context and new_messages
+                                context.messages.pop();
+                                new_messages.pop();
+                                // Retry by continuing the loop
+                                continue;
+                            } else {
+                                tracing::warn!(
+                                    "Auth error detected but get_api_key returned None for provider '{}'",
+                                    provider
+                                );
+                            }
+                        }
+                    }
+                }
+            }
 
             if matches!(message.stop_reason, StopReason::Error | StopReason::Aborted) {
                 emit.push(AgentEvent::TurnEnd {
@@ -482,6 +517,7 @@ async fn execute_parallel(
     emit: &EventStreamSender<AgentEvent>,
     signal: Option<&CancellationToken>,
 ) -> ToolBatchResult {
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(10));
     let mut entries: Vec<PreparedEntry> = Vec::new();
 
     for call in tool_calls {
@@ -536,7 +572,10 @@ async fn execute_parallel(
         let signal_clone = signal.cloned();
         let emit_clone = emit.clone();
         let schema = tool.parameters_schema().clone();
+        let semaphore_clone = semaphore.clone();
         let handle = tokio::spawn(async move {
+            let _permit = semaphore_clone.acquire_owned().await.expect("semaphore closed");
+
             let args = if call_clone.arguments.is_null() {
                 serde_json::Value::Object(Default::default())
             } else {
@@ -574,7 +613,17 @@ async fn execute_parallel(
 
     // Await in source order (like TS Promise.all) — emit tool_execution_end per tool
     let mut finalized_calls: Vec<FinalizedToolCall> = Vec::new();
-    for entry in entries {
+    let mut entries_iter = entries.into_iter();
+    let mut remaining_entries: Vec<PreparedEntry> = Vec::new();
+
+    for entry in entries_iter.by_ref() {
+        // If cancelled, collect remaining entries and abort their handles
+        if is_cancelled(signal) {
+            remaining_entries.push(entry);
+            remaining_entries.extend(entries_iter);
+            break;
+        }
+
         let finalized = match entry {
             PreparedEntry::Immediate(f) => f,
             PreparedEntry::Pending { call, handle } => {
@@ -636,6 +685,34 @@ async fn execute_parallel(
             }
         };
         finalized_calls.push(finalized);
+    }
+
+    // Abort remaining pending handles if cancellation occurred
+    for entry in remaining_entries {
+        match entry {
+            PreparedEntry::Immediate(f) => {
+                finalized_calls.push(f);
+            }
+            PreparedEntry::Pending { call, handle } => {
+                handle.abort();
+                let f = FinalizedToolCall {
+                    tool_call: call.clone(),
+                    content: vec![ContentBlock::Text {
+                        text: "Tool execution was cancelled".to_string(),
+                        signature: None,
+                    }],
+                    details: serde_json::Value::Null,
+                    is_error: true,
+                    terminate: false,
+                };
+                emit.push(AgentEvent::ToolExecutionEnd {
+                    tool_call_id: call.id.clone(),
+                    tool_name: call.name.clone(),
+                    result: finalized_to_result_message(&f),
+                });
+                finalized_calls.push(f);
+            }
+        }
     }
 
     // Emit tool result messages in source order (after all tool_execution_end)

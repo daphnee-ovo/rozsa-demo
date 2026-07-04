@@ -5,6 +5,7 @@ use serde_json::json;
 use std::path::Path;
 use tokio::fs;
 use tokio_util::sync::CancellationToken;
+use super::file_lock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct EditParams {
@@ -23,6 +24,33 @@ impl EditTool {
         Self
     }
 
+    /// Normalize whitespace for fuzzy matching: collapse runs of whitespace to single space, trim lines
+    fn normalize_whitespace(s: &str) -> String {
+        s.lines()
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Try to find old_string in content using fuzzy matching strategies
+    /// Returns match_strategy if found
+    fn fuzzy_match(content: &str, old_string: &str) -> Option<&'static str> {
+        // Strategy 1: Exact match
+        if content.contains(old_string) {
+            return Some("exact");
+        }
+
+        // Strategy 2: Whitespace-normalized match
+        let normalized_content = Self::normalize_whitespace(content);
+        let normalized_old = Self::normalize_whitespace(old_string);
+
+        if normalized_content.contains(&normalized_old) {
+            return Some("whitespace-normalized");
+        }
+
+        None
+    }
+
     async fn edit_file(
         file_path: &str,
         old_string: &str,
@@ -30,99 +58,157 @@ impl EditTool {
         replace_all: bool,
     ) -> Result<String, String> {
         let path = Path::new(file_path);
+        let path_buf = path.to_path_buf();
 
-        // Check if file exists and is readable
-        if !path.exists() {
-            return Err(format!("File not found: {}", file_path));
-        }
+        file_lock::with_file_lock(&path_buf, async move {
+            // Check if file exists and is readable
+            if !path.exists() {
+                return Err(format!("File not found: {}", file_path));
+            }
 
-        if !path.is_file() {
-            return Err(format!("Not a file: {}", file_path));
-        }
+            if !path.is_file() {
+                return Err(format!("Not a file: {}", file_path));
+            }
 
-        // Read file content
-        let content = fs::read_to_string(file_path)
-            .await
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::PermissionDenied => {
-                    format!("Permission denied: {}", file_path)
-                }
-                std::io::ErrorKind::InvalidData => {
-                    format!("Binary file or invalid UTF-8: {}", file_path)
-                }
-                _ => format!("Failed to read file: {}", e),
-            })?;
+            // Read file content
+            let mut content = fs::read_to_string(file_path)
+                .await
+                .map_err(|e| match e.kind() {
+                    std::io::ErrorKind::PermissionDenied => {
+                        format!("Permission denied: {}", file_path)
+                    }
+                    std::io::ErrorKind::InvalidData => {
+                        format!("Binary file or invalid UTF-8: {}", file_path)
+                    }
+                    _ => format!("Failed to read file: {}", e),
+                })?;
 
-        // Check if old_string exists in content
-        if !content.contains(old_string) {
-            return Err(format!(
-                "Could not find old_string in {}. The text must match exactly including all whitespace and newlines.",
-                file_path
-            ));
-        }
+            // Detect and strip BOM if present
+            let has_bom = content.starts_with('\u{feff}');
+            if has_bom {
+                content = content.trim_start_matches('\u{feff}').to_string();
+            }
 
-        // Count occurrences
-        let occurrences = content.matches(old_string).count();
+            // Detect line ending style (CRLF vs LF)
+            let uses_crlf = content.contains("\r\n");
 
-        // Handle replacement based on replace_all flag
-        let new_content = if replace_all {
-            // Replace all occurrences
-            content.replace(old_string, new_string)
-        } else {
-            // Check for uniqueness
-            if occurrences > 1 {
+            // Normalize to LF for matching
+            let normalized_content = if uses_crlf {
+                content.replace("\r\n", "\n")
+            } else {
+                content.clone()
+            };
+
+            let normalized_old_string = if uses_crlf {
+                old_string.replace("\r\n", "\n")
+            } else {
+                old_string.to_string()
+            };
+
+            // Try fuzzy matching and determine which content to work with
+            let match_strategy = Self::fuzzy_match(&normalized_content, &normalized_old_string);
+
+            if match_strategy.is_none() {
                 return Err(format!(
-                    "Found {} occurrences of old_string in {}. The text must be unique or use replace_all=true.",
-                    occurrences, file_path
+                    "Could not find old_string in {}. The text must match exactly including all whitespace and newlines.",
+                    file_path
                 ));
             }
-            // Replace single occurrence
-            content.replacen(old_string, new_string, 1)
-        };
 
-        // Check if content actually changed
-        if content == new_content {
-            return Err(format!(
-                "No changes made to {}. The replacement produced identical content.",
-                file_path
-            ));
-        }
+            let match_strategy = match_strategy.unwrap();
 
-        // Write to temporary file first (atomic write)
-        let tmp_path = path.with_extension("tmp");
+            // For fuzzy matching, work with whitespace-normalized content
+            let (working_content, working_old_string) = if match_strategy == "whitespace-normalized" {
+                (
+                    Self::normalize_whitespace(&normalized_content),
+                    Self::normalize_whitespace(&normalized_old_string),
+                )
+            } else {
+                (normalized_content.clone(), normalized_old_string.clone())
+            };
 
-        fs::write(&tmp_path, &new_content)
-            .await
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::PermissionDenied => {
-                    format!("Permission denied: {}", file_path)
+            // Count occurrences in working content
+            let occurrences = working_content.matches(&working_old_string).count();
+
+            // Handle replacement based on replace_all flag
+            let new_normalized_content = if replace_all {
+                // Replace all occurrences
+                working_content.replace(&working_old_string, new_string)
+            } else {
+                // Check for uniqueness
+                if occurrences > 1 {
+                    return Err(format!(
+                        "Found {} occurrences of old_string in {}. The text must be unique or use replace_all=true.",
+                        occurrences, file_path
+                    ));
                 }
-                std::io::ErrorKind::OutOfMemory => {
-                    format!("Out of memory while writing to {}", file_path)
-                }
-                _ => format!("Failed to write file: {}", e),
-            })?;
+                // Replace single occurrence
+                working_content.replacen(&working_old_string, new_string, 1)
+            };
 
-        // Atomic rename
-        fs::rename(&tmp_path, path)
-            .await
-            .map_err(|e| {
-                // Clean up tmp file on rename failure
-                let _ = std::fs::remove_file(&tmp_path);
-                match e.kind() {
+            // Check if content actually changed
+            if working_content == new_normalized_content {
+                return Err(format!(
+                    "No changes made to {}. The replacement produced identical content.",
+                    file_path
+                ));
+            }
+
+            // Convert back to original line ending style if needed
+            let mut final_content = if uses_crlf {
+                new_normalized_content.replace('\n', "\r\n")
+            } else {
+                new_normalized_content
+            };
+
+            // Restore BOM if present
+            if has_bom {
+                final_content = format!("\u{feff}{}", final_content);
+            }
+
+            // Write to temporary file first (atomic write)
+            let tmp_path = path.with_extension("tmp");
+
+            fs::write(&tmp_path, &final_content)
+                .await
+                .map_err(|e| match e.kind() {
                     std::io::ErrorKind::PermissionDenied => {
-                        format!("Permission denied: cannot rename temporary file to {}", file_path)
+                        format!("Permission denied: {}", file_path)
                     }
-                    _ => format!("Failed to rename temporary file: {}", e),
-                }
-            })?;
+                    std::io::ErrorKind::OutOfMemory => {
+                        format!("Out of memory while writing to {}", file_path)
+                    }
+                    _ => format!("Failed to write file: {}", e),
+                })?;
 
-        let replacement_count = if replace_all { occurrences } else { 1 };
+            // Atomic rename
+            fs::rename(&tmp_path, path)
+                .await
+                .map_err(|e| {
+                    // Clean up tmp file on rename failure
+                    let _ = std::fs::remove_file(&tmp_path);
+                    match e.kind() {
+                        std::io::ErrorKind::PermissionDenied => {
+                            format!("Permission denied: cannot rename temporary file to {}", file_path)
+                        }
+                        _ => format!("Failed to rename temporary file: {}", e),
+                    }
+                })?;
 
-        Ok(format!(
-            "Successfully replaced {} occurrence(s) in {}",
-            replacement_count, file_path
-        ))
+            let replacement_count = if replace_all { occurrences } else { 1 };
+
+            let strategy_msg = if match_strategy != "exact" {
+                format!(" (using {} match)", match_strategy)
+            } else {
+                String::new()
+            };
+
+            Ok(format!(
+                "Successfully replaced {} occurrence(s) in {}{}",
+                replacement_count, file_path, strategy_msg
+            ))
+        })
+        .await
     }
 }
 

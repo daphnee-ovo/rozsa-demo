@@ -44,4 +44,5 @@ Rust 版相较 TS 版的有意行为差异记录在 [`docs/RUST_DIFF_DECISIONS.m
 
 ## 参考
 
+`docs\TODO.md` 为长线开发规划。
 详细的开发规则、Git 规范、核心原则见 `AGENTS.md`。

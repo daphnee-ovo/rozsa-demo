@@ -148,6 +148,8 @@ pub struct PermissionPolicy {
     mode: PermissionMode,
     blacklist: Vec<(Regex, &'static str)>,
     auto_approve_patterns: Vec<Regex>,
+    allowed_tools: Vec<String>,
+    blocked_commands: Vec<String>,
     session_approvals: Mutex<HashSet<String>>,
     on_approval: Option<OnApprovalCallback>,
 }
@@ -156,7 +158,14 @@ impl PermissionPolicy {
     /// 创建新的权限策略实例。
     ///
     /// `auto_approve_patterns` 中的字符串会编译为正则，匹配 trust_key。
-    pub fn new(mode: PermissionMode, auto_approve_patterns: Vec<String>) -> Self {
+    /// `allowed_tools` 是工具名称列表，匹配的工具直接放行（例如 ["read", "grep"]）。
+    /// `blocked_commands` 是命令前缀列表，匹配的命令直接拒绝（例如 ["rm -rf", "git push --force"]）。
+    pub fn new(
+        mode: PermissionMode,
+        auto_approve_patterns: Vec<String>,
+        allowed_tools: Vec<String>,
+        blocked_commands: Vec<String>,
+    ) -> Self {
         let blacklist = build_hardcoded_blacklist();
 
         let auto_approve_patterns = auto_approve_patterns
@@ -168,6 +177,8 @@ impl PermissionPolicy {
             mode,
             blacklist,
             auto_approve_patterns,
+            allowed_tools,
+            blocked_commands,
             session_approvals: Mutex::new(HashSet::new()),
             on_approval: None,
         }
@@ -184,6 +195,24 @@ impl PermissionPolicy {
         // FreePermission 模式：一律放行。
         if self.mode == PermissionMode::FreePermission {
             return PolicyVerdict::Allow;
+        }
+
+        // allowed_tools 检查：匹配的工具名称直接放行。
+        if self.allowed_tools.iter().any(|name| name == tool_name) {
+            return PolicyVerdict::Allow;
+        }
+
+        // blocked_commands 检查：对 Bash/bash 工具检查命令前缀。
+        if tool_name == "Bash" || tool_name == "bash" {
+            if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
+                for blocked_prefix in &self.blocked_commands {
+                    if cmd.trim_start().starts_with(blocked_prefix.as_str()) {
+                        return PolicyVerdict::Block {
+                            reason: format!("blocked by blocked_commands: {}", blocked_prefix),
+                        };
+                    }
+                }
+            }
         }
 
         // 黑名单检查（仅对 Bash/bash 工具的 command 参数）。
