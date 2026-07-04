@@ -541,7 +541,9 @@ impl ModelRegistry {
                         "Provider {provider_name}: baseUrl is required when defining custom models."
                     )));
                 }
-                if provider_config.api_key.is_none() {
+                let uses_aws_auth = provider_config.api.as_deref() == Some("bedrock-converse-stream")
+                    || provider_name == "amazon-bedrock";
+                if provider_config.api_key.is_none() && !uses_aws_auth {
                     return Err(ModelRegistryError::InvalidModelsJson(format!(
                         "Provider {provider_name}: apiKey is required when defining custom models."
                     )));

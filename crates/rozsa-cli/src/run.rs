@@ -69,9 +69,23 @@ pub async fn run(args: &Args) -> Result<()> {
     };
 
     let Some(model) = model else {
-        anyhow::bail!(
-            "No model available. Configure a provider API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) or specify --model."
-        );
+        let msg = if args.prompt.is_some() || args.print {
+            "No model available. Add model configs to ~/.rozsa/models/ or <project>/.rozsa/models/, or specify --model."
+        } else {
+            "No model configured.\n\n\
+             Create a model config file, e.g. ~/.rozsa/models/openai.json:\n\n\
+             \x20 {\n\
+             \x20   \"providers\": {\n\
+             \x20     \"openai\": {\n\
+             \x20       \"baseUrl\": \"https://api.openai.com/v1\",\n\
+             \x20       \"apiKey\": \"OPENAI_API_KEY\",\n\
+             \x20       \"api\": \"openai-completions\",\n\
+             \x20       \"models\": [{\"id\": \"gpt-4o\", \"name\": \"GPT-4o\", \"contextWindow\": 128000, \"maxTokens\": 16384}]\n\
+             \x20     }\n\
+             \x20   }\n\
+             \x20 }"
+        };
+        anyhow::bail!(msg);
     };
 
     let resource_loader = ResourceLoader::new(cwd.clone(), agent_dir.clone());
