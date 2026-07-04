@@ -1096,20 +1096,31 @@ impl NativeBackend {
                     // Process flow events (show URL to user)
                     while let Some(event) = flow_event_rx.recv().await {
                         match event {
-                            OAuthFlowEvent::AuthUrl { url, instructions } => {
-                                let msg = if let Some(inst) = instructions {
-                                    format!("{inst}\n\nURL: {url}")
-                                } else {
-                                    format!("Open this URL to login:\n{url}")
-                                };
-                                notify("info", &msg);
-                                // Try to open browser via xdg-open / open
-                                let _ = std::process::Command::new("xdg-open")
-                                    .arg(&url)
+                            OAuthFlowEvent::AuthUrl { url, .. } => {
+                                notify("info", &format!("[Login] {url}"));
+                                // Try to open browser (platform-specific)
+                                let opened = std::process::Command::new("cmd.exe")
+                                    .args(["/c", "start", &url.replace('&', "^&")])
                                     .stdin(std::process::Stdio::null())
                                     .stdout(std::process::Stdio::null())
                                     .stderr(std::process::Stdio::null())
                                     .spawn()
+                                    .or_else(|_| {
+                                        std::process::Command::new("wslview")
+                                            .arg(&url)
+                                            .stdin(std::process::Stdio::null())
+                                            .stdout(std::process::Stdio::null())
+                                            .stderr(std::process::Stdio::null())
+                                            .spawn()
+                                    })
+                                    .or_else(|_| {
+                                        std::process::Command::new("xdg-open")
+                                            .arg(&url)
+                                            .stdin(std::process::Stdio::null())
+                                            .stdout(std::process::Stdio::null())
+                                            .stderr(std::process::Stdio::null())
+                                            .spawn()
+                                    })
                                     .or_else(|_| {
                                         std::process::Command::new("open")
                                             .arg(&url)
@@ -1118,6 +1129,9 @@ impl NativeBackend {
                                             .stderr(std::process::Stdio::null())
                                             .spawn()
                                     });
+                                if opened.is_err() {
+                                    notify("warning", "Could not open browser. Please copy the URL above manually.");
+                                }
                             }
                             OAuthFlowEvent::Progress { message } => {
                                 notify("info", &message);
