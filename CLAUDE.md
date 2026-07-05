@@ -1,48 +1,71 @@
 # Rózsa
 
-AI coding agent — Rust 实现。TypeScript 遗留代码归档在 `legacy-ts/`，仅作参考。
+AI coding agent — Rust + Tauri 实现。
 
 ## 开发
 
 - 检查：`cargo build && cargo clippy && cargo test`
-- 测试：`./devtools/before/test.sh`（如脚本仍存在；否则直接 `cargo test`）
-- Rust 构建：`cargo build`
+- Release：`cargo build -p rozsa-cli --release`
+- 链接器：mold（`.cargo/config.toml`）
 
-## 技术栈
+## 架构约束
 
-- Rust (Cargo workspace, 5 crates)
+### Crate 分层
 
-## 项目结构
+`rozsa-model` → `rozsa-core` → `rozsa-app` → `rozsa-gui` / `rozsa-tui` / `rozsa-cli`
 
-- `crates/` — Rust workspace crates (rozsa-model, rozsa-core, rozsa-app, rozsa-tui, rozsa-cli)
-- `legacy-ts/` — 已归档的 TypeScript 遗留实现（仅作参考，禁止新增开发）
-- `docs/` — 文档
-- `devtools/` — 构建/检查脚本
-- `tests/` — 集成测试
+- model：无状态，只定义 types + provider streaming
+- core：agent loop + events + tool trait，不知道 session/settings
+- app：AgentSession 编排层（session、permissions、model registry、settings）——GUI 和 TUI 共用
+- gui/tui：前端层，互不依赖，各自独立实现 UI
 
-## 代码风格
+### AgentSession 单实例限制
 
-- Rust: rustfmt + clippy
-- 无 inline imports，仅 top-level
-- 提交前必须 `cargo build && cargo clippy && cargo test` 全通过
+`AgentSession` 内部的 `session_manager` 是共享 mutable 的。`switch_session()` 直接替换 session_manager 指向。**如果 agent loop 还在跑，`persist_new_messages` 会写到新 session 的文件**。GUI 通过多实例回避；TUI 不切换（一个窗口一个 session）。
 
-## 核心原则
+### AgentEvent 累积模型
 
-本项目遵循 [Core Rule](https://github.com/daphnee-ovo/code-core-rule) 中定义的软件工程原则，完整内容已集成到 `AGENTS.md` 的 "Core Principles" 章节。核心要点：
+- `AgentStart` → 标记 turn 起点
+- `MessageUpdate` → 携带**完整累积**的 AssistantMessage（不是 delta）
+- `AgentEnd` → 携带权威 messages 列表，必须 truncate 到 turn_base 再 extend（不能 append，否则重复）
 
-- 安全系统优先级最高，不得绕过
-- 需求不明确时先确认，范围扩大时暂停请求确认
-- 代码与文档双向可追踪
-- 优先简单实现，组合优于集成
-- 高内聚低耦合，显式约束优于运行时约定
-- 错误透明报告，快速失败，不隐藏问题
-- 信任已有测试
+### 权限系统
+
+- `pre_tool_use` hook（`AgentSessionConfig`）→ `PermissionPolicy::evaluate` → `PolicyVerdict::NeedApproval`
+- oneshot channel：hook await 阻塞 agent loop，UI 端 send 回应
+- `AllowSession { trust_key }` 持久化到 settings.json 实现跨会话信任
+- DashMap `PendingApprovals` 是共享的（CLI 创建，传给 UI 层）
+
+### Session 持久化
+
+JSONL 格式。SessionManager 管理读写。`entries()` 返回历史消息。新消息通过 `append_message` 追加。会话元数据（name、parent）通过 `append_session_info` 更新。
+
+### GUI 多会话隔离
+
+每个 session tab 有独立的 `AgentSession` 实例（懒加载）。三态：`Idle` → `Loaded` → `Active`。事件转发 per-tab，只在该 tab 为当前视图时 emit 给前端。权限请求跟 session 走。
+
+### Tauri 注意事项
+
+- `"withGlobalTauri": true` 在 `app` section，否则 `window.__TAURI__` 不注入
+- `capabilities/default.json` 需要 `core:default` + `core:event:*`
+- tokio runtime 内不能 `blocking_lock()`，用 `try_lock()` 或 async
+- icon.png 必须是 RGBA PNG
 
 ## Rust 迁移差异
 
-Rust 版相较 TS 版的有意行为差异记录在 [`docs/RUST_DIFF_DECISIONS.md`](docs/RUST_DIFF_DECISIONS.md)。已记录的差异是设计改进，不要求一比一复现 TS 行为。新增有意差异时应同步更新该文档。
+[`docs/RUST_DIFF_DECISIONS.md`](docs/RUST_DIFF_DECISIONS.md) 记录有意差异。已记录的不要求复现 TS 行为。
 
-## 参考
+## 关键文档
 
-`docs\TODO.md` 为长线开发规划。
-详细的开发规则、Git 规范、核心原则见 `AGENTS.md`。
+| 文档 | 用途 |
+|------|------|
+| `AGENTS.md` | 开发规则、Git 规范、核心原则 |
+| `docs/TODO.md` | 长线开发规划 |
+| `docs/RUST_DIFF_DECISIONS.md` | Rust 版有意行为差异（已记录的不要求复现 TS） |
+| `docs/UNIMPLEMENTED_AUDIT.md` | 未实现功能审计 |
+| `docs/gui/UI_USAGE_GUIDELINES.md` | GUI 设计规范（色板、组件、交互规则） |
+| `docs/gui/ARCHITECTURE.md` | GUI 技术架构（IPC 协议、状态模型） |
+| `docs/model/models-config.md` | 模型配置格式（providers JSON schema） |
+| `docs/model/supported-providers.md` | 支持的 LLM 提供商列表 |
+| `docs/model/oauth-architecture.md` | OAuth 登录流程设计 |
+| `docs/rozsa_framework.md` | 整体框架设计 |

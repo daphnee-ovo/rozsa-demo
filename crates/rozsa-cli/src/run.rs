@@ -68,24 +68,32 @@ pub async fn run(args: &Args) -> Result<()> {
         registry.first_available()
     };
 
-    let Some(model) = model else {
-        let msg = if args.prompt.is_some() || args.print {
-            "No model available. Add model configs to ~/.rozsa/models/ or <project>/.rozsa/models/, or specify --model."
-        } else {
-            "No model configured.\n\n\
-             Create a model config file, e.g. ~/.rozsa/models/openai.json:\n\n\
-             \x20 {\n\
-             \x20   \"providers\": {\n\
-             \x20     \"openai\": {\n\
-             \x20       \"baseUrl\": \"https://api.openai.com/v1\",\n\
-             \x20       \"apiKey\": \"OPENAI_API_KEY\",\n\
-             \x20       \"api\": \"openai-completions\",\n\
-             \x20       \"models\": [{\"id\": \"gpt-4o\", \"name\": \"GPT-4o\", \"contextWindow\": 128000, \"maxTokens\": 16384}]\n\
-             \x20     }\n\
-             \x20   }\n\
-             \x20 }"
-        };
-        anyhow::bail!(msg);
+    let model = match model {
+        Some(m) => m,
+        None => {
+            // prompt/print 模式必须有模型
+            if args.prompt.is_some() || args.print {
+                anyhow::bail!(
+                    "No model available. Add model configs to ~/.rozsa/models/ or <project>/.rozsa/models/, or specify --model."
+                );
+            }
+            // GUI 模式允许无模型启动 — 使用 placeholder，用户可在 GUI 设置中配置
+            rozsa_model::types::Model {
+                id: "(unconfigured)".to_string(),
+                name: "No model configured".to_string(),
+                api: rozsa_model::types::Api::OpenAICompletions,
+                provider: rozsa_model::types::Provider::OpenAI,
+                base_url: String::new(),
+                reasoning: false,
+                input_modalities: vec![],
+                cost: rozsa_model::types::ModelCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 },
+                context_window: 128000,
+                max_tokens: 16384,
+                thinking_level_map: None,
+                headers: None,
+                compat: None,
+            }
+        }
     };
 
     let resource_loader = ResourceLoader::new(cwd.clone(), agent_dir.clone());
@@ -271,6 +279,9 @@ pub async fn run(args: &Args) -> Result<()> {
         hook
     };
 
+    let gui_system_prompt = system_prompt.clone();
+    let gui_resources = resources.clone();
+
     let config = AgentSessionConfig {
         model,
         thinking_level,
@@ -321,17 +332,38 @@ pub async fn run(args: &Args) -> Result<()> {
         return Ok(());
     }
 
-    // No prompt — launch interactive TUI
-    rozsa_tui::app::run_native_with(
+    // No prompt — launch interactive GUI (default) or TUI (--tui flag)
+    #[cfg(feature = "tui")]
+    if args.tui {
+        return rozsa_tui::app::run_native_with(
+            session,
+            rozsa_tui::backend::native::NativeBackendConfig {
+                model_registry: Some(Arc::new(registry)),
+                session_dir: Some(session_dir),
+                global_settings_path: Some(global_settings_path),
+                pending_approvals: Some(pending_approvals),
+                permission_request_rx: Some(perm_req_rx),
+            },
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"));
+    }
+
+    #[cfg(not(feature = "tui"))]
+    if args.tui {
+        anyhow::bail!("TUI mode not available. Rebuild with --features tui");
+    }
+
+    rozsa_gui::run(rozsa_gui::GuiConfig {
         session,
-        rozsa_tui::backend::native::NativeBackendConfig {
-            model_registry: Some(Arc::new(registry)),
-            session_dir: Some(session_dir),
-            global_settings_path: Some(global_settings_path),
-            pending_approvals: Some(pending_approvals),
-            permission_request_rx: Some(perm_req_rx),
-        },
-    )
+        model_registry: Some(Arc::new(registry)),
+        session_dir: Some(session_dir),
+        global_settings_path: Some(global_settings_path),
+        pending_approvals: Some(pending_approvals),
+        permission_request_rx: Some(perm_req_rx),
+        system_prompt: gui_system_prompt,
+        resources: gui_resources,
+    })
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))
 }

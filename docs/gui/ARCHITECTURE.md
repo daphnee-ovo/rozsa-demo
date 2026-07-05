@@ -1,0 +1,458 @@
+# Rózsa GUI 架构文档
+
+本文档描述 Rózsa 桌面 GUI 的技术架构、目录结构、IPC 协议、状态管理、流式响应机制和权限系统集成。GUI 替代之前的 ratatui TUI 作为默认交互界面，CLI 通过 `--tui` 标志保留 TUI 回退。
+
+## 1. 概述
+
+Rózsa GUI 基于 **Tauri 2.x** 构建，采用 Rust 后端 + Web 前端的跨平台架构：
+
+- **Rust 后端**：负责 agent 会话管理、工具执行、权限审批、状态持久化。
+- **Tauri IPC 层**：前端通过 `invoke()` 调用后端命令，后端通过 `emit()` 推送事件到前端。
+- **Web 前端**：单文件 HTML/CSS/JS，渲染聊天界面、工具调用、权限面板、设置。
+
+**设计目标**：
+
+- 让用户清楚看到 agent 正在做什么、用了哪些工具、是否需要权限确认。
+- 支持流式响应，逐步显示 thinking / message / tool calls。
+- 保持高信息密度，适合长期停留和代码审阅的工程师。
+
+## 2. 目录结构
+
+```
+crates/rozsa-gui/
+├── Cargo.toml              — Rust crate 配置，依赖 tauri + rozsa-app/core/model
+├── build.rs                — Tauri build 脚本（生成 schema + capabilities）
+├── tauri.conf.json         — Tauri 配置：窗口尺寸、bundle、安全策略
+├── src/
+│   ├── lib.rs              — crate 入口，GuiConfig + run() 公开接口
+│   ├── state.rs            — GuiState 共享状态 + 前端数据结构
+│   ├── commands.rs         — Tauri IPC 命令处理器（send_message, get_sessions 等）
+│   └── events.rs           — AgentEvent → GuiEvent 转换 + 权限监听任务
+└── frontend/
+    ├── index.html          — 完整单文件 UI（CSS + HTML + JS）
+    └── main.js             — TauriBridge (IPC wrapper) + SessionStore (前端状态)
+```
+
+**crate 定位**：
+
+- `rozsa-gui` 是 library crate (`[lib]`)，不是可执行 crate。
+- `rozsa-cli` 调用 `rozsa_gui::run()` 启动 GUI。
+- 所有 Rust 依赖都在后端，前端不依赖 npm/yarn。
+
+## 3. 架构分层
+
+### 3.1 Rust 后端
+
+后端职责：
+
+- **会话管理**：`AgentSession` 持有对话历史、工具执行器、权限系统。
+- **模型注册**：`ModelRegistry` 存储可用模型列表，支持运行时切换。
+- **权限审批**：`PendingApprovals` (DashMap) 持有待审批请求，`permission_request_rx` 接收新请求。
+- **状态共享**：`GuiState` 包装上述资源，通过 `tauri::State` 注入到 IPC 命令。
+
+核心类型：
+
+- `GuiConfig`：外部注入配置，包含 `session`, `model_registry`, `session_dir`, `pending_approvals`, `permission_request_rx`。
+- `GuiState`：Tauri managed state，所有 IPC 命令通过 `State<'_, GuiState>` 访问。
+
+### 3.2 Tauri IPC 层
+
+**前端 → 后端（Commands）**：
+
+前端调用 `window.__TAURI__.core.invoke(command, payload)`，后端通过 `#[tauri::command]` 注册的函数处理。
+
+**后端 → 前端（Events）**：
+
+后端通过 `app_handle.emit(event_name, payload)` 推送事件，前端通过 `window.__TAURI__.event.listen(event_name, handler)` 监听。
+
+### 3.3 Web 前端
+
+前端文件：
+
+- `frontend/index.html`：完整单文件 UI，包含 CSS + HTML + JS（内联 `<style>` 和 `<script>`）。
+- `frontend/main.js`：Tauri API 封装层，导出 `TauriBridge` 和 `SessionStore`。
+
+前端职责：
+
+- 渲染聊天流、工具调用、权限面板、设置面板。
+- 监听 `agent-event` 事件，逐步更新 UI（流式显示）。
+- 管理本地会话状态（`SessionStore`），存储消息、工具调用、当前会话 ID。
+
+## 4. IPC 协议
+
+### 4.1 Commands（前端 → 后端）
+
+所有 commands 返回 `Result<T, String>`，错误通过 `String` 传递给前端。
+
+| 命令 | 参数 | 返回值 | 说明 |
+|------|------|--------|------|
+| `send_message` | `{ message: string }` | `()` | 发送用户消息，触发 agent loop，通过 `agent-event` 流式返回 |
+| `get_sessions` | - | `SessionInfo[]` | 列出所有会话（从 `session_dir` 读取 `.jsonl` 文件） |
+| `switch_session` | `{ sessionId: string }` | `()` | 切换到指定会话 |
+| `new_session` | - | `string` | 创建新会话并返回 ID |
+| `approve_permission` | `{ requestId: string }` | `()` | 批准权限请求 |
+| `deny_permission` | `{ requestId: string }` | `()` | 拒绝权限请求 |
+| `get_settings` | - | `JsonValue` | 获取当前设置（从 `AgentSession.settings_manager()` 读取） |
+| `update_settings` | `{ key: string, value: JsonValue }` | `()` | 更新单个设置项（目前支持 `thinking_enabled` / `model`） |
+
+### 4.2 Events（后端 → 前端）
+
+所有事件通过 `agent-event` channel 发送，payload 是 `GuiEvent` 枚举。
+
+#### GuiEvent 变体
+
+`GuiEvent` 是 tagged enum，序列化为 `{ "type": "...", "data": {...} }`。
+
+| 事件类型 | 数据字段 | 说明 |
+|---------|---------|------|
+| `ThinkingStart` | - | Thinking 开始 |
+| `ThinkingContent` | `{ text: string }` | Thinking 流式内容 |
+| `ThinkingEnd` | `{ duration_ms: u64 }` | Thinking 结束 |
+| `MessageStart` | - | Assistant 消息开始 |
+| `MessageDelta` | `{ text: string }` | Assistant 消息流式增量 |
+| `MessageEnd` | - | Assistant 消息结束 |
+| `ToolCallStart` | `{ id, name, args }` | 工具调用开始 |
+| `ToolCallEnd` | `{ id, status, duration_ms, output }` | 工具调用结束 |
+| `PermissionRequired` | `{ id, title, risk_type, tool_name, command, description }` | 需要权限审批 |
+| `Error` | `{ message: string }` | Agent loop 错误 |
+| `SessionEnd` | `{ total_duration_ms, files_changed }` | 会话结束（包含文件变更摘要） |
+
+**转换逻辑**：
+
+- `events.rs::convert_agent_event()` 将 `rozsa_core::events::AgentEvent` 转换为 `GuiEvent`。
+- 内部生命周期事件（`AgentStart`, `TurnStart` 等）不转发到前端。
+
+### 4.3 权限事件流
+
+权限审批通过专用通道推送到前端：
+
+1. 后端权限系统生成审批请求，通过 `permission_request_rx` (mpsc channel) 发送 `(request_id, ApprovalInfo)`。
+2. `events.rs::start_permission_listener()` 在后台任务中监听通道，收到请求后转换为 `GuiEvent::PermissionRequired` 并 emit 到前端。
+3. 前端弹出权限面板，用户点击 Approve/Deny。
+4. 前端调用 `approve_permission(requestId)` 或 `deny_permission(requestId)`。
+5. 后端从 `PendingApprovals` (DashMap) 中取出对应的 oneshot sender，发送 `PermissionResponse::Allow` 或 `Deny`。
+6. Agent loop 收到响应，继续执行或回退。
+
+## 5. 状态管理
+
+### 5.1 后端状态（GuiState）
+
+`GuiState` 是 Tauri managed state，所有 IPC 命令通过 `State<'_, GuiState>` 访问。
+
+```rust
+pub struct GuiState {
+    pub session: Arc<AgentSession>,              // Agent 会话，驱动 LLM 交互
+    pub model_registry: Option<Arc<ModelRegistry>>, // 模型注册表，用于切换模型
+    pub session_dir: Option<PathBuf>,            // 会话持久化目录
+    pub pending_approvals: Option<PendingApprovals>, // 待审批权限 (DashMap)
+    pub active_session_id: Arc<Mutex<Option<String>>>, // 当前会话 ID
+    pub is_running: Arc<Mutex<bool>>,            // Agent loop 是否运行中
+}
+```
+
+**线程安全**：
+
+- `Arc` 包装的类型可跨 IPC 命令共享（Tauri 命令是异步执行的）。
+- `Mutex` 保护可变状态（`active_session_id`, `is_running`）。
+- `PendingApprovals` 是 `Arc<DashMap<...>>`，支持并发访问。
+
+### 5.2 前端状态（SessionStore）
+
+前端通过 `SessionStore` 管理本地会话数据：
+
+```javascript
+class SessionStore {
+  currentSessionId = null;
+  sessions = {}; // { sessionId: { messages: [...] } }
+  
+  addMessage(sessionId, role, content) { ... }
+  getMessages(sessionId) { ... }
+  clear(sessionId) { ... }
+}
+```
+
+**流式更新**：
+
+- 前端监听 `agent-event` 事件，根据事件类型更新 UI：
+  - `MessageStart`：创建新消息占位符。
+  - `MessageDelta`：追加文本到当前消息。
+  - `ToolCallStart`：插入工具调用占位符。
+  - `ToolCallEnd`：更新工具调用状态和输出。
+
+### 5.3 权限审批状态（PendingApprovals）
+
+`PendingApprovals` 是 `Arc<DashMap<String, (ApprovalInfo, oneshot::Sender<PermissionResponse>)>>`。
+
+**生命周期**：
+
+1. Agent 执行工具调用，权限系统拦截。
+2. 权限系统生成唯一 `request_id`，将 `(ApprovalInfo, oneshot_tx)` 插入 `PendingApprovals`。
+3. 通过 `permission_request_rx` 通知 GUI。
+4. GUI emit `PermissionRequired` 事件到前端。
+5. 用户点击 Approve/Deny，前端调用 `approve_permission` 或 `deny_permission`。
+6. 后端从 `PendingApprovals` 中 `remove(request_id)`，取出 `oneshot_tx` 并发送响应。
+7. Agent 收到响应，继续或中止工具执行。
+
+## 6. 流式响应机制
+
+### 6.1 Agent 事件流
+
+`AgentSession` 内部使用 `tokio::sync::broadcast` channel 广播事件：
+
+```rust
+impl AgentSession {
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<AgentEvent> { ... }
+}
+```
+
+**事件类型**：
+
+- `MessageStart` / `MessageUpdate` / `MessageEnd`：消息生命周期。
+- `ToolExecutionStart` / `ToolExecutionEnd`：工具调用生命周期。
+- `AgentEnd`：Agent loop 结束。
+
+### 6.2 GUI 订阅流程
+
+`send_message` 命令的实现：
+
+```rust
+#[tauri::command]
+pub async fn send_message(
+    state: State<'_, GuiState>,
+    app_handle: AppHandle,
+    message: String,
+) -> Result<(), String> {
+    // 1. 检查 is_running，避免并发执行
+    // 2. 订阅 session.subscribe() 获取 event receiver
+    // 3. 克隆 app_handle 到 spawned task
+    // 4. spawn agent loop: session.prompt(&message)
+    // 5. spawn event listener: loop { rx.recv(), convert_agent_event(), emit() }
+    // 6. agent loop 结束后设置 is_running = false
+}
+```
+
+**关键点**：
+
+- **订阅先于 spawn**：避免丢失事件（broadcast channel 会 lag 但不会丢失已发送的事件）。
+- **两个并行任务**：
+  - Task 1: `session.prompt()` 执行 agent loop。
+  - Task 2: 监听 event stream，转换并 emit 到前端。
+- **事件监听终止**：收到 `AgentEnd` 或 `RecvError::Closed` 时退出 loop。
+
+### 6.3 前端流式渲染
+
+前端监听 `agent-event` 事件，根据事件类型更新 DOM：
+
+```javascript
+window.__TAURI__.event.listen("agent-event", (event) => {
+  const { type, data } = event.payload;
+  
+  switch (type) {
+    case "ThinkingStart":
+      // 创建 thinking 块
+      break;
+    case "ThinkingContent":
+      // 追加 thinking 文本
+      break;
+    case "MessageStart":
+      // 创建 assistant 消息占位符
+      break;
+    case "MessageDelta":
+      // 追加消息文本（streaming）
+      break;
+    case "ToolCallStart":
+      // 插入工具调用卡片，状态设为 "running"
+      break;
+    case "ToolCallEnd":
+      // 更新工具调用状态和输出
+      break;
+    case "PermissionRequired":
+      // 弹出权限面板
+      break;
+  }
+});
+```
+
+## 7. 权限系统集成
+
+### 7.1 权限模式
+
+Rózsa 支持三种权限模式（配置在 settings.json）：
+
+| 模式 | 行为 |
+|------|------|
+| `on-request` | 所有敏感操作都需要用户批准 |
+| `auto-approve` | 自动批准所有操作（开发模式） |
+| `free-permission` | 跳过权限检查（无防护模式，仅用于测试） |
+
+### 7.2 审批流程
+
+1. Agent 调用工具（如 `Bash { command: "rm -rf ..." }`）。
+2. `PermissionGuard` 拦截，检查权限模式和 allowlist。
+3. 如果需要审批：
+   - 生成 `request_id`（UUID）。
+   - 创建 oneshot channel `(tx, rx)`。
+   - 将 `(ApprovalInfo, tx)` 插入 `PendingApprovals`。
+   - 通过 `permission_request_tx` 发送 `(request_id, ApprovalInfo)` 到 GUI。
+   - 阻塞等待 `rx.recv()`。
+4. GUI emit `PermissionRequired` 事件到前端。
+5. 前端弹出权限面板，显示风险类型、工具名、命令预览。
+6. 用户点击 Approve/Deny。
+7. 前端调用 `approve_permission(request_id)` 或 `deny_permission(request_id)`。
+8. 后端从 `PendingApprovals` 中取出 `tx`，发送 `PermissionResponse::Allow` 或 `Deny`。
+9. `PermissionGuard` 收到响应，返回 Allow/Deny 给工具执行器。
+10. Agent 继续执行或报错中止。
+
+### 7.3 数据结构
+
+**ApprovalInfo**：
+
+```rust
+pub struct ApprovalInfo {
+    pub tool_name: String,
+    pub args_summary: String,
+    pub risk: RiskLevel,
+}
+```
+
+**PendingApprovals**：
+
+```rust
+pub type PendingApprovals = Arc<DashMap<String, (ApprovalInfo, oneshot::Sender<PermissionResponse>)>>;
+```
+
+**PermissionResponse**：
+
+```rust
+pub enum PermissionResponse {
+    Allow,
+    Deny,
+}
+```
+
+## 8. 构建与运行
+
+### 8.1 开发模式
+
+```bash
+cd crates/rozsa-gui
+cargo tauri dev
+```
+
+**行为**：
+
+- Cargo 编译 Rust 后端。
+- Tauri 启动 webview，加载 `frontend/index.html`。
+- 支持热重载（修改 `index.html` 自动刷新）。
+
+### 8.2 生产构建
+
+```bash
+cargo tauri build
+```
+
+**行为**：
+
+- 编译 release 版 Rust 后端。
+- 打包 `frontend/` 到可执行文件。
+- 输出 `.dmg` (macOS) / `.deb` / `.AppImage` (Linux) / `.exe` (Windows)。
+
+### 8.3 CLI 集成
+
+`rozsa-cli` 通过 `--gui` 标志启动 GUI：
+
+```rust
+// crates/rozsa-cli/src/main.rs
+if matches.get_flag("gui") {
+    let gui_config = GuiConfig {
+        session,
+        model_registry: Some(registry),
+        session_dir: Some(session_dir),
+        pending_approvals: Some(pending_approvals),
+        permission_request_rx: Some(permission_rx),
+    };
+    rozsa_gui::run(gui_config).await?;
+} else if matches.get_flag("tui") {
+    // 启动 TUI
+} else {
+    // 默认 GUI
+}
+```
+
+## 9. 设计规范引用
+
+GUI 视觉设计和交互规范见 [UI_USAGE_GUIDELINES.md](./UI_USAGE_GUIDELINES.md)。
+
+核心原则：
+
+- **安静的结构感**：1px 发丝线、轻背景、清晰分区，不靠厚重卡片和阴影。
+- **代码是主角**：聊天、工具调用、代码块、diff 是页面核心。
+- **玫红只做信号**：品牌色 `#c0737a` 用于焦点、激活、主操作，不做大面积背景。
+- **状态真实**：运行中、成功、失败、等待审批等状态必须具体可见。
+- **工具调用轻量**：折叠态无竖线、低透明度，展开态竖线从图标下方开始。
+
+设计参考原型：`docs/gui/index.html`。
+
+## 10. 未来扩展
+
+### 10.1 优先扩展
+
+- **多会话搜索与分组**：在 `get_sessions` 中支持过滤和分类。
+- **工具调用过滤和错误定位**：在 `ToolCallEnd` 中附加错误堆栈和文件位置。
+- **权限策略模板**：在 settings 中支持保存/加载自定义 allowlist。
+- **代码预览与 diff 独立面板**：在 `ToolCallEnd` 中支持打开独立 diff viewer。
+- **周限额明细和重置时间**：在 left sidebar 显示限额使用趋势图。
+
+### 10.2 谨慎扩展
+
+- **暗色模式**：必须保持 Rózsa 的温暖气质，不变成黑色终端。配色需重新调校，避免高对比度伤眼。
+- **多窗口**：需要同步 `GuiState` 到多个窗口，或将状态移到后端 daemon。
+- **插件系统**：需要设计插件 IPC 协议和沙箱隔离。
+- **移动端**：应重排信息架构（单栏或底部抽屉），不能简单压缩桌面三栏。
+
+---
+
+## 相关文档
+
+- [UI 使用规范](./UI_USAGE_GUIDELINES.md) — GUI 视觉设计和交互规范
+- [Agent Session](../../crates/rozsa-app/src/agent_session.rs) — Agent 会话管理
+- [Permission System](../../crates/rozsa-app/src/permissions/mod.rs) — 权限系统实现
+- [Core Events](../../crates/rozsa-core/src/events.rs) — Agent 事件定义
+
+## 架构图
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│                         Tauri Window                          │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │                     Frontend (Web)                      │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
+│  │  │ SessionStore │  │ TauriBridge  │  │   Renderer   │  │  │
+│  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  │  │
+│  │         │                 │                 │           │  │
+│  └─────────┼─────────────────┼─────────────────┼───────────┘  │
+│            │                 │                 │              │
+│            │    invoke()     │    listen()     │              │
+│            ▼                 ▼                 ▼              │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │                    Tauri IPC Layer                      │  │
+│  │           commands.rs           events.rs               │  │
+│  └─────────────────────┬───────────────┬───────────────────┘  │
+│                        │               │                      │
+│                        │               │ emit()               │
+│                        ▼               ▼                      │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │                    Rust Backend                         │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
+│  │  │  GuiState    │  │ AgentSession │  │ Permissions  │  │  │
+│  │  │ (managed)    │  │ (broadcast)  │  │ (DashMap)    │  │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                     ┌────────────────────┐
+                     │   rozsa-core       │
+                     │   (LLM, Tools)     │
+                     └────────────────────┘
+```

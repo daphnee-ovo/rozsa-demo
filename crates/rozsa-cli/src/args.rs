@@ -43,6 +43,10 @@ pub struct Args {
     /// Set thinking level (off/minimal/low/medium/high/xhigh)
     #[arg(long)]
     pub thinking: Option<String>,
+
+    /// Use TUI mode instead of GUI (fallback to terminal interface)
+    #[arg(long)]
+    pub tui: bool,
 }
 
 pub fn parse() -> Args {

@@ -28,7 +28,7 @@ pub struct Resource {
 }
 
 /// 加载的资源集合
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct LoadedResources {
     /// 资源列表
     pub resources: Vec<Resource>,

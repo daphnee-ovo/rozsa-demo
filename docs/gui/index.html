@@ -1,0 +1,2591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rózsa — Coding Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ================================================================
+   Rózsa GUI — 浅色主题 · 低饱和玫红
+   框架：单 HTML 文件 · CSS Grid 三栏布局 · Tauri 桌面端风格
+   —————————————————————————————
+   /index.html
+   ├── :root CSS 变量（色板 / 间距 / 字体）
+   ├── base 全局样式（reset / 滚动条 / 选择）
+   ├── layout 三栏布局（交通灯 · sidebar-left · main · sidebar-right）
+   │   ├── .window-chrome        Mac OS 窗口装饰
+   │   ├── .sidebar              左右侧栏（可折叠）
+   │   └── .panel-main           主内容区
+   ├── conversation 对话流
+   │   ├── .message-group        消息组 · day 分隔线
+   │   ├── .message              单条消息（role 徽标）
+   │   └── .attachments-grid     图片 attachment
+   ├── tool-panel 工具调用
+   │   ├── .tool-call            可展开/折叠的工具卡片
+   │   ├── .tool-track           状态圆点 + 图标 + 竖线轨道
+   │   └── .tool-detail          展开后的详细参数
+   ├── content 内容排版
+   │   ├── .code-block           代码块（语法高亮 / 行号 / 复制）
+   │   └── .markdown-body        Markdown 渲染
+   └── utilities 工具类
+       ├── .density-compact/comfortable  消息密度
+       └── .collapsed / .expanded        折叠状态
+   ================================================================ */
+
+:root {
+  --bg: oklch(97% 0.004 350);
+  --surface: oklch(100% 0 0);
+  --fg: oklch(20% 0.012 350);
+  --muted: oklch(55% 0.01 350);
+  --border: oklch(90% 0.006 350);
+  --accent: oklch(60% 0.07 355);
+  --accent-hover: oklch(54% 0.08 355);
+  --accent-btn: oklch(50% 0.08 355);
+  --accent-bg: oklch(96% 0.02 355);
+  --accent-border: oklch(88% 0.035 355);
+  --success: oklch(48% 0.10 155);
+  --success-bg: oklch(96% 0.025 155);
+  --error: oklch(52% 0.14 25);
+  --error-bg: oklch(96% 0.025 25);
+  --warning: oklch(70% 0.12 85);
+  --warning-bg: oklch(97% 0.03 85);
+  --user-bg: oklch(94% 0.015 355);
+  --code-bg: oklch(96% 0.003 260);
+  --code-border: oklch(90% 0.005 260);
+  --sidebar-bg: oklch(97.5% 0.004 350);
+  --titlebar-bg: oklch(98.5% 0.003 350);
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Menlo, monospace;
+  --radius: 10px;
+  --radius-lg: 14px;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Tauri 标题栏 ---- */
+[data-od-id="titlebar"] {
+  height: 36px;
+  background: var(--titlebar-bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 12px;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+.traffic-lights { display: flex; gap: 7px; }
+.traffic-lights span {
+  width: 12px; height: 12px; border-radius: 50%;
+  display: block;
+}
+.tl-close { background: #fe5f57; }
+.tl-min { background: #febc2e; }
+.tl-max { background: #28c840; }
+.title-text {
+  flex: 1; text-align: center;
+  font-size: 12px; font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+/* ---- 主布局 2:8 ---- */
+[data-od-id="app-body"] {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 2fr 8fr;
+  overflow: hidden;
+}
+
+/* ---- 侧边栏 ---- */
+[data-od-id="sidebar"] {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-section:first-child { flex: 1; min-height: 0; }
+.sidebar-section:nth-child(2) { flex: 0 0 auto; }
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.sidebar-header button {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 16px; line-height: 1;
+  padding: 2px 4px; border-radius: 3px;
+  -webkit-app-region: no-drag;
+}
+.sidebar-header button:hover { background: var(--border); color: var(--fg); }
+.sidebar-scroll {
+  flex: 1; overflow-y: auto; padding: 0 6px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar { width: 4px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* 会话条目 */
+.session-item {
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+  -webkit-app-region: no-drag;
+}
+.session-item:hover { background: oklch(95.5% 0.004 350); }
+.session-item.active {
+  background: var(--surface);
+  border-color: color-mix(in oklch, var(--accent) 26%, var(--border));
+}
+.session-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px; font-weight: 500; color: var(--fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.session-meta {
+  display: flex; align-items: center;
+  margin-left: auto;
+  font-size: 10.5px; color: var(--muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.session-item.active .session-name { color: var(--fg); }
+.session-status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.session-status.running,
+.session-status.unread {
+  background: var(--accent);
+}
+.session-status.approval {
+  background: color-mix(in oklch, var(--warning) 62%, var(--surface));
+}
+.session-status.running,
+.session-status.approval {
+  animation: sessionPulse 1.15s ease-in-out infinite;
+}
+@keyframes sessionPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.38; transform: scale(0.78); }
+}
+
+/* 工具日志 */
+.tool-log-item {
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: default;
+}
+.tool-log-item:hover { background: oklch(94% 0.005 350); }
+.tool-status {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.tool-status.s-success { background: var(--success); }
+.tool-status.s-error { background: var(--error); }
+.tool-status.s-running { background: var(--warning); animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.tool-name { color: var(--fg); font-weight: 500; }
+
+/* 侧边栏底部 */
+.sidebar-bottom {
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.sidebar-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: var(--radius);
+  border: none; background: none; cursor: pointer;
+  font-size: 12px; color: var(--muted);
+  font-family: var(--font-ui);
+  -webkit-app-region: no-drag;
+  transition: background 0.12s;
+}
+.sidebar-btn:hover { background: oklch(93% 0.008 350); color: var(--fg); }
+.sidebar-btn.active { background: var(--accent-bg); color: var(--accent-hover); }
+.sidebar-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.quota-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.quota-ok { background: var(--success-bg); color: var(--success); }
+.quota-warn { background: var(--warning-bg); color: #92710a; }
+
+/* ---- 主面板 ---- */
+[data-od-id="main-panel"] {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* 面板头部 */
+[data-od-id="panel-header"] {
+  height: 46px;
+  border-bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  flex-shrink: 0;
+  background: color-mix(in oklch, var(--surface) 88%, transparent);
+  backdrop-filter: blur(16px) saturate(1.12);
+  -webkit-backdrop-filter: blur(16px) saturate(1.12);
+  box-shadow: 0 12px 28px oklch(0% 0 0 / 0.035);
+  position: relative;
+  z-index: 4;
+}
+.current-session-name {
+  font-size: 13.5px; font-weight: 600; color: var(--fg);
+}
+.model-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--muted);
+  border: 1px solid var(--code-border);
+}
+.model-selector {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--muted);
+  border: 1px solid var(--code-border);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.model-selector:hover {
+  background: var(--border);
+  color: var(--fg);
+}
+.permission-badge {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.perm-auto {
+  background: oklch(96.8% 0.003 350);
+  color: oklch(47% 0.01 350);
+  border: 1px solid color-mix(in oklch, var(--border) 78%, var(--surface));
+}
+.perm-on {
+  background: oklch(96.5% 0.02 90);
+  color: oklch(48% 0.06 85);
+  border: 1px solid oklch(88% 0.035 90);
+}
+.header-spacer { flex: 1; }
+.context-info {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.context-ring {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: default;
+}
+.context-ring svg { flex-shrink: 0; }
+.context-tokens {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 消息区域 */
+[data-od-id="chat-messages"] {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.chat-messages {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.chat-messages::-webkit-scrollbar { width: 6px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* 消息块 */
+.msg { display: flex; gap: 12px; max-width: 100%; }
+.msg-avatar {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.msg-user .msg-avatar { background: var(--accent-bg); color: var(--accent); }
+.msg-assistant .msg-avatar { background: oklch(94% 0.015 260); color: oklch(50% 0.06 260); }
+.msg-body { flex: 1; min-width: 0; }
+.msg-role {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  margin-bottom: 4px;
+}
+.msg-user .msg-role { color: var(--accent); }
+.msg-assistant .msg-role { color: oklch(50% 0.06 260); }
+.msg-content {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--fg);
+}
+.msg-content p,
+.markdown-body p {
+  margin-bottom: 8px;
+}
+.msg-content p:last-child,
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  color: var(--fg);
+  line-height: 1.28;
+  margin: 10px 0 6px;
+  font-weight: 650;
+}
+.markdown-body h1 { font-size: 18px; }
+.markdown-body h2 { font-size: 16px; }
+.markdown-body h3 { font-size: 14px; }
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 20px;
+  margin: 6px 0 10px;
+}
+.markdown-body li {
+  margin: 3px 0;
+  padding-left: 2px;
+}
+.markdown-body blockquote {
+  margin: 8px 0 10px;
+  padding: 6px 0 6px 12px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+.markdown-body a {
+  color: var(--accent-hover);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+}
+.markdown-body a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.markdown-body strong { font-weight: 650; }
+.markdown-body em { color: color-mix(in oklch, var(--fg) 82%, var(--muted)); }
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+.md-code-block {
+  position: relative;
+  margin: 8px 0 12px;
+  border: 1px solid color-mix(in oklch, var(--border) 82%, var(--surface));
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface) 94%, var(--code-bg));
+  overflow: hidden;
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.018);
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+.md-code-block:hover,
+.md-code-block:focus-within {
+  border-color: color-mix(in oklch, var(--border) 58%, var(--accent));
+  background: color-mix(in oklch, var(--surface) 97%, var(--code-bg));
+  box-shadow: 0 2px 8px oklch(0% 0 0 / 0.035);
+}
+.md-code-head {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  right: 7px;
+  min-height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.md-code-lang {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.72;
+  text-transform: uppercase;
+}
+.md-copy {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  opacity: 0.62;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+.md-code-block:hover .md-copy,
+.md-copy:focus-visible {
+  opacity: 1;
+}
+.md-copy:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+.md-copy:active {
+  transform: translateY(1px);
+}
+.md-copy:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 34%, transparent);
+}
+.md-copy.copied {
+  color: var(--accent);
+}
+.md-copy svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}
+.md-code-block pre {
+  margin: 0;
+  padding: 30px 12px 10px;
+  overflow-x: auto;
+  white-space: pre;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.md-code-block pre::-webkit-scrollbar {
+  height: 6px;
+}
+.md-code-block pre::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+.md-code-block code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.55;
+  font-variant-ligatures: none;
+  tab-size: 2;
+}
+.md-syn-command,
+.md-syn-keyword {
+  color: color-mix(in oklch, var(--accent-hover) 78%, var(--fg));
+  font-weight: 600;
+}
+.md-syn-string {
+  color: color-mix(in oklch, var(--success) 72%, var(--fg));
+}
+.md-syn-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+.md-syn-number,
+.md-syn-option {
+  color: color-mix(in oklch, var(--muted) 72%, var(--fg));
+}
+
+/* Thinking 块 */
+.thinking-block {
+  margin: 0 0 10px;
+  border: 1px solid oklch(90% 0.008 355);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: oklch(97.5% 0.006 355);
+}
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+}
+.thinking-header:hover { background: oklch(95% 0.01 355); }
+.thinking-icon { color: var(--accent); flex-shrink: 0; }
+.thinking-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.thinking-duration {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: oklch(65% 0.008 350);
+  font-variant-numeric: tabular-nums;
+}
+.thinking-chevron {
+  margin-left: auto;
+  font-size: 11px;
+  color: oklch(65% 0.008 350);
+  transition: transform 0.15s;
+}
+.thinking-block.expanded .thinking-chevron { transform: rotate(90deg); }
+.thinking-content {
+  display: none;
+  padding: 8px 12px;
+  border-top: 1px solid oklch(90% 0.008 355);
+  font-size: 12px;
+  line-height: 1.6;
+  color: oklch(48% 0.012 350);
+  font-style: italic;
+}
+.thinking-block.expanded .thinking-content,
+.thinking-expanded .thinking-content { display: block; }
+.thinking-content p { margin-bottom: 6px; }
+.thinking-content p:last-child { margin-bottom: 0; }
+/* Thinking 进行中动画 */
+.thinking-block.active .thinking-icon,
+.thinking-block.active .thinking-label {
+  animation: thinkPulse 1.5s infinite;
+}
+.thinking-block.active .thinking-label::after {
+  content: '…';
+  animation: thinkDots 1.2s steps(3) infinite;
+}
+@keyframes thinkPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes thinkDots {
+  0% { content: ''; }
+  33% { content: '.'; }
+  66% { content: '..'; }
+  100% { content: '…'; }
+}
+/* 流式光标 */
+.stream-cursor {
+  color: var(--accent);
+  font-weight: 300;
+  animation: cursorBlink 0.8s steps(1) infinite;
+  margin-left: 1px;
+}
+@keyframes cursorBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.stream-text { white-space: pre-wrap; }
+.msg-content p code,
+.msg-content li code,
+.msg-content blockquote code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.msg-content ul, .msg-content ol {
+  padding-left: 20px; margin: 6px 0;
+}
+.msg-content li { margin-bottom: 3px; }
+
+/* 工具调用 — timeline 图标 + 竖线 */
+.tool-call {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  position: relative;
+  margin: 0;
+  opacity: 0.8;
+  transition: opacity 0.18s, background 0.15s;
+  cursor: pointer;
+}
+.tool-call:not(.expanded):hover {
+  opacity: 1;
+  background: color-mix(in oklch, var(--surface) 96%, var(--text));
+  border-radius: 6px;
+}
+.tool-call.expanded { margin: 0 0 6px 0; opacity: 1; }
+.tool-call + .tool-call { margin: 0; }
+.tool-call:not(.expanded)::before { display: none; }
+.tool-call.expanded::before {
+  content: '';
+  position: absolute;
+  top: 24px;
+  left: 11px;
+  width: 1.5px;
+  height: calc(100% - 24px);
+  background: color-mix(in oklch, var(--border) 65%, var(--surface));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* 左侧竖线轨道 */
+.tool-track {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+/* 工具图标（无圈） */
+.tool-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  min-width: 22px;
+  flex-shrink: 0;
+  color: oklch(55% 0.008 350);
+}
+.tool-icon svg { width: 14px; height: 14px; }
+/* 右侧内容 */
+.tool-content {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0 6px 0;
+}
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+  transition: color 0.1s, transform 0.1s;
+}
+.tool-call:not(.expanded):hover .tool-name,
+.tool-call:not(.expanded):hover .tool-icon,
+.tool-call:not(.expanded):hover .tool-call-args,
+.tool-call:not(.expanded):hover .tool-call-toggle { color: var(--accent); }
+.tool-call-status {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tool-name {
+  color: var(--fg);
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+.tool-call-args {
+  color: var(--muted);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-call-toggle {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+}
+.tool-call-duration {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+}
+.tool-call-body {
+  width: 100%;
+  margin: 0;
+  padding: 0 8px 0 27px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: oklch(48% 0.012 350);
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.22s ease-out, opacity 0.18s ease-out, padding 0.18s ease-out;
+}
+.tool-call.expanded .tool-call-body {
+  padding: 6px 8px 6px 27px;
+  max-height: 500px;
+  opacity: 1;
+  overflow-y: auto;
+}
+/* 工具输出 — 命令行风格 */
+.tool-output {
+  padding: 0 0 0 27px !important;
+  margin: 0;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+}
+.tool-call.expanded .tool-output {
+  padding: 6px 0 6px 27px !important;
+  max-height: 2000px !important;
+  opacity: 1 !important;
+  overflow-y: auto !important;
+}
+.tool-output-steps { display: flex; flex-direction: column; gap: 2px; }
+.tool-step { font-size: 11px; line-height: 1.5; color: var(--muted); }
+.step-text { color: var(--muted); }
+.step-pkg { color: var(--fg); font-weight: 500; }
+
+/* 运行时摘要卡片 */
+.changes-card { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: color-mix(in oklch, var(--surface) 92%, var(--code-bg)); padding: 10px 12px; }
+.changes-header { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; font-size: 11.5px; font-weight: 500; color: var(--fg); }
+.changes-header svg { display: none; }
+.changes-list { display: flex; flex-direction: column; gap: 4px; }
+.change-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 11.5px; font-family: var(--font-mono); }
+.change-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.change-icon.new { background: var(--success-bg); color: var(--success); }
+.change-icon.mod { background: var(--warning-bg); color: #927114; }
+.change-name { flex: 1; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.change-add { color: var(--success); font-weight: 600; font-variant-numeric: tabular-nums; }
+.change-del { color: var(--error); font-weight: 600; font-variant-numeric: tabular-nums; }
+.changes-footer { display: flex; align-items: center; gap: 6px; padding: 8px 0 0; font-size: 10.5px; font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.changes-runtime { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; color: var(--muted); font-weight: 400; flex-direction: row-reverse; }
+.changes-runtime svg { flex-shrink: 0; }
+
+/* Diff 视图 */
+.diff-view {
+  padding: 0 8px 0 27px !important;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.diff-line {
+  display: flex;
+  align-items: baseline;
+  padding: 0 10px;
+  min-height: 20px;
+}
+.diff-sign {
+  width: 14px;
+  flex-shrink: 0;
+  font-weight: 600;
+  user-select: none;
+}
+.diff-ln {
+  width: 32px;
+  flex-shrink: 0;
+  text-align: right;
+  color: oklch(72% 0.005 350);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  padding-right: 10px;
+}
+.diff-text {
+  flex: 1;
+  white-space: pre;
+}
+/* 代码视图（Write 展示） */
+.code-view {
+  padding: 0 8px 6px 27px !important;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  background: color-mix(in oklch, var(--surface) 97%, var(--code-bg));
+}
+.code-line {
+  display: flex;
+  align-items: baseline;
+  padding: 0 10px;
+  min-height: 20px;
+  border-radius: 5px;
+  transition: background 0.1s ease;
+}
+.code-line:hover {
+  background: color-mix(in oklch, var(--surface) 92%, var(--code-bg));
+}
+.code-ln {
+  width: 32px;
+  flex-shrink: 0;
+  text-align: right;
+  color: color-mix(in oklch, var(--muted) 58%, var(--surface));
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  padding-right: 12px;
+}
+.code-text {
+  flex: 1;
+  white-space: pre;
+  color: var(--fg);
+}
+.kw,
+.fn,
+.macro {
+  color: color-mix(in oklch, var(--accent-hover) 72%, var(--fg));
+  font-weight: 600;
+}
+.ty,
+.lifetime,
+.attr {
+  color: color-mix(in oklch, var(--fg) 70%, var(--muted));
+}
+.s {
+  color: color-mix(in oklch, var(--success) 62%, var(--fg));
+}
+.cm {
+  color: var(--muted);
+  font-style: italic;
+}
+.m {
+  color: color-mix(in oklch, var(--warning) 54%, var(--fg));
+}
+.op {
+  color: color-mix(in oklch, var(--muted) 72%, var(--fg));
+}
+.diff-del {
+  background: color-mix(in oklch, var(--error-bg) 54%, transparent);
+}
+.diff-del .diff-sign { color: var(--error); }
+.diff-add {
+  background: color-mix(in oklch, var(--success-bg) 58%, transparent);
+}
+.diff-add .diff-sign { color: var(--success); }
+
+
+
+/* 打字指示器 */
+.typing-indicator {
+  display: flex; gap: 4px; align-items: center;
+  padding: 4px 0;
+}
+.typing-indicator span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--muted);
+  animation: typing 1.2s infinite;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing { 0%,60%,100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+/* 输入框 */
+[data-od-id="chat-input"] {
+  padding: 8px 20px 16px;
+  flex-shrink: 0;
+  position: relative;
+}
+.input-wrapper {
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-lg);
+  background: var(--code-bg);
+  transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+}
+.input-wrapper:focus-within {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+/* 自动补全弹出 */
+.autocomplete-popup {
+  display: none;
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 20px;
+  right: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px oklch(0% 0 0 / 0.06);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 50;
+}
+.autocomplete-popup.visible { display: block; }
+.ac-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.08s, transform 0.1s;
+}
+.ac-item:hover, .ac-item.selected { background: var(--accent-bg); }
+.ac-cmd {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 90px;
+  flex-shrink: 0;
+}
+.ac-desc { color: var(--muted); }
+.ac-hint {
+  margin-left: auto;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: oklch(72% 0.008 350);
+  flex-shrink: 0;
+}
+.input-wrapper textarea {
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 10px 14px 6px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--fg);
+  background: transparent;
+  line-height: 1.5;
+  min-height: 38px;
+  max-height: 120px;
+}
+.input-wrapper textarea::placeholder { color: oklch(70% 0.008 350); }
+.input-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 6px;
+  gap: 4px;
+}
+.input-tool-btn {
+  border: none; background: none; cursor: pointer;
+  color: var(--muted); padding: 4px 6px;
+  border-radius: 4px; font-size: 13px;
+  transition: all 0.12s;
+}
+.input-tool-btn:hover { background: var(--code-bg); color: var(--fg); transform: translateY(-1px); }
+.input-spacer { flex: 1; }
+.input-hint {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: oklch(72% 0.008 350);
+}
+.send-btn {
+  border: none;
+  background: var(--accent-btn);
+  color: white;  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.send-btn:hover { background: var(--accent-hover); transform: scale(1.04); }
+.send-btn:disabled { opacity: 0.5; cursor: default; }
+
+
+/* 权限弹窗 */
+/* 权限审批面板（替换输入框） */
+.perm-panel {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid oklch(90% 0.015 90);
+  border-radius: var(--radius);
+  animation: permFadeIn 0.18s;
+}
+.perm-panel.visible {
+  display: flex;
+}
+@keyframes permFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.perm-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.perm-panel-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.perm-panel-risk {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: oklch(90% 0.04 85);
+  color: #8a6b0a;
+}
+.perm-panel-tool {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+.perm-panel-cmd {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg);
+  word-break: break-all;
+}
+.perm-panel-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+.perm-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.perm-panel-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--fg);
+  transition: background 0.1s, border-color 0.1s;
+  text-align: left;
+  width: 100%;
+}
+.perm-panel-opt:hover {
+  background: color-mix(in oklch, var(--surface) 96%, var(--accent));
+  border-color: oklch(80% 0.025 350);
+}
+.perm-panel-opt:active {
+  background: color-mix(in oklch, var(--surface) 92%, var(--accent));
+  border-color: var(--accent);
+}
+.perm-panel-opt-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  color: var(--muted);
+}
+.perm-panel-opt-label {
+  flex: 1;
+}
+
+/* 设置面板 */
+.settings-panel {
+  position: fixed; inset: 0;
+  background: oklch(0% 0 0 / 0.25);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+}
+.settings-panel.visible { display: flex; }
+.settings-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 580px;
+  max-height: 80vh;
+  display: flex;
+  position: relative;
+  box-shadow: 0 8px 32px oklch(0% 0 0 / 0.08);
+  animation: slideUp 0.2s;
+  overflow: hidden;
+}
+.settings-tabs {
+  width: 130px;
+  flex-shrink: 0;
+  background: oklch(97.5% 0.003 350);
+  border-right: 1px solid var(--border);
+  padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-tab {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-align: left;
+  transition: all 0.12s;
+}
+.settings-tab:hover { background: oklch(94% 0.005 350); color: var(--fg); }
+.settings-tab.active {
+  background: oklch(94.5% 0.004 350);
+  color: var(--fg);
+  font-weight: 500;
+}
+.settings-content {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-height: 80vh;
+}
+.settings-pane { display: none; }
+.settings-pane.active { display: block; }
+.settings-pane-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 20px;
+}
+.settings-group { margin-bottom: 20px; }
+.settings-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: oklch(60% 0.01 350);
+  margin-bottom: 8px;
+}
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 0;
+}
+.setting-item:hover { background: oklch(99% 0.001 350); }
+.setting-label { font-size: 13px; color: var(--fg); }
+.setting-value {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  padding: 2px 0;
+  background: transparent;
+  border-radius: 0;
+  border: 0;
+}
+.setting-select {
+  min-width: 156px;
+  max-width: 238px;
+  border: 1px solid color-mix(in oklch, var(--border) 78%, var(--surface));
+  border-radius: 7px;
+  background: oklch(99% 0.001 350);
+  color: oklch(42% 0.012 350);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 4px 24px 4px 8px;
+  outline: none;
+  cursor: pointer;
+  box-shadow: none;
+}
+.setting-select:hover {
+  border-color: color-mix(in oklch, var(--border) 52%, var(--muted));
+  background: var(--surface);
+}
+.setting-select:focus {
+  border-color: color-mix(in oklch, var(--accent) 36%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 10%, transparent);
+}
+.setting-toggle {
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  background: var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.setting-toggle::after {
+  content: '';
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: white;
+  position: absolute;
+  top: 2px; left: 2px;
+  transition: transform 0.15s;
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.1);
+}
+.setting-toggle.on { background: var(--accent); }
+.setting-toggle.on::after { transform: translateX(16px); }
+.settings-close {
+  position: absolute;
+  top: 12px; right: 12px;
+  border: none; background: none; cursor: pointer;
+  font-size: 16px; color: var(--muted);
+  padding: 4px 6px; border-radius: 4px;
+  z-index: 1;
+}
+.settings-close:hover { background: var(--code-bg); color: var(--fg); }
+
+/* 周限额面板 */
+.quota-panel {
+  margin-top: 8px;
+  padding: 14px;
+  background: var(--code-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--code-border);
+}
+.quota-title {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); margin-bottom: 10px;
+}
+.quota-bar-track {
+  height: 6px; background: var(--border);
+  border-radius: 3px; overflow: hidden;
+  margin-bottom: 6px;
+}
+.quota-bar-fill {
+  height: 100%; border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.4s;
+}
+.quota-bar-fill.warn { background: var(--warning); }
+.quota-text {
+  font-size: 11px; font-family: var(--font-mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 状态面板 */
+.status-panel {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.status-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+.status-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: oklch(62% 0.01 350);
+}
+/* 工具调用 chips */
+.tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.tool-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  line-height: 1.4;
+}
+.tool-chip-name {
+  color: var(--fg);
+  font-weight: 500;
+}
+.tool-chip-count {
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tool-count-summary {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: oklch(62% 0.01 350);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+/* 限额进度 */
+.quota-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.quota-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--fg);
+}
+.quota-value {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Git 状态 */
+.git-branch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg);
+}
+.git-branch svg { flex-shrink: 0; color: var(--muted); }
+.git-branch-name {
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.git-diff-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.git-diff-add { color: var(--success); font-weight: 500; }
+.git-diff-del { color: var(--error); font-weight: 500; }
+.git-diff-files { color: var(--muted); }
+
+/* 焦点状态 — WCAG 2.4.7 */
+button:focus-visible, textarea:focus-visible, .session-item:focus-visible,
+.sidebar-btn:focus-visible, .send-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 按压态 */
+.send-btn:active:not(:disabled) { transform: translateY(1px); }
+.session-item:active { background: oklch(91% 0.012 350); }
+.sidebar-btn:active { background: oklch(90% 0.012 350); }
+/* 空会话状态 */
+.chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+.chat-empty-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: var(--accent-bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.chat-empty-title {
+  font-size: 15px; font-weight: 600; color: var(--fg);
+}
+.chat-empty-hint {
+  font-size: 12.5px; text-align: center; line-height: 1.6;
+  max-width: 320px;
+}
+.chat-empty-kbd {
+  display: inline-flex; gap: 6px; margin-top: 8px;
+  font-family: var(--font-mono); font-size: 11px;
+}
+.chat-empty-kbd kbd {
+  padding: 2px 7px; border-radius: 4px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  font-family: var(--font-mono);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 消息入场动画 */
+@keyframes msgEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.msg-enter { animation: msgEnter 0.2s ease-out; }
+</style>
+</head>
+<body>
+
+<!-- ============ Tauri 标题栏 ============ -->
+<header data-od-id="titlebar">
+  <div class="traffic-lights">
+    <span class="tl-close"></span>
+    <span class="tl-min"></span>
+    <span class="tl-max"></span>
+  </div>
+  <div class="title-text">RÓZSA</div>
+  <div style="width:52px"></div>
+</header>
+
+<!-- ============ 主体 2:8 ============ -->
+<div data-od-id="app-body">
+
+  <!-- ======== 左侧边栏 ======== -->
+  <aside data-od-id="sidebar">
+    <!-- 会话列表 -->
+    <div class="sidebar-section">
+      <div class="sidebar-header">
+        <span>会话</span>
+        <button title="新建会话" onclick="newSession()">+</button>
+      </div>
+      <div class="sidebar-scroll" id="sessionList">
+        <div class="session-item active" data-od-id="session-1" onclick="switchSession(this, 0)">
+          <span class="session-status running" title="正在运行中"></span>
+          <div class="session-name">重构 agent_loop.rs</div>
+          <div class="session-meta"><span>2h</span></div>
+        </div>
+        <div class="session-item" data-od-id="session-2" onclick="switchSession(this, 1)">
+          <span class="session-status unread" title="已结束待查看"></span>
+          <div class="session-name">修复权限面板布局</div>
+          <div class="session-meta"><span>1d</span></div>
+        </div>
+        <div class="session-item" data-od-id="session-3" onclick="switchSession(this, 2)">
+          <span class="session-status approval" title="等待审批"></span>
+          <div class="session-name">添加 subagent 工具支持</div>
+          <div class="session-meta"><span>3d</span></div>
+        </div>
+        <div class="session-item" data-od-id="session-4" onclick="switchSession(this, 3)">
+          <span class="session-status unread" title="已结束待查看"></span>
+          <div class="session-name">models.json 迁移</div>
+          <div class="session-meta"><span>7d</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏：工具计数 + 限额 -->
+    <div class="sidebar-section" data-od-id="sidebar-status">
+      <div class="sidebar-header">
+        <span>状态</span>
+      </div>
+      <div class="status-panel">
+        <!-- Git 状态 -->
+        <div class="status-group">
+          <div class="git-branch">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="4" r="1.5"/><path d="M5 5.5v5M12 5.5c0 3-3 4.5-7 4.5"/></svg>
+            <span class="git-branch-name">feat/gui-tauri</span>
+          </div>
+          <div class="git-diff-stats">
+            <span class="git-diff-add">+47</span>
+            <span class="git-diff-del">-12</span>
+            <span class="git-diff-files">3 files</span>
+          </div>
+        </div>
+        <!-- 限额进度 -->
+        <div class="status-group">
+          <div class="quota-row">
+            <div class="quota-label-row">
+              <span>5 小时</span>
+              <span class="quota-value">64%</span>
+            </div>
+            <div class="quota-bar-track"><div class="quota-bar-fill" style="width:64%"></div></div>
+          </div>
+          <div class="quota-row">
+            <div class="quota-label-row">
+              <span>本周</span>
+              <span class="quota-value">66%</span>
+            </div>
+            <div class="quota-bar-track"><div class="quota-bar-fill warn" style="width:66%"></div></div>
+          </div>
+        </div>
+        <!-- 工具调用计数 -->
+        <div class="status-group">
+          <div class="tool-chips">
+            <span class="tool-chip"><span class="tool-chip-name">Bash</span><span class="tool-chip-count">3</span></span>
+            <span class="tool-chip"><span class="tool-chip-name">Read</span><span class="tool-chip-count">1</span></span>
+            <span class="tool-chip"><span class="tool-chip-name">Edit</span><span class="tool-chip-count">1</span></span>
+            <span class="tool-chip"><span class="tool-chip-name">Write</span><span class="tool-chip-count">1</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部导航 -->
+    <div class="sidebar-bottom">
+      <button class="sidebar-btn" data-od-id="btn-settings" onclick="toggleSettings()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="2.5" y1="4" x2="13.5" y2="4"/><circle cx="10" cy="4" r="1.5" fill="currentColor" stroke="none"/><line x1="2.5" y1="8" x2="13.5" y2="8"/><circle cx="5.5" cy="8" r="1.5" fill="currentColor" stroke="none"/><line x1="2.5" y1="12" x2="13.5" y2="12"/><circle cx="11.5" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
+        <span>设置</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ======== 右侧主面板 ======== -->
+  <main data-od-id="main-panel">
+    <!-- 面板头部 -->
+    <div data-od-id="panel-header">
+      <span class="current-session-name" id="currentSessionName">重构 agent_loop.rs</span>
+      <span class="permission-badge perm-auto" data-od-id="perm-badge">auto-approve</span>
+      <div class="header-spacer"></div>
+    </div>
+
+    <!-- 聊天消息 -->
+    <div class="chat-messages" data-od-id="chat-messages" id="chatMessages">
+
+      <!-- 用户消息 -->
+      <div class="msg msg-user" data-od-id="msg-user-1">
+        <div class="msg-avatar">U</div>
+        <div class="msg-body">
+          <div class="msg-role">你</div>
+          <div class="msg-content markdown-body">
+            <h3>重构目标</h3>
+            <p>把 <code>agent_loop.rs</code> 中的事件处理从大 <strong>match</strong> 重构为 trait 分发模式。</p>
+            <ul>
+              <li>每个工具调用走独立的 handler</li>
+              <li>保留现有事件语义和测试覆盖</li>
+              <li>新增的接口要便于后续接入 <code>Subagent</code></li>
+            </ul>
+            <blockquote>
+              <p>约束：不要引入新的运行时依赖，先做最小可验证改动。</p>
+            </blockquote>
+          </div>
+        </div>
+      </div>
+
+      <!-- 助手消息 -->
+      <div class="msg msg-assistant" data-od-id="msg-assistant-1">
+        <div class="msg-avatar">R</div>
+        <div class="msg-body">
+          <div class="msg-role">Rózsa</div>
+          <!-- Thinking 块 -->
+          <div class="thinking-block" data-od-id="thinking-block">
+            <div class="thinking-header" onclick="toggleThinkingBlock(this)">
+              <svg class="thinking-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1.5C5 1.5 3 3.5 3 6c0 1.5.8 2.7 2 3.5V12a1 1 0 001 1h4a1 1 0 001-1V9.5c1.2-.8 2-2 2-3.5 0-2.5-2-4.5-5-4.5z"/><path d="M6 14.5h4"/></svg>
+              <span class="thinking-label">Thinked</span>
+              <span class="thinking-duration">1.8s</span>
+              <span class="thinking-chevron">▸</span>
+            </div>
+            <div class="thinking-content">
+              <p>用户想要把 agent_loop.rs 的事件处理从 match 重构为 trait 分发。先读一下当前代码看看结构。当前的 run() 方法有个大 match 处理所有事件类型，需要拆成独立的 handler。</p>
+              <p>方案：定义 EventHandler trait，每个工具实现 can_handle() + handle()。AgentLoop 持有 Vec 按注册顺序分发。这样能消除巨型 match，提高可测试性。</p>
+              <p>需要注意 backward compatibility——确保现有的测试都通过。先 Read 当前文件，然后创建 handler.rs，最后 Edit agent_loop.rs。</p>
+            </div>
+          </div>
+          <div class="msg-content markdown-body">
+            <h3>处理路径</h3>
+            <p>我会先确认当前事件入口，再把分发逻辑收敛到 <code>EventHandler</code> trait。</p>
+            <ol>
+              <li>读取 <code>agent_loop.rs</code> 的现有 match 分支</li>
+              <li>新增 handler 抽象和 dispatcher</li>
+              <li>替换调用点并跑核心测试</li>
+            </ol>
+            <div class="md-code-block" data-od-id="markdown-code-example">
+              <div class="md-code-head">
+                <span class="md-code-lang">bash</span>
+                <button class="md-copy" type="button" onclick="copyMarkdownCode(this)" aria-label="复制代码" title="复制代码">
+                  <svg viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="8" height="9" rx="1.5"/><path d="M3 10.5V3.5A1.5 1.5 0 014.5 2h6"/></svg>
+                </button>
+              </div>
+              <pre><code data-lang="bash"><span class="md-syn-command">cargo</span> test <span class="md-syn-option">--package</span> rozsa-core
+<span class="md-syn-command">cargo</span> publish <span class="md-syn-option">--dry-run</span> <span class="md-syn-option">--package</span> rozsa-core</code></pre>
+            </div>
+            <p>先看一下当前的代码结构：</p>
+
+            <!-- 工具调用：Read -->
+            <div class="tool-call" data-od-id="tool-call-read" onclick="toggleToolCall(this)">
+              <div class="tool-track">
+                <div class="tool-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1V3.5a1 1 0 011-1z"/><path d="M9 2.5v4h4"/><path d="M5 8.5h6M5 11h4"/></svg></div>
+                <span class="tool-name">Read</span>
+              </div>
+              <div class="tool-content">
+                <div class="tool-header">
+                  <span class="tool-call-status s-success"></span>
+                   <span class="tool-call-args">crates/rozsa-core/src/agent_loop.rs</span>
+                   <span class="tool-call-toggle">></span>
+                </div>
+              </div>
+              <div class="tool-call-body">读取了 agent_loop.rs 的完整内容（287 行）。关键结构：AgentLoop::run() 方法中的 match event { ... } 分支处理所有事件类型。</div>
+            </div>
+
+            <p>现在我了解了当前的结构。让我创建 trait 和 handler 实现：</p>
+
+            <!-- 工具调用：Write -->
+            <div class="tool-call" data-od-id="tool-call-write" onclick="toggleToolCall(this)">
+              <div class="tool-track">
+                <div class="tool-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 2.5a1.4 1.4 0 012 2L5 14l-3 1 1-3 9.5-9.5z"/><path d="M11 4l2 2"/></svg></div>
+                <span class="tool-name">Write</span>
+              </div>
+              <div class="tool-content">
+                <div class="tool-header">
+                  <span class="tool-call-status s-success"></span>
+                   <span class="tool-call-args">crates/rozsa-core/src/handler.rs</span>
+                   <span class="tool-call-toggle">></span>
+                </div>
+              </div>
+              <div class="tool-call-body code-view">
+                <div class="code-line"><span class="code-ln">1</span><span class="code-text"><span class="kw">use</span> async_trait::<span class="ty">AsyncTrait</span>;</span></div>
+                <div class="code-line"><span class="code-ln">2</span><span class="code-text"><span class="kw">use</span> crate::events::<span class="ty">AgentEvent</span>;</span></div>
+                <div class="code-line"><span class="code-ln">3</span><span class="code-text"></span></div>
+                <div class="code-line"><span class="code-ln">4</span><span class="code-text"><span class="cm">/// Result type for handler operations.</span></span></div>
+                <div class="code-line"><span class="code-ln">5</span><span class="code-text"><span class="kw">pub</span> <span class="kw">type</span> <span class="ty">HandlerResult</span> = <span class="ty">Result</span><span class="op">&lt;</span>(), <span class="ty">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> std::error::<span class="ty">Error</span> + <span class="lifetime">Send</span> + <span class="lifetime">Sync</span><span class="op">&gt;&gt;</span>;</span></div>
+                <div class="code-line"><span class="code-ln">6</span><span class="code-text"></span></div>
+                <div class="code-line"><span class="code-ln">7</span><span class="code-text"><span class="cm">/// Trait for event handlers in the dispatch system.</span></span></div>
+                <div class="code-line"><span class="code-ln">8</span><span class="code-text"><span class="attr">#[async_trait]</span></span></div>
+                <div class="code-line"><span class="code-ln">9</span><span class="code-text"><span class="kw">pub</span> <span class="kw">trait</span> <span class="ty">EventHandler</span>: <span class="lifetime">Send</span> + <span class="lifetime">Sync</span> {</span></div>
+                <div class="code-line"><span class="code-ln">10</span><span class="code-text">    <span class="cm">/// Check if this handler can handle the given event.</span></span></div>
+                <div class="code-line"><span class="code-ln">11</span><span class="code-text">    <span class="kw">fn</span> <span class="fn">can_handle</span>(<span class="op">&amp;</span><span class="lifetime">self</span>, event: <span class="op">&amp;</span><span class="ty">AgentEvent</span>) -&gt; <span class="ty">bool</span>;</span></div>
+                <div class="code-line"><span class="code-ln">12</span><span class="code-text">    <span class="cm">/// Handle the event.</span></span></div>
+                <div class="code-line"><span class="code-ln">13</span><span class="code-text">    <span class="kw">async</span> <span class="kw">fn</span> <span class="fn">handle</span>(<span class="op">&amp;</span><span class="lifetime">self</span>, event: <span class="ty">AgentEvent</span>) -&gt; <span class="ty">HandlerResult</span>;</span></div>
+                <div class="code-line"><span class="code-ln">14</span><span class="code-text">}</span></div>
+                <div class="code-line"><span class="code-ln">15</span><span class="code-text"></span></div>
+                <div class="code-line"><span class="code-ln">16</span><span class="code-text"><span class="cm">/// Dispatches events to registered handlers.</span></span></div>
+                <div class="code-line"><span class="code-ln">17</span><span class="code-text"><span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">HandlerDispatcher</span> {</span></div>
+                <div class="code-line"><span class="code-ln">18</span><span class="code-text">    handlers: <span class="ty">Vec</span><span class="op">&lt;</span><span class="ty">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ty">EventHandler</span><span class="op">&gt;&gt;</span>,</span></div>
+                <div class="code-line"><span class="code-ln">19</span><span class="code-text">}</span></div>
+                <div class="code-line"><span class="code-ln">20</span><span class="code-text"></span></div>
+                <div class="code-line"><span class="code-ln">21</span><span class="code-text"><span class="kw">impl</span> <span class="ty">HandlerDispatcher</span> {</span></div>
+                <div class="code-line"><span class="code-ln">22</span><span class="code-text">    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">new</span>() -&gt; <span class="lifetime">Self</span> {</span></div>
+                <div class="code-line"><span class="code-ln">23</span><span class="code-text">        <span class="lifetime">Self</span> { handlers: <span class="ty">Vec</span>::<span class="fn">new</span>() }</span></div>
+                <div class="code-line"><span class="code-ln">24</span><span class="code-text">    }</span></div>
+                <div class="code-line"><span class="code-ln">25</span><span class="code-text">    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">register</span>(<span class="op">&amp;</span><span class="kw">mut</span> <span class="lifetime">self</span>, handler: <span class="ty">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ty">EventHandler</span><span class="op">&gt;</span>) {</span></div>
+                <div class="code-line"><span class="code-ln">26</span><span class="code-text">        <span class="lifetime">self</span>.handlers.<span class="fn">push</span>(handler);</span></div>
+                <div class="code-line"><span class="code-ln">27</span><span class="code-text">    }</span></div>
+                <div class="code-line"><span class="code-ln">28</span><span class="code-text">    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="fn">dispatch</span>(<span class="op">&amp;</span><span class="lifetime">self</span>, event: <span class="ty">AgentEvent</span>) -&gt; <span class="ty">HandlerResult</span> {</span></div>
+                <div class="code-line"><span class="code-ln">29</span><span class="code-text">        <span class="kw">for</span> handler <span class="kw">in</span> <span class="op">&amp;</span><span class="lifetime">self</span>.handlers {</span></div>
+                <div class="code-line"><span class="code-ln">30</span><span class="code-text">            <span class="kw">if</span> handler.<span class="fn">can_handle</span>(<span class="op">&amp;</span>event) {</span></div>
+                <div class="code-line"><span class="code-ln">31</span><span class="code-text">                <span class="kw">return</span> handler.<span class="fn">handle</span>(event).<span class="fn">await</span>;</span></div>
+                <div class="code-line"><span class="code-ln">32</span><span class="code-text">            }</span></div>
+                <div class="code-line"><span class="code-ln">33</span><span class="code-text">        }</span></div>
+                <div class="code-line"><span class="code-ln">34</span><span class="code-text">        <span class="macro">Err!</span>(<span class="s">"no handler found"</span>.<span class="fn">into</span>())</span></div>
+                <div class="code-line"><span class="code-ln">35</span><span class="code-text">    }</span></div>
+                <div class="code-line"><span class="code-ln">36</span><span class="code-text">}</span></div>
+              </div>
+            </div>
+
+            <p>接下来更新 <code>agent_loop.rs</code>，将大 match 替换为 handler 分发：</p>
+
+            <!-- 工具调用：Edit -->
+            <div class="tool-call" data-od-id="tool-call-edit" onclick="toggleToolCall(this)">
+              <div class="tool-track">
+                <div class="tool-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11.5l-1 3 3-1L13 6a1.4 1.4 0 00-2-2L3.5 11.5z"/><path d="M10 3l3 3"/></svg></div>
+                <span class="tool-name">Edit</span>
+              </div>
+              <div class="tool-content">
+                <div class="tool-header">
+                  <span class="tool-call-status s-success"></span>
+                  <span class="tool-call-args">agent_loop.rs - 替换 match event 为 dispatch</span>
+                   <span class="tool-call-toggle">></span>
+                </div>
+              </div>
+              <div class="tool-call-body diff-view">
+                <div class="diff-line diff-del"><span class="diff-sign">−</span><span class="diff-ln">142</span><span class="diff-text">    match event {</span></div>
+                <div class="diff-line diff-del"><span class="diff-sign">−</span><span class="diff-ln">143</span><span class="diff-text">        AgentEvent::ToolCall(t) => self.handle_tool(t).await,</span></div>
+                <div class="diff-line diff-del"><span class="diff-sign">−</span><span class="diff-ln">144</span><span class="diff-text">        AgentEvent::Stream(s) => self.handle_stream(s).await,</span></div>
+                <div class="diff-line diff-del"><span class="diff-sign">−</span><span class="diff-ln">145</span><span class="diff-text">        _ => {}</span></div>
+                <div class="diff-line diff-del"><span class="diff-sign">−</span><span class="diff-ln">146</span><span class="diff-text">    }</span></div>
+                <div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-ln">142</span><span class="diff-text">    for handler in &self.handlers {</span></div>
+                <div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-ln">143</span><span class="diff-text">        if handler.can_handle(&event) {</span></div>
+                <div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-ln">144</span><span class="diff-text">            return handler.handle(event).await;</span></div>
+                <div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-ln">145</span><span class="diff-text">        }</span></div>
+                <div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-ln">146</span><span class="diff-text">    }</span></div>
+              </div>
+            </div>
+
+            <p>运行测试确认没有回归：</p>
+
+            <!-- 工具调用：Bash -->
+            <div class="tool-call expanded" data-od-id="tool-call-bash" onclick="toggleToolCall(this)">
+              <div class="tool-track">
+                <div class="tool-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 5.5 1.5 8 4 10.5"/><line x1="8" y1="10" x2="13" y2="10"/></svg></div>
+                <span class="tool-name">Bash</span>
+              </div>
+              <div class="tool-content">
+                <div class="tool-header">
+                  <span class="tool-call-status s-success"></span>
+                  <span class="tool-call-args">cargo test --package rozsa-core</span>
+                  <span class="tool-call-duration">4.2s</span>
+                   <span class="tool-call-toggle">></span>
+                </div>
+              </div>
+              <div class="tool-call-body tool-output">
+                <div class="tool-output-steps">
+                  <div class="tool-step step-done"><span class="step-icon">✓</span><span class="step-text">Compiling <span class="step-pkg">rozsa-model</span> v0.3.0</span></div>
+                  <div class="tool-step step-done"><span class="step-icon">✓</span><span class="step-text">Compiling <span class="step-pkg">rozsa-core</span> v0.3.0</span></div>
+                  <div class="tool-step step-done"><span class="step-icon">✓</span><span class="step-text">Compiling <span class="step-pkg">rozsa-app</span> v0.3.0</span></div>
+                </div>
+
+              </div>
+            </div>
+
+            <p>重构完成。主要改动：</p>
+            <ul>
+              <li>新增 <code>EventHandler</code> trait，定义 <code>handle()</code> 和 <code>can_handle()</code> 两个方法</li>
+              <li><code>AgentLoop</code> 持有 <code>Vec&lt;Box&lt;dyn EventHandler&gt;&gt;</code>，按注册顺序分发</li>
+              <li>每个工具调用实现独立的 handler，消除了 287 行的巨型 match</li>
+              <li>全部 14 个测试通过，无回归</li>
+            </ul>
+
+            <!-- 文件变更摘要（会话末尾） -->
+            <div class="changes-card" data-od-id="changes-summary">
+              <div class="changes-header">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M6 5h4M6 8h4M6 11h2"/></svg>
+                <span>已修改 3 个文件</span>
+              </div>
+              <div class="changes-list">
+                <div class="change-row">
+                  <span class="change-icon new" title="新建">+</span>
+                  <span class="change-name">crates/rozsa-core/src/handler.rs</span>
+                  <span class="change-add">+24</span>
+                </div>
+                <div class="change-row">
+                  <span class="change-icon mod" title="修改">~</span>
+                  <span class="change-name">crates/rozsa-core/src/agent_loop.rs</span>
+                  <span class="change-add">+8</span>
+                  <span class="change-del">−15</span>
+                </div>
+                <div class="change-row">
+                  <span class="change-icon mod" title="修改">~</span>
+                  <span class="change-name">crates/rozsa-core/src/lib.rs</span>
+                  <span class="change-add">+1</span>
+                </div>
+              </div>
+              <div class="changes-footer">
+                <span class="change-add">+33</span>
+                <span class="change-del">−15</span>
+                <span class="changes-runtime">
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5v4l2.5 1.5"/></svg>
+                  12.4s
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 打字指示器（隐藏，发送消息时显示） -->
+      <div class="msg msg-assistant" id="typingMsg" style="display:none">
+        <div class="msg-avatar">R</div>
+        <div class="msg-body">
+          <div class="msg-role">Rózsa</div>
+          <div class="typing-indicator"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+
+      <!-- 空会话状态 -->
+      <div class="chat-empty" id="emptyState" style="display:none">
+        <div class="chat-empty-icon">R</div>
+        <div class="chat-empty-title">开始新对话</div>
+        <div class="chat-empty-hint">
+          向 Rózsa 描述你的编码任务——重构、调试、代码审查或架构设计。
+          <div class="chat-empty-kbd">
+            <kbd>Enter</kbd> 发送 <kbd>⇧ Enter</kbd> 换行
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 输入框 -->
+    <div data-od-id="chat-input">
+      <div class="autocomplete-popup" id="autocomplete"></div>
+      <div class="input-wrapper">
+        <div class="perm-panel" id="permPanel">
+          <div class="perm-panel-title">请求执行权限</div>
+          <div class="perm-panel-meta">
+            <span class="perm-panel-risk">Shell 命令</span>
+            <span class="perm-panel-tool">Bash</span>
+          </div>
+          <div class="perm-panel-cmd">$ cargo publish --dry-run --package rozsa-core</div>
+          <p class="perm-panel-desc">此命令将在工作区根目录执行，仅做 dry-run 检查，不会实际发布。</p>
+          <div class="perm-panel-actions" id="permPanelActions">
+            <button class="perm-panel-opt" onclick="window._continueAfterPerm && window._continueAfterPerm()">
+              <span class="perm-panel-opt-key">Y</span>
+              <span class="perm-panel-opt-label">允许执行</span>
+            </button>
+            <button class="perm-panel-opt" onclick="window._continueAfterPerm && window._continueAfterPerm()">
+              <span class="perm-panel-opt-key">T</span>
+              <span class="perm-panel-opt-label">本次会话信任此命令</span>
+            </button>
+            <button class="perm-panel-opt" onclick="hidePermPanel()">
+              <span class="perm-panel-opt-key">N</span>
+              <span class="perm-panel-opt-label">拒绝执行</span>
+            </button>
+            <button class="perm-panel-opt" onclick="hidePermPanel()">
+              <span class="perm-panel-opt-key">A</span>
+              <span class="perm-panel-opt-label">拒绝并要求替换方案</span>
+            </button>
+          </div>
+        </div>
+        <textarea id="msgInput" placeholder="向 Rózsa 发送消息，支持 Markdown…" rows="1" oninput="autoResize(this);updateAutocomplete()"></textarea>
+        <div class="input-toolbar">
+          <button class="input-tool-btn" title="附加文件" aria-label="附加文件"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
+          <button class="input-tool-btn" title="插入代码" aria-label="插入代码"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5,3 1.5,8 5,13"/><polyline points="11,3 14.5,8 11,13"/></svg></button>
+          <button class="input-tool-btn" title="斜杠命令" aria-label="斜杠命令"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 2.5L6 13.5"/></svg></button>
+          <div class="input-spacer"></div>
+          <span class="input-hint">Markdown · ⏎ 发送 · ⇧⏎ 换行 · ⌃T 思考</span>
+          <div class="context-ring" data-od-id="context-info" title="上下文 42.3k / 200k · 21%">
+            <svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" stroke="var(--border)" stroke-width="2" fill="none"/><circle cx="9" cy="9" r="7" stroke="var(--accent)" stroke-width="2" fill="none" stroke-dasharray="44" stroke-dashoffset="34.8" stroke-linecap="round" transform="rotate(-90 9 9)"/></svg>
+            <span class="context-tokens">42.3k</span>
+          </div>
+          <button class="model-selector" data-od-id="model-badge" title="切换模型">claude-sonnet-4-20250514</button>
+          <button class="send-btn" data-od-id="send-btn" onclick="sendMessage()">发送</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+
+<!-- ============ 设置面板 ============ -->
+<div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-label="应用设置" onclick="if(event.target===this)closeSettings()">
+  <div class="settings-dialog" data-od-id="settings-dialog">
+    <nav class="settings-tabs">
+      <button class="settings-tab active" onclick="switchSettingsTab('general', this)">通用</button>
+      <button class="settings-tab" onclick="switchSettingsTab('models', this)">模型</button>
+      <button class="settings-tab" onclick="switchSettingsTab('permissions', this)">权限</button>
+      <button class="settings-tab" onclick="switchSettingsTab('tools', this)">工具</button>
+    </nav>
+    <div class="settings-content">
+      <div class="settings-pane active" id="pane-general">
+        <div class="settings-pane-title">通用设置</div>
+        <div class="settings-group">
+          <div class="settings-group-label">外观</div>
+          <div class="setting-item"><span class="setting-label">主题</span><select class="setting-select" aria-label="主题"><option>浅色</option><option>跟随系统</option><option>深色</option></select></div>
+          <div class="setting-item"><span class="setting-label">主题色</span><span class="setting-value" style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:var(--accent)"></span>低饱和玫红</span></div>
+          <div class="setting-item"><span class="setting-label">字体大小</span><select class="setting-select" aria-label="字体大小"><option>13px</option><option>14px</option><option>15px</option></select></div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label">快捷键</div>
+          <div class="setting-item"><span class="setting-label">发送消息</span><span class="setting-value">Enter</span></div>
+          <div class="setting-item"><span class="setting-label">换行</span><span class="setting-value">⇧ Enter</span></div>
+          <div class="setting-item"><span class="setting-label">切换思考面板</span><span class="setting-value">⌃ T</span></div>
+        </div>
+      </div>
+      <div class="settings-pane" id="pane-models">
+        <div class="settings-pane-title">模型配置</div>
+        <div class="settings-group">
+          <div class="settings-group-label">当前模型</div>
+          <div class="setting-item"><span class="setting-label">模型</span><select class="setting-select" aria-label="模型"><option>claude-sonnet-4-20250514</option><option>gpt-5.4-codex</option><option>local-qwen3-coder</option></select></div>
+          <div class="setting-item"><span class="setting-label">API 提供商</span><select class="setting-select" aria-label="API 提供商"><option>Anthropic</option><option>OpenAI</option><option>本地模型</option></select></div>
+          <div class="setting-item"><span class="setting-label">上下文窗口</span><span class="setting-value">200,000 tokens</span></div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label">高级</div>
+          <div class="setting-item"><span class="setting-label">Temperature</span><select class="setting-select" aria-label="Temperature"><option>1.0</option><option>0.7</option><option>0.3</option></select></div>
+          <div class="setting-item"><span class="setting-label">最大输出 Token</span><select class="setting-select" aria-label="最大输出 Token"><option>16,384</option><option>8,192</option><option>32,768</option></select></div>
+        </div>
+      </div>
+      <div class="settings-pane" id="pane-permissions">
+        <div class="settings-pane-title">权限策略</div>
+        <div class="settings-group">
+          <div class="settings-group-label">模式</div>
+          <div class="setting-item"><span class="setting-label">权限模式</span><select class="setting-select" aria-label="权限模式"><option>auto-approve</option><option>on-request</option><option>free-permission</option></select></div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label">自动批准</div>
+          <div class="setting-item"><span class="setting-label">Read, Grep, Ls, Find</span><div class="setting-toggle on"></div></div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label">需审批</div>
+          <div class="setting-item"><span class="setting-label">Bash</span><div class="setting-toggle"></div></div>
+          <div class="setting-item"><span class="setting-label">Write, Edit</span><div class="setting-toggle"></div></div>
+          <div class="setting-item"><span class="setting-label">Subagent</span><div class="setting-toggle"></div></div>
+        </div>
+      </div>
+      <div class="settings-pane" id="pane-tools">
+        <div class="settings-pane-title">工具列表</div>
+        <div class="settings-group">
+          <div class="settings-group-label">已注册 · 8 个工具</div>
+          <div class="setting-item"><span class="setting-label">Bash</span><span class="setting-value">Shell 命令执行</span></div>
+          <div class="setting-item"><span class="setting-label">Read</span><span class="setting-value">文件读取</span></div>
+          <div class="setting-item"><span class="setting-label">Write</span><span class="setting-value">文件写入</span></div>
+          <div class="setting-item"><span class="setting-label">Edit</span><span class="setting-value">文件编辑</span></div>
+          <div class="setting-item"><span class="setting-label">Grep</span><span class="setting-value">内容搜索</span></div>
+          <div class="setting-item"><span class="setting-label">Find</span><span class="setting-value">文件查找</span></div>
+          <div class="setting-item"><span class="setting-label">Ls</span><span class="setting-value">目录列表</span></div>
+          <div class="setting-item"><span class="setting-label">Subagent</span><span class="setting-value">子代理派发</span></div>
+        </div>
+      </div>
+    </div>
+    <button class="settings-close" onclick="closeSettings()">✕</button>
+  </div>
+</div>
+
+<!-- ============ 交互脚本 ============ -->
+<script>
+// 会话数据（模拟）
+const sessions = [
+  { name: '重构 agent_loop.rs', state: 'running', time: '2h' },
+  { name: '修复权限面板布局', state: 'unread', time: '1d' },
+  { name: '添加 subagent 工具支持', state: 'approval', time: '3d' },
+  { name: 'models.json 迁移', state: 'unread', time: '7d' }
+];
+
+// 切换会话
+function switchSession(el, idx) {
+  document.querySelectorAll('.session-item').forEach(s => s.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('currentSessionName').textContent = sessions[idx].name;
+}
+
+// 新建会话
+function newSession() {
+  const list = document.getElementById('sessionList');
+  const item = document.createElement('div');
+  item.className = 'session-item active';
+  item.setAttribute('tabindex', '0');
+  item.innerHTML = '<span class="session-status running" title="正在运行中"></span><div class="session-name">新会话</div><div class="session-meta"><span>刚刚</span></div>';
+  document.querySelectorAll('.session-item').forEach(s => s.classList.remove('active'));
+  list.prepend(item);
+  item.onclick = function() { switchSession(this, -1); };
+  document.getElementById('currentSessionName').textContent = '新会话';
+  document.getElementById('chatMessages').innerHTML = '';
+  showEmptyState(true);
+  // 重新添加 typing 指示器
+  const typing = document.createElement('div');
+  typing.className = 'msg msg-assistant';
+  typing.id = 'typingMsg';
+  typing.style.display = 'none';
+  typing.innerHTML = '<div class="msg-avatar">R</div><div class="msg-body"><div class="msg-role">Rózsa</div><div class="typing-indicator"><span></span><span></span><span></span></div></div>';
+  document.getElementById('chatMessages').appendChild(typing);
+}
+
+// 空状态管理
+function showEmptyState(show) {
+  const el = document.getElementById('emptyState');
+  if (el) el.style.display = show ? 'flex' : 'none';
+}
+
+// 展开/收起工具调用
+function toggleToolCall(el) {
+  el.classList.toggle('expanded');
+}
+
+// 发送消息
+function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  const messages = document.getElementById('chatMessages');
+  const typing = document.getElementById('typingMsg');
+
+  // 添加用户消息
+  showEmptyState(false);
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'msg msg-user msg-enter';
+  msgDiv.innerHTML = `<div class="msg-avatar">U</div><div class="msg-body"><div class="msg-role">你</div><div class="msg-content markdown-body">${renderMarkdown(text)}</div></div>`;
+  messages.insertBefore(msgDiv, typing);
+
+  // 清空输入框
+  input.value = '';
+  input.style.height = 'auto';
+  hideAutocomplete(document.getElementById('autocomplete'));
+
+  // 显示打字指示器
+  typing.style.display = 'flex';
+  messages.scrollTop = messages.scrollHeight;
+
+  // 模拟流式响应
+  setTimeout(() => {
+    typing.style.display = 'none';
+    const reply = document.createElement('div');
+    reply.className = 'msg msg-assistant msg-enter';
+    reply.innerHTML = `<div class="msg-avatar">R</div><div class="msg-body"><div class="msg-role">Rózsa</div>
+      <div class="thinking-block active" data-auto="true">
+        <div class="thinking-header" onclick="toggleThinkingBlock(this)">
+          <svg class="thinking-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1.5C5 1.5 3 3.5 3 6c0 1.5.8 2.7 2 3.5V12a1 1 0 001 1h4a1 1 0 001-1V9.5c1.2-.8 2-2 2-3.5 0-2.5-2-4.5-5-4.5z"/><path d="M6 14.5h4"/></svg>
+          <span class="thinking-label">思考中</span>
+          <span class="thinking-duration"></span>
+          <span class="thinking-chevron">▸</span>
+        </div>
+        <div class="thinking-content"></div>
+      </div>
+      <div class="msg-content"><div class="markdown-body reply-markdown"><span class="stream-text"></span><span class="stream-cursor">▌</span></div></div></div>`;
+    messages.insertBefore(reply, typing);
+
+    // Thinking 阶段 — 自动展开 + 流式
+    const thinkStart = Date.now();
+    const thinkBlock = reply.querySelector('.thinking-block');
+    const thinkLabel = thinkBlock.querySelector('.thinking-label');
+    const thinkDuration = thinkBlock.querySelector('.thinking-duration');
+    thinkBlock.classList.add('expanded');
+    const thinkContent = thinkBlock.querySelector('.thinking-content');
+    const thinkText = '检查发布条件：版本号、依赖状态、变更日志…';
+    let ti = 0;
+    const thinkInterval = setInterval(() => {
+      if (ti < thinkText.length) {
+        thinkContent.textContent += thinkText[ti];
+        ti++;
+        messages.scrollTop = messages.scrollHeight;
+      } else {
+        clearInterval(thinkInterval);
+        const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(1);
+        thinkBlock.classList.remove('active');
+        thinkLabel.textContent = 'Thinked';
+        thinkDuration.textContent = elapsed + 's';
+        // 未手动展开则自动折叠
+        if (thinkBlock.dataset.auto === 'true') {
+          thinkBlock.classList.remove('expanded');
+        }
+        delete thinkBlock.dataset.auto;
+
+        // 用户选择后继续：先注册回调，再显示面板，避免面板渲染异常时按钮拿不到处理函数。
+        window._continueAfterPerm = function() {
+          hidePermPanel();
+          // 创建工具调用
+          const toolDiv = document.createElement('div');
+          toolDiv.className = 'tool-call expanded';
+          toolDiv.setAttribute('onclick', 'toggleToolCall(this)');
+          toolDiv.innerHTML = `<div class="tool-track">
+            <div class="tool-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 5.5 1.5 8 4 10.5"/><line x1="8" y1="10" x2="13" y2="10"/></svg></div>
+            <span class="tool-name">Bash</span>
+          </div>
+          <div class="tool-content">
+            <div class="tool-header">
+              <span class="tool-call-status s-running"></span>
+              <span class="tool-call-args">cargo publish --dry-run --package rozsa-core</span>
+              <span class="tool-call-toggle">></span>
+            </div>
+          </div>
+          <div class="tool-call-body tool-output"><div class="tool-output-steps"><div class="tool-step step-done"><span class="step-icon">✓</span><span class="step-text">Compiling <span class="step-pkg">rozsa-model</span> v0.3.0</span></div></div></div>`;
+          reply.querySelector('.msg-content').prepend(toolDiv);
+
+          // 工具调用完成后更新（> 1s 才显示用时）
+          const toolStatus = toolDiv.querySelector('.tool-call-status');
+          const toolHeader = toolDiv.querySelector('.tool-header');
+          setTimeout(() => {
+            toolStatus.className = 'tool-call-status s-success';
+            const dur = document.createElement('span');
+            dur.className = 'tool-call-duration';
+            dur.textContent = '1.2s';
+            toolHeader.insertBefore(dur, toolHeader.querySelector('.tool-call-toggle'));
+          }, 1200);
+
+          // 流式输出主消息
+          const text = '## 发布前检查完成\n\nDry-run 检查通过，所有依赖均满足发布条件。\n\n- 版本号与变更日志已对齐\n- workspace 依赖解析正常\n- 发布前检查命令：`cargo publish --dry-run --package rozsa-core`\n\n> 建议在真正发布前再跑一次完整测试，并确认权限模式仍为 `on-request`。\n\n```bash\ncargo test --workspace\ncargo publish --dry-run --package rozsa-core\n```\n\n参考：[Rust 发布检查清单](https://doc.rust-lang.org/cargo/reference/publishing.html)。';
+          const streamEl = reply.querySelector('.stream-text');
+          const cursorEl = reply.querySelector('.stream-cursor');
+          const markdownEl = reply.querySelector('.reply-markdown');
+          let i = 0;
+          const interval = setInterval(() => {
+            if (i < text.length) {
+              streamEl.textContent += text[i];
+              i++;
+              messages.scrollTop = messages.scrollHeight;
+            } else {
+              clearInterval(interval);
+              markdownEl.innerHTML = renderMarkdown(text);
+              toolDiv.classList.remove('expanded');
+            }
+          }, 25);
+        };
+
+        // 显示权限审批面板（替换输入框）
+        showPermPanel();
+      }
+    }, 25);
+  }, 600);
+}
+
+// 权限审批面板
+function showPermPanel() {
+  const panel = document.getElementById('permPanel');
+  const input = document.getElementById('msgInput');
+  panel.classList.add('visible');
+  input.style.display = 'none';
+  const firstAction = panel.querySelector('.perm-panel-opt');
+  if (firstAction) firstAction.focus();
+  const messages = document.getElementById('chatMessages');
+  if (messages) messages.scrollTop = messages.scrollHeight;
+}
+function hidePermPanel() {
+  const panel = document.getElementById('permPanel');
+  const input = document.getElementById('msgInput');
+  panel.classList.remove('visible');
+  input.style.display = '';
+  input.focus();
+}
+
+// 自动调整输入框高度
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+// 键盘快捷键
+document.addEventListener('keydown', function(e) {
+  const input = document.getElementById('msgInput');
+  // 自动补全导航
+  if (acVisible && document.activeElement === input) {
+    const popup = document.getElementById('autocomplete');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      acSelected = Math.min(acSelected + 1, acItems.length - 1);
+      updateAcSelection(popup);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      acSelected = Math.max(acSelected - 1, 0);
+      updateAcSelection(popup);
+      return;
+    }
+    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+      if (acItems.length > 0) {
+        e.preventDefault();
+        selectAcItem(acSelected);
+        return;
+      }
+    }
+    if (e.key === 'Escape') {
+      hideAutocomplete(popup);
+      return;
+    }
+  }
+  // Ctrl+T 展开/折叠 thinking 内容
+  if (e.key === 't' && e.ctrlKey && !e.shiftKey && !e.altKey) {
+    e.preventDefault();
+    document.body.classList.toggle('thinking-expanded');
+    return;
+  }
+  // Enter 发送（不含 Shift）
+  if (e.key === 'Enter' && !e.shiftKey && document.activeElement === input) {
+    e.preventDefault();
+    sendMessage();
+  }
+  // 权限面板快捷键
+  const permPanel = document.getElementById('permPanel');
+  if (permPanel.classList.contains('visible')) {
+    const key = e.key.toLowerCase();
+    if (key === 'y') {
+      e.preventDefault();
+      window._continueAfterPerm && window._continueAfterPerm();
+      return;
+    }
+    if (key === 't') {
+      e.preventDefault();
+      window._continueAfterPerm && window._continueAfterPerm();
+      return;
+    }
+    if (key === 'n') {
+      e.preventDefault();
+      hidePermPanel();
+      return;
+    }
+    if (key === 'a') {
+      e.preventDefault();
+      hidePermPanel();
+      return;
+    }
+  }
+  // Escape 关闭弹窗
+  if (e.key === 'Escape') {
+    closeSettings();
+  }
+});
+
+function updateAcSelection(popup) {
+  popup.querySelectorAll('.ac-item').forEach((el, i) => {
+    el.classList.toggle('selected', i === acSelected);
+  });
+}
+
+// 设置面板
+function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('visible'); }
+function closeSettings() { document.getElementById('settingsPanel').classList.remove('visible'); }
+function switchSettingsTab(tabId, btn) {
+  document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.settings-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('pane-' + tabId).classList.add('active');
+}
+
+// 自动补全数据
+const slashCommands = [
+  { cmd: '/init', desc: '初始化项目', hint: '' },
+  { cmd: '/brainstorm', desc: '协作需求探索', hint: '' },
+  { cmd: '/prd', desc: '启动 PRD 阶段', hint: '' },
+  { cmd: '/spec', desc: '启动 SPEC 阶段', hint: '' },
+  { cmd: '/task', desc: '启动 TASK 阶段', hint: '' },
+  { cmd: '/devtest', desc: '日常开发测试', hint: '' },
+  { cmd: '/fix', desc: '自动修复 open issues', hint: '' },
+  { cmd: '/test', desc: '完整测试阶段', hint: '' },
+  { cmd: '/status', desc: '报告当前状态', hint: '' },
+  { cmd: '/mode', desc: '选择开发模式', hint: '' }
+];
+const mentions = [
+  { name: '@rozsa-core', desc: 'Agent loop engine crate' },
+  { name: '@rozsa-app', desc: 'Application runtime crate' },
+  { name: '@rozsa-model', desc: 'LLM abstraction layer' },
+  { name: '@rozsa-tui', desc: 'Terminal frontend (ratatui)' },
+  { name: '@rozsa-cli', desc: 'Binary entry point (clap)' }
+];
+
+let acVisible = false;
+let acSelected = 0;
+let acItems = [];
+
+function updateAutocomplete() {
+  const input = document.getElementById('msgInput');
+  const popup = document.getElementById('autocomplete');
+  const val = input.value;
+
+  // / 在开头触发
+  if (/^\/\w*$/.test(val)) {
+    const q = val.slice(1).toLowerCase();
+    acItems = slashCommands.filter(c => c.cmd.slice(1).toLowerCase().includes(q));
+    acSelected = 0;
+    renderAutocomplete(popup, acItems.map(i =>
+      `<div class="ac-cmd">${i.cmd}</div><div class="ac-desc">${i.desc}</div>${i.hint ? `<div class="ac-hint">${i.hint}</div>` : ''}`
+    ));
+    return;
+  }
+
+  // @ 在任意位置触发
+  const atMatch = val.match(/@(\w*)$/);
+  if (atMatch) {
+    const q = atMatch[1].toLowerCase();
+    acItems = mentions.filter(m => m.name.slice(1).toLowerCase().includes(q));
+    acSelected = 0;
+    renderAutocomplete(popup, acItems.map(i =>
+      `<div class="ac-cmd">${i.name}</div><div class="ac-desc">${i.desc}</div>`
+    ));
+    return;
+  }
+
+  hideAutocomplete(popup);
+}
+
+function renderAutocomplete(popup, html) {
+  if (html.length === 0) { hideAutocomplete(popup); return; }
+  popup.innerHTML = html.map((h, i) =>
+    `<div class="ac-item${i === 0 ? ' selected' : ''}" data-idx="${i}" onmousedown="selectAcItem(${i})">${h}</div>`
+  ).join('');
+  popup.classList.add('visible');
+  acVisible = true;
+}
+
+function hideAutocomplete(popup) {
+  popup.classList.remove('visible');
+  acVisible = false;
+}
+
+function selectAcItem(idx) {
+  const item = acItems[idx];
+  if (!item) return;
+  const input = document.getElementById('msgInput');
+  const val = input.value;
+  const replacement = item.cmd || item.name;
+  // 替换触发部分
+  if (val.startsWith('/')) {
+    input.value = replacement + ' ';
+  } else {
+    const atIdx = val.lastIndexOf('@');
+    input.value = val.slice(0, atIdx) + replacement + ' ';
+  }
+  hideAutocomplete(document.getElementById('autocomplete'));
+  input.focus();
+}
+
+// Thinking 块折叠/展开（手动点击时清除 auto 标记）
+function toggleThinkingBlock(header) {
+  const block = header.closest('.thinking-block');
+  block.classList.toggle('expanded');
+  delete block.dataset.auto;
+}
+
+// Markdown 渲染：安全转义后支持常见块级语法，不做语法高亮。
+function renderMarkdown(source) {
+  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  const html = [];
+  let paragraph = [];
+  let list = null;
+  let quote = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      html.push(`<p>${parseInlineMarkdown(paragraph.join(' '))}</p>`);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list) {
+      html.push(`<${list.type}>${list.items.map(item => `<li>${parseInlineMarkdown(item)}</li>`).join('')}</${list.type}>`);
+      list = null;
+    }
+  };
+  const flushQuote = () => {
+    if (quote.length) {
+      html.push(`<blockquote>${quote.map(line => `<p>${parseInlineMarkdown(line)}</p>`).join('')}</blockquote>`);
+      quote = [];
+    }
+  };
+  const flushAll = () => {
+    flushParagraph();
+    flushList();
+    flushQuote();
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      flushAll();
+      const lang = trimmed.replace(/^```/, '').trim();
+      const code = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i].trim())) {
+        code.push(lines[i]);
+        i++;
+      }
+      html.push(renderCodeBlock(code.join('\n'), lang));
+      continue;
+    }
+
+    if (!trimmed) {
+      flushAll();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushAll();
+      const level = heading[1].length;
+      html.push(`<h${level}>${parseInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    if (/^(-{3,}|\*{3,})$/.test(trimmed)) {
+      flushAll();
+      html.push('<hr>');
+      continue;
+    }
+
+    const quoteLine = trimmed.match(/^>\s?(.*)$/);
+    if (quoteLine) {
+      flushParagraph();
+      flushList();
+      quote.push(quoteLine[1]);
+      continue;
+    }
+
+    const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+    const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      flushParagraph();
+      flushQuote();
+      const type = unordered ? 'ul' : 'ol';
+      if (!list || list.type !== type) flushList();
+      if (!list) list = { type, items: [] };
+      list.items.push((unordered || ordered)[1]);
+      continue;
+    }
+
+    flushList();
+    flushQuote();
+    paragraph.push(trimmed);
+  }
+
+  flushAll();
+  return html.join('') || '<p></p>';
+}
+
+function parseInlineMarkdown(raw) {
+  const codeSpans = [];
+  let text = raw.replace(/`([^`]+)`/g, function(_, code) {
+    const id = codeSpans.push(escapeHtml(code)) - 1;
+    return `@@CODE${id}@@`;
+  });
+
+  let html = escapeHtml(text);
+  html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function(_, label, href) {
+    const safe = safeMarkdownHref(href);
+    if (!safe) return label;
+    return `<a href="${safe}" target="_blank" rel="noreferrer">${label}</a>`;
+  });
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  html = html.replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+  html = html.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+  html = html.replace(/@@CODE(\d+)@@/g, function(_, id) {
+    return `<code>${codeSpans[Number(id)] || ''}</code>`;
+  });
+  return html;
+}
+
+function safeMarkdownHref(rawHref) {
+  const href = rawHref.trim();
+  try {
+    const url = new URL(href, window.location.href);
+    if (['http:', 'https:', 'mailto:'].includes(url.protocol)) {
+      return escapeHtml(href);
+    }
+  } catch (_) {
+    return '';
+  }
+  return '';
+}
+
+function renderCodeBlock(code, lang) {
+  const cleanLang = (lang || 'text').trim().toLowerCase();
+  const label = escapeHtml(cleanLang);
+  return `<div class="md-code-block"><div class="md-code-head"><span class="md-code-lang">${label}</span><button class="md-copy" type="button" onclick="copyMarkdownCode(this)" aria-label="复制代码" title="复制代码">${copyIconSvg('copy')}</button></div><pre><code data-lang="${label}">${highlightCode(code, cleanLang)}</code></pre></div>`;
+}
+
+function highlightCode(code, lang) {
+  const language = lang || 'text';
+  return code.split('\n').map(line => highlightCodeLine(line, language)).join('\n');
+}
+
+function highlightCodeLine(line, lang) {
+  const trimmed = line.trim();
+  if (/^(#|\/\/)/.test(trimmed)) {
+    return `<span class="md-syn-comment">${escapeHtml(line)}</span>`;
+  }
+
+  const stringTokens = [];
+  let working = line.replace(/("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|`(?:\\.|[^`])*`)/g, function(match) {
+    const id = stringTokens.push(`<span class="md-syn-string">${escapeHtml(match)}</span>`) - 1;
+    return `@@STR${id}@@`;
+  });
+
+  let html = escapeHtml(working);
+  if (/^(bash|sh|shell|zsh)$/.test(lang)) {
+    html = html.replace(/^(\s*)([a-zA-Z][\w.-]*)/, '$1<span class="md-syn-command">$2</span>');
+    html = html.replace(/(\s)(--?[\w-]+)/g, '$1<span class="md-syn-option">$2</span>');
+  } else if (/^(js|javascript|ts|typescript|jsx|tsx|rust|rs|json|toml)$/.test(lang)) {
+    html = html.replace(/\b(const|let|var|function|return|if|else|for|while|class|new|async|await|import|export|from|pub|fn|struct|impl|trait|use|mod|match|enum|type|where|mut|self|true|false|null)\b/g, '<span class="md-syn-keyword">$1</span>');
+    html = html.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="md-syn-number">$1</span>');
+  }
+
+  return html.replace(/@@STR(\d+)@@/g, function(_, id) {
+    return stringTokens[Number(id)] || '';
+  });
+}
+
+function copyIconSvg(kind) {
+  if (kind === 'check') {
+    return '<svg viewBox="0 0 16 16" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 4.5L6.5 11 3 7.5"/></svg>';
+  }
+  return '<svg viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="8" height="9" rx="1.5"/><path d="M3 10.5V3.5A1.5 1.5 0 014.5 2h6"/></svg>';
+}
+
+function copyMarkdownCode(btn) {
+  const block = btn.closest('.md-code-block');
+  const code = block ? block.querySelector('code') : null;
+  if (!code) return;
+  const setCopied = () => {
+    btn.classList.add('copied');
+    btn.innerHTML = copyIconSvg('check');
+    btn.setAttribute('aria-label', '已复制');
+    btn.setAttribute('title', '已复制');
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.innerHTML = copyIconSvg('copy');
+      btn.setAttribute('aria-label', '复制代码');
+      btn.setAttribute('title', '复制代码');
+    }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code.textContent).then(setCopied).catch(() => fallbackCopy(code.textContent, setCopied));
+    return;
+  }
+  fallbackCopy(code.textContent, setCopied);
+}
+
+function fallbackCopy(text, onDone) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.left = '-9999px';
+  document.body.appendChild(area);
+  area.select();
+  try {
+    document.execCommand('copy');
+    onDone();
+  } finally {
+    document.body.removeChild(area);
+  }
+}
+
+// HTML 转义
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
