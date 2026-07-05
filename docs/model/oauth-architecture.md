@@ -97,8 +97,9 @@ Three new message types extend the JSONL bridge:
 4. Rust starts local HTTP server on port `1455`
 5. Race: callback server receives redirect OR user pastes code
 6. Rust exchanges code at `auth.openai.com/oauth/token`
-7. Extracts `accountId` from JWT payload
+7. Extracts `accountId` from the `id_token` JWT payload
 8. Credentials stored to `auth.json`
+9. Codex model requests use `https://chatgpt.com/backend-api/codex`, matching official Codex CLI ChatGPT/PAT auth routing
 
 ## Credential Storage
 

@@ -1,5 +1,5 @@
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rozsa_model::oauth::openai_codex::{
     build_auth_url, extract_account_id_from_jwt, generate_random_state, parse_authorization_input,
 };
@@ -69,7 +69,17 @@ fn test_parse_authorization_input_state_mismatch() {
 }
 
 #[test]
-fn test_extract_account_id_from_jwt() {
+fn test_extract_account_id_from_id_token_jwt() {
+    let payload = r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"test-account-123"}}"#;
+    let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+    let token = format!("header.{}.signature", payload_b64);
+
+    let account_id = extract_account_id_from_jwt(&token);
+    assert_eq!(account_id, Some("test-account-123".to_string()));
+}
+
+#[test]
+fn test_extract_account_id_from_legacy_access_token_jwt() {
     let payload = r#"{"https://api.openai.com/auth.chatgpt_account_id":"test-account-123"}"#;
     let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
     let token = format!("header.{}.signature", payload_b64);

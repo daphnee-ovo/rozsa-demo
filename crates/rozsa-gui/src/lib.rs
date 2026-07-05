@@ -22,8 +22,7 @@ pub struct GuiConfig {
     pub session_dir: Option<PathBuf>,
     pub global_settings_path: Option<PathBuf>,
     pub pending_approvals: Option<PendingApprovals>,
-    pub permission_request_rx:
-        Option<tokio::sync::mpsc::UnboundedReceiver<(String, ApprovalInfo)>>,
+    pub permission_request_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(String, ApprovalInfo)>>,
     pub system_prompt: String,
     pub resources: rozsa_app::resources::LoadedResources,
 }
@@ -36,7 +35,13 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_settings = settings_manager.resolved().clone();
 
     // 初始 session 的 path
-    let initial_path = config.session.session_manager().await.session_file().to_string_lossy().to_string();
+    let initial_path = config
+        .session
+        .session_manager()
+        .await
+        .session_file()
+        .to_string_lossy()
+        .to_string();
 
     // 共享资源（创建新 agent backend 时复用）
     let shared = Arc::new(SharedResources {
@@ -83,6 +88,8 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::update_setting,
             commands::list_models,
             commands::switch_model,
+            commands::auth_login,
+            commands::auth_logout,
             commands::compact,
             commands::rename_session,
             commands::delete_session,

@@ -94,7 +94,10 @@ fn convert_to_registry_format(models: &[RemoteModel]) -> serde_json::Value {
 
     let model_entries: Vec<serde_json::Value> = models
         .iter()
-        .filter(|m| m.supported_in_api.unwrap_or(false))
+        .filter(|m| {
+            m.supported_in_api.unwrap_or(false)
+                && m.visibility.as_deref().unwrap_or("list") == "list"
+        })
         .map(|m| {
             let reasoning = m.default_reasoning_level.is_some();
             let input: Vec<&str> = m.input_modalities.iter().map(|s| s.as_str()).collect();
@@ -114,7 +117,7 @@ fn convert_to_registry_format(models: &[RemoteModel]) -> serde_json::Value {
         "_last_refreshed": now,
         "providers": {
             "codex-oauth": {
-                "baseUrl": "https://api.openai.com/v1",
+                "baseUrl": "https://chatgpt.com/backend-api/codex",
                 "api": "openai-responses",
                 "authHeader": true,
                 "models": model_entries
@@ -127,8 +130,8 @@ fn write_config(path: &Path, config: &serde_json::Value) -> Result<(), ModelRefr
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let content =
-        serde_json::to_string_pretty(config).map_err(|e| ModelRefreshError::Parse(e.to_string()))?;
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|e| ModelRefreshError::Parse(e.to_string()))?;
     std::fs::write(path, content).map_err(|e| ModelRefreshError::Io(e.to_string()))?;
     Ok(())
 }
@@ -161,7 +164,54 @@ struct RemoteModel {
     display_name: String,
     context_window: Option<i64>,
     supported_in_api: Option<bool>,
+    visibility: Option<String>,
     default_reasoning_level: Option<String>,
     #[serde(default)]
     input_modalities: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn remote_model(slug: &str, visibility: Option<&str>, supported_in_api: bool) -> RemoteModel {
+        RemoteModel {
+            slug: slug.to_string(),
+            display_name: slug.to_string(),
+            context_window: Some(272_000),
+            supported_in_api: Some(supported_in_api),
+            visibility: visibility.map(str::to_string),
+            default_reasoning_level: Some("medium".to_string()),
+            input_modalities: vec!["text".to_string(), "image".to_string()],
+        }
+    }
+
+    #[test]
+    fn convert_to_registry_format_keeps_only_visible_api_models() {
+        let config = convert_to_registry_format(&[
+            remote_model("gpt-5.5", Some("list"), true),
+            remote_model("codex-auto-review", Some("hide"), true),
+            remote_model("internal-disabled", Some("list"), false),
+            remote_model("legacy-visible", None, true),
+        ]);
+
+        let models = config
+            .get("providers")
+            .and_then(|providers| providers.get("codex-oauth"))
+            .and_then(|provider| provider.get("models"))
+            .and_then(|models| models.as_array())
+            .expect("models should be present");
+        let base_url = config
+            .get("providers")
+            .and_then(|providers| providers.get("codex-oauth"))
+            .and_then(|provider| provider.get("baseUrl"))
+            .and_then(|base_url| base_url.as_str());
+        let ids: Vec<&str> = models
+            .iter()
+            .filter_map(|model| model.get("id").and_then(|id| id.as_str()))
+            .collect();
+
+        assert_eq!(base_url, Some("https://chatgpt.com/backend-api/codex"));
+        assert_eq!(ids, vec!["gpt-5.5", "legacy-visible"]);
+    }
 }

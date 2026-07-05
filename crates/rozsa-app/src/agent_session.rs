@@ -23,11 +23,11 @@
 // - [Core Agent Loop](../../rozsa-core/src/agent_loop.rs)
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use tokio_util::sync::CancellationToken;
 
 use rozsa_core::agent_loop::{agent_loop, agent_loop_continue};
@@ -69,7 +69,20 @@ pub struct AgentSessionConfig {
     /// Loaded resources (CLAUDE.md, AGENTS.md, etc.).
     pub resources: LoadedResources,
     /// Optional pre-tool-use hook for permission checking.
-    pub pre_tool_use: Option<Box<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>>,
+    pub pre_tool_use: Option<
+        Box<
+            dyn Fn(
+                    rozsa_core::config::PreToolUseContext,
+                ) -> std::pin::Pin<
+                    Box<
+                        dyn std::future::Future<
+                                Output = Option<rozsa_core::config::PreToolUseResult>,
+                            > + Send,
+                    >,
+                > + Send
+                + Sync,
+        >,
+    >,
 }
 
 /// Static (immutable per session) parts of AgentSessionConfig.
@@ -113,7 +126,20 @@ pub struct AgentSession {
     /// Follow-up message queue — delivered when no steering/tool calls remain.
     follow_up_queue: Arc<std::sync::Mutex<Vec<AgentMessage>>>,
     /// Optional pre-tool-use hook (injected by backend for permissions).
-    pre_tool_use_hook: Option<Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>>,
+    pre_tool_use_hook: Option<
+        Arc<
+            dyn Fn(
+                    rozsa_core::config::PreToolUseContext,
+                ) -> std::pin::Pin<
+                    Box<
+                        dyn std::future::Future<
+                                Output = Option<rozsa_core::config::PreToolUseResult>,
+                            > + Send,
+                    >,
+                > + Send
+                + Sync,
+        >,
+    >,
     /// Extension lifecycle hooks.
     extension_runner: tokio::sync::Mutex<crate::extensions::ExtensionRunner>,
     /// Skill registry — loaded from filesystem at startup, reloadable.
@@ -149,8 +175,20 @@ impl AgentSession {
             .as_ref()
             .and_then(|p| p.parent().map(|d| d.to_path_buf()));
         // Arc-wrap the permission hook early so it can be shared with subagents.
-        let pre_tool_use_arc: Option<Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>> =
-            pre_tool_use.map(|f| Arc::from(f) as _);
+        let pre_tool_use_arc: Option<
+            Arc<
+                dyn Fn(
+                        rozsa_core::config::PreToolUseContext,
+                    ) -> std::pin::Pin<
+                        Box<
+                            dyn std::future::Future<
+                                    Output = Option<rozsa_core::config::PreToolUseResult>,
+                                > + Send,
+                        >,
+                    > + Send
+                    + Sync,
+            >,
+        > = pre_tool_use.map(|f| Arc::from(f) as _);
 
         let shared = crate::subagent::SharedResources {
             model_stream: Arc::new(|m, c, o| rozsa_model::stream::stream_simple(m, c, o)),
@@ -288,14 +326,16 @@ impl AgentSession {
             }))?;
 
         let context = self.build_agent_context().await;
-        let loop_config = self.build_loop_config().await;
+        let loop_config = match self.build_loop_config().await {
+            Ok(config) => config,
+            Err(error) => {
+                *self.cancel_token.lock().await = None;
+                self.is_running.store(false, Ordering::SeqCst);
+                return Err(error);
+            }
+        };
 
-        let stream = agent_loop(
-            vec![user_msg],
-            context,
-            loop_config,
-            Some(cancel_token),
-        );
+        let stream = agent_loop(vec![user_msg], context, loop_config, Some(cancel_token));
 
         let events = self.drain_and_broadcast(stream).await;
         self.persist_new_messages(&events).await?;
@@ -323,7 +363,14 @@ impl AgentSession {
         *self.cancel_token.lock().await = Some(cancel_token.clone());
 
         let context = self.build_agent_context().await;
-        let loop_config = self.build_loop_config().await;
+        let loop_config = match self.build_loop_config().await {
+            Ok(config) => config,
+            Err(error) => {
+                *self.cancel_token.lock().await = None;
+                self.is_running.store(false, Ordering::SeqCst);
+                return Err(error);
+            }
+        };
 
         let stream = agent_loop_continue(context, loop_config, Some(cancel_token));
 
@@ -338,10 +385,7 @@ impl AgentSession {
 
     /// Drain an EventStream while fan-out broadcasting each event to subscribers.
     /// Returns the same Vec the old `collect_events` produced — callers see no behavior change.
-    async fn drain_and_broadcast(
-        &self,
-        mut stream: EventStream<AgentEvent>,
-    ) -> Vec<AgentEvent> {
+    async fn drain_and_broadcast(&self, mut stream: EventStream<AgentEvent>) -> Vec<AgentEvent> {
         let mut events = Vec::new();
         while let Some(event) = stream.next().await {
             // send() errors only when there are zero subscribers — not an error condition.
@@ -372,13 +416,17 @@ impl AgentSession {
     }
 
     /// Access the subagent manager (lock-guarded).
-    pub async fn subagent_manager(&self) -> tokio::sync::MutexGuard<'_, crate::subagent::SubagentManager> {
+    pub async fn subagent_manager(
+        &self,
+    ) -> tokio::sync::MutexGuard<'_, crate::subagent::SubagentManager> {
         self.subagent_manager.lock().await
     }
 
     /// Non-blocking access to the subagent manager — returns None if locked.
     /// Used by the synchronous render path to avoid blocking the UI thread.
-    pub fn subagent_manager_try_lock(&self) -> Option<tokio::sync::MutexGuard<'_, crate::subagent::SubagentManager>> {
+    pub fn subagent_manager_try_lock(
+        &self,
+    ) -> Option<tokio::sync::MutexGuard<'_, crate::subagent::SubagentManager>> {
         self.subagent_manager.try_lock().ok()
     }
 
@@ -391,7 +439,10 @@ impl AgentSession {
     /// on successful try_lock; returns None when the lock is held (treated as
     /// "no view information available right now").
     pub fn viewing_subagent_id_try_lock(&self) -> Option<String> {
-        self.viewing_subagent_id.try_lock().ok().and_then(|g| g.clone())
+        self.viewing_subagent_id
+            .try_lock()
+            .ok()
+            .and_then(|g| g.clone())
     }
 
     /// Set the subagent currently being viewed.
@@ -407,7 +458,10 @@ impl AgentSession {
 
     /// Switch to a different session file. Replaces the internal SessionManager
     /// and clears conversation history. Returns the old session path.
-    pub async fn switch_session(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<String> {
+    pub async fn switch_session(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> anyhow::Result<String> {
         let new_mgr = SessionManager::open(&path)?;
         let mut mgr = self.session_manager.lock().await;
         let old_path = mgr.session_file().to_string_lossy().to_string();
@@ -500,10 +554,11 @@ impl AgentSession {
         let thinking_level = runtime.thinking_level;
         drop(runtime);
 
-        let api_key = resolve_api_key(&model);
+        let credentials = resolve_credentials(&model).await?;
         let summarize_fn = |content: String| {
             let model = model.clone();
-            let api_key = api_key.clone();
+            let api_key = credentials.api_key.clone();
+            let headers = merge_headers(model.headers.clone(), credentials.headers.clone());
             async move {
                 let prompt = format!(
                     "Summarize the following conversation history concisely, \
@@ -533,7 +588,7 @@ impl AgentSession {
                         transport: Transport::Auto,
                         cache_retention: CacheRetention::Short,
                         session_id: None,
-                        headers: model.headers.clone(),
+                        headers,
                         timeout_ms: None,
                         max_retries: Some(2),
                         max_retry_delay_ms: None,
@@ -762,7 +817,7 @@ impl AgentSession {
     }
 
     /// Build the AgentLoopConfig wiring all hooks to this session's dependencies.
-    async fn build_loop_config(&self) -> AgentLoopConfig {
+    async fn build_loop_config(&self) -> Result<AgentLoopConfig> {
         let runtime = self.runtime.lock().await;
         let model = runtime.model.clone();
         let thinking_level = runtime.thinking_level;
@@ -775,19 +830,17 @@ impl AgentSession {
             level => Some(level),
         };
 
-        let api_key = resolve_api_key(&model);
+        let credentials = resolve_credentials(&model).await?;
 
         let stream_options = SimpleStreamOptions {
             base: StreamOptions {
                 temperature: None,
                 max_tokens: Some(model.max_tokens),
-                api_key,
+                api_key: credentials.api_key,
                 transport: Transport::Auto,
                 cache_retention: CacheRetention::Short,
-                session_id: Some(
-                    self.session_manager.lock().await.session_id().to_string(),
-                ),
-                headers: model.headers.clone(),
+                session_id: Some(self.session_manager.lock().await.session_id().to_string()),
+                headers: merge_headers(model.headers.clone(), credentials.headers),
                 timeout_ms: settings.retry.timeout_ms,
                 max_retries: settings.retry.max_retries,
                 max_retry_delay_ms: settings.retry.max_retry_delay_ms,
@@ -807,7 +860,7 @@ impl AgentSession {
         let follow_up_q = self.follow_up_queue.clone();
         let runtime_state_for_post = self.runtime_state.clone();
 
-        AgentLoopConfig {
+        Ok(AgentLoopConfig {
             model: model.clone(),
             reasoning,
             stream_options,
@@ -834,27 +887,40 @@ impl AgentSession {
             pre_tool_use: {
                 let runtime_state_for_pre = self.runtime_state.clone();
                 let external_hook = self.pre_tool_use_hook.clone();
-                let boxed: Box<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync> =
-                    Box::new(move |ctx| {
-                        let rs = runtime_state_for_pre.clone();
-                        let hook = external_hook.clone();
-                        Box::pin(async move {
-                            // Edit mode gate: block tools when in think_first mode.
-                            if let Ok(state) = rs.try_lock() {
-                                if let Some(reason) = state.edit_mode.check_tool_blocked(&ctx.tool_name, &ctx.args) {
-                                    return Some(rozsa_core::config::PreToolUseResult {
-                                        block: true,
-                                        reason: Some(reason),
-                                    });
-                                }
+                let boxed: Box<
+                    dyn Fn(
+                            rozsa_core::config::PreToolUseContext,
+                        ) -> std::pin::Pin<
+                            Box<
+                                dyn std::future::Future<
+                                        Output = Option<rozsa_core::config::PreToolUseResult>,
+                                    > + Send,
+                            >,
+                        > + Send
+                        + Sync,
+                > = Box::new(move |ctx| {
+                    let rs = runtime_state_for_pre.clone();
+                    let hook = external_hook.clone();
+                    Box::pin(async move {
+                        // Edit mode gate: block tools when in think_first mode.
+                        if let Ok(state) = rs.try_lock() {
+                            if let Some(reason) = state
+                                .edit_mode
+                                .check_tool_blocked(&ctx.tool_name, &ctx.args)
+                            {
+                                return Some(rozsa_core::config::PreToolUseResult {
+                                    block: true,
+                                    reason: Some(reason),
+                                });
                             }
-                            // Then run external permission hook if present.
-                            if let Some(ref h) = hook {
-                                return h(ctx).await;
-                            }
-                            None
-                        })
-                    });
+                        }
+                        // Then run external permission hook if present.
+                        if let Some(ref h) = hook {
+                            return h(ctx).await;
+                        }
+                        None
+                    })
+                });
                 Some(boxed)
             },
             post_tool_use: {
@@ -872,7 +938,7 @@ impl AgentSession {
                 ))
             },
             tools: self.tools.lock().await.clone(),
-        }
+        })
     }
 
     /// Persist new messages from agent events into the session file and internal history.
@@ -916,16 +982,19 @@ fn should_stop_for_compaction(ctx: &ShouldStopContext, threshold_tokens: u64) ->
 /// Build the model_stream function that delegates to rozsa_model's provider registry.
 fn build_model_stream_fn() -> ModelStreamFn {
     Box::new(
-        |model: &Model,
-         context: &rozsa_model::types::Context,
-         options: &SimpleStreamOptions| {
+        |model: &Model, context: &rozsa_model::types::Context, options: &SimpleStreamOptions| {
             rozsa_model::stream::stream_simple(model, context, options)
         },
     )
 }
 
-/// Resolve API key for a model from environment variables, then auth.json fallback.
-fn resolve_api_key(model: &Model) -> Option<String> {
+struct ResolvedCredentials {
+    api_key: Option<String>,
+    headers: Option<std::collections::HashMap<String, String>>,
+}
+
+/// Resolve request credentials from environment variables, then OAuth auth.json fallback.
+async fn resolve_credentials(model: &Model) -> Result<ResolvedCredentials> {
     use rozsa_model::types::Provider;
 
     // 1. Try environment variable first
@@ -940,6 +1009,7 @@ fn resolve_api_key(model: &Model) -> Option<String> {
         Provider::Mistral => Some("MISTRAL_API_KEY"),
         Provider::Together => Some("TOGETHER_API_KEY"),
         Provider::HuggingFace => Some("HF_TOKEN"),
+        Provider::Custom(provider) if is_oauth_custom_provider(provider) => None,
         Provider::Custom(_) => Some("LLM_API_KEY"),
         _ => None,
     };
@@ -947,26 +1017,90 @@ fn resolve_api_key(model: &Model) -> Option<String> {
         && let Ok(key) = std::env::var(var)
         && !key.is_empty()
     {
-        return Some(key);
+        return Ok(ResolvedCredentials {
+            api_key: Some(key),
+            headers: None,
+        });
     }
 
-    // 2. Try auth.json (for OAuth providers like codex-oauth)
-    let home = dirs_next::home_dir()?;
+    // 2. Try auth.json only for OAuth providers.
+    let Some(provider_name) = oauth_auth_provider_id(&model.provider) else {
+        return Ok(ResolvedCredentials {
+            api_key: None,
+            headers: None,
+        });
+    };
+    let Some(home) = dirs_next::home_dir() else {
+        return Ok(ResolvedCredentials {
+            api_key: None,
+            headers: None,
+        });
+    };
     let auth_path = home.join(".rozsa").join("models").join("auth.json");
     if auth_path.exists() {
-        let provider_name = rozsa_model::providers::common::provider_id(&model.provider);
         let path_str = auth_path.to_string_lossy().to_string();
-        if let Ok(rt) = tokio::runtime::Handle::try_current() {
-            let result = rt.block_on(async {
-                rozsa_model::credentials::resolve_auth_json_api_key_pub(&path_str, &provider_name).await
+        if let Some(key) =
+            rozsa_model::credentials::resolve_auth_json_api_key_pub(&path_str, provider_name)
+                .await
+                .map_err(|error| anyhow::anyhow!(error))?
+        {
+            let headers = oauth_request_headers(provider_name, &path_str, &key)?;
+            return Ok(ResolvedCredentials {
+                api_key: Some(key),
+                headers,
             });
-            if let Ok(Some(key)) = result {
-                return Some(key);
-            }
         }
     }
 
-    None
+    Ok(ResolvedCredentials {
+        api_key: None,
+        headers: None,
+    })
+}
+
+fn oauth_auth_provider_id(provider: &rozsa_model::types::Provider) -> Option<&str> {
+    match provider {
+        rozsa_model::types::Provider::Anthropic => Some("anthropic"),
+        rozsa_model::types::Provider::Custom(value) if is_oauth_custom_provider(value) => {
+            Some(value.as_str())
+        }
+        _ => None,
+    }
+}
+
+fn is_oauth_custom_provider(provider: &str) -> bool {
+    provider == "codex-oauth" || provider == "github-copilot"
+}
+
+fn oauth_request_headers(
+    provider_name: &str,
+    auth_path: &str,
+    access_token: &str,
+) -> Result<Option<std::collections::HashMap<String, String>>> {
+    if provider_name != "codex-oauth" {
+        return Ok(None);
+    }
+
+    let account_id = rozsa_model::credentials::read_account_id(auth_path, provider_name)
+        .or_else(|| rozsa_model::oauth::openai_codex::extract_account_id_from_jwt(access_token));
+    let Some(account_id) = account_id else {
+        anyhow::bail!("codex-oauth credential is missing accountId; run /login again");
+    };
+
+    let mut headers = std::collections::HashMap::new();
+    headers.insert("x-rozsa-account-id".to_string(), account_id);
+    Ok(Some(headers))
+}
+
+fn merge_headers(
+    base: Option<std::collections::HashMap<String, String>>,
+    extra: Option<std::collections::HashMap<String, String>>,
+) -> Option<std::collections::HashMap<String, String>> {
+    let mut headers = base.unwrap_or_default();
+    if let Some(extra_headers) = extra {
+        headers.extend(extra_headers);
+    }
+    (!headers.is_empty()).then_some(headers)
 }
 
 /// Current timestamp in milliseconds since UNIX epoch.
@@ -975,4 +1109,45 @@ fn current_timestamp_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::oauth_auth_provider_id;
+    use super::oauth_request_headers;
+    use rozsa_model::types::Provider;
+
+    #[test]
+    fn auth_json_provider_gate_only_allows_oauth_providers() {
+        assert_eq!(
+            oauth_auth_provider_id(&Provider::Anthropic),
+            Some("anthropic")
+        );
+        assert_eq!(
+            oauth_auth_provider_id(&Provider::Custom("codex-oauth".to_string())),
+            Some("codex-oauth")
+        );
+        assert_eq!(
+            oauth_auth_provider_id(&Provider::Custom("github-copilot".to_string())),
+            Some("github-copilot")
+        );
+        assert_eq!(oauth_auth_provider_id(&Provider::OpenAI), None);
+        assert_eq!(
+            oauth_auth_provider_id(&Provider::Custom("qwen3.5".to_string())),
+            None
+        );
+    }
+
+    #[test]
+    fn codex_oauth_headers_require_account_id() {
+        let err = oauth_request_headers("codex-oauth", "/no/such/auth.json", "not-a-jwt")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("missing accountId"));
+        assert!(
+            oauth_request_headers("anthropic", "/no/such/auth.json", "token")
+                .unwrap()
+                .is_none()
+        );
+    }
 }

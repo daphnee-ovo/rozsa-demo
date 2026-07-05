@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::model_registry::ModelRegistry;
@@ -41,7 +41,9 @@ use crate::panels::model_selector::ModelEntry;
 use crate::panels::session_selector::SessionEntry;
 use crate::protocol::{ModelInfo, NativeUiState};
 
-use super::{AgentBackend, BackendError, BackendEvent, BackendResult, Direction, ImageData, SubagentView};
+use super::{
+    AgentBackend, BackendError, BackendEvent, BackendResult, Direction, ImageData, SubagentView,
+};
 use rozsa_app::subagent::SubagentInfo;
 
 /// Live snapshot of session state used to build NativeUiState payloads.
@@ -118,7 +120,8 @@ pub struct NativeBackendConfig {
     pub global_settings_path: Option<PathBuf>,
     pub pending_approvals: Option<rozsa_app::permissions::PendingApprovals>,
     /// Receiver for permission approval requests from the pre_tool_use hook.
-    pub permission_request_rx: Option<mpsc::UnboundedReceiver<(String, rozsa_app::permissions::ApprovalInfo)>>,
+    pub permission_request_rx:
+        Option<mpsc::UnboundedReceiver<(String, rozsa_app::permissions::ApprovalInfo)>>,
 }
 
 impl Default for NativeBackendConfig {
@@ -232,7 +235,11 @@ impl NativeBackend {
 
     /// 执行 `!command` bang escape：直接在 shell 运行，流式输出到对话区。
     /// `exclude_from_context=true`（`!!` 前缀）时不将结果加入 session 持久化历史。
-    async fn execute_bang_command(&self, command: &str, exclude_from_context: bool) -> BackendResult<()> {
+    async fn execute_bang_command(
+        &self,
+        command: &str,
+        exclude_from_context: bool,
+    ) -> BackendResult<()> {
         use std::process::Stdio;
         use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -431,7 +438,10 @@ impl NativeBackend {
                     "medium" | "med" | "m" => ThinkingLevel::Medium,
                     "high" | "h" => ThinkingLevel::High,
                     other => {
-                        self.notify("error", &format!("Unknown thinking level: {other}. Use: off/low/medium/high"));
+                        self.notify(
+                            "error",
+                            &format!("Unknown thinking level: {other}. Use: off/low/medium/high"),
+                        );
                         return Ok(());
                     }
                 };
@@ -490,7 +500,9 @@ impl NativeBackend {
             }
             "session" => {
                 let mgr = self.session.session_manager().await;
-                let name = mgr.current_name().unwrap_or_else(|| "(unnamed)".to_string());
+                let name = mgr
+                    .current_name()
+                    .unwrap_or_else(|| "(unnamed)".to_string());
                 let file = mgr.session_file().to_string_lossy().to_string();
                 let id = mgr.session_id().to_string();
                 let entry_count = mgr.entries().len();
@@ -675,16 +687,12 @@ impl NativeBackend {
                                 }
                                 for block in &a.content {
                                     if let rozsa_model::types::ContentBlock::ToolCall(tc) = block {
-                                        let args_preview =
-                                            serde_json::to_string(&tc.arguments)
-                                                .unwrap_or_else(|_| "{}".to_string());
+                                        let args_preview = serde_json::to_string(&tc.arguments)
+                                            .unwrap_or_else(|_| "{}".to_string());
                                         let args_preview = truncate_chars(&args_preview, 200);
-                                        let summary =
-                                            format!("{}: {}", tc.name, args_preview);
-                                        let full_text = format!(
-                                            "Tool: {}\nArgs: {}",
-                                            tc.name, args_preview
-                                        );
+                                        let summary = format!("{}: {}", tc.name, args_preview);
+                                        let full_text =
+                                            format!("Tool: {}\nArgs: {}", tc.name, args_preview);
                                         nodes.push(NativeGraphNode {
                                             role: "tool".to_string(),
                                             summary,
@@ -705,12 +713,17 @@ impl NativeBackend {
             }
             "name" => {
                 if args.is_empty() {
-                    let name = self.session.session_manager().await
+                    let name = self
+                        .session
+                        .session_manager()
+                        .await
                         .current_name()
                         .unwrap_or_else(|| "(unnamed)".to_string());
                     self.notify("info", &format!("Session name: {name}"));
                 } else {
-                    self.session.session_manager().await
+                    self.session
+                        .session_manager()
+                        .await
                         .append_session_info(Some(args.to_string()))
                         .map_err(|e| BackendError::Internal(e.to_string()))?;
                     self.notify("info", &format!("Session name set: {args}"));
@@ -738,7 +751,14 @@ impl NativeBackend {
             "reload" => {
                 let diagnostics = self.session.reload_skills();
                 for diag in &diagnostics {
-                    self.notify("warning", &format!("Skill load warning: {} — {}", diag.path.display(), diag.message));
+                    self.notify(
+                        "warning",
+                        &format!(
+                            "Skill load warning: {} — {}",
+                            diag.path.display(),
+                            diag.message
+                        ),
+                    );
                 }
                 let count = self.session.skill_registry().list().len();
                 self.notify("info", &format!("Reloaded skills ({count} loaded), keybindings, extensions, prompts, and themes"));
@@ -777,14 +797,19 @@ impl NativeBackend {
                         for entry in entries.flatten() {
                             if let Ok(meta) = entry.metadata() {
                                 if let Ok(modified) = meta.modified() {
-                                    if modified < cutoff && std::fs::remove_file(entry.path()).is_ok() {
+                                    if modified < cutoff
+                                        && std::fs::remove_file(entry.path()).is_ok()
+                                    {
                                         removed += 1;
                                     }
                                 }
                             }
                         }
                     }
-                    self.notify("info", &format!("GC: removed {removed} session files older than {days} days"));
+                    self.notify(
+                        "info",
+                        &format!("GC: removed {removed} session files older than {days} days"),
+                    );
                 } else {
                     self.notify("warning", "No session directory configured");
                 }
@@ -799,33 +824,51 @@ impl NativeBackend {
                     for msg in &messages {
                         if let Some(m) = msg.as_standard() {
                             let text = match m {
-                                rozsa_model::types::Message::Assistant(a) => {
-                                    a.content.iter().filter_map(|b| match b {
-                                        rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
+                                rozsa_model::types::Message::Assistant(a) => a
+                                    .content
+                                    .iter()
+                                    .filter_map(|b| match b {
+                                        rozsa_model::types::ContentBlock::Text { text, .. } => {
+                                            Some(text.as_str())
+                                        }
                                         _ => None,
-                                    }).collect::<Vec<_>>().join("\n")
-                                }
-                                rozsa_model::types::Message::ToolResult(tr) => {
-                                    tr.content.iter().filter_map(|b| match b {
-                                        rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n"),
+                                rozsa_model::types::Message::ToolResult(tr) => tr
+                                    .content
+                                    .iter()
+                                    .filter_map(|b| match b {
+                                        rozsa_model::types::ContentBlock::Text { text, .. } => {
+                                            Some(text.as_str())
+                                        }
                                         _ => None,
-                                    }).collect::<Vec<_>>().join("\n")
-                                }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n"),
                                 _ => continue,
                             };
                             for line in text.lines() {
                                 if line.to_lowercase().contains(&pattern_lower) {
                                     results.push(line.to_string());
-                                    if results.len() >= 50 { break; }
+                                    if results.len() >= 50 {
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        if results.len() >= 50 { break; }
+                        if results.len() >= 50 {
+                            break;
+                        }
                     }
                     if results.is_empty() {
                         self.notify("info", &format!("No matches for '{args}'"));
                     } else {
-                        let header = format!("Search results for '{}' ({} matches):\n", args, results.len());
+                        let header = format!(
+                            "Search results for '{}' ({} matches):\n",
+                            args,
+                            results.len()
+                        );
                         self.notify("info", &format!("{header}{}", results.join("\n")));
                     }
                 }
@@ -846,7 +889,10 @@ impl NativeBackend {
                     }
                 }
                 match std::fs::write(&path, lines.join("\n") + "\n") {
-                    Ok(_) => self.notify("info", &format!("Exported {} entries to {path}", entries.len())),
+                    Ok(_) => self.notify(
+                        "info",
+                        &format!("Exported {} entries to {path}", entries.len()),
+                    ),
                     Err(e) => self.notify("error", &format!("Export failed: {e}")),
                 }
             }
@@ -857,7 +903,9 @@ impl NativeBackend {
                     match msg {
                         rozsa_model::types::Message::Assistant(a) => {
                             a.content.iter().find_map(|b| match b {
-                                rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.clone()),
+                                rozsa_model::types::ContentBlock::Text { text, .. } => {
+                                    Some(text.clone())
+                                }
                                 _ => None,
                             })
                         }
@@ -868,7 +916,8 @@ impl NativeBackend {
                     Some(text) => {
                         // OSC 52 clipboard escape
                         use base64::Engine;
-                        let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
+                        let encoded =
+                            base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
                         print!("\x1b]52;c;{encoded}\x07");
                         // Fallback: try system clipboard utilities
                         let clipboard_ok = std::process::Command::new("sh")
@@ -886,7 +935,10 @@ impl NativeBackend {
                             .map(|s| s.success())
                             .unwrap_or(false);
                         if clipboard_ok {
-                            self.notify("info", "Copied last assistant message to clipboard (OSC52 + system)");
+                            self.notify(
+                                "info",
+                                "Copied last assistant message to clipboard (OSC52 + system)",
+                            );
                         } else {
                             self.notify("info", "Copied last assistant message via OSC52 (system clipboard unavailable)");
                         }
@@ -902,7 +954,8 @@ impl NativeBackend {
                 };
                 match std::fs::read_to_string(&path) {
                     Ok(content) => {
-                        let count = content.lines()
+                        let count = content
+                            .lines()
                             .filter(|line| !line.trim().is_empty())
                             .filter(|line| serde_json::from_str::<serde_json::Value>(line).is_ok())
                             .count();
@@ -916,84 +969,130 @@ impl NativeBackend {
                 let entries = mgr.entries();
                 drop(mgr);
                 use crate::protocol::NativeGraphNode;
-                let nodes: Vec<NativeGraphNode> = entries.iter().map(|entry| {
-                    let (role, text) = match entry {
-                        rozsa_app::session::manager::SessionEntry::Message(me) => {
-                            let (role, text) = match &me.message {
-                                rozsa_model::types::Message::User(u) => {
-                                    let t = u.content.text();
-                                    ("user", t)
-                                }
-                                rozsa_model::types::Message::Assistant(a) => {
-                                    let t = a.content.iter().filter_map(|b| match b {
-                                        rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
-                                        _ => None,
-                                    }).collect::<Vec<_>>().join("\n");
-                                    ("assistant", if t.is_empty() { "(tool calls)".to_string() } else { t })
-                                }
-                                rozsa_model::types::Message::ToolResult(tr) => {
-                                    let t = tr.content.iter().filter_map(|b| match b {
-                                        rozsa_model::types::ContentBlock::Text { text, .. } => Some(text.as_str()),
-                                        _ => None,
-                                    }).collect::<Vec<_>>().join("\n");
-                                    ("tool_result", format!("[{}] {}", tr.tool_name, if t.len() > 60 { &t[..60] } else { &t }))
-                                }
-                            };
-                            (role.to_string(), text)
+                let nodes: Vec<NativeGraphNode> = entries
+                    .iter()
+                    .map(|entry| {
+                        let (role, text) = match entry {
+                            rozsa_app::session::manager::SessionEntry::Message(me) => {
+                                let (role, text) = match &me.message {
+                                    rozsa_model::types::Message::User(u) => {
+                                        let t = u.content.text();
+                                        ("user", t)
+                                    }
+                                    rozsa_model::types::Message::Assistant(a) => {
+                                        let t = a
+                                            .content
+                                            .iter()
+                                            .filter_map(|b| match b {
+                                                rozsa_model::types::ContentBlock::Text {
+                                                    text,
+                                                    ..
+                                                } => Some(text.as_str()),
+                                                _ => None,
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("\n");
+                                        (
+                                            "assistant",
+                                            if t.is_empty() {
+                                                "(tool calls)".to_string()
+                                            } else {
+                                                t
+                                            },
+                                        )
+                                    }
+                                    rozsa_model::types::Message::ToolResult(tr) => {
+                                        let t = tr
+                                            .content
+                                            .iter()
+                                            .filter_map(|b| match b {
+                                                rozsa_model::types::ContentBlock::Text {
+                                                    text,
+                                                    ..
+                                                } => Some(text.as_str()),
+                                                _ => None,
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("\n");
+                                        (
+                                            "tool_result",
+                                            format!(
+                                                "[{}] {}",
+                                                tr.tool_name,
+                                                if t.len() > 60 { &t[..60] } else { &t }
+                                            ),
+                                        )
+                                    }
+                                };
+                                (role.to_string(), text)
+                            }
+                            rozsa_app::session::manager::SessionEntry::ThinkingLevelChange(e) => {
+                                ("thinking_change".to_string(), e.thinking_level.clone())
+                            }
+                            rozsa_app::session::manager::SessionEntry::ModelChange(e) => (
+                                "model_change".to_string(),
+                                format!("{}/{}", e.provider, e.model_id),
+                            ),
+                            rozsa_app::session::manager::SessionEntry::Compaction(e) => {
+                                ("compaction".to_string(), e.summary.clone())
+                            }
+                            rozsa_app::session::manager::SessionEntry::Custom(e) => {
+                                ("custom".to_string(), e.custom_type.clone())
+                            }
+                            rozsa_app::session::manager::SessionEntry::Label(e) => {
+                                ("label".to_string(), e.label.clone().unwrap_or_default())
+                            }
+                            rozsa_app::session::manager::SessionEntry::SessionInfo(e) => (
+                                "session_info".to_string(),
+                                e.name.clone().unwrap_or_default(),
+                            ),
+                        };
+                        let summary = if text.len() > 80 {
+                            text[..80].to_string()
+                        } else {
+                            text.clone()
+                        };
+                        NativeGraphNode {
+                            role,
+                            summary,
+                            full_text: text,
+                            timestamp: String::new(),
+                            agent_id: None,
                         }
-                        rozsa_app::session::manager::SessionEntry::ThinkingLevelChange(e) => {
-                            ("thinking_change".to_string(), e.thinking_level.clone())
-                        }
-                        rozsa_app::session::manager::SessionEntry::ModelChange(e) => {
-                            ("model_change".to_string(), format!("{}/{}", e.provider, e.model_id))
-                        }
-                        rozsa_app::session::manager::SessionEntry::Compaction(e) => {
-                            ("compaction".to_string(), e.summary.clone())
-                        }
-                        rozsa_app::session::manager::SessionEntry::Custom(e) => {
-                            ("custom".to_string(), e.custom_type.clone())
-                        }
-                        rozsa_app::session::manager::SessionEntry::Label(e) => {
-                            ("label".to_string(), e.label.clone().unwrap_or_default())
-                        }
-                        rozsa_app::session::manager::SessionEntry::SessionInfo(e) => {
-                            ("session_info".to_string(), e.name.clone().unwrap_or_default())
-                        }
-                    };
-                    let summary = if text.len() > 80 { text[..80].to_string() } else { text.clone() };
-                    NativeGraphNode {
-                        role,
-                        summary,
-                        full_text: text,
-                        timestamp: String::new(),
-                        agent_id: None,
-                    }
-                }).collect();
+                    })
+                    .collect();
                 let _ = self.event_tx.send(BackendEvent::Graph(nodes));
             }
             "fork" => {
                 let messages = self.live.lock().await.messages.clone();
                 use crate::protocol::NativeGraphNode;
-                let nodes: Vec<NativeGraphNode> = messages.iter().filter_map(|m| {
-                    let msg = m.as_standard()?;
-                    match msg {
-                        rozsa_model::types::Message::User(u) => {
-                            let text = u.content.text();
-                            if text.is_empty() {
-                                return None;
+                let nodes: Vec<NativeGraphNode> = messages
+                    .iter()
+                    .filter_map(|m| {
+                        let msg = m.as_standard()?;
+                        match msg {
+                            rozsa_model::types::Message::User(u) => {
+                                let text = u.content.text();
+                                if text.is_empty() {
+                                    return None;
+                                }
+                                let summary = if text.len() > 80 {
+                                    text[..80].to_string()
+                                } else {
+                                    text.clone()
+                                };
+                                Some(NativeGraphNode {
+                                    role: "user".to_string(),
+                                    summary,
+                                    full_text: text,
+                                    timestamp: String::new(),
+                                    agent_id: None,
+                                })
                             }
-                            let summary = if text.len() > 80 { text[..80].to_string() } else { text.clone() };
-                            Some(NativeGraphNode {
-                                role: "user".to_string(),
-                                summary,
-                                full_text: text,
-                                timestamp: String::new(),
-                                agent_id: None,
-                            })
+                            _ => None,
                         }
-                        _ => None,
-                    }
-                }).collect();
+                    })
+                    .collect();
                 let _ = self.event_tx.send(BackendEvent::ForkGraph(nodes));
             }
             "clone" => {
@@ -1001,10 +1100,13 @@ impl NativeBackend {
                 let entries = mgr.entries();
                 let cwd = self.session.cwd().to_string_lossy().to_string();
                 drop(mgr);
-                let new_id = format!("{:016x}", std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos());
+                let new_id = format!(
+                    "{:016x}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_nanos()
+                );
                 let new_path = if let Some(dir) = &self.session_dir {
                     dir.join(format!("{new_id}.jsonl"))
                 } else {
@@ -1020,7 +1122,13 @@ impl NativeBackend {
                                 }
                             }
                         }
-                        self.notify("info", &format!("Cloned {count} messages to new session: {}", new_path.display()));
+                        self.notify(
+                            "info",
+                            &format!(
+                                "Cloned {count} messages to new session: {}",
+                                new_path.display()
+                            ),
+                        );
                     }
                     Err(e) => self.notify("error", &format!("Clone failed: {e}")),
                 }
@@ -1041,7 +1149,12 @@ impl NativeBackend {
                     self.notify("error", &format!("Share export failed: {e}"));
                 } else {
                     match std::process::Command::new("gh")
-                        .args(["gist", "create", "--public=false", &tmp_path.to_string_lossy()])
+                        .args([
+                            "gist",
+                            "create",
+                            "--public=false",
+                            &tmp_path.to_string_lossy(),
+                        ])
                         .output()
                     {
                         Ok(output) if output.status.success() => {
@@ -1060,10 +1173,14 @@ impl NativeBackend {
             "scoped-models" => {
                 if let Some(registry) = &self.model_registry {
                     let all = registry.all();
-                    let lines: Vec<String> = all.iter().map(|m| {
-                        format!("[{}] {}", m.provider, m.id)
-                    }).collect();
-                    self.notify("info", &format!("Available models ({}):\n{}", all.len(), lines.join("\n")));
+                    let lines: Vec<String> = all
+                        .iter()
+                        .map(|m| format!("[{}] {}", m.provider, m.id))
+                        .collect();
+                    self.notify(
+                        "info",
+                        &format!("Available models ({}):\n{}", all.len(), lines.join("\n")),
+                    );
                 } else {
                     self.notify("warning", "No model registry available");
                 }
@@ -1071,9 +1188,9 @@ impl NativeBackend {
             "login" => {
                 let event_tx_clone = self.event_tx.clone();
                 tokio::spawn(async move {
+                    use rozsa_model::credentials::store_oauth_credentials;
                     use rozsa_model::oauth::openai_codex;
                     use rozsa_model::oauth::types::OAuthFlowEvent;
-                    use rozsa_model::credentials::store_oauth_credentials;
                     use tokio::sync::mpsc as tokio_mpsc;
                     use tokio_util::sync::CancellationToken;
 
@@ -1091,7 +1208,11 @@ impl NativeBackend {
                     let cancel = CancellationToken::new();
 
                     // Spawn the login flow
-                    let login_handle = tokio::spawn(openai_codex::login(flow_event_tx, response_rx, cancel.clone()));
+                    let login_handle = tokio::spawn(openai_codex::login(
+                        flow_event_tx,
+                        response_rx,
+                        cancel.clone(),
+                    ));
 
                     // Process flow events (show URL to user)
                     while let Some(event) = flow_event_rx.recv().await {
@@ -1130,7 +1251,10 @@ impl NativeBackend {
                                             .spawn()
                                     });
                                 if opened.is_err() {
-                                    notify("warning", "Could not open browser. Please copy the URL above manually.");
+                                    notify(
+                                        "warning",
+                                        "Could not open browser. Please copy the URL above manually.",
+                                    );
                                 }
                             }
                             OAuthFlowEvent::Progress { message } => {
@@ -1192,7 +1316,8 @@ impl NativeBackend {
                     };
                     match rozsa_app::rate_limit::get_rate_limits().await {
                         Ok(snapshot) => {
-                            let display = rozsa_app::rate_limit::format_rate_limit_display(&snapshot);
+                            let display =
+                                rozsa_app::rate_limit::format_rate_limit_display(&snapshot);
                             notify("info", &display);
                         }
                         Err(e) => {
@@ -1204,18 +1329,33 @@ impl NativeBackend {
             _ => {
                 use rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS;
                 if BUILTIN_SLASH_COMMANDS.iter().any(|c| c.name == cmd) {
-                    self.notify("warning", &format!("/{cmd} is not supported by the native TUI yet"));
+                    self.notify(
+                        "warning",
+                        &format!("/{cmd} is not supported by the native TUI yet"),
+                    );
                 } else {
                     let session = self.session.clone();
                     // Normalize: if cmd matches a skill name (or is already skill:name), use /skill:name
                     let full_text = if cmd.starts_with("skill:") {
                         // Already normalized
-                        if args.is_empty() { format!("/{cmd}") } else { format!("/{cmd} {args}") }
+                        if args.is_empty() {
+                            format!("/{cmd}")
+                        } else {
+                            format!("/{cmd} {args}")
+                        }
                     } else if session.skill_registry().find_by_name(cmd).is_some() {
                         // Skill name without prefix → normalize to /skill:name
-                        if args.is_empty() { format!("/skill:{cmd}") } else { format!("/skill:{cmd} {args}") }
+                        if args.is_empty() {
+                            format!("/skill:{cmd}")
+                        } else {
+                            format!("/skill:{cmd} {args}")
+                        }
                     } else {
-                        if args.is_empty() { format!("/{cmd}") } else { format!("/{cmd} {args}") }
+                        if args.is_empty() {
+                            format!("/{cmd}")
+                        } else {
+                            format!("/{cmd} {args}")
+                        }
                     };
                     let backend_tx = self.event_tx.clone();
                     tokio::spawn(async move {
@@ -1245,12 +1385,21 @@ impl NativeBackend {
         let on_off = |v: bool| if v { "on" } else { "off" };
         vec![
             format!("[AI] Thinking level: < {:?} >", thinking),
-            format!("[AI] Auto compact: < {} >", on_off(settings.compaction.enabled)),
+            format!(
+                "[AI] Auto compact: < {} >",
+                on_off(settings.compaction.enabled)
+            ),
             format!("[AI] Steering mode: < {} >", settings.steering_mode),
             format!("[AI] Follow-up mode: < {} >", settings.follow_up_mode),
             format!("[Network] Transport: < {} >", settings.transport),
-            format!("[Permission] Permission mode: < {} >", settings.permissions.mode),
-            format!("[Display] Block images: < {} >", on_off(settings.block_images)),
+            format!(
+                "[Permission] Permission mode: < {} >",
+                settings.permissions.mode
+            ),
+            format!(
+                "[Display] Block images: < {} >",
+                on_off(settings.block_images)
+            ),
         ]
     }
 
@@ -1260,16 +1409,29 @@ impl NativeBackend {
 
         fn cycle_str<'a>(opts: &[&'a str], current: &str, dir: i32) -> &'a str {
             let idx = opts.iter().position(|o| *o == current).unwrap_or(0);
-            let next = if dir > 0 { (idx + 1) % opts.len() } else { (idx + opts.len() - 1) % opts.len() };
+            let next = if dir > 0 {
+                (idx + 1) % opts.len()
+            } else {
+                (idx + opts.len() - 1) % opts.len()
+            };
             opts[next]
         }
 
         match option_index {
             0 => {
-                let levels = [ThinkingLevel::Off, ThinkingLevel::Low, ThinkingLevel::Medium, ThinkingLevel::High];
+                let levels = [
+                    ThinkingLevel::Off,
+                    ThinkingLevel::Low,
+                    ThinkingLevel::Medium,
+                    ThinkingLevel::High,
+                ];
                 let current = self.session.thinking_level().await;
                 let idx = levels.iter().position(|l| *l == current).unwrap_or(0);
-                let next = if direction > 0 { (idx + 1) % levels.len() } else { (idx + levels.len() - 1) % levels.len() };
+                let next = if direction > 0 {
+                    (idx + 1) % levels.len()
+                } else {
+                    (idx + levels.len() - 1) % levels.len()
+                };
                 self.session.set_thinking_level(levels[next]).await;
                 {
                     let mut s = self.runtime_settings.lock().await;
@@ -1293,12 +1455,20 @@ impl NativeBackend {
             }
             4 => {
                 let mut s = self.runtime_settings.lock().await;
-                let new_val = cycle_str(&["auto", "sse", "websocket", "websocket-cached"], &s.transport, direction);
+                let new_val = cycle_str(
+                    &["auto", "sse", "websocket", "websocket-cached"],
+                    &s.transport,
+                    direction,
+                );
                 s.transport = new_val.to_string();
             }
             5 => {
                 let mut s = self.runtime_settings.lock().await;
-                let new_val = cycle_str(&["on-request", "auto-permission", "free-permission"], &s.permissions.mode, direction);
+                let new_val = cycle_str(
+                    &["on-request", "auto-permission", "free-permission"],
+                    &s.permissions.mode,
+                    direction,
+                );
                 s.permissions.mode = new_val.to_string();
             }
             6 => {
@@ -1438,7 +1608,10 @@ fn default_keybindings() -> BTreeMap<String, Vec<String>> {
     kb.insert("app.interrupt".into(), vec!["escape".into()]);
     kb.insert("app.exit".into(), vec!["ctrl+d".into()]);
     kb.insert("app.model.cycleForward".into(), vec!["ctrl+p".into()]);
-    kb.insert("app.model.cycleBackward".into(), vec!["ctrl+shift+p".into()]);
+    kb.insert(
+        "app.model.cycleBackward".into(),
+        vec!["ctrl+shift+p".into()],
+    );
     kb.insert("app.model.select".into(), vec!["ctrl+l".into()]);
     kb.insert("app.thinking.toggle".into(), vec!["ctrl+t".into()]);
     kb.insert("app.suspend".into(), vec!["ctrl+z".into()]);
@@ -1477,7 +1650,9 @@ impl AgentBackend for NativeBackend {
             if command.is_empty() {
                 return Ok(());
             }
-            return self.execute_bang_command(command, exclude_from_context).await;
+            return self
+                .execute_bang_command(command, exclude_from_context)
+                .await;
         }
 
         let session = self.session.clone();
@@ -1844,7 +2019,9 @@ impl AgentBackend for NativeBackend {
                 )));
             }
             drop(mgr);
-            self.session.set_viewing_subagent(Some(id.to_string())).await;
+            self.session
+                .set_viewing_subagent(Some(id.to_string()))
+                .await;
         }
         self.push_state().await;
         Ok(())
@@ -1916,12 +2093,12 @@ impl AgentBackend for NativeBackend {
         // Echo back the prefix for the UI to verify staleness.
         let prefix = text.get(..cursor).unwrap_or("").to_string();
 
-        let id = self.autocomplete_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let _ = self.event_tx.send(BackendEvent::Autocomplete {
-            id,
-            prefix,
-            items,
-        });
+        let id = self
+            .autocomplete_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let _ = self
+            .event_tx
+            .send(BackendEvent::Autocomplete { id, prefix, items });
         Ok(())
     }
 
@@ -1947,7 +2124,7 @@ impl AgentBackend for NativeBackend {
                     other => {
                         return Err(BackendError::Protocol(format!(
                             "unknown thinking level: {other}"
-                        )))
+                        )));
                     }
                 };
                 self.session.set_thinking_level(level).await;
@@ -2028,72 +2205,118 @@ impl SubagentView for NativeBackend {
     }
 }
 
-/// Auto-create ~/.rozsa/models/codex-oauth.json with default GPT models if not exists.
+const CODEX_OAUTH_FALLBACK_SOURCE: &str = "codex-rs/models-manager/models.json";
+const CODEX_OAUTH_FALLBACK_VERSION: u64 = 3;
+const LEGACY_CODEX_OAUTH_FALLBACK_MODEL_IDS: &[&str] = &[
+    "gpt-4o",
+    "gpt-4o-mini",
+    "o3",
+    "o4-mini",
+    "codex-mini-latest",
+];
+
+/// Auto-create or migrate the generated ~/.rozsa/models/codex-oauth.json fallback model config.
 fn ensure_codex_oauth_models_config(models_dir: &std::path::Path) {
     let config_path = models_dir.join("codex-oauth.json");
-    if config_path.exists() {
+    if config_path.exists() && !should_replace_codex_oauth_models_config(&config_path) {
         return;
     }
-    let default_config = serde_json::json!({
-        "providers": {
-            "codex-oauth": {
-                "baseUrl": "https://api.openai.com/v1",
-                "api": "openai-responses",
-                "authHeader": true,
-                "models": [
-                    {
-                        "id": "gpt-4o",
-                        "name": "GPT-4o",
-                        "contextWindow": 128000,
-                        "maxTokens": 16384,
-                        "reasoning": false,
-                        "input": ["text", "image"],
-                        "cost": { "input": 2.5, "output": 10.0, "cacheRead": 1.25, "cacheWrite": 0.0 }
-                    },
-                    {
-                        "id": "gpt-4o-mini",
-                        "name": "GPT-4o Mini",
-                        "contextWindow": 128000,
-                        "maxTokens": 16384,
-                        "reasoning": false,
-                        "input": ["text", "image"],
-                        "cost": { "input": 0.15, "output": 0.6, "cacheRead": 0.075, "cacheWrite": 0.0 }
-                    },
-                    {
-                        "id": "o3",
-                        "name": "o3",
-                        "contextWindow": 200000,
-                        "maxTokens": 100000,
-                        "reasoning": true,
-                        "input": ["text", "image"],
-                        "cost": { "input": 2.0, "output": 8.0, "cacheRead": 1.0, "cacheWrite": 0.0 }
-                    },
-                    {
-                        "id": "o4-mini",
-                        "name": "o4-mini",
-                        "contextWindow": 200000,
-                        "maxTokens": 100000,
-                        "reasoning": true,
-                        "input": ["text", "image"],
-                        "cost": { "input": 1.1, "output": 4.4, "cacheRead": 0.55, "cacheWrite": 0.0 }
-                    },
-                    {
-                        "id": "codex-mini-latest",
-                        "name": "Codex Mini",
-                        "contextWindow": 200000,
-                        "maxTokens": 100000,
-                        "reasoning": true,
-                        "input": ["text"],
-                        "cost": { "input": 1.5, "output": 6.0, "cacheRead": 0.75, "cacheWrite": 0.0 }
-                    }
-                ]
-            }
-        }
-    });
+    let default_config = codex_oauth_fallback_models_config();
     let _ = std::fs::write(
         &config_path,
         serde_json::to_string_pretty(&default_config).unwrap_or_default(),
     );
+}
+
+fn should_replace_codex_oauth_models_config(config_path: &std::path::Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(config_path) else {
+        return false;
+    };
+    let Ok(value): Result<serde_json::Value, _> = serde_json::from_str(&content) else {
+        return false;
+    };
+
+    if value.get("_fallback_source").and_then(|v| v.as_str()) == Some(CODEX_OAUTH_FALLBACK_SOURCE) {
+        return value
+            .get("_fallback_version")
+            .and_then(|v| v.as_u64())
+            .is_some_and(|version| version < CODEX_OAUTH_FALLBACK_VERSION);
+    }
+
+    let ids: Option<Vec<&str>> = value
+        .get("providers")
+        .and_then(|v| v.get("codex-oauth"))
+        .and_then(|v| v.get("models"))
+        .and_then(|v| v.as_array())
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|model| model.get("id").and_then(|id| id.as_str()))
+                .collect()
+        });
+
+    ids.as_deref() == Some(LEGACY_CODEX_OAUTH_FALLBACK_MODEL_IDS)
+}
+
+fn codex_oauth_fallback_models_config() -> serde_json::Value {
+    serde_json::json!({
+        "_fallback_source": CODEX_OAUTH_FALLBACK_SOURCE,
+        "_fallback_version": CODEX_OAUTH_FALLBACK_VERSION,
+        "providers": {
+            "codex-oauth": {
+                "baseUrl": "https://chatgpt.com/backend-api/codex",
+                "api": "openai-responses",
+                "authHeader": true,
+                "models": [
+                    {
+                        "id": "gpt-5.5",
+                        "name": "GPT-5.5",
+                        "contextWindow": 272000,
+                        "maxTokens": 136000,
+                        "reasoning": true,
+                        "input": ["text", "image"],
+                        "cost": { "input": 0.0, "output": 0.0, "cacheRead": 0.0, "cacheWrite": 0.0 }
+                    },
+                    {
+                        "id": "gpt-5.4",
+                        "name": "gpt-5.4",
+                        "contextWindow": 272000,
+                        "maxTokens": 136000,
+                        "reasoning": true,
+                        "input": ["text", "image"],
+                        "cost": { "input": 0.0, "output": 0.0, "cacheRead": 0.0, "cacheWrite": 0.0 }
+                    },
+                    {
+                        "id": "gpt-5.4-mini",
+                        "name": "GPT-5.4-Mini",
+                        "contextWindow": 272000,
+                        "maxTokens": 136000,
+                        "reasoning": true,
+                        "input": ["text", "image"],
+                        "cost": { "input": 0.0, "output": 0.0, "cacheRead": 0.0, "cacheWrite": 0.0 }
+                    },
+                    {
+                        "id": "gpt-5.3-codex",
+                        "name": "gpt-5.3-codex",
+                        "contextWindow": 272000,
+                        "maxTokens": 136000,
+                        "reasoning": true,
+                        "input": ["text", "image"],
+                        "cost": { "input": 0.0, "output": 0.0, "cacheRead": 0.0, "cacheWrite": 0.0 }
+                    },
+                    {
+                        "id": "gpt-5.2",
+                        "name": "gpt-5.2",
+                        "contextWindow": 272000,
+                        "maxTokens": 136000,
+                        "reasoning": true,
+                        "input": ["text", "image"],
+                        "cost": { "input": 0.0, "output": 0.0, "cacheRead": 0.0, "cacheWrite": 0.0 }
+                    }
+                ]
+            }
+        }
+    })
 }
 
 // Suppress unused warnings on imports retained for future use:

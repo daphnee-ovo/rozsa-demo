@@ -144,7 +144,10 @@ async fn resolve_auth_json_api_key(path: &str, provider: &str) -> Result<Option<
 }
 
 /// Public wrapper for resolving API key from auth.json.
-pub async fn resolve_auth_json_api_key_pub(path: &str, provider: &str) -> Result<Option<String>, String> {
+pub async fn resolve_auth_json_api_key_pub(
+    path: &str,
+    provider: &str,
+) -> Result<Option<String>, String> {
     resolve_auth_json_api_key(path, provider).await
 }
 
@@ -153,7 +156,28 @@ pub fn read_account_id(path: &str, provider: &str) -> Option<String> {
     let input = std::fs::read_to_string(path).ok()?;
     let auth: Map<String, Value> = serde_json::from_str(&input).ok()?;
     let credential = auth.get(provider)?;
-    credential.get("accountId").and_then(|v| v.as_str()).map(String::from)
+    read_account_id_from_credential(credential)
+}
+
+fn read_account_id_from_credential(credential: &Value) -> Option<String> {
+    credential
+        .get("accountId")
+        .or_else(|| credential.get("account_id"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .or_else(|| {
+            credential
+                .get("idToken")
+                .or_else(|| credential.get("id_token"))
+                .and_then(|v| v.as_str())
+                .and_then(crate::oauth::openai_codex::extract_account_id_from_jwt)
+        })
+        .or_else(|| {
+            credential
+                .get("access")
+                .and_then(|v| v.as_str())
+                .and_then(crate::oauth::openai_codex::extract_account_id_from_jwt)
+        })
 }
 
 fn now_ms() -> i64 {
@@ -176,6 +200,7 @@ struct RefreshTokenResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: i64,
+    id_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -307,13 +332,21 @@ async fn refresh_openai_codex_oauth(
     let parsed: RefreshTokenResponse = serde_json::from_str(&body).map_err(|error| {
         format!("OpenAI Codex token refresh returned invalid JSON: {error}; body={body}")
     })?;
+    let mut extra = credential.extra.clone();
+    if let Some(id_token) = parsed.id_token.as_ref() {
+        extra.insert("idToken".to_string(), Value::String(id_token.clone()));
+        if let Some(account_id) = crate::oauth::openai_codex::extract_account_id_from_jwt(id_token)
+        {
+            extra.insert("accountId".to_string(), Value::String(account_id));
+        }
+    }
     Ok(OAuthCredential {
         access: parsed.access_token,
         refresh: parsed
             .refresh_token
             .unwrap_or_else(|| credential.refresh.clone()),
         expires: now_ms() + parsed.expires_in * 1000,
-        extra: credential.extra.clone(),
+        extra,
     })
 }
 
@@ -435,6 +468,25 @@ pub fn store_oauth_credentials(
 
     auth.insert(provider.to_string(), Value::Object(value));
     write_auth_json(path, &auth)
+}
+
+/// Remove stored credentials for a provider from auth.json.
+pub fn remove_stored_credentials(path: &str, provider: &str) -> Result<bool, String> {
+    let mut auth: Map<String, Value> = match fs::read_to_string(path) {
+        Ok(input) => {
+            let cleaned = strip_json_comments(&input);
+            serde_json::from_str(&cleaned)
+                .map_err(|e| format!("Failed to parse auth.json `{path}`: {e}"))?
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(format!("Failed to read auth.json `{path}`: {e}")),
+    };
+
+    let removed = auth.remove(provider).is_some();
+    if removed {
+        write_auth_json(path, &auth)?;
+    }
+    Ok(removed)
 }
 
 fn write_auth_json(path: &str, auth: &Map<String, Value>) -> Result<(), String> {
@@ -580,4 +632,61 @@ fn strip_trailing_commas(input: &str) -> String {
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_account_id_from_credential;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use serde_json::json;
+
+    fn jwt_with_payload(payload: &str) -> String {
+        let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+        format!("header.{}.signature", payload_b64)
+    }
+
+    #[test]
+    fn read_account_id_prefers_stored_camel_case_value() {
+        let credential = json!({
+            "type": "oauth",
+            "accountId": "stored-account",
+            "idToken": jwt_with_payload(
+                r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"token-account"}}"#
+            )
+        });
+
+        assert_eq!(
+            read_account_id_from_credential(&credential),
+            Some("stored-account".to_string())
+        );
+    }
+
+    #[test]
+    fn read_account_id_accepts_stored_snake_case_value() {
+        let credential = json!({
+            "type": "oauth",
+            "account_id": "stored-account"
+        });
+
+        assert_eq!(
+            read_account_id_from_credential(&credential),
+            Some("stored-account".to_string())
+        );
+    }
+
+    #[test]
+    fn read_account_id_derives_from_id_token() {
+        let credential = json!({
+            "type": "oauth",
+            "idToken": jwt_with_payload(
+                r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"token-account"}}"#
+            )
+        });
+
+        assert_eq!(
+            read_account_id_from_credential(&credential),
+            Some("token-account".to_string())
+        );
+    }
 }

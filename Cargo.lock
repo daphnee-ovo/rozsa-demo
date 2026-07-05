@@ -4299,6 +4299,7 @@ name = "rozsa-gui"
 version = "1.0.4"
 dependencies = [
  "dashmap",
+ "dirs",
  "rozsa-app",
  "rozsa-core",
  "rozsa-model",
@@ -4307,6 +4308,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]

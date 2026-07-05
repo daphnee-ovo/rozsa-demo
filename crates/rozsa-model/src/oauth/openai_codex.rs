@@ -1,5 +1,5 @@
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -142,7 +142,9 @@ pub fn parse_authorization_input(
                     .cloned()
                     .unwrap_or_else(|| expected_state.to_string());
                 if state != expected_state {
-                    return Err(OAuthLoginError::CallbackServer("state mismatch".to_string()));
+                    return Err(OAuthLoginError::CallbackServer(
+                        "state mismatch".to_string(),
+                    ));
                 }
                 return Ok((code.clone(), state));
             }
@@ -156,7 +158,9 @@ pub fn parse_authorization_input(
             let code = parts[0].to_string();
             let state = parts[1].to_string();
             if state != expected_state {
-                return Err(OAuthLoginError::CallbackServer("state mismatch".to_string()));
+                return Err(OAuthLoginError::CallbackServer(
+                    "state mismatch".to_string(),
+                ));
             }
             return Ok((code, state));
         }
@@ -171,7 +175,9 @@ pub fn parse_authorization_input(
                 .cloned()
                 .unwrap_or_else(|| expected_state.to_string());
             if state != expected_state {
-                return Err(OAuthLoginError::CallbackServer("state mismatch".to_string()));
+                return Err(OAuthLoginError::CallbackServer(
+                    "state mismatch".to_string(),
+                ));
             }
             return Ok((code.clone(), state));
         }
@@ -193,10 +199,7 @@ fn parse_query_string(query: &str) -> HashMap<String, String> {
         .collect()
 }
 
-async fn exchange_code(
-    code: &str,
-    verifier: &str,
-) -> Result<OAuthCredentials, OAuthLoginError> {
+async fn exchange_code(code: &str, verifier: &str) -> Result<OAuthCredentials, OAuthLoginError> {
     let client = reqwest::Client::new();
 
     let response = client
@@ -218,8 +221,7 @@ async fn exchange_code(
         let body = response.text().await.unwrap_or_default();
         return Err(OAuthLoginError::TokenExchange(format!(
             "HTTP {}: {}",
-            status,
-            body
+            status, body
         )));
     }
 
@@ -228,8 +230,11 @@ async fn exchange_code(
         .await
         .map_err(|e| OAuthLoginError::TokenExchange(e.to_string()))?;
 
-    // Extract accountId from JWT
-    let account_id = extract_account_id_from_jwt(&body.access_token);
+    let account_id = body
+        .id_token
+        .as_deref()
+        .and_then(extract_account_id_from_jwt)
+        .or_else(|| extract_account_id_from_jwt(&body.access_token));
 
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -237,6 +242,9 @@ async fn exchange_code(
         .as_millis() as i64;
 
     let mut extra = HashMap::new();
+    if let Some(id_token) = body.id_token {
+        extra.insert("idToken".to_string(), serde_json::json!(id_token));
+    }
     if let Some(account_id) = account_id {
         extra.insert("accountId".to_string(), serde_json::json!(account_id));
     }
@@ -250,8 +258,10 @@ async fn exchange_code(
     })
 }
 
-/// Extract accountId from JWT without verification.
-/// OpenAI JWT payload contains "https://api.openai.com/auth.chatgpt_account_id".
+/// Extract accountId from a Codex JWT without verification.
+/// Official Codex derives it from id_token payload
+/// `https://api.openai.com/auth.chatgpt_account_id`; old Rozsa builds attempted
+/// the flat access-token claim `https://api.openai.com/auth.chatgpt_account_id`.
 #[doc(hidden)]
 pub fn extract_account_id_from_jwt(token: &str) -> Option<String> {
     // JWT format: header.payload.signature
@@ -265,7 +275,10 @@ pub fn extract_account_id_from_jwt(token: &str) -> Option<String> {
     let payload: serde_json::Value = serde_json::from_slice(&payload_bytes).ok()?;
 
     payload
-        .get("https://api.openai.com/auth.chatgpt_account_id")
+        .get("https://api.openai.com/auth")
+        .and_then(|v| v.as_object())
+        .and_then(|auth| auth.get("chatgpt_account_id"))
+        .or_else(|| payload.get("https://api.openai.com/auth.chatgpt_account_id"))
         .and_then(|v| v.as_str())
         .map(String::from)
 }
@@ -275,5 +288,5 @@ struct TokenResponse {
     access_token: String,
     refresh_token: String,
     expires_in: u64,
+    id_token: Option<String>,
 }
-

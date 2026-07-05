@@ -88,8 +88,8 @@ pub enum ResponseItem {
     Reasoning {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        summary: Option<Vec<ReasoningSummaryPart>>,
+        #[serde(default)]
+        summary: Vec<ReasoningSummaryPart>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         encrypted_content: Option<String>,
     },
@@ -129,9 +129,15 @@ pub struct ReasoningSummaryPart {
 #[derive(Debug, Clone)]
 pub enum ResponseEvent {
     Created,
-    OutputItemAdded { item: ResponseItem },
-    OutputItemDone { item: ResponseItem },
-    OutputTextDelta { delta: String },
+    OutputItemAdded {
+        item: ResponseItem,
+    },
+    OutputItemDone {
+        item: ResponseItem,
+    },
+    OutputTextDelta {
+        delta: String,
+    },
     FunctionCallArgsDelta {
         item_id: Option<String>,
         call_id: Option<String>,

@@ -109,6 +109,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('tool-event', ev => handleToolEvent(ev.payload));
   await listen('permission-request', ev => showPermission(ev.payload));
   await listen('error', ev => showError(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
+  await listen('notification', ev => showNotification(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
 
   try { const s = await invoke('get_state'); renderState(s); } catch (e) { console.warn('get_state:', e); }
   try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { console.warn('get_sessions:', e); }
@@ -171,12 +172,21 @@ function updateSidebar(snap) {
     if (weekVal) weekVal.textContent = total > 1000 ? Math.round(total / 1000) + 'k' : total;
   }
 
-  if (snap.cwd) {
-    const branchEl = document.getElementById('gitBranch');
-    if (branchEl) {
-      const parts = snap.cwd.split('/');
-      branchEl.textContent = parts[parts.length - 1] || snap.cwd;
-    }
+  const branchEl = document.getElementById('gitBranch');
+  const addEl = document.getElementById('gitAdd');
+  const delEl = document.getElementById('gitDel');
+  const filesEl = document.getElementById('gitFiles');
+  if (snap.git) {
+    if (branchEl) branchEl.textContent = snap.git.label || snap.git.projectName || '—';
+    if (addEl) addEl.textContent = '+' + (snap.git.added || 0);
+    if (delEl) delEl.textContent = '-' + (snap.git.deleted || 0);
+    if (filesEl) filesEl.textContent = (snap.git.files || 0) + ' files';
+  } else if (snap.cwd) {
+    const parts = snap.cwd.split('/');
+    if (branchEl) branchEl.textContent = parts[parts.length - 1] || snap.cwd;
+    if (addEl) addEl.textContent = '—';
+    if (delEl) delEl.textContent = '—';
+    if (filesEl) filesEl.textContent = '—';
   }
 }
 
@@ -281,6 +291,10 @@ function renderMessage(raw, toolResultMap) {
   } else if (role === 'assistant') {
     div.className = 'msg msg-assistant';
     let body = '<div class="msg-avatar">R</div><div class="msg-body"><div class="msg-role">Rozsa</div>';
+    const errorMessage = msg.errorMessage || '';
+    if (errorMessage) {
+      body += '<div class="msg-content msg-error"><pre>' + escapeHtml(errorMessage) + '</pre></div>';
+    }
 
     const thinking = extractThinking(content);
     if (thinking) {
@@ -511,7 +525,10 @@ async function dispatchSlashCommand(text) {
           m.name.toLowerCase().includes(args.toLowerCase())
         );
         if (match) await onModelChange(match.id);
-        else showError('No model matching: ' + args);
+        else {
+          await onModelChange(args);
+          showNotification('Using custom model id: ' + args);
+        }
       } else {
         toggleSettings();
         switchSettingsTab('models', document.querySelectorAll('.settings-tab')[1]);
@@ -542,6 +559,23 @@ async function dispatchSlashCommand(text) {
 
     case 'hotkeys':
       showHotkeys();
+      return true;
+
+    case 'login':
+      try {
+        showNotification('Starting codex-oauth login...');
+        const message = await invoke('auth_login');
+        showNotification(message);
+        models = await invoke('list_models');
+        renderModelSelector();
+      } catch (e) { showError(String(e)); }
+      return true;
+
+    case 'logout':
+      try {
+        const message = await invoke('auth_logout');
+        showNotification(message);
+      } catch (e) { showError(String(e)); }
       return true;
 
     case 'quit':

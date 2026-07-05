@@ -28,7 +28,7 @@ use crate::types::{
     ToolSchema, Usage, UserContent,
 };
 
-use super::types::{ContentItem, ResponseEvent, ResponseItem, TokenUsage};
+use super::types::{ContentItem, ReasoningSummaryPart, ResponseEvent, ResponseItem, TokenUsage};
 
 // ---------------------------------------------------------------------------
 // convert_messages
@@ -115,10 +115,21 @@ fn convert_assistant_blocks(blocks: &[ContentBlock], items: &mut Vec<ResponseIte
                     content: vec![ContentItem::OutputText { text: text.clone() }],
                 });
             }
-            ContentBlock::Thinking { signature, .. } => {
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+                ..
+            } => {
+                let summary = if thinking.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![ReasoningSummaryPart {
+                        text: thinking.clone(),
+                    }]
+                };
                 items.push(ResponseItem::Reasoning {
                     id: None,
-                    summary: None,
+                    summary,
                     encrypted_content: signature.clone(),
                 });
             }
@@ -222,23 +233,16 @@ impl ResponseStreamNormalizer {
         match event {
             ResponseEvent::Created => self.handle_created(),
             ResponseEvent::OutputTextDelta { delta } => self.handle_text_delta(delta),
-            ResponseEvent::ReasoningSummaryDelta { delta, .. } => {
-                self.handle_thinking_delta(delta)
+            ResponseEvent::ReasoningSummaryDelta { delta, .. } => self.handle_thinking_delta(delta),
+            ResponseEvent::ReasoningContentDelta { delta, .. } => self.handle_thinking_delta(delta),
+            ResponseEvent::FunctionCallArgsDelta { call_id, delta, .. } => {
+                self.handle_function_call_delta(call_id, delta)
             }
-            ResponseEvent::ReasoningContentDelta { delta, .. } => {
-                self.handle_thinking_delta(delta)
-            }
-            ResponseEvent::FunctionCallArgsDelta {
-                call_id, delta, ..
-            } => self.handle_function_call_delta(call_id, delta),
             ResponseEvent::OutputItemDone { item } => self.handle_output_item_done(item),
-            ResponseEvent::Completed {
-                response_id,
-                usage,
-            } => self.handle_completed(response_id, usage),
-            ResponseEvent::Failed {
-                error_message, ..
-            } => self.handle_failed(error_message),
+            ResponseEvent::Completed { response_id, usage } => {
+                self.handle_completed(response_id, usage)
+            }
+            ResponseEvent::Failed { error_message, .. } => self.handle_failed(error_message),
             ResponseEvent::Incomplete { reason } => self.handle_incomplete(reason),
             ResponseEvent::OutputItemAdded { .. } => Vec::new(),
         }
@@ -466,15 +470,12 @@ impl ResponseStreamNormalizer {
             } => {
                 if let Some(idx) = self.thinking_index {
                     // 从 summary 提取最终文本
-                    let final_text = summary
-                        .as_ref()
-                        .map(|parts| {
-                            parts.iter().map(|p| p.text.as_str()).collect::<String>()
-                        })
-                        .unwrap_or_default();
+                    let final_text = summary.iter().map(|p| p.text.as_str()).collect::<String>();
 
                     if let Some(ContentBlock::Thinking {
-                        thinking, signature, ..
+                        thinking,
+                        signature,
+                        ..
                     }) = self.output.content.get_mut(idx)
                     {
                         if !final_text.is_empty() {
@@ -575,5 +576,53 @@ fn convert_token_usage(tu: &TokenUsage) -> Usage {
         cache_write: 0,
         total_tokens: tu.total_tokens,
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Provider;
+
+    fn assistant_with_thinking(thinking: &str, signature: Option<&str>) -> Message {
+        Message::Assistant(AssistantMessage {
+            content: vec![ContentBlock::Thinking {
+                thinking: thinking.to_string(),
+                signature: signature.map(str::to_string),
+                redacted: false,
+            }],
+            api: Api::OpenAIResponses,
+            provider: Provider::Custom("codex-oauth".to_string()),
+            model: "gpt-5.4".to_string(),
+            response_model: None,
+            response_id: Some("resp-1".to_string()),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        })
+    }
+
+    #[test]
+    fn assistant_thinking_replay_includes_required_summary() {
+        let items = convert_messages(
+            &[assistant_with_thinking("reasoning summary", Some("enc"))],
+            None,
+        );
+
+        let value = serde_json::to_value(&items[0]).expect("reasoning item should serialize");
+        assert_eq!(value["type"], "reasoning");
+        assert_eq!(value["summary"][0]["text"], "reasoning summary");
+        assert_eq!(value["encrypted_content"], "enc");
+    }
+
+    #[test]
+    fn empty_assistant_thinking_replay_serializes_empty_summary() {
+        let items = convert_messages(&[assistant_with_thinking("", Some("enc"))], None);
+
+        let value = serde_json::to_value(&items[0]).expect("reasoning item should serialize");
+        assert_eq!(value["type"], "reasoning");
+        assert_eq!(value["summary"], serde_json::json!([]));
+        assert_eq!(value["encrypted_content"], "enc");
     }
 }

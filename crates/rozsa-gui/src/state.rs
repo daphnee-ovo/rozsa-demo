@@ -5,6 +5,7 @@
 // 只有 Active 状态的 session 有独立的 AgentSession 后端。
 
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -87,7 +88,20 @@ pub struct SharedResources {
     pub system_prompt: String,
     pub model: Mutex<rozsa_model::types::Model>,
     pub thinking_level: Mutex<rozsa_model::types::ThinkingLevel>,
-    pub pre_tool_use: Option<Arc<dyn Fn(rozsa_core::config::PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>> + Send + Sync>>,
+    pub pre_tool_use: Option<
+        Arc<
+            dyn Fn(
+                    rozsa_core::config::PreToolUseContext,
+                ) -> std::pin::Pin<
+                    Box<
+                        dyn std::future::Future<
+                                Output = Option<rozsa_core::config::PreToolUseResult>,
+                            > + Send,
+                    >,
+                > + Send
+                + Sync,
+        >,
+    >,
 }
 
 /// 消息累积器
@@ -146,6 +160,7 @@ pub struct UiSnapshot {
     pub thinking_level: String,
     pub session_name: Option<String>,
     pub cwd: String,
+    pub git: Option<GitStatus>,
     pub context_usage: ContextUsage,
     pub runtime_state: RuntimeState,
 }
@@ -167,6 +182,18 @@ pub struct ContextUsage {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GitStatus {
+    pub label: String,
+    pub project_name: String,
+    pub branch: Option<String>,
+    pub dirty: bool,
+    pub added: u64,
+    pub deleted: u64,
+    pub files: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeState {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
@@ -175,7 +202,8 @@ pub struct RuntimeState {
 
 impl UiSnapshot {
     pub fn from_tab(tab: &SessionTab, shared: &SharedResources) -> Self {
-        let messages: Vec<serde_json::Value> = tab.messages()
+        let messages: Vec<serde_json::Value> = tab
+            .messages()
             .iter()
             .filter_map(|m| serde_json::to_value(m).ok())
             .collect();
@@ -197,7 +225,10 @@ impl UiSnapshot {
         let context_window = model_guard.context_window;
         drop(model_guard);
 
-        let thinking = shared.thinking_level.try_lock().unwrap_or_else(|_| unreachable!());
+        let thinking = shared
+            .thinking_level
+            .try_lock()
+            .unwrap_or_else(|_| unreachable!());
         let thinking_str = format!("{:?}", *thinking).to_lowercase();
         drop(thinking);
 
@@ -214,6 +245,7 @@ impl UiSnapshot {
             thinking_level: thinking_str,
             session_name: None,
             cwd: shared.cwd.to_string_lossy().to_string(),
+            git: git_status(&shared.cwd),
             context_usage: ContextUsage {
                 percent: context_percent,
                 tokens: input_tokens,
@@ -226,6 +258,104 @@ impl UiSnapshot {
             },
         }
     }
+}
+
+fn git_status(cwd: &PathBuf) -> Option<GitStatus> {
+    let project_name = cwd
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace")
+        .to_string();
+    let status_output = Command::new("git")
+        .args([
+            "-C",
+            &cwd.to_string_lossy(),
+            "status",
+            "--porcelain=v1",
+            "--branch",
+        ])
+        .output()
+        .ok()?;
+    if !status_output.status.success() {
+        return Some(GitStatus {
+            label: project_name.clone(),
+            project_name,
+            branch: None,
+            dirty: false,
+            added: 0,
+            deleted: 0,
+            files: 0,
+        });
+    }
+
+    let status = String::from_utf8_lossy(&status_output.stdout);
+    let mut branch = None;
+    let mut files = 0_u64;
+    for line in status.lines() {
+        if let Some(raw_branch) = line.strip_prefix("## ") {
+            let name = raw_branch
+                .split_whitespace()
+                .next()
+                .unwrap_or(raw_branch)
+                .split("...")
+                .next()
+                .unwrap_or(raw_branch);
+            branch = (!name.is_empty()).then(|| name.to_string());
+            continue;
+        }
+        if !line.trim().is_empty() {
+            files += 1;
+        }
+    }
+
+    let (added, deleted) = git_diff_stat(cwd);
+    let dirty = files > 0;
+    let label = match branch.as_deref() {
+        Some(branch) => format!("{project_name}({branch}{})", if dirty { "*" } else { "" }),
+        None => project_name.clone(),
+    };
+
+    Some(GitStatus {
+        label,
+        project_name,
+        branch,
+        dirty,
+        added,
+        deleted,
+        files,
+    })
+}
+
+fn git_diff_stat(cwd: &PathBuf) -> (u64, u64) {
+    let output = Command::new("git")
+        .args([
+            "-C",
+            &cwd.to_string_lossy(),
+            "diff",
+            "--numstat",
+            "HEAD",
+            "--",
+        ])
+        .output();
+    let Ok(output) = output else {
+        return (0, 0);
+    };
+    if !output.status.success() {
+        return (0, 0);
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut added = 0_u64;
+    let mut deleted = 0_u64;
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        if let Some(raw) = parts.next().and_then(|value| value.parse::<u64>().ok()) {
+            added += raw;
+        }
+        if let Some(raw) = parts.next().and_then(|value| value.parse::<u64>().ok()) {
+            deleted += raw;
+        }
+    }
+    (added, deleted)
 }
 
 /// 权限请求事件
@@ -242,6 +372,15 @@ pub struct PermissionEvent {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type")]
 pub enum ToolEvent {
-    Start { id: String, name: String, args: serde_json::Value },
-    End { id: String, name: String, success: bool, output: String },
+    Start {
+        id: String,
+        name: String,
+        args: serde_json::Value,
+    },
+    End {
+        id: String,
+        name: String,
+        success: bool,
+        output: String,
+    },
 }
