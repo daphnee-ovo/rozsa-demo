@@ -263,6 +263,84 @@ fn test_live_state_turn_replacement() {
 }
 
 #[test]
+fn test_live_state_updates_active_assistant_with_trailing_tool_result() {
+    let mut state = LiveState::default();
+
+    state.apply(&AgentEvent::AgentStart);
+    state.apply(&AgentEvent::MessageStart {
+        message: make_user_message("hello", 1000),
+    });
+    state.apply(&AgentEvent::MessageStart {
+        message: make_assistant_message(2000),
+    });
+    state.apply(&AgentEvent::MessageStart {
+        message: make_tool_result_message("tc_001", "tool output", 3000),
+    });
+
+    let mut updated_assistant = make_assistant_message(2000);
+    if let AgentMessage::Standard {
+        message: Message::Assistant(ref mut a),
+    } = updated_assistant
+    {
+        a.content.push(ContentBlock::Text {
+            text: " streamed tail".to_string(),
+            signature: None,
+        });
+    }
+
+    let updated_partial = match &updated_assistant {
+        AgentMessage::Standard {
+            message: Message::Assistant(a),
+        } => a.clone(),
+        _ => panic!("Expected assistant message"),
+    };
+    state.apply(&AgentEvent::MessageUpdate {
+        message: updated_assistant.clone(),
+        stream_event: rozsa_model::types::StreamEvent::TextDelta {
+            content_index: 0,
+            delta: " streamed tail".to_string(),
+            partial: updated_partial,
+        },
+    });
+
+    assert_eq!(state.messages.len(), 3, "update must not add messages");
+    if let AgentMessage::Standard {
+        message: Message::Assistant(a),
+    } = &state.messages[1]
+    {
+        assert_eq!(a.content.len(), 4, "assistant message should be updated");
+    } else {
+        panic!("Expected assistant message at index 1");
+    }
+    if let AgentMessage::Standard {
+        message: Message::ToolResult(tr),
+    } = &state.messages[2]
+    {
+        assert_eq!(
+            tr.tool_call_id, "tc_001",
+            "trailing tool result should remain intact"
+        );
+    } else {
+        panic!("Expected tool result at index 2");
+    }
+
+    state.apply(&AgentEvent::MessageEnd {
+        message: updated_assistant,
+    });
+    if let AgentMessage::Standard {
+        message: Message::ToolResult(tr),
+    } = &state.messages[2]
+    {
+        assert_eq!(
+            tr.tool_call_id, "tc_001",
+            "MessageEnd should not overwrite trailing tool result"
+        );
+    } else {
+        panic!("Expected tool result at index 2");
+    }
+}
+
+#[test]
 fn test_ui_snapshot_serialization_format() {
     // Test case 3: 验证 UiSnapshot 序列化后的 JSON 格式
     let user_msg = make_user_message("test user message", 1000);

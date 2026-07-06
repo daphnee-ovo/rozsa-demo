@@ -90,6 +90,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::switch_model,
             commands::auth_login,
             commands::auth_logout,
+            commands::get_rate_limits,
             commands::compact,
             commands::rename_session,
             commands::delete_session,

@@ -32,7 +32,7 @@ pub fn format_rate_limit_display(snapshot: &RateLimitSnapshot) -> String {
         let window_hours = primary.window_duration_secs / 3600;
         let reset_mins = primary.reset_after_secs / 60;
         parts.push(format!(
-            "{}h window: {}% used (resets in {}m)",
+            "{}h window: {:.0}% used (resets in {}m)",
             window_hours, primary.used_percent, reset_mins
         ));
     }
@@ -41,13 +41,13 @@ pub fn format_rate_limit_display(snapshot: &RateLimitSnapshot) -> String {
         let window_days = secondary.window_duration_secs / 86400;
         let reset_hours = secondary.reset_after_secs / 3600;
         parts.push(format!(
-            "{}d window: {}% used (resets in {}h)",
+            "{}d window: {:.0}% used (resets in {}h)",
             window_days, secondary.used_percent, reset_hours
         ));
     }
 
     if snapshot.limit_reached {
-        parts.push("⚠ Rate limit reached!".to_string());
+        parts.push("Rate limit reached".to_string());
     }
 
     if parts.is_empty() {

@@ -479,6 +479,13 @@ pub async fn auth_logout() -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+pub async fn get_rate_limits() -> Result<rozsa_model::rate_limit::RateLimitSnapshot, String> {
+    rozsa_app::rate_limit::get_rate_limits()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // --- 其他操作 ---
 
 #[tauri::command]

@@ -1409,6 +1409,31 @@ body {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.quota-tooltip {
+  position: fixed;
+  display: none;
+  z-index: 120;
+  max-width: 220px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in oklch, var(--border) 78%, var(--surface));
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--surface) 96%, var(--code-bg));
+  color: var(--fg);
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.075);
+  font-size: 11px;
+  line-height: 1.35;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.quota-tooltip.visible {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
 /* Git 状态 */
 .git-branch {
   display: flex;
@@ -1681,6 +1706,7 @@ button:focus-visible, .session-item:focus-visible,
             <div class="quota-bar-track"><div class="quota-bar-fill" id="quotaWeekBar" style="width:0%"></div></div>
           </div>
         </div>
+        <div class="quota-tooltip" id="quotaTooltip"></div>
         <!-- 工具调用计数 -->
         <div class="status-group">
           <div class="tool-chips" id="toolChips">

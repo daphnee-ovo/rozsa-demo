@@ -114,6 +114,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   try { const s = await invoke('get_state'); renderState(s); } catch (e) { showError('get_state failed: ' + String(e)); }
   try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { showSidebarError('sessionList', 'get_sessions failed: ' + String(e)); }
   try { models = await invoke('list_models'); renderModelSelector(); } catch (e) { showError('list_models failed: ' + String(e)); }
+  refreshRateLimits(false);
 });
 
 // =============== State Rendering ===============
@@ -151,15 +152,50 @@ function updateHeader(snap) {
   }
 }
 
-function updateQuotaPlaceholder() {
+function updateQuotaBars(snapshot) {
   const hourBar = document.getElementById('quotaHourBar');
   const hourVal = document.getElementById('quotaHour');
   const weekBar = document.getElementById('quotaWeekBar');
   const weekVal = document.getElementById('quotaWeek');
-  if (hourBar) hourBar.style.width = '0%';
-  if (hourVal) hourVal.textContent = '—';
-  if (weekBar) weekBar.style.width = '0%';
-  if (weekVal) weekVal.textContent = '—';
+  updateQuotaWindow(hourBar, hourVal, snapshot && snapshot.primary, '5 小时');
+  updateQuotaWindow(weekBar, weekVal, snapshot && snapshot.secondary, '本周');
+}
+
+function updateQuotaWindow(bar, valueEl, window, label) {
+  if (!bar || !valueEl) return;
+  const row = bar.closest('.quota-row');
+  if (!window) {
+    bar.style.width = '0%';
+    bar.classList.remove('warn');
+    valueEl.textContent = '—';
+    setQuotaTooltip(row, bar, valueEl, '');
+    return;
+  }
+  const used = clampPercent(Number(window.usedPercent || 0));
+  bar.style.width = used + '%';
+  bar.classList.toggle('warn', used >= 80);
+  valueEl.textContent = Math.round(used) + '%';
+  setQuotaTooltip(row, bar, valueEl, formatResetTitle(label, window));
+}
+
+function setQuotaTooltip(row, bar, valueEl, text) {
+  for (const el of [row, bar, valueEl]) {
+    if (!el) continue;
+    el.removeAttribute('title');
+    if (text) el.dataset.quotaTooltip = text;
+    else delete el.dataset.quotaTooltip;
+  }
+}
+
+async function refreshRateLimits(showResult) {
+  try {
+    const snapshot = await invoke('get_rate_limits');
+    updateQuotaBars(snapshot);
+    if (showResult) showNotification(formatRateLimitSnapshot(snapshot));
+  } catch (e) {
+    updateQuotaBars(null);
+    if (showResult) showError('Rate limit query failed: ' + String(e));
+  }
 }
 
 function updateSidebar(snap) {
@@ -171,8 +207,6 @@ function updateSidebar(snap) {
     const ring = document.querySelector('.context-ring circle:last-child');
     if (ring) ring.setAttribute('stroke-dashoffset', 44 - (44 * pct / 100));
   }
-
-  updateQuotaPlaceholder();
 
   const branchEl = document.getElementById('gitBranch');
   const addEl = document.getElementById('gitAdd');
@@ -239,14 +273,16 @@ function renderMessages(messages, streaming) {
     !(raw.kind === 'standard' && raw.message && raw.message.role === 'toolResult')
   );
 
+  const activeStreamIndex = activeStreamMessageIndex(visibleMessages, streaming);
+
   for (let i = 0; i < visibleMessages.length; i++) {
     const raw = visibleMessages[i];
-    container.appendChild(renderMessage(raw, toolResultMap, streaming && i === visibleMessages.length - 1));
+    container.appendChild(renderMessage(raw, toolResultMap, i === activeStreamIndex));
   }
 
-  if (streaming) {
-    const last = container.lastElementChild;
-    if (last) attachStreamCursor(last);
+  if (activeStreamIndex >= 0) {
+    const active = container.children[activeStreamIndex];
+    if (active) attachStreamCursor(active);
   }
 
   renderToolChips();
@@ -294,8 +330,8 @@ function renderMessage(raw, toolResultMap, isActiveStream = false) {
     }
 
     const thinking = extractThinking(content);
+    const latestType = content.length ? content[content.length - 1].type : '';
     if (thinking) {
-      const latestType = content.length ? content[content.length - 1].type : '';
       const thinkingActive = isActiveStream && latestType === 'thinking';
       const thinkingLabel = thinkingActive ? 'THINKING' : 'THINKED';
       const thinkingDuration = thinkingActive ? '' : formatThinkingDuration(Date.now() - messageTimestampMs(msg));
@@ -304,7 +340,8 @@ function renderMessage(raw, toolResultMap, isActiveStream = false) {
         '<span class="thinking-label">' + thinkingLabel + '</span>' +
         (thinkingDuration ? '<span class="thinking-duration">' + thinkingDuration + '</span>' : '') +
         '<span class="thinking-chevron">▸</span></div>' +
-        '<div class="thinking-content">' + renderMarkdown(thinking) + '</div></div>';
+        '<div class="thinking-content"' + (thinkingActive ? ' data-stream-cursor-target="thinking"' : '') + '>' +
+        renderMarkdown(thinking) + '</div></div>';
     }
 
     const toolCalls = content.filter(b => b.type === 'toolCall');
@@ -331,7 +368,9 @@ function renderMessage(raw, toolResultMap, isActiveStream = false) {
 
     const text = extractText(content);
     if (text) {
-      body += '<div class="msg-content markdown-body">' + renderMarkdown(text) + '</div>';
+      const textActive = isActiveStream && latestType === 'text';
+      body += '<div class="msg-content markdown-body"' + (textActive ? ' data-stream-cursor-target="text"' : '') +
+        '>' + renderMarkdown(text) + '</div>';
     }
 
     body += '</div>';
@@ -411,15 +450,53 @@ function extractThinking(content) {
   return blocks.length > 0 ? blocks.map(b => b.thinking).join('\n') : null;
 }
 
+function activeStreamMessageIndex(messages, streaming) {
+  if (!streaming) return -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const raw = messages[i];
+    if (raw.kind === 'standard' && raw.message && raw.message.role === 'assistant') return i;
+  }
+  return -1;
+}
+
 function attachStreamCursor(messageEl) {
   if (messageEl.querySelector('.stream-cursor')) return;
-  const targets = messageEl.querySelectorAll('.msg-content.markdown-body, .thinking-content, .msg-content, .msg-body');
-  const target = targets[targets.length - 1];
+  const markedTarget = messageEl.querySelector('[data-stream-cursor-target]');
+  const targets = messageEl.querySelectorAll('.msg-content.markdown-body, .thinking-content, .msg-content');
+  const target = markedTarget || targets[targets.length - 1];
   if (!target) return;
   const cursor = document.createElement('span');
   cursor.className = 'stream-cursor';
   cursor.textContent = '▌';
+  appendCursorAfterLastText(target, cursor);
+}
+
+function appendCursorAfterLastText(target, cursor) {
+  const textNode = lastVisibleTextNode(target);
+  if (textNode && textNode.parentNode) {
+    textNode.parentNode.insertBefore(cursor, textNode.nextSibling);
+    return;
+  }
   target.appendChild(cursor);
+}
+
+function lastVisibleTextNode(target) {
+  const walker = document.createTreeWalker(
+    target,
+    4,
+    {
+      acceptNode(node) {
+        return node.nodeValue && node.nodeValue.trim() ? 1 : 3;
+      },
+    }
+  );
+  let last = null;
+  let node = walker.nextNode();
+  while (node) {
+    last = node;
+    node = walker.nextNode();
+  }
+  return last;
 }
 
 function messageTimestampMs(msg) {
@@ -618,6 +695,7 @@ async function dispatchSlashCommand(text) {
         showNotification(message);
         models = await invoke('list_models');
         renderModelSelector();
+        await refreshRateLimits(false);
       } catch (e) { showError(String(e)); }
       return true;
 
@@ -625,7 +703,12 @@ async function dispatchSlashCommand(text) {
       try {
         const message = await invoke('auth_logout');
         showNotification(message);
+        updateQuotaBars(null);
       } catch (e) { showError(String(e)); }
+      return true;
+
+    case 'usage':
+      await refreshRateLimits(true);
       return true;
 
     case 'quit':
@@ -1109,6 +1192,42 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+document.addEventListener('mouseover', function(e) {
+  const target = e.target.closest('[data-quota-tooltip]');
+  if (!target) return;
+  showQuotaTooltip(target);
+});
+
+document.addEventListener('mouseout', function(e) {
+  const target = e.target.closest('[data-quota-tooltip]');
+  if (!target || (e.relatedTarget && target.contains(e.relatedTarget))) return;
+  hideQuotaTooltip();
+});
+
+document.addEventListener('scroll', hideQuotaTooltip, true);
+
+function showQuotaTooltip(target) {
+  const tooltip = document.getElementById('quotaTooltip');
+  const text = target.dataset.quotaTooltip;
+  if (!tooltip || !text) return;
+  tooltip.textContent = text;
+  tooltip.classList.add('visible');
+  const rect = target.getBoundingClientRect();
+  const tipRect = tooltip.getBoundingClientRect();
+  const margin = 8;
+  let left = rect.right - tipRect.width;
+  left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
+  let top = rect.top - tipRect.height - margin;
+  if (top < margin) top = rect.bottom + margin;
+  tooltip.style.left = left + 'px';
+  tooltip.style.top = top + 'px';
+}
+
+function hideQuotaTooltip() {
+  const tooltip = document.getElementById('quotaTooltip');
+  if (tooltip) tooltip.classList.remove('visible');
+}
+
 // =============== UI Helpers ===============
 
 function toggleToolCall(el) { el.classList.toggle('expanded'); }
@@ -1207,6 +1326,44 @@ function showHotkeys() {
     '<div class="msg-content markdown-body">' + renderMarkdown(hotkeysText) + '</div></div>';
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+}
+
+function clampPercent(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+function formatResetTitle(label, window) {
+  const resetText = formatResetAt(window.resetAt, window.resetAfterSecs);
+  return resetText ? label + ' ' + resetText + ' 重置' : label + ' 重置时间未知';
+}
+
+function formatResetAt(resetAt, resetAfterSecs) {
+  const resetAtSecs = Number(resetAt || 0);
+  const resetAfter = Number(resetAfterSecs || 0);
+  let time;
+  if (Number.isFinite(resetAtSecs) && resetAtSecs > 0) {
+    time = new Date(resetAtSecs * 1000);
+  } else if (Number.isFinite(resetAfter) && resetAfter > 0) {
+    time = new Date(Date.now() + resetAfter * 1000);
+  } else {
+    return '';
+  }
+  const now = new Date();
+  const sameDay = time.toDateString() === now.toDateString();
+  const clock = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return clock;
+  return time.toLocaleDateString([], { month: 'numeric', day: 'numeric' }) + ' ' + clock;
+}
+
+function formatRateLimitSnapshot(snapshot) {
+  if (!snapshot) return 'No rate limit data available';
+  const parts = [];
+  if (snapshot.planType) parts.push('Plan: ' + snapshot.planType);
+  if (snapshot.primary) parts.push('5h: ' + Math.round(clampPercent(snapshot.primary.usedPercent)) + '% used');
+  if (snapshot.secondary) parts.push('week: ' + Math.round(clampPercent(snapshot.secondary.usedPercent)) + '% used');
+  if (snapshot.limitReached) parts.push('Rate limit reached');
+  return parts.length ? parts.join(' | ') : 'No rate limit data available';
 }
 
 function copyCode(btn) {

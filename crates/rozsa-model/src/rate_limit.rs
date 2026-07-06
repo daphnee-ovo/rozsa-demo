@@ -10,10 +10,11 @@
 // Reference:
 // - codex-rs backend-client/src/client.rs:284-302
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Rate limit snapshot for a ChatGPT subscription account.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RateLimitSnapshot {
     pub plan_type: Option<String>,
     pub allowed: bool,
@@ -25,10 +26,11 @@ pub struct RateLimitSnapshot {
 }
 
 /// A single rate limit window (5-hour or weekly).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RateLimitWindow {
     /// Percentage of quota used (0-100).
-    pub used_percent: i32,
+    pub used_percent: f64,
     /// Window duration in seconds.
     pub window_duration_secs: i32,
     /// Seconds until the window resets.
@@ -86,6 +88,13 @@ pub async fn fetch_rate_limits(
     Ok(parse_payload(payload))
 }
 
+/// Parse a `/wham/usage` JSON response into a normalized snapshot.
+pub fn parse_rate_limit_response_json(input: &str) -> Result<RateLimitSnapshot, RateLimitError> {
+    let payload: RateLimitPayload =
+        serde_json::from_str(input).map_err(|e| RateLimitError::Parse(e.to_string()))?;
+    Ok(parse_payload(payload))
+}
+
 /// Fetch rate limits using credentials from auth.json.
 pub async fn fetch_rate_limits_from_auth(
     auth_json_path: &str,
@@ -110,23 +119,32 @@ pub async fn fetch_rate_limits_from_auth(
 
 #[derive(Debug, Deserialize)]
 struct RateLimitPayload {
+    #[serde(alias = "planType")]
     plan_type: Option<String>,
+    #[serde(alias = "rateLimit")]
     rate_limit: Option<RateLimitDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RateLimitDetails {
     allowed: Option<bool>,
+    #[serde(alias = "limitReached")]
     limit_reached: Option<bool>,
+    #[serde(alias = "primaryWindow")]
     primary_window: Option<RateLimitWindowRaw>,
+    #[serde(alias = "secondaryWindow")]
     secondary_window: Option<RateLimitWindowRaw>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RateLimitWindowRaw {
-    used_percent: Option<i32>,
+    #[serde(alias = "usedPercent")]
+    used_percent: Option<f64>,
+    #[serde(alias = "limitWindowSeconds")]
     limit_window_seconds: Option<i32>,
+    #[serde(alias = "resetAfterSeconds")]
     reset_after_seconds: Option<i32>,
+    #[serde(alias = "resetAt")]
     reset_at: Option<i64>,
 }
 
@@ -152,7 +170,7 @@ fn parse_payload(payload: RateLimitPayload) -> RateLimitSnapshot {
 
 fn parse_window(raw: RateLimitWindowRaw) -> RateLimitWindow {
     RateLimitWindow {
-        used_percent: raw.used_percent.unwrap_or(0),
+        used_percent: raw.used_percent.unwrap_or(0.0),
         window_duration_secs: raw.limit_window_seconds.unwrap_or(0),
         reset_after_secs: raw.reset_after_seconds.unwrap_or(0),
         reset_at: raw.reset_at.unwrap_or(0),

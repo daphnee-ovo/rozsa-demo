@@ -110,6 +110,7 @@ pub struct LiveState {
     pub messages: Vec<AgentMessage>,
     pub is_streaming: bool,
     pub turn_base: usize,
+    pub(crate) streaming_message_index: Option<usize>,
 }
 
 impl LiveState {
@@ -118,28 +119,30 @@ impl LiveState {
             AgentEvent::AgentStart => {
                 self.turn_base = self.messages.len();
                 self.is_streaming = true;
+                self.streaming_message_index = None;
                 true
             }
             AgentEvent::MessageStart { message } => {
                 self.messages.push(message.clone());
+                if is_assistant_message(message) {
+                    self.streaming_message_index = Some(self.messages.len() - 1);
+                }
                 true
             }
             AgentEvent::MessageUpdate { message, .. } => {
-                if let Some(last) = self.messages.last_mut() {
-                    *last = message.clone();
-                }
+                self.update_streaming_message(message);
                 true
             }
             AgentEvent::MessageEnd { message } => {
-                if let Some(last) = self.messages.last_mut() {
-                    *last = message.clone();
-                }
+                self.update_streaming_message(message);
+                self.streaming_message_index = None;
                 true
             }
             AgentEvent::AgentEnd { messages } => {
                 self.messages.truncate(self.turn_base);
                 self.messages.extend(messages.iter().cloned());
                 self.is_streaming = false;
+                self.streaming_message_index = None;
                 true
             }
             AgentEvent::ToolExecutionStart { .. }
@@ -148,6 +151,32 @@ impl LiveState {
             _ => false,
         }
     }
+
+    fn update_streaming_message(&mut self, message: &AgentMessage) {
+        if let Some(index) = self
+            .streaming_message_index
+            .filter(|index| *index < self.messages.len())
+        {
+            self.messages[index] = message.clone();
+            return;
+        }
+
+        if !is_assistant_message(message) {
+            return;
+        }
+
+        if let Some(index) = self.messages.iter().rposition(is_assistant_message) {
+            self.messages[index] = message.clone();
+            self.streaming_message_index = Some(index);
+        }
+    }
+}
+
+fn is_assistant_message(message: &AgentMessage) -> bool {
+    matches!(
+        message.as_standard(),
+        Some(rozsa_model::types::Message::Assistant(_))
+    )
 }
 
 /// 前端 UiSnapshot
