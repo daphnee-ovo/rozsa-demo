@@ -115,7 +115,22 @@ pub enum ContentItem {
 /// A segment of a reasoning summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReasoningSummaryPart {
+    #[serde(rename = "type", default = "default_reasoning_summary_part_type")]
+    pub kind: String,
     pub text: String,
+}
+
+impl ReasoningSummaryPart {
+    pub fn summary_text(text: String) -> Self {
+        Self {
+            kind: default_reasoning_summary_part_type(),
+            text,
+        }
+    }
+}
+
+fn default_reasoning_summary_part_type() -> String {
+    "summary_text".to_string()
 }
 
 // ---------------------------------------------------------------------------

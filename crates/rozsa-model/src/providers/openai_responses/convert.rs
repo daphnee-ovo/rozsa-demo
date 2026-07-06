@@ -75,13 +75,14 @@ pub fn convert_messages(messages: &[Message], system_prompt: Option<&str>) -> Ve
                 convert_assistant_blocks(&assistant.content, &mut items);
             }
             Message::ToolResult(tool_result) => {
-                let call_id = extract_call_id(&tool_result.tool_call_id);
-                let output = content_to_string(&tool_result.content);
-                items.push(ResponseItem::FunctionCallOutput {
-                    id: None,
-                    call_id,
-                    output,
-                });
+                if let Some(call_id) = extract_call_id(&tool_result.tool_call_id) {
+                    let output = content_to_string(&tool_result.content);
+                    items.push(ResponseItem::FunctionCallOutput {
+                        id: None,
+                        call_id,
+                        output,
+                    });
+                }
             }
         }
     }
@@ -123,9 +124,7 @@ fn convert_assistant_blocks(blocks: &[ContentBlock], items: &mut Vec<ResponseIte
                 let summary = if thinking.is_empty() {
                     Vec::new()
                 } else {
-                    vec![ReasoningSummaryPart {
-                        text: thinking.clone(),
-                    }]
+                    vec![ReasoningSummaryPart::summary_text(thinking.clone())]
                 };
                 items.push(ResponseItem::Reasoning {
                     id: None,
@@ -134,13 +133,14 @@ fn convert_assistant_blocks(blocks: &[ContentBlock], items: &mut Vec<ResponseIte
                 });
             }
             ContentBlock::ToolCall(tc) => {
-                let call_id = extract_call_id(&tc.id);
-                items.push(ResponseItem::FunctionCall {
-                    id: None,
-                    name: tc.name.clone(),
-                    arguments: serde_json::to_string(&tc.arguments).unwrap_or_default(),
-                    call_id,
-                });
+                if let Some(call_id) = extract_call_id(&tc.id) {
+                    items.push(ResponseItem::FunctionCall {
+                        id: None,
+                        name: tc.name.clone(),
+                        arguments: serde_json::to_string(&tc.arguments).unwrap_or_default(),
+                        call_id,
+                    });
+                }
             }
             ContentBlock::Image { .. } => {
                 // Images 不在 assistant 输出侧产生 ResponseItem
@@ -149,9 +149,25 @@ fn convert_assistant_blocks(blocks: &[ContentBlock], items: &mut Vec<ResponseIte
     }
 }
 
-/// Extract the call_id portion from a potentially compound id ("call_id|item_id").
-fn extract_call_id(id: &str) -> String {
-    id.split('|').next().unwrap_or(id).to_string()
+/// Extract a non-empty call_id from a potentially compound id ("call_id|item_id").
+fn extract_call_id(id: &str) -> Option<String> {
+    let value = id.split('|').next().unwrap_or(id).trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn non_empty_id(id: Option<String>) -> Option<String> {
+    id.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
 }
 
 /// Join text content blocks into a single string. Text blocks are joined with
@@ -235,9 +251,11 @@ impl ResponseStreamNormalizer {
             ResponseEvent::OutputTextDelta { delta } => self.handle_text_delta(delta),
             ResponseEvent::ReasoningSummaryDelta { delta, .. } => self.handle_thinking_delta(delta),
             ResponseEvent::ReasoningContentDelta { delta, .. } => self.handle_thinking_delta(delta),
-            ResponseEvent::FunctionCallArgsDelta { call_id, delta, .. } => {
-                self.handle_function_call_delta(call_id, delta)
-            }
+            ResponseEvent::FunctionCallArgsDelta {
+                item_id,
+                call_id,
+                delta,
+            } => self.handle_function_call_delta(item_id, call_id, delta),
             ResponseEvent::OutputItemDone { item } => self.handle_output_item_done(item),
             ResponseEvent::Completed { response_id, usage } => {
                 self.handle_completed(response_id, usage)
@@ -348,6 +366,7 @@ impl ResponseStreamNormalizer {
 
     fn handle_function_call_delta(
         &mut self,
+        item_id: Option<String>,
         call_id: Option<String>,
         delta: String,
     ) -> Vec<StreamEvent> {
@@ -357,7 +376,10 @@ impl ResponseStreamNormalizer {
             events.extend(self.handle_created());
         }
 
-        let key = call_id.unwrap_or_default();
+        let key = non_empty_id(call_id).or_else(|| non_empty_id(item_id));
+        let Some(key) = key else {
+            return events;
+        };
 
         let idx = if let Some(&idx) = self.tool_call_indices.get(&key) {
             idx
@@ -418,17 +440,28 @@ impl ResponseStreamNormalizer {
                 }
             }
             ResponseItem::FunctionCall {
+                id,
                 name,
                 arguments,
                 call_id,
-                ..
             } => {
-                let key = call_id.clone();
-                if let Some(&idx) = self.tool_call_indices.get(&key) {
+                let item_key = non_empty_id(id);
+                let resolved_call_id = extract_call_id(&call_id).or_else(|| item_key.clone());
+                let Some(resolved_call_id) = resolved_call_id else {
+                    return events;
+                };
+
+                let existing_idx = self
+                    .tool_call_indices
+                    .get(&resolved_call_id)
+                    .copied()
+                    .or_else(|| item_key.and_then(|key| self.tool_call_indices.remove(&key)));
+
+                if let Some(idx) = existing_idx {
                     let parsed_args: Value =
                         serde_json::from_str(&arguments).unwrap_or(Value::Null);
                     let tool_call = ToolCall {
-                        id: call_id,
+                        id: resolved_call_id,
                         name: name.clone(),
                         arguments: parsed_args.clone(),
                     };
@@ -449,7 +482,7 @@ impl ResponseStreamNormalizer {
                     let parsed_args: Value =
                         serde_json::from_str(&arguments).unwrap_or(Value::Null);
                     let tool_call = ToolCall {
-                        id: call_id,
+                        id: resolved_call_id,
                         name,
                         arguments: parsed_args,
                     };
@@ -582,7 +615,7 @@ fn convert_token_usage(tu: &TokenUsage) -> Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Provider;
+    use crate::types::{Provider, ToolResultMessage};
 
     fn assistant_with_thinking(thinking: &str, signature: Option<&str>) -> Message {
         Message::Assistant(AssistantMessage {
@@ -603,6 +636,39 @@ mod tests {
         })
     }
 
+    fn assistant_with_tool_call(id: &str) -> Message {
+        Message::Assistant(AssistantMessage {
+            content: vec![ContentBlock::ToolCall(ToolCall {
+                id: id.to_string(),
+                name: "Bash".to_string(),
+                arguments: json!({"command": "pwd"}),
+            })],
+            api: Api::OpenAIResponses,
+            provider: Provider::Custom("codex-oauth".to_string()),
+            model: "gpt-5.4".to_string(),
+            response_model: None,
+            response_id: Some("resp-1".to_string()),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        })
+    }
+
+    fn tool_result(id: &str) -> Message {
+        Message::ToolResult(ToolResultMessage {
+            tool_call_id: id.to_string(),
+            tool_name: "Bash".to_string(),
+            content: vec![ContentBlock::Text {
+                text: "ok".to_string(),
+                signature: None,
+            }],
+            details: Value::Null,
+            is_error: false,
+            timestamp: 0,
+        })
+    }
+
     #[test]
     fn assistant_thinking_replay_includes_required_summary() {
         let items = convert_messages(
@@ -612,6 +678,7 @@ mod tests {
 
         let value = serde_json::to_value(&items[0]).expect("reasoning item should serialize");
         assert_eq!(value["type"], "reasoning");
+        assert_eq!(value["summary"][0]["type"], "summary_text");
         assert_eq!(value["summary"][0]["text"], "reasoning summary");
         assert_eq!(value["encrypted_content"], "enc");
     }
@@ -624,5 +691,65 @@ mod tests {
         assert_eq!(value["type"], "reasoning");
         assert_eq!(value["summary"], serde_json::json!([]));
         assert_eq!(value["encrypted_content"], "enc");
+    }
+
+    #[test]
+    fn replay_skips_empty_tool_call_ids() {
+        let items = convert_messages(&[assistant_with_tool_call(""), tool_result("")], None);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn function_call_delta_uses_item_id_until_done_supplies_call_id() {
+        let model = Model {
+            id: "gpt-5.4".to_string(),
+            name: "gpt-5.4".to_string(),
+            api: Api::OpenAIResponses,
+            provider: Provider::Custom("codex-oauth".to_string()),
+            base_url: "https://chatgpt.com/backend-api/codex".to_string(),
+            reasoning: true,
+            input_modalities: vec![],
+            cost: crate::types::ModelCost {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+            },
+            context_window: 128000,
+            max_tokens: 8192,
+            thinking_level_map: None,
+            headers: None,
+            compat: None,
+        };
+        let mut normalizer = ResponseStreamNormalizer::new(&model);
+
+        let events = normalizer.push_event(ResponseEvent::FunctionCallArgsDelta {
+            item_id: Some("fc_item_1".to_string()),
+            call_id: None,
+            delta: "{\"command\"".to_string(),
+        });
+        assert!(events.iter().any(|event| matches!(event, StreamEvent::ToolCallStart { .. })));
+
+        let events = normalizer.push_event(ResponseEvent::OutputItemDone {
+            item: ResponseItem::FunctionCall {
+                id: Some("fc_item_1".to_string()),
+                name: "Bash".to_string(),
+                arguments: "{\"command\":\"pwd\"}".to_string(),
+                call_id: "call_1".to_string(),
+            },
+        });
+
+        let tool_call = events
+            .iter()
+            .find_map(|event| {
+                if let StreamEvent::ToolCallEnd { tool_call, .. } = event {
+                    Some(tool_call)
+                } else {
+                    None
+                }
+            })
+            .expect("tool call should finish");
+        assert_eq!(tool_call.id, "call_1");
     }
 }

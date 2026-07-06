@@ -126,8 +126,10 @@ pub async fn get_sessions(state: State<'_, GuiState>) -> Result<Vec<SessionListE
             id: m.id,
             path: m.path.to_string_lossy().to_string(),
             name: m.name.unwrap_or_else(|| {
-                if m.first_message.len() > 50 {
-                    format!("{}...", &m.first_message[..50])
+                let mut chars = m.first_message.chars();
+                let preview: String = chars.by_ref().take(50).collect();
+                if chars.next().is_some() {
+                    format!("{preview}...")
                 } else {
                     m.first_message
                 }
@@ -259,7 +261,7 @@ pub async fn get_settings(state: State<'_, GuiState>) -> Result<SettingsSnapshot
         thinking_level: format!("{:?}", *thinking).to_lowercase(),
         model_id: model.id.clone(),
         model_name: model.name.clone(),
-        model_provider: format!("{:?}", model.provider),
+        model_provider: model.provider.as_str().to_string(),
         auto_approve_patterns: rt.permissions.auto_approve_patterns.clone(),
         allowed_tools: rt.permissions.allowed_tools.clone(),
         block_images: rt.block_images,
@@ -297,6 +299,12 @@ pub async fn update_setting(
                     agent.set_thinking_level(level).await;
                 }
             }
+            drop(tabs);
+            {
+                let mut s = state.runtime_settings.lock().await;
+                s.default_thinking_level = Some(level);
+            }
+            persist_settings(&state).await;
             Ok(())
         }
         "permission_mode" => {
@@ -384,6 +392,13 @@ pub async fn switch_model(state: State<'_, GuiState>, model_id: String) -> Resul
 
     // 更新共享 model
     *state.shared.model.lock().await = model.clone();
+    {
+        let mut settings = state.runtime_settings.lock().await;
+        settings.default_model = Some(model.id.clone());
+        settings.default_provider = Some(model.provider.as_str().to_string());
+    }
+    persist_settings(&state).await;
+
     // 同步到所有 active sessions
     let tabs = state.tabs.lock().await;
     for tab in tabs.iter() {

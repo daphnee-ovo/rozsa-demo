@@ -111,9 +111,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('error', ev => showError(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
   await listen('notification', ev => showNotification(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
 
-  try { const s = await invoke('get_state'); renderState(s); } catch (e) { console.warn('get_state:', e); }
-  try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { console.warn('get_sessions:', e); }
-  try { models = await invoke('list_models'); renderModelSelector(); } catch (e) { console.warn('list_models:', e); }
+  try { const s = await invoke('get_state'); renderState(s); } catch (e) { showError('get_state failed: ' + String(e)); }
+  try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { showSidebarError('sessionList', 'get_sessions failed: ' + String(e)); }
+  try { models = await invoke('list_models'); renderModelSelector(); } catch (e) { showError('list_models failed: ' + String(e)); }
 });
 
 // =============== State Rendering ===============
@@ -151,6 +151,17 @@ function updateHeader(snap) {
   }
 }
 
+function updateQuotaPlaceholder() {
+  const hourBar = document.getElementById('quotaHourBar');
+  const hourVal = document.getElementById('quotaHour');
+  const weekBar = document.getElementById('quotaWeekBar');
+  const weekVal = document.getElementById('quotaWeek');
+  if (hourBar) hourBar.style.width = '0%';
+  if (hourVal) hourVal.textContent = '—';
+  if (weekBar) weekBar.style.width = '0%';
+  if (weekVal) weekVal.textContent = '—';
+}
+
 function updateSidebar(snap) {
   if (snap.contextUsage) {
     const pct = Math.round(snap.contextUsage.percent);
@@ -159,18 +170,9 @@ function updateSidebar(snap) {
     if (ctxEl) ctxEl.textContent = tokens > 1000 ? Math.round(tokens / 1000) + 'k' : tokens;
     const ring = document.querySelector('.context-ring circle:last-child');
     if (ring) ring.setAttribute('stroke-dashoffset', 44 - (44 * pct / 100));
-    const hourBar = document.getElementById('quotaHourBar');
-    const hourVal = document.getElementById('quotaHour');
-    if (hourBar) hourBar.style.width = pct + '%';
-    if (hourVal) hourVal.textContent = pct + '%';
   }
 
-  if (snap.runtimeState) {
-    const weekBar = document.getElementById('quotaWeekBar');
-    const weekVal = document.getElementById('quotaWeek');
-    const total = snap.runtimeState.sessionTotalTokens || 0;
-    if (weekVal) weekVal.textContent = total > 1000 ? Math.round(total / 1000) + 'k' : total;
-  }
+  updateQuotaPlaceholder();
 
   const branchEl = document.getElementById('gitBranch');
   const addEl = document.getElementById('gitAdd');
@@ -233,30 +235,25 @@ function renderMessages(messages, streaming) {
     }
   }
 
-  for (const raw of messages) {
-    // toolResult 不单独渲染 — 已通过 toolCallId 合并到对应的 toolCall 卡片中
-    if (raw.kind === 'standard' && raw.message && raw.message.role === 'toolResult') continue;
-    container.appendChild(renderMessage(raw, toolResultMap));
+  const visibleMessages = messages.filter(raw =>
+    !(raw.kind === 'standard' && raw.message && raw.message.role === 'toolResult')
+  );
+
+  for (let i = 0; i < visibleMessages.length; i++) {
+    const raw = visibleMessages[i];
+    container.appendChild(renderMessage(raw, toolResultMap, streaming && i === visibleMessages.length - 1));
   }
 
   if (streaming) {
     const last = container.lastElementChild;
-    if (last) {
-      const content = last.querySelector('.msg-content') || last.querySelector('.msg-body');
-      if (content && !content.querySelector('.stream-cursor')) {
-        const cursor = document.createElement('span');
-        cursor.className = 'stream-cursor';
-        cursor.textContent = '▌';
-        content.appendChild(cursor);
-      }
-    }
+    if (last) attachStreamCursor(last);
   }
 
   renderToolChips();
   container.scrollTop = container.scrollHeight;
 }
 
-function renderMessage(raw, toolResultMap) {
+function renderMessage(raw, toolResultMap, isActiveStream = false) {
   const div = document.createElement('div');
 
   if (raw.kind === 'custom') {
@@ -298,9 +295,15 @@ function renderMessage(raw, toolResultMap) {
 
     const thinking = extractThinking(content);
     if (thinking) {
-      body += '<div class="thinking-block"><div class="thinking-header" onclick="toggleThinking(this)">' +
+      const latestType = content.length ? content[content.length - 1].type : '';
+      const thinkingActive = isActiveStream && latestType === 'thinking';
+      const thinkingLabel = thinkingActive ? 'THINKING' : 'THINKED';
+      const thinkingDuration = thinkingActive ? '' : formatThinkingDuration(Date.now() - messageTimestampMs(msg));
+      body += '<div class="thinking-block' + (thinkingActive ? ' active' : '') + '"><div class="thinking-header" onclick="toggleThinking(this)">' +
         '<svg class="thinking-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1.5C5 1.5 3 3.5 3 6c0 1.5.8 2.7 2 3.5V12a1 1 0 001 1h4a1 1 0 001-1V9.5c1.2-.8 2-2 2-3.5 0-2.5-2-4.5-5-4.5z"/><path d="M6 14.5h4"/></svg>' +
-        '<span class="thinking-label">Thinking</span><span class="thinking-chevron">▸</span></div>' +
+        '<span class="thinking-label">' + thinkingLabel + '</span>' +
+        (thinkingDuration ? '<span class="thinking-duration">' + thinkingDuration + '</span>' : '') +
+        '<span class="thinking-chevron">▸</span></div>' +
         '<div class="thinking-content">' + renderMarkdown(thinking) + '</div></div>';
     }
 
@@ -309,22 +312,21 @@ function renderMessage(raw, toolResultMap) {
       trackTool(tc.name);
       // 通过 tc.id 查找对应的 toolResult
       const result = toolResultMap && tc.id ? toolResultMap[tc.id] : null;
-      const hasResult = !!result;
       const tcStatus = result ? (result.isError ? 's-error' : 's-success') : 's-running';
-      const argsDisplay = formatToolArgs(tc);
+      const toolTitle = formatToolTitle(tc);
       const resultOutput = result ? result.output : '';
-      // 折叠态显示：工具名 + 参数摘要（有结果时显示输出摘要）
-      const headerPreview = hasResult ? escapeHtml(resultOutput.slice(0, 100)) : escapeHtml(argsDisplay.slice(0, 100));
+      const bodyOutput = resultOutput || formatToolArgs(tc);
 
       body += '<div class="tool-call" onclick="toggleToolCall(this)">' +
         '<div class="tool-track"><div class="tool-icon">' + toolIcon(tc.name) + '</div>' +
-        '<span class="tool-name">' + escapeHtml(tc.name) + '</span></div>' +
+        '</div>' +
         '<div class="tool-content"><div class="tool-header">' +
         '<span class="tool-call-status ' + tcStatus + '"></span>' +
-        '<span class="tool-call-args">' + headerPreview + '</span>' +
+        '<span class="tool-name">' + escapeHtml(toolTitle.name) + '</span>' +
+        '<span class="tool-call-args">' + escapeHtml(toolTitle.arg) + '</span>' +
         '<span class="tool-call-toggle">▸</span></div></div>' +
         '<div class="tool-call-body"><pre style="white-space:pre-wrap;margin:0;font-size:11.5px">' +
-        escapeHtml(resultOutput || argsDisplay) + '</pre></div></div>';
+        escapeHtml(bodyOutput) + '</pre></div></div>';
     }
 
     const text = extractText(content);
@@ -373,6 +375,29 @@ function formatToolArgs(tc) {
   return JSON.stringify(args);
 }
 
+function formatToolTitle(tc) {
+  const name = tc.name || 'Tool';
+  const args = tc.arguments || {};
+  if (typeof args === 'string') return { name, arg: args };
+  if (name === 'Bash' && args.command) return { name, arg: args.command };
+  if (name === 'Read') return { name, arg: args.file_path || args.path || '' };
+  if (name === 'Write') return { name, arg: args.file_path || args.path || '' };
+  if (name === 'Edit') return { name, arg: args.file_path || args.path || '' };
+  if (name === 'Find') {
+    const parts = [];
+    if (args.pattern) parts.push(args.pattern);
+    if (args.path && args.path !== '.') parts.push(args.path);
+    return { name, arg: parts.join(' ') };
+  }
+  if (name === 'Grep') {
+    const parts = [];
+    if (args.pattern) parts.push(args.pattern);
+    if (args.path) parts.push(args.path);
+    return { name, arg: parts.join(' ') };
+  }
+  return { name, arg: formatToolArgs(tc) };
+}
+
 // =============== Content Block Extraction ===============
 
 function extractText(content) {
@@ -384,6 +409,31 @@ function extractThinking(content) {
   if (!Array.isArray(content)) return null;
   const blocks = content.filter(b => b.type === 'thinking');
   return blocks.length > 0 ? blocks.map(b => b.thinking).join('\n') : null;
+}
+
+function attachStreamCursor(messageEl) {
+  if (messageEl.querySelector('.stream-cursor')) return;
+  const targets = messageEl.querySelectorAll('.msg-content.markdown-body, .thinking-content, .msg-content, .msg-body');
+  const target = targets[targets.length - 1];
+  if (!target) return;
+  const cursor = document.createElement('span');
+  cursor.className = 'stream-cursor';
+  cursor.textContent = '▌';
+  target.appendChild(cursor);
+}
+
+function messageTimestampMs(msg) {
+  const ts = Number(msg.timestamp || 0);
+  if (!Number.isFinite(ts) || ts <= 0) return Date.now();
+  return ts < 100000000000 ? ts * 1000 : ts;
+}
+
+function formatThinkingDuration(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return seconds + 's';
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes + 'm' + (rest ? ' ' + rest + 's' : '');
 }
 
 // =============== Tool Events ===============
@@ -544,11 +594,11 @@ async function dispatchSlashCommand(text) {
       let level = args.toLowerCase();
       if (!levels.includes(level)) {
         // Cycle to next
-        const current = currentSettings?.defaultThinkingLevel?.toLowerCase() || 'off';
+        const current = currentSettings?.thinking_level?.toLowerCase() || 'off';
         const idx = levels.indexOf(current);
         level = levels[(idx + 1) % levels.length];
       }
-      await saveSetting('defaultThinkingLevel', level);
+      await saveSetting('thinking', level);
       showNotification('Thinking level: ' + level);
       return true;
     }
@@ -616,6 +666,13 @@ function renderSessionList() {
   ).join('');
 }
 
+function showSidebarError(id, message) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '<div style="padding:12px;font-size:11px;color:var(--danger);line-height:1.4">' +
+    escapeHtml(message) + '</div>';
+}
+
 function formatSessionDate(dateStr) {
   if (!dateStr) return '';
   try {
@@ -668,9 +725,9 @@ function renderModelSelector() {
       '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.name || m.id) +
       ' (' + escapeHtml(m.provider || '') + ')</option>'
     ).join('');
+    const currentModelId = currentSettings?.model_id || document.getElementById('modelSelector')?.textContent || '';
+    if (currentModelId && models.some(m => m.id === currentModelId)) select.value = currentModelId;
   }
-  const btn = document.getElementById('modelSelector');
-  if (btn && models.length) btn.textContent = models[0].id;
 }
 
 async function onModelChange(modelId) {
@@ -678,13 +735,27 @@ async function onModelChange(modelId) {
     await invoke('switch_model', { modelId: modelId });
     const state = await invoke('get_state');
     renderState(state);
+    currentSettings = await invoke('get_settings');
+    renderSettingsPane(currentSettings);
     const btn = document.getElementById('modelSelector');
     if (btn) btn.textContent = modelId;
   } catch (e) { showError(String(e)); }
 }
 
-function showModelPicker() {
-  if (!models.length) { toggleSettings(); return; }
+async function showModelPicker() {
+  if (!models.length) {
+    try {
+      models = await invoke('list_models');
+      renderModelSelector();
+    } catch (e) {
+      showError('list_models failed: ' + String(e));
+      return;
+    }
+  }
+  if (!models.length) {
+    showError('No models available');
+    return;
+  }
   // 使用 autocomplete popup 显示模型列表
   const popup = document.getElementById('autocomplete');
   if (!popup) return;
@@ -744,8 +815,8 @@ function renderSettingsPane(settings) {
 
   // Thinking level
   const thinkingSel = document.getElementById('settingsThinking');
-  if (thinkingSel && settings.defaultThinkingLevel) {
-    thinkingSel.value = settings.defaultThinkingLevel.toLowerCase();
+  if (thinkingSel && settings.thinking_level) {
+    thinkingSel.value = settings.thinking_level.toLowerCase();
   }
 
   // Permission mode
@@ -772,14 +843,14 @@ function renderSettingsPane(settings) {
 
   // Model selector in settings
   const modelSel = document.getElementById('settingsModelSelect');
-  if (modelSel && settings.defaultModel) {
-    modelSel.value = settings.defaultModel;
+  if (modelSel && settings.model_id) {
+    modelSel.value = settings.model_id;
   }
 
   // Provider info
   const providerEl = document.getElementById('settingsProvider');
-  if (providerEl && settings.defaultProvider) {
-    providerEl.textContent = settings.defaultProvider;
+  if (providerEl && settings.model_provider) {
+    providerEl.textContent = settings.model_provider;
   }
 
   // Render general pane settings with live controls
@@ -842,6 +913,7 @@ async function saveSetting(key, value) {
     await invoke('update_setting', { key: key, value: value });
     // Refresh settings state
     currentSettings = await invoke('get_settings');
+    renderSettingsPane(currentSettings);
   } catch (e) {
     console.warn('update_setting failed:', e);
     showError('Failed to save setting: ' + key);
