@@ -64,8 +64,7 @@ pub async fn consume_anthropic_stream(
                         output.usage.input = usage.input_tokens.unwrap_or(0);
                         output.usage.output = usage.output_tokens.unwrap_or(0);
                         output.usage.cache_read = usage.cache_read_input_tokens.unwrap_or(0);
-                        output.usage.cache_write =
-                            usage.cache_creation_input_tokens.unwrap_or(0);
+                        output.usage.cache_write = usage.cache_creation_input_tokens.unwrap_or(0);
                         output.usage.total_tokens = output.usage.input
                             + output.usage.output
                             + output.usage.cache_read
@@ -107,10 +106,7 @@ pub async fn consume_anthropic_stream(
                             });
                         }
                         "redacted_thinking" => {
-                            let sig = data
-                                .content_block
-                                .data
-                                .unwrap_or_default();
+                            let sig = data.content_block.data.unwrap_or_default();
                             output.content.push(ContentBlock::Thinking {
                                 thinking: "[Reasoning redacted]".to_string(),
                                 signature: Some(sig),
@@ -123,9 +119,8 @@ pub async fn consume_anthropic_stream(
                             });
                         }
                         "tool_use" => {
-                            let id = normalize_tool_call_id(
-                                &data.content_block.id.unwrap_or_default(),
-                            );
+                            let id =
+                                normalize_tool_call_id(&data.content_block.id.unwrap_or_default());
                             let raw_name = data.content_block.name.unwrap_or_default();
                             let name = if is_oauth {
                                 from_claude_code_name(&raw_name, tools)
@@ -150,10 +145,7 @@ pub async fn consume_anthropic_stream(
                 }
                 "content_block_delta" => {
                     let data: ContentBlockDeltaData = parse_event_data(&event.data)?;
-                    let our_index = block_index_map
-                        .get(data.index)
-                        .copied()
-                        .unwrap_or(0);
+                    let our_index = block_index_map.get(data.index).copied().unwrap_or(0);
 
                     match data.delta.delta_type.as_str() {
                         "text_delta" => {
@@ -213,10 +205,7 @@ pub async fn consume_anthropic_stream(
                 }
                 "content_block_stop" => {
                     let data: ContentBlockStopData = parse_event_data(&event.data)?;
-                    let our_index = block_index_map
-                        .get(data.index)
-                        .copied()
-                        .unwrap_or(0);
+                    let our_index = block_index_map.get(data.index).copied().unwrap_or(0);
 
                     // Finalize tool call arguments before borrowing for match
                     let is_tool_call = matches!(
@@ -264,8 +253,12 @@ pub async fn consume_anthropic_stream(
                         output.stop_reason = map_stop_reason(&reason);
                     }
                     if let Some(usage) = data.usage {
-                        if let Some(v) = usage.input_tokens { output.usage.input = v; }
-                        if let Some(v) = usage.output_tokens { output.usage.output = v; }
+                        if let Some(v) = usage.input_tokens {
+                            output.usage.input = v;
+                        }
+                        if let Some(v) = usage.output_tokens {
+                            output.usage.output = v;
+                        }
                         if let Some(v) = usage.cache_read_input_tokens {
                             output.usage.cache_read = v;
                         }

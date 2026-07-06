@@ -1,10 +1,10 @@
 //! Public stream entry points backed by the provider registry.
 
-use crate::event_stream::{create_event_stream, EventStream};
+use crate::event_stream::{EventStream, create_event_stream};
 use crate::registry::get_provider;
 use crate::types::{
-    Api, AssistantMessage, Context, Model, Provider, SimpleStreamOptions, StopReason, StreamOptions,
-    Usage, UsageCost,
+    Api, AssistantMessage, Context, Model, Provider, SimpleStreamOptions, StopReason,
+    StreamOptions, Usage, UsageCost,
 };
 
 pub type StreamEvent = crate::types::StreamEvent;
@@ -33,7 +33,11 @@ pub fn stream_simple(
     provider.stream_simple(model, context, options)
 }
 
-fn emit_unsupported_error(api: &Api, provider: &Provider, model_id: &str) -> EventStream<StreamEvent> {
+fn emit_unsupported_error(
+    api: &Api,
+    provider: &Provider,
+    model_id: &str,
+) -> EventStream<StreamEvent> {
     let (tx, rx) = create_event_stream();
     let error_msg = format!(
         "Provider {:?} (api: {:?}) is not yet implemented. Model '{}' cannot be used.",

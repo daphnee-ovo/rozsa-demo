@@ -1,6 +1,6 @@
 use ratatui::layout::Rect;
 use rozsa_tui::render::overlay::{
-    calculate_rect, Anchor, Margin, OverlayConfig, OverlaySize, OverlayStack,
+    Anchor, Margin, OverlayConfig, OverlaySize, OverlayStack, calculate_rect,
 };
 
 #[test]
@@ -50,7 +50,12 @@ fn margin_reduces_available_space() {
         anchor: Anchor::TopLeft,
         width: OverlaySize::Percent(100),
         height: OverlaySize::Percent(100),
-        margin: Margin { top: 2, bottom: 2, left: 5, right: 5 },
+        margin: Margin {
+            top: 2,
+            bottom: 2,
+            left: 5,
+            right: 5,
+        },
         ..Default::default()
     };
     let viewport = Rect::new(0, 0, 80, 24);
@@ -115,14 +120,20 @@ fn overlay_stack_focus_target_skips_hidden() {
 #[test]
 fn overlay_stack_focus_target_respects_captures_focus() {
     let mut stack = OverlayStack::default();
-    stack.push("bg".to_string(), OverlayConfig {
-        captures_focus: false,
-        ..Default::default()
-    });
-    stack.push("fg".to_string(), OverlayConfig {
-        captures_focus: true,
-        ..Default::default()
-    });
+    stack.push(
+        "bg".to_string(),
+        OverlayConfig {
+            captures_focus: false,
+            ..Default::default()
+        },
+    );
+    stack.push(
+        "fg".to_string(),
+        OverlayConfig {
+            captures_focus: true,
+            ..Default::default()
+        },
+    );
     assert_eq!(stack.focus_target().unwrap().id, "fg");
     // Remove "fg" — "bg" doesn't capture focus, so no focus target
     stack.pop();

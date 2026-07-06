@@ -74,7 +74,9 @@ impl<'de> serde::Deserialize<'de> for ContentBlock {
 }
 
 fn deserialize_content_block(value: &Value) -> Result<ContentBlock, String> {
-    let typ = value.get("type").and_then(Value::as_str)
+    let typ = value
+        .get("type")
+        .and_then(Value::as_str)
         .ok_or_else(|| format!("ContentBlock missing 'type': {value}"))?;
     match typ {
         "text" => Ok(ContentBlock::Text {
@@ -84,7 +86,10 @@ fn deserialize_content_block(value: &Value) -> Result<ContentBlock, String> {
         "thinking" => Ok(ContentBlock::Thinking {
             thinking: str_field(value, "thinking")?,
             signature: opt_str(value, "thinkingSignature"),
-            redacted: value.get("redacted").and_then(Value::as_bool).unwrap_or(false),
+            redacted: value
+                .get("redacted")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         }),
         "image" => Ok(ContentBlock::Image {
             data: str_field(value, "data")?,
@@ -93,7 +98,10 @@ fn deserialize_content_block(value: &Value) -> Result<ContentBlock, String> {
         "toolCall" => Ok(ContentBlock::ToolCall(ToolCall {
             id: str_field(value, "id")?,
             name: str_field(value, "name")?,
-            arguments: value.get("arguments").cloned().unwrap_or(Value::Object(Default::default())),
+            arguments: value
+                .get("arguments")
+                .cloned()
+                .unwrap_or(Value::Object(Default::default())),
         })),
         _ => Err(format!("unknown content block type: {typ}")),
     }
@@ -131,7 +139,8 @@ fn deserialize_user_content(value: &Value) -> Result<UserContent, String> {
         return Ok(UserContent::Text(text.to_string()));
     }
     if let Some(arr) = value.as_array() {
-        let blocks: Result<Vec<ContentBlock>, _> = arr.iter().map(deserialize_content_block).collect();
+        let blocks: Result<Vec<ContentBlock>, _> =
+            arr.iter().map(deserialize_content_block).collect();
         return Ok(UserContent::Blocks(blocks?));
     }
     Err(format!("cannot parse UserContent from: {value}"))
@@ -197,12 +206,13 @@ impl<'de> serde::Deserialize<'de> for Message {
 }
 
 fn deserialize_message(value: &Value) -> Result<Message, String> {
-    let role = value.get("role").and_then(Value::as_str)
+    let role = value
+        .get("role")
+        .and_then(Value::as_str)
         .ok_or_else(|| format!("Message missing 'role': {value}"))?;
     match role {
         "user" => {
-            let content = value.get("content")
-                .ok_or("user message missing content")?;
+            let content = value.get("content").ok_or("user message missing content")?;
             Ok(Message::User(UserMessage {
                 content: deserialize_user_content(content)?,
                 display_text: opt_str(value, "displayText"),
@@ -215,7 +225,10 @@ fn deserialize_message(value: &Value) -> Result<Message, String> {
             tool_name: str_field(value, "toolName")?,
             content: deserialize_content_blocks(value.get("content"))?,
             details: value.get("details").cloned().unwrap_or(Value::Null),
-            is_error: value.get("isError").and_then(Value::as_bool).unwrap_or(false),
+            is_error: value
+                .get("isError")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             timestamp: value.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
         })),
         _ => Err(format!("unknown message role: {role}")),
@@ -225,19 +238,31 @@ fn deserialize_message(value: &Value) -> Result<Message, String> {
 fn deserialize_assistant(value: &Value) -> Result<AssistantMessage, String> {
     Ok(AssistantMessage {
         content: deserialize_content_blocks(value.get("content"))?,
-        api: parse_api(value.get("api").and_then(Value::as_str).unwrap_or("anthropic-messages")),
-        provider: parse_provider(value.get("provider").and_then(Value::as_str).unwrap_or("anthropic")),
+        api: parse_api(
+            value
+                .get("api")
+                .and_then(Value::as_str)
+                .unwrap_or("anthropic-messages"),
+        ),
+        provider: parse_provider(
+            value
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or("anthropic"),
+        ),
         model: str_field(value, "model")?,
         response_model: opt_str(value, "responseModel"),
         response_id: opt_str(value, "responseId"),
         usage: deserialize_usage(value.get("usage")),
-        stop_reason: value.get("stopReason").and_then(Value::as_str)
-            .map(parse_stop_reason).unwrap_or(StopReason::Stop),
+        stop_reason: value
+            .get("stopReason")
+            .and_then(Value::as_str)
+            .map(parse_stop_reason)
+            .unwrap_or(StopReason::Stop),
         error_message: opt_str(value, "errorMessage"),
         timestamp: value.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
     })
 }
-
 
 fn deserialize_content_blocks(value: Option<&Value>) -> Result<Vec<ContentBlock>, String> {
     match value {
@@ -248,23 +273,51 @@ fn deserialize_content_blocks(value: Option<&Value>) -> Result<Vec<ContentBlock>
 }
 
 fn deserialize_usage(value: Option<&Value>) -> Usage {
-    let input = value.and_then(|v| v.get("input")).and_then(Value::as_u64).unwrap_or(0);
-    let output = value.and_then(|v| v.get("output")).and_then(Value::as_u64).unwrap_or(0);
-    let cache_read = value.and_then(|v| v.get("cacheRead")).and_then(Value::as_u64).unwrap_or(0);
-    let cache_write = value.and_then(|v| v.get("cacheWrite")).and_then(Value::as_u64).unwrap_or(0);
-    let total_tokens = value.and_then(|v| v.get("totalTokens")).and_then(Value::as_u64)
+    let input = value
+        .and_then(|v| v.get("input"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let output = value
+        .and_then(|v| v.get("output"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let cache_read = value
+        .and_then(|v| v.get("cacheRead"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let cache_write = value
+        .and_then(|v| v.get("cacheWrite"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let total_tokens = value
+        .and_then(|v| v.get("totalTokens"))
+        .and_then(Value::as_u64)
         .unwrap_or(input + output + cache_read + cache_write);
-    let cost = value.and_then(|v| v.get("cost")).map(|c| UsageCost {
-        input: c.get("input").and_then(Value::as_f64).unwrap_or(0.0),
-        output: c.get("output").and_then(Value::as_f64).unwrap_or(0.0),
-        cache_read: c.get("cacheRead").and_then(Value::as_f64).unwrap_or(0.0),
-        cache_write: c.get("cacheWrite").and_then(Value::as_f64).unwrap_or(0.0),
-        total: c.get("total").and_then(Value::as_f64).unwrap_or(0.0),
-    }).unwrap_or(UsageCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0, total: 0.0 });
-    Usage { input, output, cache_read, cache_write, total_tokens, cost }
+    let cost = value
+        .and_then(|v| v.get("cost"))
+        .map(|c| UsageCost {
+            input: c.get("input").and_then(Value::as_f64).unwrap_or(0.0),
+            output: c.get("output").and_then(Value::as_f64).unwrap_or(0.0),
+            cache_read: c.get("cacheRead").and_then(Value::as_f64).unwrap_or(0.0),
+            cache_write: c.get("cacheWrite").and_then(Value::as_f64).unwrap_or(0.0),
+            total: c.get("total").and_then(Value::as_f64).unwrap_or(0.0),
+        })
+        .unwrap_or(UsageCost {
+            input: 0.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+            total: 0.0,
+        });
+    Usage {
+        input,
+        output,
+        cache_read,
+        cache_write,
+        total_tokens,
+        cost,
+    }
 }
-
-
 
 // ─── Usage Serialize (camelCase wire format) ────────────────────────────────
 
@@ -350,7 +403,6 @@ fn parse_api(value: &str) -> Api {
     }
 }
 
-
 fn parse_provider(value: &str) -> Provider {
     match value {
         "anthropic" => Provider::Anthropic,
@@ -380,7 +432,6 @@ fn parse_provider(value: &str) -> Provider {
     }
 }
 
-
 fn parse_stop_reason(value: &str) -> StopReason {
     match value {
         "stop" | "Stop" => StopReason::Stop,
@@ -393,13 +444,16 @@ fn parse_stop_reason(value: &str) -> StopReason {
 }
 
 fn str_field(value: &Value, field: &str) -> Result<String, String> {
-    value.get(field)
+    value
+        .get(field)
         .and_then(Value::as_str)
         .map(ToString::to_string)
         .ok_or_else(|| format!("missing or invalid field: {field}"))
 }
 
 fn opt_str(value: &Value, field: &str) -> Option<String> {
-    value.get(field).and_then(Value::as_str).map(ToString::to_string)
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
 }
-

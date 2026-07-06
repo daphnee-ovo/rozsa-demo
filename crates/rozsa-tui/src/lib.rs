@@ -19,18 +19,18 @@
 // - [Protocol](../../packages/coding-agent/src/modes/native/protocol.ts)
 
 pub mod app;
-pub mod render;
-pub mod input;
-pub mod panels;
-pub mod widgets;
 #[allow(dead_code, unused_imports, clippy::large_enum_variant)]
 pub mod backend;
 #[allow(dead_code)]
 pub mod command;
+pub mod data;
+pub mod input;
+pub mod panels;
 pub mod protocol;
+pub mod render;
 pub mod theme;
 pub mod util;
-pub mod data;
+pub mod widgets;
 
 /// 统一换行符：\r\n 和 \r 归一化为 \n
 pub fn normalize_newlines(text: &str) -> String {

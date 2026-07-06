@@ -35,8 +35,16 @@ pub struct AgentLoopConfig {
     pub get_follow_up_messages: Option<Box<dyn Fn() -> Vec<AgentMessage> + Send + Sync>>,
     pub max_turns: Option<u32>,
     pub tool_execution: ToolExecutionMode,
-    pub pre_tool_use:
-        Option<Box<dyn Fn(PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<PreToolUseResult>> + Send>> + Send + Sync>>,
+    pub pre_tool_use: Option<
+        Box<
+            dyn Fn(
+                    PreToolUseContext,
+                ) -> std::pin::Pin<
+                    Box<dyn std::future::Future<Output = Option<PreToolUseResult>> + Send>,
+                > + Send
+                + Sync,
+        >,
+    >,
     pub post_tool_use:
         Option<Box<dyn Fn(&PostToolUseContext) -> Option<PostToolUseResult> + Send + Sync>>,
     pub tools: Vec<Arc<dyn Tool>>,

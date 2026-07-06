@@ -2,7 +2,7 @@
 //
 // 不需要真终端，不启动 socket，直接构造 AppState 然后断言渲染帧内容。
 
-use ratatui::{backend::TestBackend, buffer::Buffer, Terminal};
+use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use rozsa_core::messages::{AgentMessage, CustomAgentMessage};
 use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Message, Provider as ModelProvider, StopReason, ToolCall,

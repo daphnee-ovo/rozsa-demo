@@ -3,9 +3,9 @@ use rozsa_core::tool::{Tool, ToolError, ToolResult};
 use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
-use std::future::Future;
 use tokio::fs;
 use tokio_util::sync::CancellationToken;
 
@@ -45,10 +45,7 @@ impl FindTool {
         }
 
         // Skip common large directories
-        matches!(
-            name,
-            "node_modules" | "target" | ".git" | "dist" | "build"
-        )
+        matches!(name, "node_modules" | "target" | ".git" | "dist" | "build")
     }
 
     fn find_files<'a>(
@@ -125,10 +122,9 @@ impl FindTool {
         let mut results = Vec::new();
         let limit = DEFAULT_MAX_RESULTS;
 
-        let limit_reached =
-            Self::find_files(path, &regex, path, &mut results, limit)
-                .await
-                .map_err(|e| format!("Error searching directory: {}", e))?;
+        let limit_reached = Self::find_files(path, &regex, path, &mut results, limit)
+            .await
+            .map_err(|e| format!("Error searching directory: {}", e))?;
 
         if results.is_empty() {
             return Ok((

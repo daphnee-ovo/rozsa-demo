@@ -112,7 +112,10 @@ fn underscore_italic() {
     let lines = parse_markdown("hello _world_ end");
     assert_eq!(lines.len(), 1);
     let spans = &lines[0].spans;
-    let italic_span = spans.iter().find(|s| s.content.as_ref() == "world").unwrap();
+    let italic_span = spans
+        .iter()
+        .find(|s| s.content.as_ref() == "world")
+        .unwrap();
     assert!(italic_span.style.add_modifier.contains(Modifier::ITALIC));
 }
 
@@ -133,11 +136,17 @@ fn nested_bold_italic() {
     assert_eq!(lines.len(), 1);
     let spans = &lines[0].spans;
     // "bold " should be BOLD only
-    let bold_span = spans.iter().find(|s| s.content.as_ref() == "bold ").unwrap();
+    let bold_span = spans
+        .iter()
+        .find(|s| s.content.as_ref() == "bold ")
+        .unwrap();
     assert!(bold_span.style.add_modifier.contains(Modifier::BOLD));
     assert!(!bold_span.style.add_modifier.contains(Modifier::ITALIC));
     // "italic" should be BOLD + ITALIC
-    let italic_span = spans.iter().find(|s| s.content.as_ref() == "italic").unwrap();
+    let italic_span = spans
+        .iter()
+        .find(|s| s.content.as_ref() == "italic")
+        .unwrap();
     assert!(italic_span.style.add_modifier.contains(Modifier::BOLD));
     assert!(italic_span.style.add_modifier.contains(Modifier::ITALIC));
 }
@@ -148,13 +157,22 @@ fn nested_italic_inside_bold() {
     let lines = parse_markdown("**bold *nested* more**");
     assert_eq!(lines.len(), 1);
     let spans = &lines[0].spans;
-    let bold_span = spans.iter().find(|s| s.content.as_ref() == "bold ").unwrap();
+    let bold_span = spans
+        .iter()
+        .find(|s| s.content.as_ref() == "bold ")
+        .unwrap();
     assert!(bold_span.style.add_modifier.contains(Modifier::BOLD));
     assert!(!bold_span.style.add_modifier.contains(Modifier::ITALIC));
-    let nested_span = spans.iter().find(|s| s.content.as_ref() == "nested").unwrap();
+    let nested_span = spans
+        .iter()
+        .find(|s| s.content.as_ref() == "nested")
+        .unwrap();
     assert!(nested_span.style.add_modifier.contains(Modifier::BOLD));
     assert!(nested_span.style.add_modifier.contains(Modifier::ITALIC));
-    let more_span = spans.iter().find(|s| s.content.as_ref() == " more").unwrap();
+    let more_span = spans
+        .iter()
+        .find(|s| s.content.as_ref() == " more")
+        .unwrap();
     assert!(more_span.style.add_modifier.contains(Modifier::BOLD));
     assert!(!more_span.style.add_modifier.contains(Modifier::ITALIC));
 }
@@ -164,11 +182,19 @@ fn nested_italic_inside_bold() {
 #[test]
 fn hr_width_adapts_to_terminal() {
     let lines_narrow = parse_markdown_with_width("---", 40);
-    let text_narrow: String = lines_narrow[0].spans.iter().map(|s| s.content.as_ref()).collect();
+    let text_narrow: String = lines_narrow[0]
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
     let narrow_count = text_narrow.chars().filter(|&c| c == '─').count();
 
     let lines_wide = parse_markdown_with_width("---", 120);
-    let text_wide: String = lines_wide[0].spans.iter().map(|s| s.content.as_ref()).collect();
+    let text_wide: String = lines_wide[0]
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
     let wide_count = text_wide.chars().filter(|&c| c == '─').count();
 
     // Narrow terminal: width capped at terminal width
@@ -187,7 +213,8 @@ fn table_cell_inline_format() {
     let lines = parse_markdown(md);
     // Should render without crashing, and table contains styled content
     assert!(lines.len() >= 3); // top border + header + separator + data + bottom border
-    let all_text: String = lines.iter()
+    let all_text: String = lines
+        .iter()
         .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
         .collect::<Vec<_>>()
         .join("");
@@ -212,7 +239,10 @@ fn highlight_mark() {
     let lines = parse_markdown("hello ==highlighted== end");
     assert_eq!(lines.len(), 1);
     let spans = &lines[0].spans;
-    let hl_span = spans.iter().find(|s| s.content.as_ref() == "highlighted").unwrap();
+    let hl_span = spans
+        .iter()
+        .find(|s| s.content.as_ref() == "highlighted")
+        .unwrap();
     assert!(hl_span.style.add_modifier.contains(Modifier::REVERSED));
 }
 
@@ -223,7 +253,10 @@ fn inline_latex() {
     let lines = parse_markdown("The formula $E = mc^2$ is famous");
     assert_eq!(lines.len(), 1);
     let spans = &lines[0].spans;
-    let formula_span = spans.iter().find(|s| s.content.as_ref() == "E = mc^2").unwrap();
+    let formula_span = spans
+        .iter()
+        .find(|s| s.content.as_ref() == "E = mc^2")
+        .unwrap();
     assert!(formula_span.style.add_modifier.contains(Modifier::ITALIC));
 }
 
@@ -233,7 +266,8 @@ fn inline_latex() {
 fn block_latex() {
     let md = "text\n$$\n\\int_0^1 f(x) dx\n$$\nmore";
     let lines = parse_markdown(md);
-    let all_text: String = lines.iter()
+    let all_text: String = lines
+        .iter()
         .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
         .collect::<Vec<_>>()
         .join("|");

@@ -96,15 +96,11 @@ pub async fn fetch_rate_limits_from_auth(
         .await
         .map_err(RateLimitError::MissingCredentials)?
         .ok_or_else(|| {
-            RateLimitError::MissingCredentials(
-                "No codex-oauth credential in auth.json".to_string(),
-            )
+            RateLimitError::MissingCredentials("No codex-oauth credential in auth.json".to_string())
         })?;
 
     let account_id = read_account_id(auth_json_path, "codex-oauth").ok_or_else(|| {
-        RateLimitError::MissingCredentials(
-            "No accountId in codex-oauth credential".to_string(),
-        )
+        RateLimitError::MissingCredentials("No accountId in codex-oauth credential".to_string())
     })?;
 
     fetch_rate_limits(&access_token, &account_id, None).await

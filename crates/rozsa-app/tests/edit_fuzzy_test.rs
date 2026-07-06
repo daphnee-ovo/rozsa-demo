@@ -82,7 +82,10 @@ async fn test_crlf_file_preserves_line_endings() {
     let new_content = String::from_utf8(new_content_bytes).expect("Invalid UTF-8");
 
     // Check that CRLF is preserved
-    assert!(new_content.contains("\r\n"), "CRLF line endings were not preserved");
+    assert!(
+        new_content.contains("\r\n"),
+        "CRLF line endings were not preserved"
+    );
     assert!(new_content.contains("This is modified"));
     assert!(!new_content.contains("This is a test"));
 }
@@ -156,10 +159,7 @@ async fn test_bom_is_preserved() {
     let new_content = fs::read_to_string(&file_path).expect("Failed to read file");
 
     // Check that BOM is preserved
-    assert!(
-        new_content.starts_with('\u{feff}'),
-        "BOM was not preserved"
-    );
+    assert!(new_content.starts_with('\u{feff}'), "BOM was not preserved");
     assert!(new_content.contains("This is modified"));
     assert!(!new_content.contains("This is a test"));
 }

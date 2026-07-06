@@ -106,7 +106,8 @@ impl ReadTool {
         };
 
         // Apply truncation logic
-        let (output_lines, truncation) = Self::truncate_head(selected_lines, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES);
+        let (output_lines, truncation) =
+            Self::truncate_head(selected_lines, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES);
 
         // Check if first line exceeds limit
         if truncation.first_line_exceeds_limit {
@@ -295,8 +296,7 @@ impl Tool for ReadTool {
 
         match result {
             Ok((output, truncation)) => {
-                let details = serde_json::to_value(truncation)
-                    .unwrap_or(json!({}));
+                let details = serde_json::to_value(truncation).unwrap_or(json!({}));
 
                 Ok(ToolResult {
                     content: vec![ContentBlock::Text {
@@ -307,16 +307,14 @@ impl Tool for ReadTool {
                     terminate: false,
                 })
             }
-            Err(error_msg) => {
-                Ok(ToolResult {
-                    content: vec![ContentBlock::Text {
-                        text: error_msg,
-                        signature: None,
-                    }],
-                    details: json!({}),
-                    terminate: false,
-                })
-            }
+            Err(error_msg) => Ok(ToolResult {
+                content: vec![ContentBlock::Text {
+                    text: error_msg,
+                    signature: None,
+                }],
+                details: json!({}),
+                terminate: false,
+            }),
         }
     }
 }

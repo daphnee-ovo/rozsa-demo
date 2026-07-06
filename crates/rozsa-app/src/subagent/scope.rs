@@ -127,10 +127,7 @@ impl SubagentScope {
         // 3. bash — 检查命令前缀
         if tool_name == "bash" {
             if let Some(prefixes) = &self.bash_prefixes {
-                let cmd = args
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
                 let ok = prefixes.iter().any(|p| cmd.starts_with(p));
                 if !ok {
                     return Err(format!(
@@ -144,10 +141,7 @@ impl SubagentScope {
         // 4. skill — 检查 skill 名单
         if tool_name == "skill" {
             if let Some(allowed_skills) = &self.allowed_skills {
-                let skill = args
-                    .get("skill")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let skill = args.get("skill").and_then(|v| v.as_str()).unwrap_or("");
                 if !allowed_skills.iter().any(|s| s == skill) {
                     return Err(format!("skill '{}' is not in the allowed set", skill));
                 }

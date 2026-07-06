@@ -39,8 +39,8 @@
 // 相关文档:
 // - [SPEC](../../../../.dev-doc/refactor/tui/SPEC.md)
 
-use std::{env, error::Error, fs, io::Write, process::Command};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::{env, error::Error, fs, io::Write, process::Command};
 use unicode_segmentation::UnicodeSegmentation;
 
 use serde_json::Value;
@@ -48,13 +48,13 @@ use serde_json::Value;
 use crate::{
     app::{AppState, DialogState},
     input::editor::{EditorComponent, EditorMode},
-    panels::graph::handle_graph_key,
     input::keymap::matches_action,
     input::kill_ring::{LastAction, PushOpts},
+    panels::graph::handle_graph_key,
     panels::model_selector::handle_model_selector_key,
     panels::permission::handle_permission_key,
-    protocol::{send, ClientMessage, ImagePayload},
     panels::session_selector::handle_session_selector_key,
+    protocol::{ClientMessage, ImagePayload, send},
 };
 
 use super::{AtomicSpan, InputState, JumpDirection, SelectionAnchor, Writer};
@@ -319,7 +319,9 @@ fn shift_atomic_spans(input: &mut InputState, row: usize, after_col: usize, delt
 
 /// 移除指定位置的 atomic span。
 fn remove_atomic_span(input: &mut InputState, row: usize, col_start: usize) {
-    input.atomic_spans.retain(|s| !(s.row == row && s.col_start == col_start));
+    input
+        .atomic_spans
+        .retain(|s| !(s.row == row && s.col_start == col_start));
 }
 
 pub fn insert_char(input: &mut InputState, ch: char) {
@@ -345,9 +347,10 @@ pub fn find_atomic_span(input: &InputState) -> Option<&AtomicSpan> {
 
 /// 查找光标紧邻右侧的原子 span（用于 delete forward）。
 pub fn find_atomic_span_forward(input: &InputState) -> Option<&AtomicSpan> {
-    input.atomic_spans.iter().find(|span| {
-        span.row == input.cursor_row && input.cursor_col == span.col_start
-    })
+    input
+        .atomic_spans
+        .iter()
+        .find(|span| span.row == input.cursor_row && input.cursor_col == span.col_start)
 }
 
 pub fn delete_char_backward(input: &mut InputState) {
@@ -449,7 +452,10 @@ pub fn delete_word_backward_text(input: &mut InputState) -> String {
     if pos > 0 {
         let is_word = is_word_char(graphemes[pos - 1]);
         // 跳过同类字符（word 或标点）
-        while pos > 0 && is_word_char(graphemes[pos - 1]) == is_word && !graphemes[pos - 1].chars().all(|c| c.is_whitespace()) {
+        while pos > 0
+            && is_word_char(graphemes[pos - 1]) == is_word
+            && !graphemes[pos - 1].chars().all(|c| c.is_whitespace())
+        {
             pos -= 1;
         }
     }
@@ -475,7 +481,10 @@ pub fn delete_word_forward_text(input: &mut InputState) -> String {
     let mut pos = input.cursor_col;
     // 跳过同类字符
     let is_word = is_word_char(graphemes[pos]);
-    while pos < len && is_word_char(graphemes[pos]) == is_word && !graphemes[pos].chars().all(|c| c.is_whitespace()) {
+    while pos < len
+        && is_word_char(graphemes[pos]) == is_word
+        && !graphemes[pos].chars().all(|c| c.is_whitespace())
+    {
         pos += 1;
     }
     // 跳过尾随空白
@@ -622,7 +631,10 @@ pub fn move_word_forward(input: &mut InputState) {
     if pos < len {
         let starting_is_word = is_word_char(graphemes[pos]);
         // 跳过同类字符
-        while pos < len && is_word_char(graphemes[pos]) == starting_is_word && !graphemes[pos].chars().all(|c| c.is_whitespace()) {
+        while pos < len
+            && is_word_char(graphemes[pos]) == starting_is_word
+            && !graphemes[pos].chars().all(|c| c.is_whitespace())
+        {
             pos += 1;
         }
     }
@@ -646,7 +658,10 @@ pub fn move_word_backward(input: &mut InputState) {
     if pos > 0 {
         let target_is_word = is_word_char(graphemes[pos - 1]);
         // 跳过同类字符
-        while pos > 0 && is_word_char(graphemes[pos - 1]) == target_is_word && !graphemes[pos - 1].chars().all(|c| c.is_whitespace()) {
+        while pos > 0
+            && is_word_char(graphemes[pos - 1]) == target_is_word
+            && !graphemes[pos - 1].chars().all(|c| c.is_whitespace())
+        {
             pos -= 1;
         }
     }
@@ -702,13 +717,17 @@ pub fn handle_key(
     if let Some(ac_state) = state.autocomplete.take() {
         let current_text = input.text();
         let current_cursor = cursor_char_index(input);
-        let (next, action) = crate::panels::autocomplete::handle_autocomplete_key(key, ac_state.clone());
+        let (next, action) =
+            crate::panels::autocomplete::handle_autocomplete_key(key, ac_state.clone());
         state.autocomplete = next;
         match action {
             crate::panels::autocomplete::AutocompleteAction::ApplyAndSubmit => {
                 // 应用补全并提交（slash command + Enter）
-                let (new_text, _) =
-                    crate::panels::autocomplete::apply_completion(&current_text, current_cursor, &ac_state);
+                let (new_text, _) = crate::panels::autocomplete::apply_completion(
+                    &current_text,
+                    current_cursor,
+                    &ac_state,
+                );
                 let text = new_text.trim().to_string();
                 if !text.is_empty() {
                     input.history.push(text.clone());
@@ -727,8 +746,11 @@ pub fn handle_key(
             }
             crate::panels::autocomplete::AutocompleteAction::ApplyAndEdit => {
                 // 应用补全，继续编辑（Tab 或 @file + Enter）
-                let (new_text, new_cursor) =
-                    crate::panels::autocomplete::apply_completion(&current_text, current_cursor, &ac_state);
+                let (new_text, new_cursor) = crate::panels::autocomplete::apply_completion(
+                    &current_text,
+                    current_cursor,
+                    &ac_state,
+                );
                 input.set_text(new_text);
                 input.cursor_col = new_cursor;
                 // 补全刚应用成功 → 标记有效，不再发 autocomplete 请求
@@ -1180,12 +1202,16 @@ pub fn handle_key(
             input.cursor_col = grapheme_count(&input.lines[input.cursor_row]);
         }
         KeyCode::PageUp => {
-            let half_page = crossterm::terminal::size().map(|(_, h)| h / 2).unwrap_or(10) as usize;
+            let half_page = crossterm::terminal::size()
+                .map(|(_, h)| h / 2)
+                .unwrap_or(10) as usize;
             state.scroll = state.scroll.saturating_add(half_page);
             state.auto_scroll = false;
         }
         KeyCode::PageDown => {
-            let half_page = crossterm::terminal::size().map(|(_, h)| h / 2).unwrap_or(10) as usize;
+            let half_page = crossterm::terminal::size()
+                .map(|(_, h)| h / 2)
+                .unwrap_or(10) as usize;
             state.scroll = state.scroll.saturating_sub(half_page);
             if state.scroll == 0 {
                 state.auto_scroll = true;
@@ -1360,15 +1386,21 @@ fn handle_dialog_key(
     mut dialog: DialogState,
     keybindings: &std::collections::BTreeMap<String, Vec<String>>,
 ) -> Result<(), Box<dyn Error>> {
-    let is_cancel = matches_action(keybindings, key, "tui.select.cancel")
-        || matches!(key.code, KeyCode::Esc);
+    let is_cancel =
+        matches_action(keybindings, key, "tui.select.cancel") || matches!(key.code, KeyCode::Esc);
     let is_up = matches_action(keybindings, key, "tui.select.up")
         || matches!(key.code, KeyCode::Up)
-        || (key.code == KeyCode::Char('k') && key.modifiers == KeyModifiers::NONE && dialog.kind != "input" && dialog.kind != "editor")
+        || (key.code == KeyCode::Char('k')
+            && key.modifiers == KeyModifiers::NONE
+            && dialog.kind != "input"
+            && dialog.kind != "editor")
         || (key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL));
     let is_down = matches_action(keybindings, key, "tui.select.down")
         || matches!(key.code, KeyCode::Down)
-        || (key.code == KeyCode::Char('j') && key.modifiers == KeyModifiers::NONE && dialog.kind != "input" && dialog.kind != "editor")
+        || (key.code == KeyCode::Char('j')
+            && key.modifiers == KeyModifiers::NONE
+            && dialog.kind != "input"
+            && dialog.kind != "editor")
         || (key.code == KeyCode::Char('n') && key.modifiers.contains(KeyModifiers::CONTROL));
     let is_confirm = matches_action(keybindings, key, "tui.select.confirm")
         || matches!(key.code, KeyCode::Enter);
@@ -1417,12 +1449,20 @@ fn handle_dialog_key(
     } else if (key.code == KeyCode::Left || key.code == KeyCode::Right) && dialog.id == "settings" {
         // Settings dialog: Left/Right 循环切换当前选中项的值
         let real_index = if dialog.has_tabs() {
-            dialog.filtered_indices.get(dialog.selected).copied().unwrap_or(0)
+            dialog
+                .filtered_indices
+                .get(dialog.selected)
+                .copied()
+                .unwrap_or(0)
         } else {
             dialog.selected
         };
         // Theme 选项由 TUI 本地处理
-        let selected_opt = dialog.options.get(real_index).map(String::as_str).unwrap_or("");
+        let selected_opt = dialog
+            .options
+            .get(real_index)
+            .map(String::as_str)
+            .unwrap_or("");
         if selected_opt.contains("Theme:") {
             let new_theme = crate::theme::toggle_theme();
             send(
@@ -1435,13 +1475,21 @@ fn handle_dialog_key(
             // 更新 dialog 中 Theme 选项的显示文本
             let theme_label = format!(
                 "[Display] Theme: < {} >",
-                if crate::theme::is_dark_theme() { "dark" } else { "light" }
+                if crate::theme::is_dark_theme() {
+                    "dark"
+                } else {
+                    "light"
+                }
             );
             dialog.options[real_index] = theme_label;
             state.needs_full_redraw = true;
             state.dialog = Some(dialog);
         } else {
-            let direction = if key.code == KeyCode::Right { "1" } else { "-1" };
+            let direction = if key.code == KeyCode::Right {
+                "1"
+            } else {
+                "-1"
+            };
             let value = format!("{real_index}:{direction}");
             send(
                 writer,
@@ -1535,7 +1583,8 @@ fn open_external_editor(current_text: &str) -> Option<String> {
         crossterm::event::DisableMouseCapture,
         crossterm::event::DisableBracketedPaste,
         crossterm::terminal::LeaveAlternateScreen
-    ).ok()?;
+    )
+    .ok()?;
 
     let status = Command::new(&editor).arg(&tmp_path).status().ok()?;
 
@@ -1546,7 +1595,8 @@ fn open_external_editor(current_text: &str) -> Option<String> {
         crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
         crossterm::event::EnableBracketedPaste,
         crossterm::event::EnableMouseCapture
-    ).ok()?;
+    )
+    .ok()?;
     crossterm::terminal::enable_raw_mode().ok()?;
 
     if !status.success() {
@@ -1567,7 +1617,8 @@ fn suspend_process() {
         crossterm::event::DisableMouseCapture,
         crossterm::event::DisableBracketedPaste,
         crossterm::terminal::LeaveAlternateScreen
-    ).ok();
+    )
+    .ok();
 
     #[cfg(unix)]
     unsafe {
@@ -1580,7 +1631,7 @@ fn suspend_process() {
         crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
         crossterm::event::EnableBracketedPaste,
         crossterm::event::EnableMouseCapture
-    ).ok();
+    )
+    .ok();
     crossterm::terminal::enable_raw_mode().ok();
 }
-

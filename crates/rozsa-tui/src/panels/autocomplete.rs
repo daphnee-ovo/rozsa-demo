@@ -13,9 +13,7 @@
 // Related Docs:
 // - [TUI Design](../../../docs/rozsa_framework.md#rozsa-tui--ratatui-终端前端)
 
-use std::{
-    error::Error,
-};
+use std::error::Error;
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -26,10 +24,10 @@ use ratatui::{
 };
 
 use crate::{
-    util::fuzzy::fuzzy_match,
-    protocol::{send, ClientMessage, NativeAutocompleteItem},
     panels::sidebar::truncate,
+    protocol::{ClientMessage, NativeAutocompleteItem, send},
     theme::THEME,
+    util::fuzzy::fuzzy_match,
 };
 
 #[derive(Clone, Debug)]
@@ -228,9 +226,7 @@ pub fn handle_autocomplete_key(
             state.down();
             (Some(state), AutocompleteAction::KeepOpen)
         }
-        KeyCode::Tab => {
-            (None, AutocompleteAction::ApplyAndEdit)
-        }
+        KeyCode::Tab => (None, AutocompleteAction::ApplyAndEdit),
         KeyCode::Enter => {
             // Enter 行为取决于 prefix 类型：
             // "/" 前缀（slash command）→ 应用补全并提交

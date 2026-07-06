@@ -118,4 +118,3 @@ pub fn build_and_flatten(entries: &[SessionEntry], indices: &[usize]) -> Vec<Fla
     let roots = build_session_tree(entries, indices);
     flatten_tree(&roots)
 }
-

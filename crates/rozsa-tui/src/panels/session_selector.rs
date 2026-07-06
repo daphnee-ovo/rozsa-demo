@@ -29,10 +29,7 @@
 // Related Docs:
 // - [TUI Design](../../../docs/rozsa_framework.md#rozsa-tui--ratatui-终端前端)
 
-use std::{
-    error::Error,
-    time::Instant,
-};
+use std::{error::Error, time::Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -44,8 +41,8 @@ use ratatui::{
 use serde::Deserialize;
 
 use crate::{
-    protocol::{send, ClientMessage},
     panels::sidebar::truncate,
+    protocol::{ClientMessage, send},
     theme::THEME,
 };
 
@@ -202,7 +199,8 @@ impl SessionSelectorState {
         // 排序 + 树构建
         if self.sort_mode == SortMode::Threaded && query.is_empty() {
             let indices: Vec<usize> = after_search.iter().map(|(i, _)| *i).collect();
-            self.display_nodes = crate::data::session_tree::build_and_flatten(&self.entries, &indices);
+            self.display_nodes =
+                crate::data::session_tree::build_and_flatten(&self.entries, &indices);
         } else {
             let mut sorted = after_search;
             match self.sort_mode {
@@ -231,10 +229,16 @@ impl SessionSelectorState {
                 .collect();
         }
 
-        self.selected = self.selected.min(self.display_nodes.len().saturating_sub(1));
+        self.selected = self
+            .selected
+            .min(self.display_nodes.len().saturating_sub(1));
     }
 
-    pub fn set_entries(&mut self, entries: Vec<SessionEntry>, current_session_path: Option<String>) {
+    pub fn set_entries(
+        &mut self,
+        entries: Vec<SessionEntry>,
+        current_session_path: Option<String>,
+    ) {
         self.entries = entries;
         self.current_session_path = current_session_path;
         self.loading = false;
@@ -517,7 +521,7 @@ pub fn render_session_selector(
         .constraints([
             Constraint::Length(4), // header + hints
             Constraint::Length(2), // search + blank
-            Constraint::Min(3),   // list
+            Constraint::Min(3),    // list
             Constraint::Length(1), // scroll indicator / status
         ])
         .margin(1)
@@ -544,7 +548,8 @@ pub fn render_session_selector(
         NameFilter::All => "All",
         NameFilter::Named => "Named",
     };
-    let header_line1 = format!("{title}    {scope_indicator}  Sort: {sort_label}  Name: {name_label}");
+    let header_line1 =
+        format!("{title}    {scope_indicator}  Sort: {sort_label}  Name: {name_label}");
 
     let (hint_line1, hint_line2) = match &state.mode {
         SelectorMode::ConfirmDelete { .. } => (
@@ -564,11 +569,13 @@ pub fn render_session_selector(
         Line::styled(header_line1, Style::default().add_modifier(Modifier::BOLD)),
         Line::styled(
             hint_line1,
-            Style::default().fg(if matches!(state.mode, SelectorMode::ConfirmDelete { .. }) {
-                THEME.error
-            } else {
-                THEME.dim
-            }),
+            Style::default().fg(
+                if matches!(state.mode, SelectorMode::ConfirmDelete { .. }) {
+                    THEME.error
+                } else {
+                    THEME.dim
+                },
+            ),
         ),
         Line::styled(hint_line2, Style::default().fg(THEME.dim)),
     ];
@@ -587,15 +594,20 @@ pub fn render_session_selector(
             }
         }
     };
-    let search = Paragraph::new(search_text)
-        .block(Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(THEME.border_muted)));
+    let search = Paragraph::new(search_text).block(
+        Block::default()
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(THEME.border_muted)),
+    );
     frame.render_widget(search, chunks[1]);
 
     // === Session List ===
     let list_height = chunks[2].height as usize;
     if state.display_nodes.is_empty() {
         let empty_msg = match (&state.scope, &state.name_filter) {
-            (Scope::Current, NameFilter::Named) => "No named sessions. Press ^N to show all, or Tab for all folders.",
+            (Scope::Current, NameFilter::Named) => {
+                "No named sessions. Press ^N to show all, or Tab for all folders."
+            }
             (Scope::Current, _) => "No sessions in current folder. Press Tab to view all.",
             (_, NameFilter::Named) => "No named sessions found. Press ^N to show all.",
             _ => "No sessions found.",
@@ -603,9 +615,10 @@ pub fn render_session_selector(
         let empty = Paragraph::new(Line::styled(empty_msg, Style::default().fg(THEME.dim)));
         frame.render_widget(empty, chunks[2]);
     } else {
-        let start = state.selected.saturating_sub(list_height / 2).min(
-            state.display_nodes.len().saturating_sub(list_height),
-        );
+        let start = state
+            .selected
+            .saturating_sub(list_height / 2)
+            .min(state.display_nodes.len().saturating_sub(list_height));
         let start = start.min(state.display_nodes.len().saturating_sub(1));
         let end = (start + list_height).min(state.display_nodes.len());
 
@@ -657,7 +670,8 @@ pub fn render_session_selector(
             let truncated_name = truncate(&normalized, available.max(8));
 
             // 样式
-            let fg_color = if matches!(state.mode, SelectorMode::ConfirmDelete { ref path } if *path == entry.path) {
+            let fg_color = if matches!(state.mode, SelectorMode::ConfirmDelete { ref path } if *path == entry.path)
+            {
                 THEME.error
             } else if is_current {
                 THEME.accent
@@ -672,7 +686,8 @@ pub fn render_session_selector(
                 style = style.add_modifier(Modifier::BOLD);
             }
 
-            let spacing = w.saturating_sub(2 + prefix_len + truncated_name.chars().count() + right_len);
+            let spacing =
+                w.saturating_sub(2 + prefix_len + truncated_name.chars().count() + right_len);
             let line_text = format!(
                 "{cursor}{prefix}{truncated_name}{}{right}",
                 " ".repeat(spacing.max(1))

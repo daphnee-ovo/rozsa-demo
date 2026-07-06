@@ -1,7 +1,7 @@
-pub mod scope;
-pub mod runtime;
 pub mod manager;
+pub mod runtime;
+pub mod scope;
 
+pub use manager::{SharedResources, SpawnConfig, SubagentManager, SubagentSnapshot};
 pub use runtime::{SubagentInfo, SubagentStatus};
-pub use manager::{SubagentManager, SpawnConfig, SubagentSnapshot, SharedResources};
 pub use scope::SubagentScope;

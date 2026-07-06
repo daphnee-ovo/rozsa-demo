@@ -1,7 +1,8 @@
 use rozsa_tui::input::keys::{
     cursor_char_index, delete_char_backward, delete_char_forward, delete_word_backward_text,
-    delete_word_forward_text, grapheme_count, grapheme_skip, grapheme_take, grapheme_to_byte_offset,
-    insert_char, insert_text_at_cursor, is_autocomplete_context, is_word_char, jump_to_char, undo,
+    delete_word_forward_text, grapheme_count, grapheme_skip, grapheme_take,
+    grapheme_to_byte_offset, insert_char, insert_text_at_cursor, is_autocomplete_context,
+    is_word_char, jump_to_char, undo,
 };
 use rozsa_tui::input::kill_ring::PushOpts;
 use rozsa_tui::input::{InputState, JumpDirection, SelectionAnchor};

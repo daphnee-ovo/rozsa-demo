@@ -21,8 +21,7 @@ use crate::types::{
     SimpleStreamOptions, StreamOptions, ThinkingLevel, ToolCall, ToolSchema,
 };
 
-const NON_VISION_USER_IMAGE_PLACEHOLDER: &str =
-    "(image omitted: model does not support images)";
+const NON_VISION_USER_IMAGE_PLACEHOLDER: &str = "(image omitted: model does not support images)";
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER: &str =
     "(tool image omitted: model does not support images)";
 
@@ -32,9 +31,23 @@ const INTERLEAVED_THINKING_BETA: &str = "interleaved-thinking-2025-05-14";
 const CLAUDE_CODE_VERSION: &str = "2.1.75";
 
 const CLAUDE_CODE_TOOLS: &[&str] = &[
-    "Read", "Write", "Edit", "Bash", "Grep", "Glob", "AskUserQuestion",
-    "EnterPlanMode", "ExitPlanMode", "KillShell", "NotebookEdit", "Skill",
-    "Task", "TaskOutput", "TodoWrite", "WebFetch", "WebSearch",
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Grep",
+    "Glob",
+    "AskUserQuestion",
+    "EnterPlanMode",
+    "ExitPlanMode",
+    "KillShell",
+    "NotebookEdit",
+    "Skill",
+    "Task",
+    "TaskOutput",
+    "TodoWrite",
+    "WebFetch",
+    "WebSearch",
 ];
 
 /// Resolved compat flags for Anthropic-compatible providers.
@@ -51,26 +64,23 @@ pub struct AnthropicCompat {
 pub fn resolve_compat(model: &Model) -> AnthropicCompat {
     let provider_id = provider_str(&model.provider);
     let is_fireworks = provider_id == "fireworks";
-    let is_cloudflare_anthropic = provider_id == "cloudflare-ai-gateway"
-        && model.base_url.contains("anthropic");
+    let is_cloudflare_anthropic =
+        provider_id == "cloudflare-ai-gateway" && model.base_url.contains("anthropic");
     let compat_val = model.compat.as_ref();
 
     AnthropicCompat {
         supports_eager_tool_input_streaming: compat_bool(
-            compat_val, "supportsEagerToolInputStreaming",
-        ).unwrap_or(!is_fireworks),
-        supports_long_cache_retention: compat_bool(
-            compat_val, "supportsLongCacheRetention",
-        ).unwrap_or(!is_fireworks),
-        send_session_affinity_headers: compat_bool(
-            compat_val, "sendSessionAffinityHeaders",
-        ).unwrap_or(is_fireworks || is_cloudflare_anthropic),
-        supports_cache_control_on_tools: compat_bool(
-            compat_val, "supportsCacheControlOnTools",
-        ).unwrap_or(!is_fireworks),
-        force_adaptive_thinking: compat_bool(
-            compat_val, "forceAdaptiveThinking",
-        ).unwrap_or(false),
+            compat_val,
+            "supportsEagerToolInputStreaming",
+        )
+        .unwrap_or(!is_fireworks),
+        supports_long_cache_retention: compat_bool(compat_val, "supportsLongCacheRetention")
+            .unwrap_or(!is_fireworks),
+        send_session_affinity_headers: compat_bool(compat_val, "sendSessionAffinityHeaders")
+            .unwrap_or(is_fireworks || is_cloudflare_anthropic),
+        supports_cache_control_on_tools: compat_bool(compat_val, "supportsCacheControlOnTools")
+            .unwrap_or(!is_fireworks),
+        force_adaptive_thinking: compat_bool(compat_val, "forceAdaptiveThinking").unwrap_or(false),
     }
 }
 
@@ -106,7 +116,11 @@ pub fn build_messages_payload(
             &context.tools,
             is_oauth,
             compat.supports_eager_tool_input_streaming,
-            if compat.supports_cache_control_on_tools { cache_control.as_ref() } else { None },
+            if compat.supports_cache_control_on_tools {
+                cache_control.as_ref()
+            } else {
+                None
+            },
         );
     }
 
@@ -241,21 +255,30 @@ fn convert_messages(
                 let blocks = match &user_msg.content {
                     crate::types::UserContent::Text(text) => {
                         let text = sanitize(text);
-                        if text.trim().is_empty() { i += 1; continue; }
+                        if text.trim().is_empty() {
+                            i += 1;
+                            continue;
+                        }
                         json!([{ "type": "text", "text": text }])
                     }
-                    crate::types::UserContent::Blocks(blocks) => {
-                        convert_user_blocks(
-                            blocks, supports_images, NON_VISION_USER_IMAGE_PLACEHOLDER,
-                        )
-                    }
+                    crate::types::UserContent::Blocks(blocks) => convert_user_blocks(
+                        blocks,
+                        supports_images,
+                        NON_VISION_USER_IMAGE_PLACEHOLDER,
+                    ),
                 };
-                if blocks.as_array().is_some_and(|a| a.is_empty()) { i += 1; continue; }
+                if blocks.as_array().is_some_and(|a| a.is_empty()) {
+                    i += 1;
+                    continue;
+                }
                 params.push(json!({ "role": "user", "content": blocks }));
             }
             Message::Assistant(msg) => {
                 let blocks = convert_assistant_blocks(&msg.content, is_oauth);
-                if blocks.as_array().is_some_and(|a| a.is_empty()) { i += 1; continue; }
+                if blocks.as_array().is_some_and(|a| a.is_empty()) {
+                    i += 1;
+                    continue;
+                }
                 params.push(json!({ "role": "assistant", "content": blocks }));
             }
             Message::ToolResult(tr) => {
@@ -291,11 +314,7 @@ fn convert_messages(
     Value::Array(params)
 }
 
-fn convert_user_blocks(
-    blocks: &[ContentBlock],
-    supports_images: bool,
-    placeholder: &str,
-) -> Value {
+fn convert_user_blocks(blocks: &[ContentBlock], supports_images: bool, placeholder: &str) -> Value {
     let mut result: Vec<Value> = Vec::new();
     let mut prev_placeholder = false;
 
@@ -325,9 +344,9 @@ fn convert_user_blocks(
     }
 
     if !result.is_empty()
-        && result.iter().all(|b| {
-            b.get("type").and_then(|v| v.as_str()) == Some("image")
-        })
+        && result
+            .iter()
+            .all(|b| b.get("type").and_then(|v| v.as_str()) == Some("image"))
     {
         result.insert(0, json!({ "type": "text", "text": "(see attached image)" }));
     }
@@ -346,7 +365,11 @@ fn convert_assistant_blocks(blocks: &[ContentBlock], is_oauth: bool) -> Value {
                     result.push(json!({ "type": "text", "text": text }));
                 }
             }
-            ContentBlock::Thinking { thinking, signature, redacted } => {
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+                redacted,
+            } => {
                 if *redacted {
                     if let Some(sig) = signature {
                         result.push(json!({ "type": "redacted_thinking", "data": sig }));
@@ -354,7 +377,9 @@ fn convert_assistant_blocks(blocks: &[ContentBlock], is_oauth: bool) -> Value {
                     continue;
                 }
                 let thinking = sanitize(thinking);
-                if thinking.trim().is_empty() { continue; }
+                if thinking.trim().is_empty() {
+                    continue;
+                }
                 match signature {
                     Some(sig) if !sig.trim().is_empty() => {
                         result.push(json!({
@@ -366,7 +391,11 @@ fn convert_assistant_blocks(blocks: &[ContentBlock], is_oauth: bool) -> Value {
                     }
                 }
             }
-            ContentBlock::ToolCall(ToolCall { id, name, arguments }) => {
+            ContentBlock::ToolCall(ToolCall {
+                id,
+                name,
+                arguments,
+            }) => {
                 let tool_name = if is_oauth {
                     to_claude_code_name(name)
                 } else {
@@ -383,10 +412,7 @@ fn convert_assistant_blocks(blocks: &[ContentBlock], is_oauth: bool) -> Value {
     Value::Array(result)
 }
 
-fn build_tool_result_block(
-    tr: &crate::types::ToolResultMessage,
-    supports_images: bool,
-) -> Value {
+fn build_tool_result_block(tr: &crate::types::ToolResultMessage, supports_images: bool) -> Value {
     let content = convert_tool_result_content(&tr.content, supports_images);
     json!({
         "type": "tool_result",
@@ -397,7 +423,9 @@ fn build_tool_result_block(
 }
 
 fn convert_tool_result_content(blocks: &[ContentBlock], supports_images: bool) -> Value {
-    let has_images = blocks.iter().any(|b| matches!(b, ContentBlock::Image { .. }));
+    let has_images = blocks
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Image { .. }));
     if !has_images {
         let text: String = blocks
             .iter()
@@ -423,18 +451,34 @@ fn convert_tools(
         .iter()
         .enumerate()
         .map(|(i, tool)| {
-            let name = if is_oauth { to_claude_code_name(&tool.name) } else { tool.name.clone() };
-            let props = tool.parameters.get("properties").cloned().unwrap_or(json!({}));
-            let req = tool.parameters.get("required").cloned().unwrap_or(json!([]));
+            let name = if is_oauth {
+                to_claude_code_name(&tool.name)
+            } else {
+                tool.name.clone()
+            };
+            let props = tool
+                .parameters
+                .get("properties")
+                .cloned()
+                .unwrap_or(json!({}));
+            let req = tool
+                .parameters
+                .get("required")
+                .cloned()
+                .unwrap_or(json!([]));
 
             let mut t = json!({
                 "name": name,
                 "description": tool.description,
                 "input_schema": { "type": "object", "properties": props, "required": req },
             });
-            if eager { t["eager_input_streaming"] = json!(true); }
+            if eager {
+                t["eager_input_streaming"] = json!(true);
+            }
             if i == last_idx {
-                if let Some(cc) = cache_control { t["cache_control"] = cc.clone(); }
+                if let Some(cc) = cache_control {
+                    t["cache_control"] = cc.clone();
+                }
             }
             t
         })
@@ -454,18 +498,24 @@ fn build_system_prompt(
                 "type": "text",
                 "text": "You are Claude Code, Anthropic's official CLI for Claude.",
             });
-            if let Some(cc) = cache_control { b["cache_control"] = cc.clone(); }
+            if let Some(cc) = cache_control {
+                b["cache_control"] = cc.clone();
+            }
             b
         }];
         if let Some(prompt) = &context.system_prompt {
             let mut b = json!({ "type": "text", "text": sanitize(prompt) });
-            if let Some(cc) = cache_control { b["cache_control"] = cc.clone(); }
+            if let Some(cc) = cache_control {
+                b["cache_control"] = cc.clone();
+            }
             blocks.push(b);
         }
         payload["system"] = Value::Array(blocks);
     } else if let Some(prompt) = &context.system_prompt {
         let mut b = json!({ "type": "text", "text": sanitize(prompt) });
-        if let Some(cc) = cache_control { b["cache_control"] = cc.clone(); }
+        if let Some(cc) = cache_control {
+            b["cache_control"] = cc.clone();
+        }
         payload["system"] = json!([b]);
     }
 }

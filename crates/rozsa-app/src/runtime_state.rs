@@ -47,9 +47,26 @@ const THINK_FIRST_BLOCKED_TOOLS: &[&str] = &["edit", "write"];
 
 /// Bash command prefixes allowed in think_first mode (read-only commands).
 const THINK_FIRST_BASH_ALLOWED_PREFIXES: &[&str] = &[
-    "ls", "cat", "head", "tail", "wc", "sort", "diff", "grep", "find",
-    "which", "type", "pwd", "echo", "git status", "git log", "git diff",
-    "git show", "git branch", "git blame", "git tag",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "diff",
+    "grep",
+    "find",
+    "which",
+    "type",
+    "pwd",
+    "echo",
+    "git status",
+    "git log",
+    "git diff",
+    "git show",
+    "git branch",
+    "git blame",
+    "git tag",
 ];
 
 impl EditMode {
@@ -65,12 +82,15 @@ impl EditMode {
             ));
         }
         if tool_name == "bash" {
-            let cmd = args.get("command")
+            let cmd = args
+                .get("command")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .trim();
             if !cmd.is_empty()
-                && !THINK_FIRST_BASH_ALLOWED_PREFIXES.iter().any(|p| cmd.starts_with(p))
+                && !THINK_FIRST_BASH_ALLOWED_PREFIXES
+                    .iter()
+                    .any(|p| cmd.starts_with(p))
             {
                 let truncated: String = cmd.chars().take(60).collect();
                 return Some(format!(
@@ -111,12 +131,13 @@ impl RuntimeState {
 
     /// Record a tool invocation, tracking call and error counts.
     pub fn record_tool_call(&mut self, tool_name: &str, is_error: bool) {
-        let stats = self.tool_stats.entry(tool_name.to_owned()).or_insert_with(|| {
-            ToolCallStats {
+        let stats = self
+            .tool_stats
+            .entry(tool_name.to_owned())
+            .or_insert_with(|| ToolCallStats {
                 tool_name: tool_name.to_owned(),
                 ..Default::default()
-            }
-        });
+            });
         stats.call_count += 1;
         if is_error {
             stats.error_count += 1;

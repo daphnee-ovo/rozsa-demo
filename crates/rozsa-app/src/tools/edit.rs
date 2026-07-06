@@ -1,3 +1,4 @@
+use super::file_lock;
 use rozsa_core::tool::{Tool, ToolError, ToolResult};
 use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
@@ -5,7 +6,6 @@ use serde_json::json;
 use std::path::Path;
 use tokio::fs;
 use tokio_util::sync::CancellationToken;
-use super::file_lock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct EditParams {
@@ -307,9 +307,7 @@ impl Tool for EditTool {
                     terminate: false,
                 })
             }
-            Err(error_msg) => {
-                Err(ToolError::Execution(error_msg))
-            }
+            Err(error_msg) => Err(ToolError::Execution(error_msg)),
         }
     }
 }

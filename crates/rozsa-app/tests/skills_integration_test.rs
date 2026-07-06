@@ -1,8 +1,8 @@
 //! Integration tests for Skill Registry system.
 //! Tests use explicit paths to avoid HOME environment pollution.
 
-use rozsa_app::skills::loader::{load_skills_from_dirs, SkillScope};
 use rozsa_app::skills::SkillRegistry;
+use rozsa_app::skills::loader::{SkillScope, load_skills_from_dirs};
 use std::fs;
 use tempfile::TempDir;
 
@@ -43,9 +43,21 @@ fn priority_override_across_dirs() {
     fs::create_dir_all(&agents_dir).unwrap();
     fs::create_dir_all(&user_dir).unwrap();
 
-    create_skill(&user_dir, "deploy", "---\nname: deploy\ndescription: User deploy\n---\nUser.");
-    create_skill(&agents_dir, "deploy", "---\nname: deploy\ndescription: Agents deploy\n---\nAgents.");
-    create_skill(&project_dir, "deploy", "---\nname: deploy\ndescription: Project deploy\n---\nProject.");
+    create_skill(
+        &user_dir,
+        "deploy",
+        "---\nname: deploy\ndescription: User deploy\n---\nUser.",
+    );
+    create_skill(
+        &agents_dir,
+        "deploy",
+        "---\nname: deploy\ndescription: Agents deploy\n---\nAgents.",
+    );
+    create_skill(
+        &project_dir,
+        "deploy",
+        "---\nname: deploy\ndescription: Project deploy\n---\nProject.",
+    );
 
     let result = load_skills_from_dirs(&[
         (project_dir, SkillScope::Project),
@@ -55,8 +67,14 @@ fn priority_override_across_dirs() {
     let registry = SkillRegistry::new(result.skills);
 
     assert_eq!(registry.list().len(), 1);
-    assert_eq!(registry.find_by_name("deploy").unwrap().description, "Project deploy");
-    assert_eq!(registry.find_by_name("deploy").unwrap().scope, SkillScope::Project);
+    assert_eq!(
+        registry.find_by_name("deploy").unwrap().description,
+        "Project deploy"
+    );
+    assert_eq!(
+        registry.find_by_name("deploy").unwrap().scope,
+        SkillScope::Project
+    );
 }
 
 #[test]
@@ -69,9 +87,21 @@ fn format_for_prompt_with_multiple_scopes() {
     fs::create_dir_all(&agents_dir).unwrap();
     fs::create_dir_all(&user_dir).unwrap();
 
-    create_skill(&project_dir, "build", "---\nname: build\ndescription: Build project\n---\nBuild.");
-    create_skill(&agents_dir, "lint", "---\nname: lint\ndescription: Lint code\n---\nLint.");
-    create_skill(&user_dir, "helper", "---\nname: helper\ndescription: My helper\n---\nHelper.");
+    create_skill(
+        &project_dir,
+        "build",
+        "---\nname: build\ndescription: Build project\n---\nBuild.",
+    );
+    create_skill(
+        &agents_dir,
+        "lint",
+        "---\nname: lint\ndescription: Lint code\n---\nLint.",
+    );
+    create_skill(
+        &user_dir,
+        "helper",
+        "---\nname: helper\ndescription: My helper\n---\nHelper.",
+    );
 
     let result = load_skills_from_dirs(&[
         (project_dir, SkillScope::Project),
@@ -106,7 +136,11 @@ fn diagnostics_collected_across_dirs() {
     let dir = tmp.path().join("skills");
     fs::create_dir_all(&dir).unwrap();
 
-    create_skill(&dir, "good", "---\nname: good\ndescription: Works fine\n---\nGood.");
+    create_skill(
+        &dir,
+        "good",
+        "---\nname: good\ndescription: Works fine\n---\nGood.",
+    );
     create_skill(&dir, "bad1", "---\nname: bad1\n---\nMissing desc.");
     create_skill(&dir, "bad2", "No frontmatter at all.");
 

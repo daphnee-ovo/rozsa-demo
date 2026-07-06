@@ -17,7 +17,7 @@ use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Message, Provider, StopReason, ToolResultMessage, Usage,
     UsageCost, UserContent, UserMessage,
 };
-use rozsa_tui::backend::native::{apply_event, LiveState};
+use rozsa_tui::backend::native::{LiveState, apply_event};
 
 fn user(text: &str) -> AgentMessage {
     AgentMessage::standard(Message::User(UserMessage {
@@ -149,8 +149,18 @@ fn second_turn_preserves_history_and_does_not_duplicate() {
     let a1 = assistant("hi");
 
     apply_event(&mut live, &AgentEvent::AgentStart);
-    apply_event(&mut live, &AgentEvent::MessageStart { message: u1.clone() });
-    apply_event(&mut live, &AgentEvent::MessageStart { message: a1.clone() });
+    apply_event(
+        &mut live,
+        &AgentEvent::MessageStart {
+            message: u1.clone(),
+        },
+    );
+    apply_event(
+        &mut live,
+        &AgentEvent::MessageStart {
+            message: a1.clone(),
+        },
+    );
     apply_event(
         &mut live,
         &AgentEvent::AgentEnd {
@@ -162,8 +172,18 @@ fn second_turn_preserves_history_and_does_not_duplicate() {
     let u2 = user("bye");
     let a2 = assistant("goodbye");
     apply_event(&mut live, &AgentEvent::AgentStart);
-    apply_event(&mut live, &AgentEvent::MessageStart { message: u2.clone() });
-    apply_event(&mut live, &AgentEvent::MessageStart { message: a2.clone() });
+    apply_event(
+        &mut live,
+        &AgentEvent::MessageStart {
+            message: u2.clone(),
+        },
+    );
+    apply_event(
+        &mut live,
+        &AgentEvent::MessageStart {
+            message: a2.clone(),
+        },
+    );
     apply_event(
         &mut live,
         &AgentEvent::AgentEnd {
@@ -171,7 +191,11 @@ fn second_turn_preserves_history_and_does_not_duplicate() {
         },
     );
 
-    assert_eq!(live.messages.len(), 4, "two turns => 4 messages, no doubling");
+    assert_eq!(
+        live.messages.len(),
+        4,
+        "two turns => 4 messages, no doubling"
+    );
     assert_eq!(text_of(&live.messages[0]), "hello");
     assert_eq!(text_of(&live.messages[1]), "hi");
     assert_eq!(text_of(&live.messages[2]), "bye");

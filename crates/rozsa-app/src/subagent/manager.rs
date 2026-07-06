@@ -38,8 +38,8 @@ use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 use rozsa_core::tool::{Tool, ToolExecutionMode};
 use rozsa_model::types::{
-    CacheRetention, Message, Model, SimpleStreamOptions, StreamEvent, StreamOptions,
-    ThinkingLevel, ToolSchema, Transport, UserContent, UserMessage,
+    CacheRetention, Message, Model, SimpleStreamOptions, StreamEvent, StreamOptions, ThinkingLevel,
+    ToolSchema, Transport, UserContent, UserMessage,
 };
 use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;
@@ -52,8 +52,7 @@ const MAX_ACTIVE_SUBAGENTS: usize = 10;
 const SUBAGENT_BLOCKED_TOOLS: &[&str] = &["subagent"];
 
 /// Convert AgentMessages to LLM-compatible Messages, filtering out custom messages.
-pub type ConvertToLlmFn =
-    Arc<dyn Fn(&[AgentMessage]) -> Vec<Message> + Send + Sync>;
+pub type ConvertToLlmFn = Arc<dyn Fn(&[AgentMessage]) -> Vec<Message> + Send + Sync>;
 
 /// Stream factory shared with the main agent loop.
 pub type ModelStreamArc = Arc<
@@ -68,7 +67,10 @@ pub type ModelStreamArc = Arc<
 
 /// Pre-tool-use hook type shared with subagents (same signature as main agent's hook).
 pub type PreToolUseHook = Arc<
-    dyn Fn(PreToolUseContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<PreToolUseResult>> + Send>>
+    dyn Fn(
+            PreToolUseContext,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<PreToolUseResult>> + Send>>
         + Send
         + Sync,
 >;
@@ -149,7 +151,9 @@ impl SubagentManager {
         self.next_id += 1;
         let name = config.name.unwrap_or_else(|| id.clone());
 
-        let model = config.model.unwrap_or_else(|| self.shared.main_model.clone());
+        let model = config
+            .model
+            .unwrap_or_else(|| self.shared.main_model.clone());
         let thinking_level = config
             .thinking_level
             .unwrap_or(self.shared.main_thinking_level);
@@ -422,8 +426,7 @@ fn build_loop_config(
     };
 
     let model_stream_arc = shared.model_stream.clone();
-    let model_stream: ModelStreamFn =
-        Box::new(move |m, c, o| model_stream_arc(m, c, o));
+    let model_stream: ModelStreamFn = Box::new(move |m, c, o| model_stream_arc(m, c, o));
 
     let convert_arc = shared.convert_to_llm.clone();
     let convert_to_llm: Box<dyn Fn(&[AgentMessage]) -> Vec<Message> + Send + Sync> =

@@ -77,7 +77,10 @@ fn nested_object_coercion() {
     });
     let args = json!({"config": {"timeout": "30", "verbose": "true"}});
     let result = coerce_arguments(&schema, args);
-    assert_eq!(result, json!({"config": {"timeout": 30.0, "verbose": true}}));
+    assert_eq!(
+        result,
+        json!({"config": {"timeout": 30.0, "verbose": true}})
+    );
 }
 
 #[test]

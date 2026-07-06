@@ -3,9 +3,9 @@ use rozsa_core::tool::{Tool, ToolError, ToolResult};
 use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
-use std::future::Future;
 use tokio::fs;
 use tokio_util::sync::CancellationToken;
 
@@ -49,10 +49,7 @@ impl GrepTool {
         }
 
         // Skip common large directories
-        matches!(
-            name,
-            "node_modules" | "target" | ".git" | "dist" | "build"
-        )
+        matches!(name, "node_modules" | "target" | ".git" | "dist" | "build")
     }
 
     fn truncate_line(line: &str) -> (String, bool) {

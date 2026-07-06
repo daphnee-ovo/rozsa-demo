@@ -16,11 +16,9 @@ pub async fn wait_for_callback(
     expected_state: &str,
     cancel: CancellationToken,
 ) -> Result<CallbackResult, super::types::OAuthLoginError> {
-    let listener = TcpListener::bind(("127.0.0.1", port))
-        .await
-        .map_err(|e| {
-            super::types::OAuthLoginError::CallbackServer(format!("failed to bind port {port}: {e}"))
-        })?;
+    let listener = TcpListener::bind(("127.0.0.1", port)).await.map_err(|e| {
+        super::types::OAuthLoginError::CallbackServer(format!("failed to bind port {port}: {e}"))
+    })?;
 
     let (mut stream, _) = tokio::select! {
         result = listener.accept() => {

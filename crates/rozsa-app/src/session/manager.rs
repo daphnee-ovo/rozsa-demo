@@ -212,8 +212,9 @@ impl SessionManager {
 
         // Create parent directory if needed
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create session directory: {}", parent.display()))?;
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create session directory: {}", parent.display())
+            })?;
         }
 
         // Create the file and write header
@@ -230,12 +231,10 @@ impl SessionManager {
             parent_session: parent_session.clone(),
         };
 
-        let header_json = serde_json::to_string(&header)
-            .context("Failed to serialize session header")?;
-        writeln!(writer, "{}", header_json)
-            .context("Failed to write session header")?;
-        writer.flush()
-            .context("Failed to flush session file")?;
+        let header_json =
+            serde_json::to_string(&header).context("Failed to serialize session header")?;
+        writeln!(writer, "{}", header_json).context("Failed to write session header")?;
+        writer.flush().context("Failed to flush session file")?;
 
         Ok(SessionManager {
             session_id,
@@ -286,12 +285,17 @@ impl SessionManager {
         }
 
         if let Some(parent) = self.session_file.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create session directory: {}", parent.display()))?;
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create session directory: {}", parent.display())
+            })?;
         }
 
-        let file = File::create(&self.session_file)
-            .with_context(|| format!("Failed to create session file: {}", self.session_file.display()))?;
+        let file = File::create(&self.session_file).with_context(|| {
+            format!(
+                "Failed to create session file: {}",
+                self.session_file.display()
+            )
+        })?;
         let mut writer = BufWriter::new(file);
 
         let header = SessionHeader {
@@ -303,12 +307,10 @@ impl SessionManager {
             parent_session: self.parent_session.clone(),
         };
 
-        let header_json = serde_json::to_string(&header)
-            .context("Failed to serialize session header")?;
-        writeln!(writer, "{}", header_json)
-            .context("Failed to write session header")?;
-        writer.flush()
-            .context("Failed to flush session file")?;
+        let header_json =
+            serde_json::to_string(&header).context("Failed to serialize session header")?;
+        writeln!(writer, "{}", header_json).context("Failed to write session header")?;
+        writer.flush().context("Failed to flush session file")?;
 
         self.materialized = true;
         Ok(())
@@ -321,16 +323,20 @@ impl SessionManager {
         let id = entry.id().to_string();
 
         // Serialize and append to file
-        let entry_json = serde_json::to_string(&entry)
-            .context("Failed to serialize session entry")?;
+        let entry_json =
+            serde_json::to_string(&entry).context("Failed to serialize session entry")?;
 
         let mut file = OpenOptions::new()
             .append(true)
             .open(&self.session_file)
-            .with_context(|| format!("Failed to open session file for append: {}", self.session_file.display()))?;
+            .with_context(|| {
+                format!(
+                    "Failed to open session file for append: {}",
+                    self.session_file.display()
+                )
+            })?;
 
-        writeln!(file, "{}", entry_json)
-            .context("Failed to append entry to session file")?;
+        writeln!(file, "{}", entry_json).context("Failed to append entry to session file")?;
 
         // Update internal state
         self.by_id.insert(id.clone(), entry);
@@ -525,7 +531,9 @@ impl SessionManager {
         let mut last_id: Option<String> = None;
 
         for (idx, line) in reader.lines().enumerate() {
-            let line = line.with_context(|| format!("Failed to read line {} of {}", idx + 1, path.display()))?;
+            let line = line.with_context(|| {
+                format!("Failed to read line {} of {}", idx + 1, path.display())
+            })?;
             if line.trim().is_empty() {
                 continue;
             }
@@ -627,8 +635,7 @@ impl SessionManager {
 /// Scan a single session file and produce its [`SessionMeta`] summary.
 /// Returns Err if the file is missing a valid header — caller may skip.
 fn build_session_meta(path: &Path) -> Result<SessionMeta> {
-    let file = File::open(path)
-        .with_context(|| format!("Failed to open {}", path.display()))?;
+    let file = File::open(path).with_context(|| format!("Failed to open {}", path.display()))?;
     let reader = BufReader::new(file);
 
     let mut header: Option<SessionHeader> = None;
@@ -702,9 +709,8 @@ fn build_session_meta(path: &Path) -> Result<SessionMeta> {
         }
     }
 
-    let header = header.ok_or_else(|| {
-        anyhow::anyhow!("No session header in {}", path.display())
-    })?;
+    let header =
+        header.ok_or_else(|| anyhow::anyhow!("No session header in {}", path.display()))?;
 
     let modified = latest_activity.unwrap_or_else(|| {
         // Fallback to fs mtime in RFC3339.
@@ -719,7 +725,9 @@ fn build_session_meta(path: &Path) -> Result<SessionMeta> {
         path: path.to_path_buf(),
         id: header.id.clone(),
         cwd: header.cwd.clone(),
-        name: latest_name.and_then(|(_, n)| n).filter(|s| !s.trim().is_empty()),
+        name: latest_name
+            .and_then(|(_, n)| n)
+            .filter(|s| !s.trim().is_empty()),
         parent_session_path: header.parent_session.clone(),
         created: header.timestamp,
         modified,

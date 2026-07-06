@@ -32,20 +32,18 @@ pub fn agent_loop_continue(
         tracing::warn!("agent_loop_continue called with empty context — nothing to continue");
         let (sender, stream) = create_event_stream();
         sender.push(AgentEvent::AgentStart);
-        sender.push(AgentEvent::AgentEnd {
-            messages: vec![],
-        });
+        sender.push(AgentEvent::AgentEnd { messages: vec![] });
         return stream;
     }
 
     if let Some(last) = context.messages.last() {
         if let Some(Message::Assistant(_)) = last.as_standard() {
-            tracing::warn!("agent_loop_continue called with assistant as last message — nothing to continue");
+            tracing::warn!(
+                "agent_loop_continue called with assistant as last message — nothing to continue"
+            );
             let (sender, stream) = create_event_stream();
             sender.push(AgentEvent::AgentStart);
-            sender.push(AgentEvent::AgentEnd {
-                messages: vec![],
-            });
+            sender.push(AgentEvent::AgentEnd { messages: vec![] });
             return stream;
         }
     }
@@ -83,8 +81,10 @@ async fn run_loop(
         new_messages.push(prompt);
     }
 
-    let mut pending_messages: Vec<AgentMessage> =
-        config.get_steering_messages.as_ref().map_or_else(Vec::new, |f| f());
+    let mut pending_messages: Vec<AgentMessage> = config
+        .get_steering_messages
+        .as_ref()
+        .map_or_else(Vec::new, |f| f());
 
     loop {
         let mut has_more_tool_calls = true;
@@ -202,10 +202,16 @@ async fn run_loop(
             let mut tool_results: Vec<ToolResultMessage> = Vec::new();
             has_more_tool_calls = false;
 
-
             if !tool_calls.is_empty() {
-                let batch =
-                    execute_tool_batch(&tool_calls, &message, &context, &config, &emit, signal.as_ref()).await;
+                let batch = execute_tool_batch(
+                    &tool_calls,
+                    &message,
+                    &context,
+                    &config,
+                    &emit,
+                    signal.as_ref(),
+                )
+                .await;
                 has_more_tool_calls = !batch.terminate;
                 tool_results = batch.messages;
 
@@ -215,7 +221,6 @@ async fn run_loop(
                     new_messages.push(msg);
                 }
             }
-
 
             emit.push(AgentEvent::TurnEnd {
                 message: message.clone(),
@@ -269,10 +274,11 @@ async fn run_loop(
                 }
             }
 
-            pending_messages =
-                config.get_steering_messages.as_ref().map_or_else(Vec::new, |f| f());
+            pending_messages = config
+                .get_steering_messages
+                .as_ref()
+                .map_or_else(Vec::new, |f| f());
         }
-
 
         let follow_ups = config
             .get_follow_up_messages
@@ -478,7 +484,8 @@ async fn execute_sequential(
             args: call.arguments.clone(),
         });
 
-        let finalized = execute_single_tool(call, assistant_message, context, config, emit, signal).await;
+        let finalized =
+            execute_single_tool(call, assistant_message, context, config, emit, signal).await;
 
         let result_msg = finalized_to_result_message(&finalized);
         emit.push(AgentEvent::ToolExecutionEnd {
@@ -498,14 +505,20 @@ async fn execute_sequential(
     }
 
     let terminate = should_terminate_batch(&finalized_calls);
-    ToolBatchResult { messages, terminate }
+    ToolBatchResult {
+        messages,
+        terminate,
+    }
 }
 
 enum PreparedEntry {
     Immediate(FinalizedToolCall),
     Pending {
         call: ToolCall,
-        handle: tokio::task::JoinHandle<(ToolCall, Result<crate::tool::ToolResult, crate::tool::ToolError>)>,
+        handle: tokio::task::JoinHandle<(
+            ToolCall,
+            Result<crate::tool::ToolResult, crate::tool::ToolError>,
+        )>,
     },
 }
 
@@ -554,7 +567,9 @@ async fn execute_parallel(
             };
             if let Some(result) = before(ctx).await {
                 if result.block {
-                    let reason = result.reason.unwrap_or_else(|| "Tool execution was blocked".to_string());
+                    let reason = result
+                        .reason
+                        .unwrap_or_else(|| "Tool execution was blocked".to_string());
                     let finalized = make_error_finalized(call, reason);
                     emit.push(AgentEvent::ToolExecutionEnd {
                         tool_call_id: call.id.clone(),
@@ -574,7 +589,10 @@ async fn execute_parallel(
         let schema = tool.parameters_schema().clone();
         let semaphore_clone = semaphore.clone();
         let handle = tokio::spawn(async move {
-            let _permit = semaphore_clone.acquire_owned().await.expect("semaphore closed");
+            let _permit = semaphore_clone
+                .acquire_owned()
+                .await
+                .expect("semaphore closed");
 
             let args = if call_clone.arguments.is_null() {
                 serde_json::Value::Object(Default::default())
@@ -595,16 +613,14 @@ async fn execute_parallel(
             };
 
             let exec_result = tool_clone
-                .execute(
-                    &call_clone.id,
-                    args,
-                    signal_clone,
-                    Some(&on_update),
-                )
+                .execute(&call_clone.id, args, signal_clone, Some(&on_update))
                 .await;
             (call_clone, exec_result)
         });
-        entries.push(PreparedEntry::Pending { call: call.clone(), handle });
+        entries.push(PreparedEntry::Pending {
+            call: call.clone(),
+            handle,
+        });
 
         if is_cancelled(signal) {
             break;
@@ -626,63 +642,61 @@ async fn execute_parallel(
 
         let finalized = match entry {
             PreparedEntry::Immediate(f) => f,
-            PreparedEntry::Pending { call, handle } => {
-                match handle.await {
-                    Ok((call, exec_result)) => {
-                        let (content, details, is_error, terminate) = match exec_result {
-                            Ok(result) => (result.content, result.details, false, result.terminate),
-                            Err(err) => (
-                                vec![ContentBlock::Text {
-                                    text: format!("{}", err),
-                                    signature: None,
-                                }],
-                                serde_json::Value::Null,
-                                true,
-                                false,
-                            ),
-                        };
-
-                        let mut f = FinalizedToolCall {
-                            tool_call: call.clone(),
-                            content,
-                            details,
-                            is_error,
-                            terminate,
-                        };
-
-                        if let Some(ref after) = config.post_tool_use {
-                            apply_post_tool_use(&mut f, after.as_ref(), assistant_message, context);
-                        }
-
-                        emit.push(AgentEvent::ToolExecutionEnd {
-                            tool_call_id: f.tool_call.id.clone(),
-                            tool_name: f.tool_call.name.clone(),
-                            result: finalized_to_result_message(&f),
-                        });
-
-                        f
-                    }
-                    Err(join_error) => {
-                        let error_msg = format!("Tool execution panicked: {}", join_error);
-                        let f = FinalizedToolCall {
-                            tool_call: call.clone(),
-                            content: vec![ContentBlock::Text {
-                                text: error_msg,
+            PreparedEntry::Pending { call, handle } => match handle.await {
+                Ok((call, exec_result)) => {
+                    let (content, details, is_error, terminate) = match exec_result {
+                        Ok(result) => (result.content, result.details, false, result.terminate),
+                        Err(err) => (
+                            vec![ContentBlock::Text {
+                                text: format!("{}", err),
                                 signature: None,
                             }],
-                            details: serde_json::Value::Null,
-                            is_error: true,
-                            terminate: false,
-                        };
-                        emit.push(AgentEvent::ToolExecutionEnd {
-                            tool_call_id: call.id.clone(),
-                            tool_name: call.name.clone(),
-                            result: finalized_to_result_message(&f),
-                        });
-                        f
+                            serde_json::Value::Null,
+                            true,
+                            false,
+                        ),
+                    };
+
+                    let mut f = FinalizedToolCall {
+                        tool_call: call.clone(),
+                        content,
+                        details,
+                        is_error,
+                        terminate,
+                    };
+
+                    if let Some(ref after) = config.post_tool_use {
+                        apply_post_tool_use(&mut f, after.as_ref(), assistant_message, context);
                     }
+
+                    emit.push(AgentEvent::ToolExecutionEnd {
+                        tool_call_id: f.tool_call.id.clone(),
+                        tool_name: f.tool_call.name.clone(),
+                        result: finalized_to_result_message(&f),
+                    });
+
+                    f
                 }
-            }
+                Err(join_error) => {
+                    let error_msg = format!("Tool execution panicked: {}", join_error);
+                    let f = FinalizedToolCall {
+                        tool_call: call.clone(),
+                        content: vec![ContentBlock::Text {
+                            text: error_msg,
+                            signature: None,
+                        }],
+                        details: serde_json::Value::Null,
+                        is_error: true,
+                        terminate: false,
+                    };
+                    emit.push(AgentEvent::ToolExecutionEnd {
+                        tool_call_id: call.id.clone(),
+                        tool_name: call.name.clone(),
+                        result: finalized_to_result_message(&f),
+                    });
+                    f
+                }
+            },
         };
         finalized_calls.push(finalized);
     }
@@ -731,7 +745,10 @@ async fn execute_parallel(
         });
     }
 
-    ToolBatchResult { messages, terminate }
+    ToolBatchResult {
+        messages,
+        terminate,
+    }
 }
 
 async fn execute_single_tool(
@@ -758,7 +775,9 @@ async fn execute_single_tool(
         };
         if let Some(result) = before(ctx).await {
             if result.block {
-                let reason = result.reason.unwrap_or_else(|| "Tool execution was blocked".to_string());
+                let reason = result
+                    .reason
+                    .unwrap_or_else(|| "Tool execution was blocked".to_string());
                 return make_error_finalized(call, reason);
             }
         }
@@ -887,7 +906,10 @@ fn apply_post_tool_use(
         }
         Ok(None) => {}
         Err(_) => {
-            tracing::error!("post_tool_use hook panicked for tool '{}'", f.tool_call.name);
+            tracing::error!(
+                "post_tool_use hook panicked for tool '{}'",
+                f.tool_call.name
+            );
         }
     }
 }

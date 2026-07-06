@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use rozsa_core::tool::{Tool, ToolError, ToolExecutionMode, ToolResult};
 use rozsa_model::types::ContentBlock;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -70,13 +70,17 @@ impl SubagentTool {
                     SubagentScope::scoped(paths)
                 }
                 "custom" => {
-                    let tools = obj.get("tools").and_then(|v| v.as_array()).map(|arr| {
-                        let set: HashSet<String> = arr
-                            .iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect();
-                        AllowedTools::Only(set)
-                    }).unwrap_or(AllowedTools::All);
+                    let tools = obj
+                        .get("tools")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            let set: HashSet<String> = arr
+                                .iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect();
+                            AllowedTools::Only(set)
+                        })
+                        .unwrap_or(AllowedTools::All);
 
                     let paths = obj.get("paths").and_then(|v| v.as_array()).map(|arr| {
                         arr.iter()
@@ -84,11 +88,14 @@ impl SubagentTool {
                             .collect()
                     });
 
-                    let bash_prefixes = obj.get("bash_prefixes").and_then(|v| v.as_array()).map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    });
+                    let bash_prefixes =
+                        obj.get("bash_prefixes")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(String::from))
+                                    .collect()
+                            });
 
                     let skills = obj.get("skills").and_then(|v| v.as_array()).map(|arr| {
                         arr.iter()
@@ -128,7 +135,9 @@ impl SubagentTool {
         lines.join("\n")
     }
 
-    fn extract_last_assistant_text(messages: &[rozsa_core::messages::AgentMessage]) -> Option<String> {
+    fn extract_last_assistant_text(
+        messages: &[rozsa_core::messages::AgentMessage],
+    ) -> Option<String> {
         use rozsa_model::types::{ContentBlock, Message};
 
         for msg in messages.iter().rev() {
@@ -256,7 +265,10 @@ impl Tool for SubagentTool {
                     ));
                 }
 
-                let name = params.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 let scope = Self::parse_scope(params.get("scope"));
 
                 let config = SpawnConfig {
@@ -268,14 +280,17 @@ impl Tool for SubagentTool {
                 };
 
                 let mut manager = self.manager.lock().await;
-                let info = manager
-                    .spawn(config)
-                    .await
-                    .map_err(ToolError::Execution)?;
+                let info = manager.spawn(config).await.map_err(ToolError::Execution)?;
 
-                let prompt = params.get("prompt").and_then(|v| v.as_str()).map(|s| s.trim().to_string());
+                let prompt = params
+                    .get("prompt")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string());
                 if let Some(prompt_text) = prompt.filter(|s| !s.is_empty()) {
-                    let wait = params.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let wait = params
+                        .get("wait")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     let id = info.id.clone();
                     manager
                         .send(&id, &prompt_text, wait)
@@ -305,7 +320,9 @@ impl Tool for SubagentTool {
                     .trim()
                     .to_string();
                 if id.is_empty() {
-                    return Err(ToolError::Execution("subagent send requires id".to_string()));
+                    return Err(ToolError::Execution(
+                        "subagent send requires id".to_string(),
+                    ));
                 }
 
                 let prompt = params
@@ -315,10 +332,15 @@ impl Tool for SubagentTool {
                     .trim()
                     .to_string();
                 if prompt.is_empty() {
-                    return Err(ToolError::Execution("subagent send requires prompt".to_string()));
+                    return Err(ToolError::Execution(
+                        "subagent send requires prompt".to_string(),
+                    ));
                 }
 
-                let wait = params.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
+                let wait = params
+                    .get("wait")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
 
                 let manager = self.manager.lock().await;
                 manager
@@ -351,14 +373,13 @@ impl Tool for SubagentTool {
                     .trim()
                     .to_string();
                 if id.is_empty() {
-                    return Err(ToolError::Execution("subagent wait requires id".to_string()));
+                    return Err(ToolError::Execution(
+                        "subagent wait requires id".to_string(),
+                    ));
                 }
 
                 let manager = self.manager.lock().await;
-                manager
-                    .wait(&id)
-                    .await
-                    .map_err(ToolError::Execution)?;
+                manager.wait(&id).await.map_err(ToolError::Execution)?;
 
                 let list = manager.list().await;
                 let info = list
@@ -385,14 +406,13 @@ impl Tool for SubagentTool {
                     .trim()
                     .to_string();
                 if id.is_empty() {
-                    return Err(ToolError::Execution("subagent interrupt requires id".to_string()));
+                    return Err(ToolError::Execution(
+                        "subagent interrupt requires id".to_string(),
+                    ));
                 }
 
                 let manager = self.manager.lock().await;
-                manager
-                    .abort(&id)
-                    .await
-                    .map_err(ToolError::Execution)?;
+                manager.abort(&id).await.map_err(ToolError::Execution)?;
 
                 let list = manager.list().await;
                 let info = list

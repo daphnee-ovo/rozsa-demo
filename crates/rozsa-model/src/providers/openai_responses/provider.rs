@@ -29,7 +29,7 @@ use crate::types::{
     ThinkingLevel,
 };
 
-use super::convert::{convert_messages, convert_tools, ResponseStreamNormalizer};
+use super::convert::{ResponseStreamNormalizer, convert_messages, convert_tools};
 use super::sse::ResponsesSseParser;
 use super::types::{Reasoning, ResponsesApiRequest};
 
@@ -86,11 +86,9 @@ impl ApiProvider for OpenAIResponsesProvider {
             let output = create_output(&model, Api::OpenAIResponses);
             match stream_responses(&model, &context, &options, output, &sender).await {
                 Ok(()) => {}
-                Err(error) => emit_error(
-                    &sender,
-                    create_output(&model, Api::OpenAIResponses),
-                    error,
-                ),
+                Err(error) => {
+                    emit_error(&sender, create_output(&model, Api::OpenAIResponses), error)
+                }
             }
         });
         stream

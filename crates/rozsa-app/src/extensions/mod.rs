@@ -60,10 +60,7 @@ pub trait Extension: Send + Sync {
         Ok(())
     }
 
-    async fn on_context(
-        &self,
-        messages: Vec<AgentMessage>,
-    ) -> anyhow::Result<Vec<AgentMessage>> {
+    async fn on_context(&self, messages: Vec<AgentMessage>) -> anyhow::Result<Vec<AgentMessage>> {
         Ok(messages)
     }
 }

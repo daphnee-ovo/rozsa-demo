@@ -90,12 +90,7 @@ pub fn build_auth_url(challenge: &str, state: &str) -> String {
     let scope_encoded = SCOPE.replace(' ', "%20");
     format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256",
-        AUTHORIZE_URL,
-        CLIENT_ID,
-        REDIRECT_URI,
-        scope_encoded,
-        state,
-        challenge,
+        AUTHORIZE_URL, CLIENT_ID, REDIRECT_URI, scope_encoded, state, challenge,
     )
 }
 
@@ -122,7 +117,9 @@ pub fn parse_authorization_input(
                     .cloned()
                     .unwrap_or_else(|| expected_state.to_string());
                 if state != expected_state {
-                    return Err(OAuthLoginError::CallbackServer("state mismatch".to_string()));
+                    return Err(OAuthLoginError::CallbackServer(
+                        "state mismatch".to_string(),
+                    ));
                 }
                 return Ok((code.clone(), state));
             }
@@ -136,7 +133,9 @@ pub fn parse_authorization_input(
             let code = parts[0].to_string();
             let state = parts[1].to_string();
             if state != expected_state {
-                return Err(OAuthLoginError::CallbackServer("state mismatch".to_string()));
+                return Err(OAuthLoginError::CallbackServer(
+                    "state mismatch".to_string(),
+                ));
             }
             return Ok((code, state));
         }
@@ -151,7 +150,9 @@ pub fn parse_authorization_input(
                 .cloned()
                 .unwrap_or_else(|| expected_state.to_string());
             if state != expected_state {
-                return Err(OAuthLoginError::CallbackServer("state mismatch".to_string()));
+                return Err(OAuthLoginError::CallbackServer(
+                    "state mismatch".to_string(),
+                ));
             }
             return Ok((code.clone(), state));
         }
@@ -173,10 +174,7 @@ fn parse_query_string(query: &str) -> HashMap<String, String> {
         .collect()
 }
 
-async fn exchange_code(
-    code: &str,
-    verifier: &str,
-) -> Result<OAuthCredentials, OAuthLoginError> {
+async fn exchange_code(code: &str, verifier: &str) -> Result<OAuthCredentials, OAuthLoginError> {
     let client = reqwest::Client::new();
 
     let response = client
@@ -198,8 +196,7 @@ async fn exchange_code(
         let body = response.text().await.unwrap_or_default();
         return Err(OAuthLoginError::TokenExchange(format!(
             "HTTP {}: {}",
-            status,
-            body
+            status, body
         )));
     }
 
@@ -227,4 +224,3 @@ struct TokenResponse {
     refresh_token: String,
     expires_in: u64,
 }
-

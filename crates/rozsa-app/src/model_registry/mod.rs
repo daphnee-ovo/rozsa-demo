@@ -284,9 +284,7 @@ impl ModelRegistry {
                 message: e.to_string(),
             })?
             .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
-            })
+            .filter(|entry| is_models_config_path(&entry.path()))
             .collect();
 
         entries.sort_by_key(|e| e.file_name());
@@ -343,11 +341,7 @@ impl ModelRegistry {
         let available = self.provider_available();
         self.models
             .iter()
-            .find(|m| {
-                available
-                    .get(&m.provider)
-                    .is_some_and(|pa| pa.configured)
-            })
+            .find(|m| available.get(&m.provider).is_some_and(|pa| pa.configured))
             .map(|rm| rm.to_model())
     }
 
@@ -440,8 +434,6 @@ impl ModelRegistry {
         let mut provider_overrides = HashMap::new();
         let mut model_overrides = HashMap::new();
         let mut custom_models = Vec::new();
-        self.user_configured_model_keys.clear();
-        self.provider_api_keys.clear();
 
         for (provider_name, provider_config) in config.providers {
             if let Some(api_key) = &provider_config.api_key {
@@ -541,9 +533,11 @@ impl ModelRegistry {
                         "Provider {provider_name}: baseUrl is required when defining custom models."
                     )));
                 }
-                let uses_aws_auth = provider_config.api.as_deref() == Some("bedrock-converse-stream")
-                    || provider_name == "amazon-bedrock";
-                if provider_config.api_key.is_none() && !uses_aws_auth {
+                let uses_external_auth = provider_config.api.as_deref()
+                    == Some("bedrock-converse-stream")
+                    || provider_name == "amazon-bedrock"
+                    || provider_config.auth_header.unwrap_or(false);
+                if provider_config.api_key.is_none() && !uses_external_auth {
                     return Err(ModelRegistryError::InvalidModelsJson(format!(
                         "Provider {provider_name}: apiKey is required when defining custom models."
                     )));
@@ -689,6 +683,8 @@ struct ProviderConfig {
     #[serde(rename = "apiKey")]
     api_key: Option<String>,
     api: Option<String>,
+    #[serde(rename = "authHeader")]
+    auth_header: Option<bool>,
     headers: Option<HashMap<String, String>>,
     compat: Option<Value>,
     #[serde(default)]
@@ -930,6 +926,11 @@ fn provider_from_str(name: &str) -> Option<Provider> {
     }
 }
 
+fn is_models_config_path(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("json")
+        && path.file_name().and_then(|name| name.to_str()) != Some("auth.json")
+}
+
 fn model_key(provider: &str, model_id: &str) -> String {
     format!("{provider}/{model_id}")
 }
@@ -1015,4 +1016,17 @@ fn strip_trailing_commas(input: &str) -> String {
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_models_config_path;
+    use std::path::Path;
+
+    #[test]
+    fn models_config_scan_ignores_auth_json() {
+        assert!(!is_models_config_path(Path::new("auth.json")));
+        assert!(is_models_config_path(Path::new("openai.json")));
+        assert!(!is_models_config_path(Path::new("openai.toml")));
+    }
 }

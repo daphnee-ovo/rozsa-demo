@@ -33,8 +33,7 @@ pub async fn run(args: &Args) -> Result<()> {
         None,
     )
     .unwrap_or_else(|_| {
-        SettingsManager::load(PathBuf::from("/dev/null"), None, None)
-            .expect("fallback settings")
+        SettingsManager::load(PathBuf::from("/dev/null"), None, None).expect("fallback settings")
     });
 
     // Spawn non-blocking version check
@@ -47,8 +46,7 @@ pub async fn run(args: &Args) -> Result<()> {
     // Resolve model from registry: user-level then project-level (project overrides user)
     let user_models_dir = home.join(".rozsa").join("models");
     let project_models_dir = cwd.join(".rozsa").join("models");
-    let registry =
-        ModelRegistry::load_from_dirs(&[&user_models_dir, &project_models_dir])?;
+    let registry = ModelRegistry::load_from_dirs(&[&user_models_dir, &project_models_dir])?;
 
     let model = if let Some(ref model_arg) = args.model {
         registry.find_by_id(model_arg)
@@ -86,7 +84,12 @@ pub async fn run(args: &Args) -> Result<()> {
                 base_url: String::new(),
                 reasoning: false,
                 input_modalities: vec![],
-                cost: rozsa_model::types::ModelCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 },
+                cost: rozsa_model::types::ModelCost {
+                    input: 0.0,
+                    output: 0.0,
+                    cache_read: 0.0,
+                    cache_write: 0.0,
+                },
                 context_window: 128000,
                 max_tokens: 16384,
                 thinking_level_map: None,
@@ -235,9 +238,13 @@ pub async fn run(args: &Args) -> Result<()> {
         let hook: Box<
             dyn Fn(
                     rozsa_core::config::PreToolUseContext,
-                )
-                    -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>> + Send>>
-                + Send
+                ) -> std::pin::Pin<
+                    Box<
+                        dyn std::future::Future<
+                                Output = Option<rozsa_core::config::PreToolUseResult>,
+                            > + Send,
+                    >,
+                > + Send
                 + Sync,
         > = Box::new(move |ctx| {
             let policy = policy.clone();
@@ -247,12 +254,10 @@ pub async fn run(args: &Args) -> Result<()> {
                 let verdict = policy.evaluate(&ctx.tool_name, &ctx.args);
                 match verdict {
                     PolicyVerdict::Allow => None,
-                    PolicyVerdict::Block { reason } => {
-                        Some(rozsa_core::config::PreToolUseResult {
-                            block: true,
-                            reason: Some(reason),
-                        })
-                    }
+                    PolicyVerdict::Block { reason } => Some(rozsa_core::config::PreToolUseResult {
+                        block: true,
+                        reason: Some(reason),
+                    }),
                     PolicyVerdict::NeedApproval { info } => {
                         let (tx, rx) = tokio::sync::oneshot::channel();
                         let request_id = ctx.tool_call_id.clone();
@@ -322,8 +327,7 @@ pub async fn run(args: &Args) -> Result<()> {
             }
             crate::args::OutputFormat::Json => {
                 for event in &events {
-                    let json = serde_json::to_string(event)
-                        .unwrap_or_else(|_| "{}".to_string());
+                    let json = serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string());
                     println!("{json}");
                 }
             }
@@ -384,4 +388,3 @@ async fn check_version() {
         );
     }
 }
-

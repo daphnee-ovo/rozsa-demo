@@ -29,3 +29,6 @@
 - 14:54 fix: ISSUE-I058：App: 缺少 Package Manager — 无法从 npm/git 安装扩展/技能
 - 14:55 fix: ISSUE-I057：App: 缺少 Package Manager — 无法从 npm/git 安装扩展/技能
 - 17:58 fix: ISSUE-I067：fix: /login 浏览器打开失败 + URL 不显示
+
+## 2026-07-06
+- 10:57 fix: ISSUE-I081：GUI regression: session list and model picker broken after tool row changes

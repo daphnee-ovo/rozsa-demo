@@ -6,11 +6,9 @@ use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::resources::LoadedResources;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
-use rozsa_model::types::{
-    Api, InputModality, Model, ModelCost, Provider, ThinkingLevel,
-};
-use rozsa_tui::backend::{AgentBackend, BackendEvent};
+use rozsa_model::types::{Api, InputModality, Model, ModelCost, Provider, ThinkingLevel};
 use rozsa_tui::backend::native::NativeBackend;
+use rozsa_tui::backend::{AgentBackend, BackendEvent};
 
 fn test_model() -> Model {
     Model {
@@ -21,7 +19,12 @@ fn test_model() -> Model {
         base_url: "https://example.invalid".to_string(),
         reasoning: false,
         input_modalities: vec![InputModality::Text],
-        cost: ModelCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 },
+        cost: ModelCost {
+            input: 0.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+        },
         context_window: 8192,
         max_tokens: 2048,
         thinking_level_map: None,
@@ -40,12 +43,8 @@ fn create_backend(tmp_dir: &tempfile::TempDir) -> NativeBackend {
     )
     .unwrap();
 
-    let settings_manager = SettingsManager::load(
-        tmp_dir.path().join("global-settings.json"),
-        None,
-        None,
-    )
-    .unwrap();
+    let settings_manager =
+        SettingsManager::load(tmp_dir.path().join("global-settings.json"), None, None).unwrap();
 
     let session = AgentSession::new(AgentSessionConfig {
         model: test_model(),
@@ -63,7 +62,9 @@ fn create_backend(tmp_dir: &tempfile::TempDir) -> NativeBackend {
 
 /// 等待收到包含已完成 bashExecution 消息（exitCode 非 null）的 State 事件。
 /// Returns the custom message's payload Value.
-async fn wait_for_bash_state(rx: &mut tokio::sync::mpsc::UnboundedReceiver<BackendEvent>) -> serde_json::Value {
+async fn wait_for_bash_state(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<BackendEvent>,
+) -> serde_json::Value {
     use rozsa_core::messages::AgentMessage;
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
@@ -96,7 +97,10 @@ async fn bang_command_renders_in_conversation() {
     let backend = create_backend(&tmp_dir);
     let mut rx = backend.events();
 
-    backend.submit("!echo bang_test_marker", vec![]).await.unwrap();
+    backend
+        .submit("!echo bang_test_marker", vec![])
+        .await
+        .unwrap();
 
     let msg = wait_for_bash_state(&mut rx).await;
     let command = msg.get("command").and_then(|v| v.as_str()).unwrap_or("");
@@ -116,7 +120,10 @@ async fn double_bang_command_renders_in_conversation() {
     let backend = create_backend(&tmp_dir);
     let mut rx = backend.events();
 
-    backend.submit("!!echo double_bang_marker", vec![]).await.unwrap();
+    backend
+        .submit("!!echo double_bang_marker", vec![])
+        .await
+        .unwrap();
 
     let msg = wait_for_bash_state(&mut rx).await;
     let command = msg.get("command").and_then(|v| v.as_str()).unwrap_or("");
@@ -139,14 +146,7 @@ async fn empty_bang_is_noop() {
     backend.submit("!", vec![]).await.unwrap();
 
     // 短暂等待后应无 bashExecution 消息
-    let result = tokio::time::timeout(
-        std::time::Duration::from_millis(200),
-        rx.recv(),
-    )
-    .await;
+    let result = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await;
 
-    assert!(
-        result.is_err(),
-        "empty bang should not produce any events"
-    );
+    assert!(result.is_err(), "empty bang should not produce any events");
 }

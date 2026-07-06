@@ -4,12 +4,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rozsa_app::subagent::SubagentStatus;
 use rozsa_app::subagent::manager::{SharedResources, SpawnConfig, SubagentManager};
 use rozsa_app::subagent::scope::SubagentScope;
-use rozsa_app::subagent::SubagentStatus;
-use rozsa_model::types::{
-    Api, InputModality, Model, ModelCost, Provider, ThinkingLevel,
-};
+use rozsa_model::types::{Api, InputModality, Model, ModelCost, Provider, ThinkingLevel};
 use tokio::sync::Mutex;
 
 fn dummy_model() -> Model {
@@ -39,7 +37,9 @@ fn make_manager() -> SubagentManager {
     let shared = SharedResources {
         model_stream: Arc::new(|m, c, o| rozsa_model::stream::stream_simple(m, c, o)),
         convert_to_llm: Arc::new(|msgs| {
-            msgs.iter().filter_map(|m| m.as_standard().cloned()).collect()
+            msgs.iter()
+                .filter_map(|m| m.as_standard().cloned())
+                .collect()
         }),
         main_tools: Arc::new(Mutex::new(Vec::new())),
         main_model: dummy_model(),

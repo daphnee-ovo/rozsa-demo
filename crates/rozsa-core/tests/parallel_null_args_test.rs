@@ -1,8 +1,8 @@
 // 回归测试：并行执行路径下 tool call arguments 为 null 时应规范化为 {}，不报错。
 // 修复前 execute_parallel 直接传 Value::Null 导致 serde 反序列化失败。
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rozsa_core::agent_loop::agent_loop;
 use rozsa_core::config::{AgentContext, AgentLoopConfig};
@@ -23,10 +23,18 @@ struct AssertNonNullTool {
 
 #[async_trait::async_trait]
 impl Tool for AssertNonNullTool {
-    fn name(&self) -> &str { "null_check" }
-    fn description(&self) -> &str { "asserts params not null" }
-    fn label(&self) -> &str { "null_check" }
-    fn parameters_schema(&self) -> &serde_json::Value { &self.schema }
+    fn name(&self) -> &str {
+        "null_check"
+    }
+    fn description(&self) -> &str {
+        "asserts params not null"
+    }
+    fn label(&self) -> &str {
+        "null_check"
+    }
+    fn parameters_schema(&self) -> &serde_json::Value {
+        &self.schema
+    }
     async fn execute(
         &self,
         _tool_call_id: &str,
@@ -34,7 +42,10 @@ impl Tool for AssertNonNullTool {
         _signal: Option<CancellationToken>,
         _on_update: Option<&(dyn Fn(ToolResult) + Send + Sync)>,
     ) -> Result<ToolResult, ToolError> {
-        assert!(!params.is_null(), "params should be normalized to {{}}, got null");
+        assert!(
+            !params.is_null(),
+            "params should be normalized to {{}}, got null"
+        );
         self.received_non_null.store(true, Ordering::SeqCst);
         Ok(ToolResult {
             content: vec![ContentBlock::Text {
@@ -56,7 +67,12 @@ fn make_model() -> Model {
         base_url: "https://example.invalid".to_string(),
         reasoning: false,
         input_modalities: vec![InputModality::Text],
-        cost: ModelCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 },
+        cost: ModelCost {
+            input: 0.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+        },
         context_window: 8192,
         max_tokens: 2048,
         thinking_level_map: None,
@@ -74,8 +90,18 @@ fn make_assistant_message(content: Vec<ContentBlock>) -> rozsa_model::types::Ass
         response_model: None,
         response_id: None,
         usage: Usage {
-            input: 0, output: 0, cache_read: 0, cache_write: 0, total_tokens: 0,
-            cost: UsageCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0, total: 0.0 },
+            input: 0,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+            total_tokens: 0,
+            cost: UsageCost {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+                total: 0.0,
+            },
         },
         stop_reason: StopReason::Stop,
         error_message: None,
@@ -135,7 +161,11 @@ async fn parallel_null_arguments_normalized_to_empty_object() {
                 stream
             }),
             convert_to_llm: Box::new(|messages| {
-                messages.iter().filter_map(AgentMessage::as_standard).cloned().collect()
+                messages
+                    .iter()
+                    .filter_map(AgentMessage::as_standard)
+                    .cloned()
+                    .collect()
             }),
             transform_context: None,
             get_api_key: None,

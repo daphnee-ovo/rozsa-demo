@@ -25,8 +25,8 @@ use tokio::sync::mpsc;
 
 use crate::{
     panels::model_selector::ModelEntry,
-    protocol::{NativeGraphNode, NativePermissionPrompt, NativeUiState},
     panels::session_selector::SessionEntry,
+    protocol::{NativeGraphNode, NativePermissionPrompt, NativeUiState},
 };
 
 // --- 类型定义 ---
@@ -78,7 +78,10 @@ pub enum BackendEvent {
         selected: Option<usize>,
     },
     /// 通知消息
-    Notify { level: String, message: String },
+    Notify {
+        level: String,
+        message: String,
+    },
     /// 终端标题
     SetTitle(String),
     /// 覆盖输入框内容
@@ -108,7 +111,10 @@ pub enum BackendEvent {
     /// 模型列表
     Models(Vec<ModelEntry>),
     /// 重试倒计时
-    Retry { seconds: u32, reason: String },
+    Retry {
+        seconds: u32,
+        reason: String,
+    },
     /// Compacting 状态
     Compacting(bool),
     /// 后端请求关闭

@@ -5,9 +5,7 @@ use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::resources::LoadedResources;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
-use rozsa_model::types::{
-    Api, InputModality, Model, ModelCost, Provider, ThinkingLevel,
-};
+use rozsa_model::types::{Api, InputModality, Model, ModelCost, Provider, ThinkingLevel};
 use rozsa_tui::backend::AgentBackend;
 use rozsa_tui::backend::native::{NativeBackend, NativeBackendConfig};
 use std::path::PathBuf;
@@ -21,7 +19,12 @@ fn test_model() -> Model {
         base_url: "https://example.invalid".to_string(),
         reasoning: false,
         input_modalities: vec![InputModality::Text],
-        cost: ModelCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 },
+        cost: ModelCost {
+            input: 0.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+        },
         context_window: 8192,
         max_tokens: 2048,
         thinking_level_map: None,
@@ -41,12 +44,7 @@ fn create_backend(tmp_dir: &tempfile::TempDir) -> (NativeBackend, PathBuf) {
     .unwrap();
 
     let global_settings_path = tmp_dir.path().join("settings.json");
-    let settings_manager = SettingsManager::load(
-        global_settings_path.clone(),
-        None,
-        None,
-    )
-    .unwrap();
+    let settings_manager = SettingsManager::load(global_settings_path.clone(), None, None).unwrap();
 
     let session = AgentSession::new(AgentSessionConfig {
         model: test_model(),
@@ -67,7 +65,10 @@ fn create_backend(tmp_dir: &tempfile::TempDir) -> (NativeBackend, PathBuf) {
         permission_request_rx: None,
     };
 
-    (NativeBackend::with_config(session, config), global_settings_path)
+    (
+        NativeBackend::with_config(session, config),
+        global_settings_path,
+    )
 }
 
 fn read_settings_json(path: &std::path::Path) -> serde_json::Value {
@@ -90,7 +91,9 @@ async fn thinking_command_persists_to_settings_file() {
 
     let settings = read_settings_json(&settings_path);
     assert_eq!(
-        settings.get("defaultThinkingLevel").and_then(|v| v.as_str()),
+        settings
+            .get("defaultThinkingLevel")
+            .and_then(|v| v.as_str()),
         Some("medium"),
         "settings file should contain defaultThinkingLevel=medium"
     );
@@ -111,7 +114,9 @@ async fn thinking_off_persists() {
 
     let settings = read_settings_json(&settings_path);
     assert_eq!(
-        settings.get("defaultThinkingLevel").and_then(|v| v.as_str()),
+        settings
+            .get("defaultThinkingLevel")
+            .and_then(|v| v.as_str()),
         Some("off"),
     );
 }
@@ -125,23 +130,33 @@ async fn settings_dialog_cycle_thinking_persists() {
     let _rx = backend.events();
 
     // cycle thinking: Off → Low (index=0, direction=1)
-    backend.update_setting("__cycle_setting", "0:1").await.unwrap();
+    backend
+        .update_setting("__cycle_setting", "0:1")
+        .await
+        .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let settings = read_settings_json(&settings_path);
     assert_eq!(
-        settings.get("defaultThinkingLevel").and_then(|v| v.as_str()),
+        settings
+            .get("defaultThinkingLevel")
+            .and_then(|v| v.as_str()),
         Some("low"),
         "cycle_setting should persist thinking level"
     );
 
     // cycle again: Low → Medium
-    backend.update_setting("__cycle_setting", "0:1").await.unwrap();
+    backend
+        .update_setting("__cycle_setting", "0:1")
+        .await
+        .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let settings = read_settings_json(&settings_path);
     assert_eq!(
-        settings.get("defaultThinkingLevel").and_then(|v| v.as_str()),
+        settings
+            .get("defaultThinkingLevel")
+            .and_then(|v| v.as_str()),
         Some("medium"),
     );
 }
@@ -154,7 +169,10 @@ async fn settings_dialog_cycle_transport_persists() {
     let _rx = backend.events();
 
     // cycle transport: auto → sse (index=4, direction=1)
-    backend.update_setting("__cycle_setting", "4:1").await.unwrap();
+    backend
+        .update_setting("__cycle_setting", "4:1")
+        .await
+        .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let settings = read_settings_json(&settings_path);

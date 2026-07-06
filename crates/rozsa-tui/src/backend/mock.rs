@@ -194,9 +194,7 @@ impl AgentBackend for MockBackend {
     }
 
     async fn switch_agent(&self, id: &str) -> BackendResult<()> {
-        self.record(MockCall::SwitchAgent {
-            id: id.to_string(),
-        });
+        self.record(MockCall::SwitchAgent { id: id.to_string() });
         Ok(())
     }
 
@@ -207,9 +205,7 @@ impl AgentBackend for MockBackend {
         _confirmed: Option<bool>,
         _cancelled: Option<bool>,
     ) -> BackendResult<()> {
-        self.record(MockCall::DialogResponse {
-            id: id.to_string(),
-        });
+        self.record(MockCall::DialogResponse { id: id.to_string() });
         Ok(())
     }
 

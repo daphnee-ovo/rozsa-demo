@@ -22,9 +22,7 @@
 // Related Docs:
 // - [TUI Design](../../../docs/rozsa_framework.md#rozsa-tui--ratatui-终端前端)
 
-use std::{
-    error::Error,
-};
+use std::error::Error;
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -36,10 +34,10 @@ use ratatui::{
 use serde::Deserialize;
 
 use crate::{
-    protocol::{send, ClientMessage},
     panels::sidebar::truncate,
+    protocol::{ClientMessage, send},
     theme::THEME,
-    widgets::{render_tab_bar, TabBarState},
+    widgets::{TabBarState, render_tab_bar},
 };
 
 /// 模型条目
@@ -126,7 +124,9 @@ impl ModelSelectorState {
                 }
             })
             .collect();
-        self.selected = self.selected.min(self.filtered_indices.len().saturating_sub(1));
+        self.selected = self
+            .selected
+            .min(self.filtered_indices.len().saturating_sub(1));
     }
 }
 
@@ -150,7 +150,9 @@ fn provider_display_name(id: &str) -> &str {
         "moonshotai" | "moonshotai-cn" => "MoonshotAI",
         "huggingface" => "HuggingFace",
         "cloudflare-workers-ai" | "cloudflare-ai-gateway" => "Cloudflare",
-        "xiaomi" | "xiaomi-token-plan-cn" | "xiaomi-token-plan-ams" | "xiaomi-token-plan-sgp" => "Xiaomi",
+        "xiaomi" | "xiaomi-token-plan-cn" | "xiaomi-token-plan-ams" | "xiaomi-token-plan-sgp" => {
+            "Xiaomi"
+        }
         other => other,
     }
 }
@@ -196,7 +198,8 @@ pub fn handle_model_selector_key(
             Ok(Some(state))
         }
         KeyCode::Down => {
-            state.selected = (state.selected + 1).min(state.filtered_indices.len().saturating_sub(1));
+            state.selected =
+                (state.selected + 1).min(state.filtered_indices.len().saturating_sub(1));
             Ok(Some(state))
         }
         KeyCode::Enter => {
@@ -239,7 +242,7 @@ pub fn render_model_selector(
         .constraints([
             Constraint::Length(1), // tab 栏
             Constraint::Length(3), // 搜索框
-            Constraint::Min(3),   // 模型列表
+            Constraint::Min(3),    // 模型列表
             Constraint::Length(1), // 底部提示
         ])
         .margin(1)

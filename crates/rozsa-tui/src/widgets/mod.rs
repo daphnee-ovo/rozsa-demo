@@ -8,5 +8,5 @@
 pub mod hints_bar;
 pub mod tab_bar;
 
-pub use hints_bar::{render_hints_bar, HintItem};
-pub use tab_bar::{render_tab_bar, TabBarState};
+pub use hints_bar::{HintItem, render_hints_bar};
+pub use tab_bar::{TabBarState, render_tab_bar};

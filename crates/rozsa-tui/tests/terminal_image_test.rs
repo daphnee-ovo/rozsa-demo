@@ -1,5 +1,5 @@
 use rozsa_tui::util::terminal_image::{
-    calculate_cell_size, iterm2_transmit, kitty_transmit, parse_image_dimensions, ImageDimensions,
+    ImageDimensions, calculate_cell_size, iterm2_transmit, kitty_transmit, parse_image_dimensions,
 };
 
 #[test]
@@ -33,7 +33,10 @@ fn parse_gif_dimensions() {
 
 #[test]
 fn cell_size_calculation() {
-    let dims = ImageDimensions { width: 800, height: 600 };
+    let dims = ImageDimensions {
+        width: 800,
+        height: 600,
+    };
     let (cols, rows) = calculate_cell_size(dims, 80, 24);
     assert!(cols <= 80);
     assert!(rows <= 24);

@@ -1,3 +1,4 @@
+use super::file_lock;
 use rozsa_core::tool::{Tool, ToolError, ToolResult};
 use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
@@ -5,7 +6,6 @@ use serde_json::json;
 use std::path::Path;
 use tokio::fs;
 use tokio_util::sync::CancellationToken;
-use super::file_lock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WriteParams {
@@ -33,7 +33,10 @@ impl WriteTool {
                         .await
                         .map_err(|e| match e.kind() {
                             std::io::ErrorKind::PermissionDenied => {
-                                format!("Permission denied: cannot create parent directory for {}", file_path)
+                                format!(
+                                    "Permission denied: cannot create parent directory for {}",
+                                    file_path
+                                )
                             }
                             _ => format!("Failed to create parent directory: {}", e),
                         })?;
@@ -56,18 +59,19 @@ impl WriteTool {
                 })?;
 
             // Atomic rename
-            fs::rename(&tmp_path, path)
-                .await
-                .map_err(|e| {
-                    // Clean up tmp file on rename failure
-                    let _ = std::fs::remove_file(&tmp_path);
-                    match e.kind() {
-                        std::io::ErrorKind::PermissionDenied => {
-                            format!("Permission denied: cannot rename temporary file to {}", file_path)
-                        }
-                        _ => format!("Failed to rename temporary file: {}", e),
+            fs::rename(&tmp_path, path).await.map_err(|e| {
+                // Clean up tmp file on rename failure
+                let _ = std::fs::remove_file(&tmp_path);
+                match e.kind() {
+                    std::io::ErrorKind::PermissionDenied => {
+                        format!(
+                            "Permission denied: cannot rename temporary file to {}",
+                            file_path
+                        )
                     }
-                })?;
+                    _ => format!("Failed to rename temporary file: {}", e),
+                }
+            })?;
 
             // Count lines
             let line_count = content.lines().count();
@@ -152,23 +156,19 @@ impl Tool for WriteTool {
         let result = Self::write_file(&params.file_path, &params.content).await;
 
         match result {
-            Ok(message) => {
-                Ok(ToolResult {
-                    content: vec![ContentBlock::Text {
-                        text: message,
-                        signature: None,
-                    }],
-                    details: json!({
-                        "file_path": params.file_path,
-                        "bytes_written": params.content.len(),
-                        "line_count": params.content.lines().count(),
-                    }),
-                    terminate: false,
-                })
-            }
-            Err(error_msg) => {
-                Err(ToolError::Execution(error_msg))
-            }
+            Ok(message) => Ok(ToolResult {
+                content: vec![ContentBlock::Text {
+                    text: message,
+                    signature: None,
+                }],
+                details: json!({
+                    "file_path": params.file_path,
+                    "bytes_written": params.content.len(),
+                    "line_count": params.content.lines().count(),
+                }),
+                terminate: false,
+            }),
+            Err(error_msg) => Err(ToolError::Execution(error_msg)),
         }
     }
 }

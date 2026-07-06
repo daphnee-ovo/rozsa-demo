@@ -17,8 +17,8 @@
 
 use regex::Regex;
 
-use crate::util::fuzzy::fuzzy_match;
 use crate::panels::session_selector::SessionEntry;
+use crate::util::fuzzy::fuzzy_match;
 
 #[derive(Debug)]
 pub enum ParsedQuery {
@@ -106,10 +106,7 @@ pub fn match_session(entry: &SessionEntry, query: &ParsedQuery) -> (bool, f64) {
         ParsedQuery::Phrase(phrase) => {
             let haystack = build_haystack(entry).to_lowercase();
             // normalize whitespace
-            let normalized: String = haystack
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ");
+            let normalized: String = haystack.split_whitespace().collect::<Vec<_>>().join(" ");
             let matches = normalized.contains(phrase.as_str());
             (matches, if matches { 1.0 } else { 0.0 })
         }
@@ -131,4 +128,3 @@ pub fn filter_sessions(
         })
         .collect()
 }
-

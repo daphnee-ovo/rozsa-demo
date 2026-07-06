@@ -171,10 +171,7 @@ fn append_context(
     let label = percent
         .map(|value| format!("{value:.0}%"))
         .unwrap_or_else(|| "—".to_string());
-    lines.push(Line::styled(
-        "CONTEXT",
-        Style::default().fg(THEME.muted),
-    ));
+    lines.push(Line::styled("CONTEXT", Style::default().fg(THEME.muted)));
     lines.push(progress_line(percent.unwrap_or(0.0), &label, inner));
     lines.push(Line::raw(""));
 }
@@ -220,11 +217,7 @@ fn append_queue(lines: &mut Vec<Line<'static>>, ui: &crate::protocol::NativeUiSt
     }
 }
 
-fn append_agents(
-    lines: &mut Vec<Line<'static>>,
-    agents: Option<&dyn SubagentView>,
-    inner: usize,
-) {
+fn append_agents(lines: &mut Vec<Line<'static>>, agents: Option<&dyn SubagentView>, inner: usize) {
     let Some(view) = agents else {
         return;
     };
@@ -236,7 +229,11 @@ fn append_agents(
     lines.push(Line::raw(""));
     lines.push(Line::styled("AGENTS", Style::default().fg(THEME.muted)));
     lines.push(Line::styled(
-        if viewing.is_none() { "▶ main" } else { "● main" },
+        if viewing.is_none() {
+            "▶ main"
+        } else {
+            "● main"
+        },
         Style::default().fg(THEME.accent),
     ));
     for agent in subagents.iter().take(5) {
@@ -325,10 +322,7 @@ fn append_notices(lines: &mut Vec<Line<'static>>, state: &AppState, inner: usize
         return;
     }
     lines.push(Line::raw(""));
-    lines.push(Line::styled(
-        "NOTICES",
-        Style::default().fg(THEME.muted),
-    ));
+    lines.push(Line::styled("NOTICES", Style::default().fg(THEME.muted)));
     for notice in state.notifications.iter().rev().take(3) {
         let color = match notice.level.as_str() {
             "error" => THEME.error,
@@ -361,7 +355,10 @@ fn append_file_section(
     lines.push(Line::from(vec![
         Span::styled(title.to_string(), Style::default().fg(THEME.muted)),
         if total_add > 0 {
-            Span::styled(format!(" +{total_add}"), Style::default().fg(THEME.assistant_msg))
+            Span::styled(
+                format!(" +{total_add}"),
+                Style::default().fg(THEME.assistant_msg),
+            )
         } else {
             Span::raw("")
         },
@@ -397,10 +394,16 @@ fn append_file_section(
             Span::raw(truncate(name, name_max)),
         ];
         if add > 0 {
-            spans.push(Span::styled(format!(" +{add}"), Style::default().fg(THEME.assistant_msg)));
+            spans.push(Span::styled(
+                format!(" +{add}"),
+                Style::default().fg(THEME.assistant_msg),
+            ));
         }
         if del > 0 {
-            spans.push(Span::styled(format!("-{del}"), Style::default().fg(THEME.error)));
+            spans.push(Span::styled(
+                format!("-{del}"),
+                Style::default().fg(THEME.error),
+            ));
         }
         lines.push(Line::from(spans));
     }

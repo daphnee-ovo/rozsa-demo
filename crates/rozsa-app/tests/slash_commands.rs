@@ -1,5 +1,5 @@
 use rozsa_app::slash_commands::{
-    AutocompleteEngine, SlashCommandInfo, SlashCommandSource, BUILTIN_SLASH_COMMANDS,
+    AutocompleteEngine, BUILTIN_SLASH_COMMANDS, SlashCommandInfo, SlashCommandSource,
 };
 
 #[test]

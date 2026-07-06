@@ -174,9 +174,7 @@ impl Tool for FakeTool {
     }
 }
 
-fn assistant_agent_message(
-    message: rozsa_model::types::AssistantMessage,
-) -> AgentMessage {
+fn assistant_agent_message(message: rozsa_model::types::AssistantMessage) -> AgentMessage {
     AgentMessage::standard(Message::Assistant(message))
 }
 
@@ -318,7 +316,10 @@ async fn steering_messages_injected_before_assistant_response() {
                 }
             }
             if let Some(Message::Assistant(_)) = message.as_standard() {
-                assert!(found_steering, "steering message should appear before assistant");
+                assert!(
+                    found_steering,
+                    "steering message should appear before assistant"
+                );
                 found_assistant = true;
             }
         }
@@ -553,7 +554,11 @@ async fn prepare_next_turn_updates_model() {
         events.push(event);
     }
 
-    assert_eq!(*prepare_count.lock().unwrap(), 2, "prepare_next_turn should be called twice");
+    assert_eq!(
+        *prepare_count.lock().unwrap(),
+        2,
+        "prepare_next_turn should be called twice"
+    );
     assert_eq!(*initial_model_id.lock().unwrap(), "updated-model");
 }
 
@@ -621,7 +626,10 @@ async fn multi_turn_with_tools() {
     assert!(event_names.contains(&"tool_execution_end"));
 
     let turn_starts = event_names.iter().filter(|&&n| n == "turn_start").count();
-    assert_eq!(turn_starts, 2, "should have 2 turns: tool call then final response");
+    assert_eq!(
+        turn_starts, 2,
+        "should have 2 turns: tool call then final response"
+    );
 
     let mut found_tool_result = false;
     let mut found_final_response = false;
@@ -642,20 +650,35 @@ async fn multi_turn_with_tools() {
         }
     }
     assert!(found_tool_result, "tool result should appear in messages");
-    assert!(found_final_response, "second-turn assistant text should be visible via MessageEnd");
+    assert!(
+        found_final_response,
+        "second-turn assistant text should be visible via MessageEnd"
+    );
 
     // Verify AgentEnd.messages contains the final response
-    let agent_end = events.iter().find_map(|e| {
-        if let AgentEvent::AgentEnd { messages } = e { Some(messages) } else { None }
-    }).expect("should have AgentEnd");
+    let agent_end = events
+        .iter()
+        .find_map(|e| {
+            if let AgentEvent::AgentEnd { messages } = e {
+                Some(messages)
+            } else {
+                None
+            }
+        })
+        .expect("should have AgentEnd");
     let has_final_in_end = agent_end.iter().any(|m| {
         if let Some(Message::Assistant(a)) = m.as_standard() {
-            a.content.iter().any(|b| matches!(b, ContentBlock::Text { text, .. } if text == "final response"))
+            a.content
+                .iter()
+                .any(|b| matches!(b, ContentBlock::Text { text, .. } if text == "final response"))
         } else {
             false
         }
     });
-    assert!(has_final_in_end, "AgentEnd.messages must contain the final assistant response");
+    assert!(
+        has_final_in_end,
+        "AgentEnd.messages must contain the final assistant response"
+    );
 }
 
 #[tokio::test]
@@ -678,12 +701,14 @@ async fn continue_empty_context_emits_agent_end_immediately() {
 #[tokio::test]
 async fn continue_last_message_assistant_emits_agent_end_immediately() {
     let mut context = empty_context();
-    context.messages.push(assistant_agent_message(assistant_message(vec![
-        ContentBlock::Text {
-            text: "hi".to_string(),
-            signature: None,
-        },
-    ])));
+    context
+        .messages
+        .push(assistant_agent_message(assistant_message(vec![
+            ContentBlock::Text {
+                text: "hi".to_string(),
+                signature: None,
+            },
+        ])));
     let config = config_with_stream(|| {
         panic!("should not stream");
     });
@@ -701,11 +726,13 @@ async fn continue_last_message_assistant_emits_agent_end_immediately() {
 #[tokio::test]
 async fn continue_valid_last_user_message_streams_response() {
     let mut context = empty_context();
-    context.messages.push(AgentMessage::standard(Message::User(UserMessage {
-        content: UserContent::Text("hello".to_string()),
-        display_text: None,
-        timestamp: 1,
-    })));
+    context
+        .messages
+        .push(AgentMessage::standard(Message::User(UserMessage {
+            content: UserContent::Text("hello".to_string()),
+            display_text: None,
+            timestamp: 1,
+        })));
     let config = config_with_stream(|| {
         let (sender, stream) = create_event_stream();
         let message = assistant_message(vec![ContentBlock::Text {
@@ -777,7 +804,10 @@ async fn unknown_tool_returns_error_result() {
             }
         }
     }
-    assert!(found_error_result, "unknown tool should produce error result");
+    assert!(
+        found_error_result,
+        "unknown tool should produce error result"
+    );
 }
 
 #[tokio::test]
@@ -845,7 +875,10 @@ async fn pre_tool_use_blocks_tool() {
             }
         }
     }
-    assert!(found_blocked, "blocked tool should produce error with reason");
+    assert!(
+        found_blocked,
+        "blocked tool should produce error with reason"
+    );
 }
 
 #[tokio::test]
@@ -912,7 +945,10 @@ async fn post_tool_use_overrides_result() {
             }
         }
     }
-    assert!(found_override, "post_tool_use should override result content");
+    assert!(
+        found_override,
+        "post_tool_use should override result content"
+    );
 }
 
 #[tokio::test]
@@ -923,10 +959,18 @@ async fn all_tools_terminate_ends_tool_loop() {
 
     #[async_trait::async_trait]
     impl Tool for TerminateTool {
-        fn name(&self) -> &str { "term_tool" }
-        fn description(&self) -> &str { "terminates" }
-        fn label(&self) -> &str { "term" }
-        fn parameters_schema(&self) -> &serde_json::Value { &self.schema }
+        fn name(&self) -> &str {
+            "term_tool"
+        }
+        fn description(&self) -> &str {
+            "terminates"
+        }
+        fn label(&self) -> &str {
+            "term"
+        }
+        fn parameters_schema(&self) -> &serde_json::Value {
+            &self.schema
+        }
         async fn execute(
             &self,
             _tool_call_id: &str,
@@ -1043,10 +1087,18 @@ async fn parallel_panic_produces_error_result_not_silent_drop() {
 
     #[async_trait::async_trait]
     impl Tool for PanicTool {
-        fn name(&self) -> &str { "panic_tool" }
-        fn description(&self) -> &str { "panics" }
-        fn label(&self) -> &str { "panic" }
-        fn parameters_schema(&self) -> &serde_json::Value { &self.schema }
+        fn name(&self) -> &str {
+            "panic_tool"
+        }
+        fn description(&self) -> &str {
+            "panics"
+        }
+        fn label(&self) -> &str {
+            "panic"
+        }
+        fn parameters_schema(&self) -> &serde_json::Value {
+            &self.schema
+        }
         async fn execute(
             &self,
             _tool_call_id: &str,
@@ -1111,44 +1163,67 @@ async fn parallel_panic_produces_error_result_not_silent_drop() {
     }
 
     // Both ToolExecutionStart events should have matching ToolExecutionEnd events
-    let starts: Vec<_> = events.iter().filter_map(|e| {
-        if let AgentEvent::ToolExecutionStart { tool_call_id, .. } = e {
-            Some(tool_call_id.clone())
-        } else {
-            None
-        }
-    }).collect();
-    let ends: Vec<_> = events.iter().filter_map(|e| {
-        if let AgentEvent::ToolExecutionEnd { tool_call_id, .. } = e {
-            Some(tool_call_id.clone())
-        } else {
-            None
-        }
-    }).collect();
-    assert_eq!(starts.len(), 2, "should have 2 tool execution starts");
-    assert_eq!(ends.len(), 2, "should have 2 tool execution ends (panic recovered)");
-    assert_eq!(starts, ends, "start/end ids should match in order");
-
-    // The panicked tool should produce an error result
-    let panic_result = events.iter().find_map(|e| {
-        if let AgentEvent::ToolExecutionEnd { tool_call_id, result, .. } = e {
-            if tool_call_id == "call_panic" {
-                Some(result)
+    let starts: Vec<_> = events
+        .iter()
+        .filter_map(|e| {
+            if let AgentEvent::ToolExecutionStart { tool_call_id, .. } = e {
+                Some(tool_call_id.clone())
             } else {
                 None
             }
-        } else {
-            None
-        }
-    }).expect("should have end event for panic tool");
+        })
+        .collect();
+    let ends: Vec<_> = events
+        .iter()
+        .filter_map(|e| {
+            if let AgentEvent::ToolExecutionEnd { tool_call_id, .. } = e {
+                Some(tool_call_id.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(starts.len(), 2, "should have 2 tool execution starts");
+    assert_eq!(
+        ends.len(),
+        2,
+        "should have 2 tool execution ends (panic recovered)"
+    );
+    assert_eq!(starts, ends, "start/end ids should match in order");
+
+    // The panicked tool should produce an error result
+    let panic_result = events
+        .iter()
+        .find_map(|e| {
+            if let AgentEvent::ToolExecutionEnd {
+                tool_call_id,
+                result,
+                ..
+            } = e
+            {
+                if tool_call_id == "call_panic" {
+                    Some(result)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .expect("should have end event for panic tool");
     assert!(panic_result.is_error);
-    let has_panic_msg = panic_result.content.iter().any(|b| {
-        matches!(b, ContentBlock::Text { text, .. } if text.contains("panicked"))
-    });
+    let has_panic_msg = panic_result
+        .content
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Text { text, .. } if text.contains("panicked")));
     assert!(has_panic_msg, "error should mention panic");
 
     // AgentEnd should be reached
-    assert!(events.iter().any(|e| matches!(e, AgentEvent::AgentEnd { .. })));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::AgentEnd { .. }))
+    );
 }
 
 #[tokio::test]
@@ -1160,10 +1235,18 @@ async fn parallel_cancel_aborts_pending_handles() {
 
     #[async_trait::async_trait]
     impl Tool for SlowTool {
-        fn name(&self) -> &str { &self.name }
-        fn description(&self) -> &str { "slow tool" }
-        fn label(&self) -> &str { "slow" }
-        fn parameters_schema(&self) -> &serde_json::Value { &self.schema }
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn description(&self) -> &str {
+            "slow tool"
+        }
+        fn label(&self) -> &str {
+            "slow"
+        }
+        fn parameters_schema(&self) -> &serde_json::Value {
+            &self.schema
+        }
         async fn execute(
             &self,
             _tool_call_id: &str,
@@ -1259,29 +1342,51 @@ async fn parallel_cancel_aborts_pending_handles() {
     }
 
     // Both tools should have start events
-    let starts: Vec<_> = events.iter().filter_map(|e| {
-        if let AgentEvent::ToolExecutionStart { tool_call_id, .. } = e {
-            Some(tool_call_id.clone())
-        } else {
-            None
-        }
-    }).collect();
+    let starts: Vec<_> = events
+        .iter()
+        .filter_map(|e| {
+            if let AgentEvent::ToolExecutionStart { tool_call_id, .. } = e {
+                Some(tool_call_id.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(starts.len(), 2, "should have 2 tool execution starts");
 
     // Both tools should have end events (cancelled tools produce error results)
-    let ends: Vec<_> = events.iter().filter_map(|e| {
-        if let AgentEvent::ToolExecutionEnd { tool_call_id, result, .. } = e {
-            Some((tool_call_id.clone(), result.is_error))
-        } else {
-            None
-        }
-    }).collect();
-    assert_eq!(ends.len(), 2, "should have 2 tool execution ends (cancelled tools produce errors)");
+    let ends: Vec<_> = events
+        .iter()
+        .filter_map(|e| {
+            if let AgentEvent::ToolExecutionEnd {
+                tool_call_id,
+                result,
+                ..
+            } = e
+            {
+                Some((tool_call_id.clone(), result.is_error))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        ends.len(),
+        2,
+        "should have 2 tool execution ends (cancelled tools produce errors)"
+    );
 
     // At least one should be an error (from cancellation)
     let error_count = ends.iter().filter(|(_, is_error)| *is_error).count();
-    assert!(error_count >= 1, "at least one tool should have error result from cancellation");
+    assert!(
+        error_count >= 1,
+        "at least one tool should have error result from cancellation"
+    );
 
     // Agent should complete
-    assert!(events.iter().any(|e| matches!(e, AgentEvent::AgentEnd { .. })));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::AgentEnd { .. }))
+    );
 }

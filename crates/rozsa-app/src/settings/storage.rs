@@ -174,8 +174,16 @@ impl SettingsManager {
     /// Converts the trust_key into a regex pattern (exact prefix match).
     pub fn add_trusted_pattern(&mut self, trust_key: &str) {
         let pattern = format!("^{}", regex::escape(trust_key));
-        if !self.resolved.permissions.auto_approve_patterns.contains(&pattern) {
-            self.resolved.permissions.auto_approve_patterns.push(pattern);
+        if !self
+            .resolved
+            .permissions
+            .auto_approve_patterns
+            .contains(&pattern)
+        {
+            self.resolved
+                .permissions
+                .auto_approve_patterns
+                .push(pattern);
             let _ = self.save_global();
         }
     }
@@ -188,11 +196,12 @@ impl SettingsManager {
                 source,
             })?;
         }
-        let json = serde_json::to_string_pretty(&self.resolved)
-            .map_err(|source| SettingsError::ParseError {
+        let json = serde_json::to_string_pretty(&self.resolved).map_err(|source| {
+            SettingsError::ParseError {
                 path: self.global_path.clone(),
                 source,
-            })?;
+            }
+        })?;
         fs::write(&self.global_path, json).map_err(|source| SettingsError::ReadError {
             path: self.global_path.clone(),
             source,

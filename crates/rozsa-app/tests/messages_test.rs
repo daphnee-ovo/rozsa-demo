@@ -22,11 +22,7 @@ fn test_app_message_to_agent_message() {
 
 #[test]
 fn test_bash_execution_message() {
-    let bash = BashExecutionMessage::new(
-        "ls -la".to_string(),
-        "file1\nfile2".to_string(),
-        Some(0),
-    );
+    let bash = BashExecutionMessage::new("ls -la".to_string(), "file1\nfile2".to_string(), Some(0));
     assert_eq!(bash.command, "ls -la");
     assert!(!bash.exclude_from_context);
 

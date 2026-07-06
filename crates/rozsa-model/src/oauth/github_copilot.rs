@@ -1,10 +1,10 @@
+use serde_json::Value;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use serde_json::Value;
 
-use super::types::{OAuthCredentials, OAuthFlowEvent, OAuthLoginError};
 use super::device_code::{self, DeviceCodePollResult};
+use super::types::{OAuthCredentials, OAuthFlowEvent, OAuthLoginError};
 
 const CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
 const DEFAULT_DOMAIN: &str = "github.com";
@@ -37,10 +37,7 @@ pub async fn login(
         .ok();
 
     // 2. Wait for user response
-    let domain_response = response_rx
-        .recv()
-        .await
-        .ok_or(OAuthLoginError::Cancelled)?;
+    let domain_response = response_rx.recv().await.ok_or(OAuthLoginError::Cancelled)?;
     let domain_input = domain_response
         .get("value")
         .and_then(Value::as_str)

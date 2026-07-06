@@ -16,7 +16,11 @@ fn make_entry(name: Option<&str>, first_msg: &str, all_text: &str) -> SessionEnt
 
 #[test]
 fn test_token_match() {
-    let entry = make_entry(Some("auth refactor"), "fix login bug", "auth login token refresh");
+    let entry = make_entry(
+        Some("auth refactor"),
+        "fix login bug",
+        "auth login token refresh",
+    );
     let parsed = parse_query("auth login");
     let (matches, _score) = match_session(&entry, &parsed);
     assert!(matches);

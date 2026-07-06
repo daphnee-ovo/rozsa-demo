@@ -92,7 +92,8 @@ pub fn handle_paste(data: &str, state: &mut AppState, editor: &mut InputState) {
             let path = std::path::Path::new(stripped);
             if path.is_file() {
                 if let Ok(bytes) = std::fs::read(path) {
-                    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+                    let b64 =
+                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
                     attach_image(state, editor, b64);
                     return;
                 }

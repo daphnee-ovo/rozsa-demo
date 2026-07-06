@@ -9,7 +9,7 @@ pub mod resources;
 pub mod runtime_state;
 pub mod session;
 pub mod settings;
-pub mod slash_commands;
 pub mod skills;
+pub mod slash_commands;
 pub mod subagent;
 pub mod tools;

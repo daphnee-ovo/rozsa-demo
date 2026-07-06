@@ -23,8 +23,8 @@ mod dialog;
 mod input_box;
 mod layout;
 mod messages;
-mod status;
 pub mod overlay;
+mod status;
 
 use std::hash::{Hash, Hasher};
 
@@ -34,15 +34,10 @@ use rozsa_core::messages::AgentMessage;
 use rozsa_model::types::Message;
 
 use crate::{
-    app::AppState,
-    backend::SubagentView,
-    panels::autocomplete::render_autocomplete,
-    panels::graph::render_graph,
-    panels::model_selector::render_model_selector,
-    panels::permission::render_permission,
-    panels::session_selector::render_session_selector,
-    panels::sidebar::render_sidebar,
-    input::InputState,
+    app::AppState, backend::SubagentView, input::InputState,
+    panels::autocomplete::render_autocomplete, panels::graph::render_graph,
+    panels::model_selector::render_model_selector, panels::permission::render_permission,
+    panels::session_selector::render_session_selector, panels::sidebar::render_sidebar,
 };
 
 use dialog::{centered_rect, render_dialog};
@@ -150,7 +145,15 @@ pub(crate) fn cached_message_lines(
         if let Some(lines) = cache.get(&key) {
             return lines.clone();
         }
-        let lines = messages::message_lines(message, tools_expanded, thinking_visible, show_images, compaction_collapsed, false, width);
+        let lines = messages::message_lines(
+            message,
+            tools_expanded,
+            thinking_visible,
+            show_images,
+            compaction_collapsed,
+            false,
+            width,
+        );
         // 同步更新 height cache（顺手缓存，避免下次单独算）
         HEIGHT_CACHE.with(|hc| {
             hc.borrow_mut().put(key, lines.len());

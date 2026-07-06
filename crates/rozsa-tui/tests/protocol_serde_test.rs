@@ -29,7 +29,13 @@ fn test_dialog_deserialization() {
     let json = r#"{"type":"dialog","id":"dlg-1","kind":"select","title":"Choose","message":"Pick one","options":["a","b","c"]}"#;
     let msg: HostMessage = serde_json::from_str(json).expect("dialog deserialization failed");
     match msg {
-        HostMessage::Dialog { id, kind, title, options, .. } => {
+        HostMessage::Dialog {
+            id,
+            kind,
+            title,
+            options,
+            ..
+        } => {
             assert_eq!(id, "dlg-1");
             assert_eq!(kind, "select");
             assert_eq!(title, "Choose");
@@ -69,14 +75,20 @@ fn test_unknown_type_fails_gracefully() {
 fn test_client_message_serialization() {
     use rozsa_tui::protocol::{ClientMessage, ImagePayload};
 
-    let msg = ClientMessage::Submit { text: "hello", images: vec![] };
+    let msg = ClientMessage::Submit {
+        text: "hello",
+        images: vec![],
+    };
     let json = serde_json::to_string(&msg).unwrap();
     assert!(json.contains(r#""type":"submit""#));
     assert!(json.contains(r#""text":"hello""#));
     assert!(!json.contains("images"));
 
     let img = ImagePayload::from_base64("iVBORdata".to_string());
-    let msg = ClientMessage::Submit { text: "hi", images: vec![img] };
+    let msg = ClientMessage::Submit {
+        text: "hi",
+        images: vec![img],
+    };
     let json = serde_json::to_string(&msg).unwrap();
     assert!(json.contains("images"));
     assert!(json.contains(r#""mimeType":"image/png""#));
@@ -96,7 +108,11 @@ fn test_client_message_serialization() {
         r#"{"type":"switch_model","provider":"nvidia","id":"google/gemma-4-31b-it"}"#
     );
 
-    let msg = ClientMessage::PermissionResponse { id: "p1", choice: "approve_once", trust_key: None };
+    let msg = ClientMessage::PermissionResponse {
+        id: "p1",
+        choice: "approve_once",
+        trust_key: None,
+    };
     let json = serde_json::to_string(&msg).unwrap();
     assert!(json.contains(r#""id":"p1""#));
     assert!(!json.contains("trustKey"));
@@ -106,7 +122,10 @@ fn test_client_message_serialization() {
 fn test_update_setting_serialization() {
     use rozsa_tui::protocol::ClientMessage;
 
-    let msg = ClientMessage::UpdateSetting { key: "thinkingLevel", value: "high" };
+    let msg = ClientMessage::UpdateSetting {
+        key: "thinkingLevel",
+        value: "high",
+    };
     let json = serde_json::to_string(&msg).unwrap();
     assert!(json.contains(r#""type":"update_setting""#));
     assert!(json.contains(r#""key":"thinkingLevel""#));

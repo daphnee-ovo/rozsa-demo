@@ -68,10 +68,7 @@ impl AppMessage {
     }
 
     /// Create a model change message
-    pub fn model_change(
-        from_model: Option<(String, String)>,
-        to_model: (String, String),
-    ) -> Self {
+    pub fn model_change(from_model: Option<(String, String)>, to_model: (String, String)) -> Self {
         Self::ModelChange(ModelChangeMessage {
             from_model: from_model.map(|(provider, id)| ModelInfo { provider, id }),
             to_model: ModelInfo {
@@ -118,8 +115,7 @@ impl AppMessage {
 impl From<AppMessage> for AgentMessage {
     fn from(app_msg: AppMessage) -> Self {
         let message_type = app_msg.message_type().to_string();
-        let payload = serde_json::to_value(&app_msg)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let payload = serde_json::to_value(&app_msg).unwrap_or_else(|_| serde_json::json!({}));
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -160,8 +156,7 @@ impl BashExecutionMessage {
     }
 
     pub fn to_agent_message(self) -> AgentMessage {
-        let payload = serde_json::to_value(&self)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let payload = serde_json::to_value(&self).unwrap_or_else(|_| serde_json::json!({}));
         AgentMessage::custom("bash_execution".to_string(), payload, self.timestamp)
     }
 }
@@ -187,9 +182,7 @@ impl BranchSummaryMessage {
     }
 
     pub fn to_agent_message(self) -> AgentMessage {
-        let payload = serde_json::to_value(&self)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let payload = serde_json::to_value(&self).unwrap_or_else(|_| serde_json::json!({}));
         AgentMessage::custom("branch_summary".to_string(), payload, self.timestamp)
     }
 }
-

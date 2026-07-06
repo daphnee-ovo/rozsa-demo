@@ -5,11 +5,8 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    util::highlight::highlight_code,
-    util::hyperlink::render_link_spans,
-    util::terminal_caps::CAPS,
-    util::terminal_image::render_image,
-    theme::THEME,
+    theme::THEME, util::highlight::highlight_code, util::hyperlink::render_link_spans,
+    util::terminal_caps::CAPS, util::terminal_image::render_image,
 };
 
 pub fn parse_markdown_with_width(text: &str, terminal_width: usize) -> Vec<Line<'static>> {
@@ -36,7 +33,8 @@ fn parse_markdown_inner(text: &str, terminal_width: usize) -> Vec<Line<'static>>
         // 表格处理：收集以 | 开头的连续行
         if !in_code_block {
             let trimmed_for_table = raw_line.trim();
-            let is_table_line = trimmed_for_table.starts_with('|') && trimmed_for_table.ends_with('|');
+            let is_table_line =
+                trimmed_for_table.starts_with('|') && trimmed_for_table.ends_with('|');
 
             if is_table_line {
                 table_buf.push(raw_line);
@@ -70,7 +68,11 @@ fn parse_markdown_inner(text: &str, terminal_width: usize) -> Vec<Line<'static>>
         if raw_line.trim_start().starts_with("```") {
             if !in_code_block {
                 // 进入代码块：提取语言标记
-                code_lang = raw_line.trim_start().trim_start_matches('`').trim().to_string();
+                code_lang = raw_line
+                    .trim_start()
+                    .trim_start_matches('`')
+                    .trim()
+                    .to_string();
                 code_buf.clear();
                 lines.push(Line::from(Span::styled(
                     raw_line.to_string(),
@@ -223,10 +225,9 @@ fn parse_image_line(line: &str) -> Option<Vec<Line<'static>>> {
     if path.starts_with("data:image/") {
         if let Some(b64_start) = path.find(";base64,") {
             let b64_data = &path[b64_start + 8..];
-            if let Ok(data) = base64::Engine::decode(
-                &base64::engine::general_purpose::STANDARD,
-                b64_data,
-            ) {
+            if let Ok(data) =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64_data)
+            {
                 if let Some((seq, rows)) = render_image(&data, 60, 20) {
                     let mut lines = vec![Line::raw(seq)];
                     for _ in 1..rows {
@@ -330,18 +331,16 @@ fn parse_heading(line: &str) -> Option<Line<'static>> {
 fn parse_list_item(line: &str) -> Option<Line<'static>> {
     let trimmed = line.trim_start();
     let indent = line.len() - trimmed.len();
-    let (bullet, rest) = if trimmed.starts_with("- ")
-        || trimmed.starts_with("* ")
-        || trimmed.starts_with("+ ")
-    {
-        trimmed.split_at(2)
-    } else {
-        let dot_pos = trimmed.find(". ")?;
-        if dot_pos > 3 || !trimmed[..dot_pos].chars().all(|c| c.is_ascii_digit()) {
-            return None;
-        }
-        trimmed.split_at(dot_pos + 2)
-    };
+    let (bullet, rest) =
+        if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
+            trimmed.split_at(2)
+        } else {
+            let dot_pos = trimmed.find(". ")?;
+            if dot_pos > 3 || !trimmed[..dot_pos].chars().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            trimmed.split_at(dot_pos + 2)
+        };
     // 每级嵌套 4 空格缩进（对齐 TS TUI）
     let nesting_level = indent / 2;
     let prefix = " ".repeat(nesting_level * 4);
@@ -358,7 +357,10 @@ fn parse_list_item(line: &str) -> Option<Line<'static>> {
     let inline = parse_inline(content);
     let mut spans = vec![
         Span::raw(prefix),
-        Span::styled(bullet.to_string(), Style::default().fg(THEME.md_list_bullet)),
+        Span::styled(
+            bullet.to_string(),
+            Style::default().fg(THEME.md_list_bullet),
+        ),
     ];
     if let Some(marker) = task_marker {
         spans.push(Span::styled(
@@ -379,10 +381,7 @@ fn render_table(table_lines: &[&str]) -> Option<Vec<Line<'static>>> {
 
     // 验证第二行是分隔符行（|---|---|）
     let separator = table_lines[1].trim();
-    let sep_cells: Vec<&str> = separator
-        .trim_matches('|')
-        .split('|')
-        .collect();
+    let sep_cells: Vec<&str> = separator.trim_matches('|').split('|').collect();
     let is_separator = sep_cells.iter().all(|c| {
         let t = c.trim();
         t.chars().all(|ch| ch == '-' || ch == ':') && !t.is_empty()
@@ -462,7 +461,10 @@ fn render_table(table_lines: &[&str]) -> Option<Vec<Line<'static>>> {
             spans.push(Span::styled(" ".to_string(), cell_style));
             let cell_line = parse_inline(cell_content);
             spans.extend(cell_line.spans);
-            spans.push(Span::styled(format!("{} ", " ".repeat(padding)), cell_style));
+            spans.push(Span::styled(
+                format!("{} ", " ".repeat(padding)),
+                cell_style,
+            ));
             spans.push(Span::styled("│".to_string(), border_style));
         }
         result.push(Line::from(spans));
@@ -531,7 +533,9 @@ fn parse_inline_spans(line: &str, inherited_modifier: Modifier) -> Vec<Span<'sta
             }
             spans.push(Span::styled(
                 code,
-                Style::default().fg(THEME.md_code).add_modifier(inherited_modifier),
+                Style::default()
+                    .fg(THEME.md_code)
+                    .add_modifier(inherited_modifier),
             ));
         } else if chars[i] == '*' && i + 1 < len && chars[i + 1] == '*' {
             if !buf.is_empty() {
@@ -564,7 +568,8 @@ fn parse_inline_spans(line: &str, inherited_modifier: Modifier) -> Vec<Span<'sta
             if i + 1 < len {
                 i += 2;
             }
-            let inner = parse_inline_spans(&strike_content, inherited_modifier | Modifier::CROSSED_OUT);
+            let inner =
+                parse_inline_spans(&strike_content, inherited_modifier | Modifier::CROSSED_OUT);
             spans.extend(inner);
         } else if chars[i] == '=' && i + 1 < len && chars[i + 1] == '=' {
             // ==highlight== — 高亮标记
@@ -617,7 +622,8 @@ fn parse_inline_spans(line: &str, inherited_modifier: Modifier) -> Vec<Span<'sta
             }
             let inner = parse_inline_spans(&bold_content, inherited_modifier | Modifier::BOLD);
             spans.extend(inner);
-        } else if chars[i] == '_' && (i == 0 || chars[i - 1].is_whitespace() || chars[i - 1] == '(') {
+        } else if chars[i] == '_' && (i == 0 || chars[i - 1].is_whitespace() || chars[i - 1] == '(')
+        {
             // _italic_ — only at word boundary
             if !buf.is_empty() {
                 spans.push(Span::styled(buf.clone(), base_style));
@@ -633,10 +639,15 @@ fn parse_inline_spans(line: &str, inherited_modifier: Modifier) -> Vec<Span<'sta
                 i += 1;
             }
             if !italic_content.is_empty() {
-                let inner = parse_inline_spans(&italic_content, inherited_modifier | Modifier::ITALIC);
+                let inner =
+                    parse_inline_spans(&italic_content, inherited_modifier | Modifier::ITALIC);
                 spans.extend(inner);
             }
-        } else if chars[i] == '$' && i + 1 < len && !chars[i + 1].is_whitespace() && chars[i + 1] != '$' {
+        } else if chars[i] == '$'
+            && i + 1 < len
+            && !chars[i + 1].is_whitespace()
+            && chars[i + 1] != '$'
+        {
             // LaTeX 公式：$inline$ — 要求 $ 后紧跟非空白字符（避免与货币符号冲突）
             if !buf.is_empty() {
                 spans.push(Span::styled(buf.clone(), base_style));
@@ -734,4 +745,3 @@ fn parse_link_at(chars: &[char], start: usize) -> Option<(String, String, usize)
     }
     Some((text, url, i))
 }
-

@@ -9,10 +9,26 @@ use serde_json::json;
 fn inherit_allows_everything() {
     let scope = SubagentScope::inherit();
     let cwd = Path::new("/tmp");
-    assert!(scope.check_tool_allowed("write", &json!({"path": "/etc/foo"}), cwd).is_ok());
-    assert!(scope.check_tool_allowed("bash", &json!({"command": "rm -rf /"}), cwd).is_ok());
-    assert!(scope.check_tool_allowed("skill", &json!({"skill": "anything"}), cwd).is_ok());
-    assert!(scope.check_tool_allowed("anything_else", &json!({}), cwd).is_ok());
+    assert!(
+        scope
+            .check_tool_allowed("write", &json!({"path": "/etc/foo"}), cwd)
+            .is_ok()
+    );
+    assert!(
+        scope
+            .check_tool_allowed("bash", &json!({"command": "rm -rf /"}), cwd)
+            .is_ok()
+    );
+    assert!(
+        scope
+            .check_tool_allowed("skill", &json!({"skill": "anything"}), cwd)
+            .is_ok()
+    );
+    assert!(
+        scope
+            .check_tool_allowed("anything_else", &json!({}), cwd)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -24,7 +40,11 @@ fn readonly_blocks_write_tool() {
         .unwrap_err();
     assert!(err.contains("write"));
     // 只读工具放行
-    assert!(scope.check_tool_allowed("read", &json!({"path": "/anywhere"}), cwd).is_ok());
+    assert!(
+        scope
+            .check_tool_allowed("read", &json!({"path": "/anywhere"}), cwd)
+            .is_ok()
+    );
     assert!(scope.check_tool_allowed("grep", &json!({}), cwd).is_ok());
 }
 

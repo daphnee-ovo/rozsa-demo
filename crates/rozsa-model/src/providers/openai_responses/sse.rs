@@ -77,7 +77,11 @@ impl ResponsesSseParser {
     }
 
     /// Process a single complete line within the SSE stream.
-    fn parse_line(&mut self, line: &str, events: &mut Vec<ResponseEvent>) -> Result<(), ProviderError> {
+    fn parse_line(
+        &mut self,
+        line: &str,
+        events: &mut Vec<ResponseEvent>,
+    ) -> Result<(), ProviderError> {
         // Empty line = frame boundary (double newline separator).
         if line.is_empty() {
             self.flush_frame(events)?;
@@ -157,11 +161,13 @@ fn map_raw_to_event(raw: RawResponsesStreamEvent) -> Result<Option<ResponseEvent
             delta: raw.delta.unwrap_or_default(),
         })),
 
-        "response.function_call_arguments.delta" => Ok(Some(ResponseEvent::FunctionCallArgsDelta {
-            item_id: raw.item_id,
-            call_id: raw.call_id,
-            delta: raw.delta.unwrap_or_default(),
-        })),
+        "response.function_call_arguments.delta" => {
+            Ok(Some(ResponseEvent::FunctionCallArgsDelta {
+                item_id: raw.item_id,
+                call_id: raw.call_id,
+                delta: raw.delta.unwrap_or_default(),
+            }))
+        }
 
         "response.reasoning_summary_text.delta" => Ok(Some(ResponseEvent::ReasoningSummaryDelta {
             delta: raw.delta.unwrap_or_default(),
@@ -203,8 +209,9 @@ fn parse_response_item(
 ) -> Result<Option<ResponseItem>, ProviderError> {
     match item {
         Some(val) => {
-            let parsed = serde_json::from_value::<ResponseItem>(val)
-                .map_err(|e| ProviderError::Parse(format!("failed to parse ResponseItem from {context}: {e}")))?;
+            let parsed = serde_json::from_value::<ResponseItem>(val).map_err(|e| {
+                ProviderError::Parse(format!("failed to parse ResponseItem from {context}: {e}"))
+            })?;
             Ok(Some(parsed))
         }
         None => Ok(None),
@@ -217,10 +224,12 @@ fn parse_completed(
 ) -> Result<Option<ResponseEvent>, ProviderError> {
     let resp = match response {
         Some(v) => v,
-        None => return Ok(Some(ResponseEvent::Completed {
-            response_id: String::new(),
-            usage: None,
-        })),
+        None => {
+            return Ok(Some(ResponseEvent::Completed {
+                response_id: String::new(),
+                usage: None,
+            }));
+        }
     };
 
     let response_id = resp
@@ -279,10 +288,12 @@ fn parse_failed(
 ) -> Result<Option<ResponseEvent>, ProviderError> {
     let resp = match response {
         Some(v) => v,
-        None => return Ok(Some(ResponseEvent::Failed {
-            error_code: "unknown".to_string(),
-            error_message: "response.failed event with no response payload".to_string(),
-        })),
+        None => {
+            return Ok(Some(ResponseEvent::Failed {
+                error_code: "unknown".to_string(),
+                error_message: "response.failed event with no response payload".to_string(),
+            }));
+        }
     };
 
     let error_obj = resp.get("error");

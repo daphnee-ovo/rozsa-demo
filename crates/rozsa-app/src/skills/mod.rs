@@ -3,7 +3,7 @@ pub mod loader;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use loader::{load_skills_from_dirs, LoadedSkill, SkillScope};
+use loader::{LoadedSkill, SkillScope, load_skills_from_dirs};
 
 /// 注册表中的 Skill
 #[derive(Debug, Clone)]
@@ -66,7 +66,10 @@ impl SkillRegistry {
         let dirs = vec![
             (cwd.join(".rozsa").join("skills"), SkillScope::Project),
             (home.join(".agents").join("skills"), SkillScope::Agents),
-            (home.join(".rozsa").join("agent").join("skills"), SkillScope::User),
+            (
+                home.join(".rozsa").join("agent").join("skills"),
+                SkillScope::User,
+            ),
         ];
         let result = load_skills_from_dirs(&dirs);
         Self::new(result.skills)
@@ -78,7 +81,10 @@ impl SkillRegistry {
         let dirs = vec![
             (cwd.join(".rozsa").join("skills"), SkillScope::Project),
             (home.join(".agents").join("skills"), SkillScope::Agents),
-            (home.join(".rozsa").join("agent").join("skills"), SkillScope::User),
+            (
+                home.join(".rozsa").join("agent").join("skills"),
+                SkillScope::User,
+            ),
         ];
         let result = load_skills_from_dirs(&dirs);
         (Self::new(result.skills), result.diagnostics)
@@ -106,7 +112,10 @@ impl SkillRegistry {
 
         for skill in &self.skills {
             let var_path = format_skill_var_path(skill);
-            lines.push(format!("- {}: {} (file: {})", skill.name, skill.description, var_path));
+            lines.push(format!(
+                "- {}: {} (file: {})",
+                skill.name, skill.description, var_path
+            ));
         }
 
         lines.join("\n")
@@ -136,8 +145,16 @@ fn format_skill_var_path(skill: &Skill) -> String {
     // 从 file_path 提取 skill 目录后的相对路径部分
     // file_path 形如 /path/to/skills/<name>/SKILL.md
     // 我们要输出 $VAR/<name>/SKILL.md
-    let file_name = skill.file_path.file_name().unwrap_or_default().to_string_lossy();
-    let skill_dir_name = skill.base_dir.file_name().unwrap_or_default().to_string_lossy();
+    let file_name = skill
+        .file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let skill_dir_name = skill
+        .base_dir
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
     format!("{var_name}/{skill_dir_name}/{file_name}")
 }
 

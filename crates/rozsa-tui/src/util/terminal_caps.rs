@@ -29,17 +29,14 @@ pub struct TerminalCaps {
 pub static CAPS: LazyLock<TerminalCaps> = LazyLock::new(detect);
 
 pub fn detect() -> TerminalCaps {
-    let term_program = env::var("TERM_PROGRAM")
-        .unwrap_or_default()
-        .to_lowercase();
+    let term_program = env::var("TERM_PROGRAM").unwrap_or_default().to_lowercase();
     let term = env::var("TERM").unwrap_or_default().to_lowercase();
     let color_term = env::var("COLORTERM").unwrap_or_default().to_lowercase();
     let has_true_color = color_term == "truecolor" || color_term == "24bit";
 
     // tmux/screen: 不支持 hyperlinks 和 images
-    let in_tmux = env::var("TMUX").is_ok()
-        || term.starts_with("tmux")
-        || term.starts_with("screen");
+    let in_tmux =
+        env::var("TMUX").is_ok() || term.starts_with("tmux") || term.starts_with("screen");
     if in_tmux {
         return TerminalCaps {
             images: None,

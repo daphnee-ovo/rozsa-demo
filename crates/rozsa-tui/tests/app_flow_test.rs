@@ -84,12 +84,10 @@ async fn full_conversation_flow_with_mock_backend() {
         id: "perm-1".to_string(),
         request: json!({"toolName": "bash", "command": "ls"}),
         context: json!({"riskLevel": "low"}),
-        trust_levels: vec![
-            rozsa_tui::protocol::NativeTrustLevel {
-                label: "This session".to_string(),
-                key: "session".to_string(),
-            },
-        ],
+        trust_levels: vec![rozsa_tui::protocol::NativeTrustLevel {
+            label: "This session".to_string(),
+            key: "session".to_string(),
+        }],
     };
     backend.inject_event(BackendEvent::Permission(perm));
     let event = rx.recv().await.unwrap();
@@ -168,7 +166,12 @@ async fn model_and_session_commands() {
     assert!(
         matches!(&calls[1], MockCall::SwitchModel { provider, id } if provider == "anthropic" && id == "claude-opus-4-20250514")
     );
-    assert!(matches!(&calls[2], MockCall::CycleModel { direction: Direction::Forward }));
+    assert!(matches!(
+        &calls[2],
+        MockCall::CycleModel {
+            direction: Direction::Forward
+        }
+    ));
     assert!(matches!(&calls[3], MockCall::ListSessions));
 }
 

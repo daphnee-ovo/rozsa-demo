@@ -36,7 +36,11 @@ fn content_block_thinking_roundtrip() {
     assert_eq!(json["redacted"], true);
     let back: ContentBlock = serde_json::from_value(json).unwrap();
     match back {
-        ContentBlock::Thinking { thinking, signature, redacted } => {
+        ContentBlock::Thinking {
+            thinking,
+            signature,
+            redacted,
+        } => {
             assert_eq!(thinking, "hmm");
             assert_eq!(signature, Some("sig123".to_string()));
             assert!(redacted);
@@ -97,15 +101,28 @@ fn message_user_roundtrip() {
 #[test]
 fn message_assistant_roundtrip() {
     let msg = Message::Assistant(AssistantMessage {
-        content: vec![ContentBlock::Text { text: "hi".to_string(), signature: None }],
+        content: vec![ContentBlock::Text {
+            text: "hi".to_string(),
+            signature: None,
+        }],
         api: Api::AnthropicMessages,
         provider: Provider::Anthropic,
         model: "claude-3".to_string(),
         response_model: None,
         response_id: None,
         usage: Usage {
-            input: 10, output: 20, cache_read: 0, cache_write: 0, total_tokens: 30,
-            cost: UsageCost { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0, total: 0.0 },
+            input: 10,
+            output: 20,
+            cache_read: 0,
+            cache_write: 0,
+            total_tokens: 30,
+            cost: UsageCost {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+                total: 0.0,
+            },
         },
         stop_reason: StopReason::Stop,
         error_message: None,

@@ -103,7 +103,8 @@ fn get_vertex_credential() -> Option<String> {
     }
     // Application Default Credentials + project + location
     let has_adc = if let Some(home) = home_dir() {
-        home.join(".config/gcloud/application_default_credentials.json").exists()
+        home.join(".config/gcloud/application_default_credentials.json")
+            .exists()
     } else {
         false
     };

@@ -29,8 +29,9 @@ fn build_client() -> Client {
     // Respect HTTP_PROXY / HTTPS_PROXY environment variables.
     // reqwest automatically reads these env vars when using default builder,
     // but we make it explicit for clarity.
-    if let Ok(proxy_url) = std::env::var("HTTPS_PROXY").or_else(|_| std::env::var("HTTP_PROXY")) &&
-       let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
+    if let Ok(proxy_url) = std::env::var("HTTPS_PROXY").or_else(|_| std::env::var("HTTP_PROXY"))
+        && let Ok(proxy) = reqwest::Proxy::all(&proxy_url)
+    {
         builder = builder.proxy(proxy);
     }
 

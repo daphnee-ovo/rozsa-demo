@@ -15,9 +15,14 @@ use std::time::{Duration, Instant};
 fn binary_path() -> String {
     // cargo test 在 workspace root 运行，但以防万一也支持 crate root
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent().unwrap()  // crates/
-        .parent().unwrap(); // workspace root
-    workspace.join("target/debug/rozsa").to_string_lossy().into_owned()
+        .parent()
+        .unwrap() // crates/
+        .parent()
+        .unwrap(); // workspace root
+    workspace
+        .join("target/debug/rozsa")
+        .to_string_lossy()
+        .into_owned()
 }
 
 const _BINARY_PLACEHOLDER: &str = ""; // BINARY 现在由 binary_path() 提供
@@ -167,13 +172,9 @@ fn slash_input_triggers_completion_popup() {
 
     // 验证补全列表出现
     let screen = session.capture();
-    let has_completion = screen.contains("compact")
-        || screen.contains("help")
-        || screen.contains("model");
-    assert!(
-        has_completion,
-        "输入 / 后应出现补全列表。屏幕:\n{screen}"
-    );
+    let has_completion =
+        screen.contains("compact") || screen.contains("help") || screen.contains("model");
+    assert!(has_completion, "输入 / 后应出现补全列表。屏幕:\n{screen}");
 }
 
 #[test]

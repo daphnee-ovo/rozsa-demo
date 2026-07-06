@@ -15,7 +15,7 @@ use ratatui::{
     text::Span,
 };
 
-use crate::{util::terminal_caps::CAPS, theme::THEME};
+use crate::{theme::THEME, util::terminal_caps::CAPS};
 
 /// 生成 OSC 8 超链接转义序列
 pub fn osc8_hyperlink(url: &str, text: &str) -> String {

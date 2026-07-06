@@ -6,9 +6,7 @@ use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::resources::LoadedResources;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
-use rozsa_model::types::{
-    Api, InputModality, Model, ModelCost, Provider, ThinkingLevel,
-};
+use rozsa_model::types::{Api, InputModality, Model, ModelCost, Provider, ThinkingLevel};
 
 fn test_model() -> Model {
     Model {
@@ -46,12 +44,8 @@ async fn agent_session_creates_and_registers_tools() {
     )
     .unwrap();
 
-    let settings_manager = SettingsManager::load(
-        tmp_dir.path().join("global-settings.json"),
-        None,
-        None,
-    )
-    .unwrap();
+    let settings_manager =
+        SettingsManager::load(tmp_dir.path().join("global-settings.json"), None, None).unwrap();
 
     let config = AgentSessionConfig {
         model: test_model(),
@@ -90,7 +84,10 @@ async fn session_manager_persistence_round_trip() {
         timestamp: 1000,
     });
     let entry_id = manager.append_message(user_msg).unwrap();
-    assert!(!entry_id.is_empty(), "append should return a valid entry id");
+    assert!(
+        !entry_id.is_empty(),
+        "append should return a valid entry id"
+    );
 }
 
 #[tokio::test]
@@ -141,12 +138,8 @@ async fn session_list_dir_parses_ts_format_file() {
 #[tokio::test]
 async fn settings_manager_default_values() {
     let tmp_dir = tempfile::tempdir().unwrap();
-    let manager = SettingsManager::load(
-        tmp_dir.path().join("nonexistent.json"),
-        None,
-        None,
-    )
-    .unwrap();
+    let manager =
+        SettingsManager::load(tmp_dir.path().join("nonexistent.json"), None, None).unwrap();
 
     let settings = manager.resolved();
     assert!(settings.compaction.enabled);

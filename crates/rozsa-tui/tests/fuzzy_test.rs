@@ -33,17 +33,27 @@ fn word_boundary_bonus() {
     assert!(m1.matches);
     assert!(m2.matches);
     // lower score = better
-    assert!(m2.score <= m1.score, "word boundary should score better (lower): m2={} vs m1={}", m2.score, m1.score);
+    assert!(
+        m2.score <= m1.score,
+        "word boundary should score better (lower): m2={} vs m1={}",
+        m2.score,
+        m1.score
+    );
 }
 
 #[test]
 fn consecutive_bonus() {
     // 比较连续匹配 vs 分散匹配（无 word boundary 干扰）
-    let m1 = fuzzy_match("abc", "abcdef");    // 连续，开头
+    let m1 = fuzzy_match("abc", "abcdef"); // 连续，开头
     let m2 = fuzzy_match("abc", "axxbxxcxx"); // 分散，有 gap penalty
     assert!(m1.matches);
     assert!(m2.matches);
-    assert!(m1.score < m2.score, "consecutive should score better (lower): m1={} vs m2={}", m1.score, m2.score);
+    assert!(
+        m1.score < m2.score,
+        "consecutive should score better (lower): m1={} vs m2={}",
+        m1.score,
+        m2.score
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use super::schema::{
-    CompactionSettings, PartialCompactionSettings, PartialPermissionSettings,
-    PartialRetrySettings, PartialSettings, PermissionSettings, RetrySettings, Settings,
+    CompactionSettings, PartialCompactionSettings, PartialPermissionSettings, PartialRetrySettings,
+    PartialSettings, PermissionSettings, RetrySettings, Settings,
 };
 
 /// Merge settings: base + overlay → resolved

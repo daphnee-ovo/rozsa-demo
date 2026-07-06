@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use base64::Engine;
 
-use crate::util::terminal_caps::{ImageProtocol, CAPS};
+use crate::util::terminal_caps::{CAPS, ImageProtocol};
 
 const KITTY_CHUNK_SIZE: usize = 4096;
 
@@ -132,7 +132,8 @@ fn query_cell_pixel_size() -> (u32, u32) {
         {
             use std::mem::MaybeUninit;
             let mut ws = MaybeUninit::<libc::winsize>::zeroed();
-            let ret = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, ws.as_mut_ptr()) };
+            let ret =
+                unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, ws.as_mut_ptr()) };
             if ret == 0 {
                 let ws = unsafe { ws.assume_init() };
                 if ws.ws_xpixel > 0 && ws.ws_ypixel > 0 && ws.ws_col > 0 && ws.ws_row > 0 {
@@ -160,8 +161,12 @@ pub fn calculate_cell_size(img: ImageDimensions, max_cols: u16, max_rows: u16) -
     let scale_y = max_rows as f64 / img_rows.max(1) as f64;
     let scale = scale_x.min(scale_y).min(1.0);
 
-    let cols = ((img_cols as f64 * scale).ceil() as u16).max(1).min(max_cols);
-    let rows = ((img_rows as f64 * scale).ceil() as u16).max(1).min(max_rows);
+    let cols = ((img_cols as f64 * scale).ceil() as u16)
+        .max(1)
+        .min(max_cols);
+    let rows = ((img_rows as f64 * scale).ceil() as u16)
+        .max(1)
+        .min(max_rows);
 
     (cols, rows)
 }
@@ -196,9 +201,7 @@ pub fn kitty_delete(image_id: u32) -> String {
 /// 使用 iTerm2 协议传输图片
 pub fn iterm2_transmit(data: &[u8], cols: u16) -> String {
     let payload = base64::engine::general_purpose::STANDARD.encode(data);
-    format!(
-        "\x1b]1337;File=inline=1;width={cols};preserveAspectRatio=1:{payload}\x07"
-    )
+    format!("\x1b]1337;File=inline=1;width={cols};preserveAspectRatio=1:{payload}\x07")
 }
 
 /// 根据终端能力渲染图片，返回转义序列 + 占用的行数

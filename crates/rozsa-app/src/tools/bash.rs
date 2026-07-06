@@ -148,10 +148,15 @@ impl BashTool {
 
             // Wait for process to exit
             match child.wait().await {
-                Ok(status) => Ok((String::from_utf8_lossy(&output_buffer).to_string(), status.code(), truncated)),
+                Ok(status) => Ok((
+                    String::from_utf8_lossy(&output_buffer).to_string(),
+                    status.code(),
+                    truncated,
+                )),
                 Err(e) => Err(format!("Failed to wait for process: {}", e)),
             }
-        }).await;
+        })
+        .await;
 
         match result {
             Ok(inner_result) => inner_result,
@@ -163,7 +168,11 @@ impl BashTool {
                 let output = String::from_utf8_lossy(&output_buffer).to_string();
                 Err(format!(
                     "{}Command timed out after {}ms",
-                    if output.is_empty() { String::new() } else { format!("{}\n\n", output) },
+                    if output.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}\n\n", output)
+                    },
                     timeout_ms
                 ))
             }
@@ -231,13 +240,8 @@ impl Tool for BashTool {
 
         let timeout_ms = params.timeout.unwrap_or(DEFAULT_TIMEOUT_MS);
 
-        let result = Self::execute_command(
-            &params.command,
-            &self.working_dir,
-            timeout_ms,
-            signal,
-        )
-        .await;
+        let result =
+            Self::execute_command(&params.command, &self.working_dir, timeout_ms, signal).await;
 
         match result {
             Ok((mut output, exit_code, truncated)) => {

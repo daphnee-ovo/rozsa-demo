@@ -115,9 +115,9 @@ async fn stream_anthropic_response(
     if is_oauth || is_copilot_provider(model) {
         req_headers.insert(
             reqwest::header::AUTHORIZATION,
-            format!("Bearer {api_key}").parse().map_err(|_| {
-                ProviderError::Parse("invalid auth header value".to_string())
-            })?,
+            format!("Bearer {api_key}")
+                .parse()
+                .map_err(|_| ProviderError::Parse("invalid auth header value".to_string()))?,
         );
     } else if is_cloudflare_gateway(model) {
         req_headers.insert(
@@ -129,9 +129,9 @@ async fn stream_anthropic_response(
     } else {
         req_headers.insert(
             reqwest::header::HeaderName::from_static("x-api-key"),
-            api_key.parse().map_err(|_| {
-                ProviderError::Parse("invalid x-api-key header value".to_string())
-            })?,
+            api_key
+                .parse()
+                .map_err(|_| ProviderError::Parse("invalid x-api-key header value".to_string()))?,
         );
     }
 

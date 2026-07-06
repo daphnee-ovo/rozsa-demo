@@ -123,17 +123,13 @@ impl Default for CompactionEngine {
 fn estimate_entry_tokens(entry: &SessionEntry) -> u64 {
     match entry {
         SessionEntry::Message(e) => match &e.message {
-            rozsa_model::types::Message::Assistant(a) if a.usage.output > 0 => {
-                a.usage.output
-            }
+            rozsa_model::types::Message::Assistant(a) if a.usage.output > 0 => a.usage.output,
             other => estimate_tokens(&serde_json::to_string(other).unwrap_or_default()),
         },
         SessionEntry::Compaction(e) => estimate_tokens(&e.summary),
-        SessionEntry::Custom(e) => {
-            e.data.as_ref().map_or(0, |v| {
-                estimate_tokens(&serde_json::to_string(v).unwrap_or_default())
-            })
-        }
+        SessionEntry::Custom(e) => e.data.as_ref().map_or(0, |v| {
+            estimate_tokens(&serde_json::to_string(v).unwrap_or_default())
+        }),
         _ => 0,
     }
 }
@@ -163,7 +159,9 @@ fn adjust_to_safe_boundary(entries: &[SessionEntry], raw_cut: usize) -> usize {
             }
             // If Assistant has ToolCall and the next entry is its ToolResult, keep the pair together.
             Message::Assistant(a)
-                if a.content.iter().any(|b| matches!(b, ContentBlock::ToolCall(_))) =>
+                if a.content
+                    .iter()
+                    .any(|b| matches!(b, ContentBlock::ToolCall(_))) =>
             {
                 let next_is_tool_result = entries.get(cut + 1).is_some_and(|next| {
                     matches!(next, SessionEntry::Message(m) if matches!(m.message, Message::ToolResult(_)))
@@ -202,7 +200,9 @@ fn has_image_content(msg: &Message) -> bool {
         Message::ToolResult(t) => &t.content,
         Message::User(_) => return false,
     };
-    blocks.iter().any(|b| matches!(b, ContentBlock::Image { .. }))
+    blocks
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Image { .. }))
 }
 
 fn serialize_without_images(msg: &Message) -> String {

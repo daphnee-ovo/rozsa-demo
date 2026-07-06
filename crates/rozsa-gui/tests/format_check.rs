@@ -37,7 +37,10 @@ fn dump_serialized_message_formats() {
         error_message: None,
         timestamp: 2000,
     }));
-    eprintln!("ASSISTANT:\n{}\n", serde_json::to_string_pretty(&assistant).unwrap());
+    eprintln!(
+        "ASSISTANT:\n{}\n",
+        serde_json::to_string_pretty(&assistant).unwrap()
+    );
 
     let tool_result = AgentMessage::standard(Message::ToolResult(ToolResultMessage {
         tool_call_id: "tc1".to_string(),
@@ -50,5 +53,8 @@ fn dump_serialized_message_formats() {
         is_error: false,
         timestamp: 3000,
     }));
-    eprintln!("TOOL_RESULT:\n{}\n", serde_json::to_string_pretty(&tool_result).unwrap());
+    eprintln!(
+        "TOOL_RESULT:\n{}\n",
+        serde_json::to_string_pretty(&tool_result).unwrap()
+    );
 }

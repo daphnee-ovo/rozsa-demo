@@ -71,8 +71,7 @@ pub fn render_tab_bar(frame: &mut ratatui::Frame<'_>, area: Rect, state: &TabBar
 
     // 先确保 active 单独能放下 — 如果 active 已是唯一 tab 且仍放不下，直接截断显示
     if right > left
-        && total_with_separators(left, right)
-            + reserve(left > 0, right < state.tabs.len())
+        && total_with_separators(left, right) + reserve(left > 0, right < state.tabs.len())
             > max_width
         && right - left > 1
     {
@@ -89,8 +88,8 @@ pub fn render_tab_bar(frame: &mut ratatui::Frame<'_>, area: Rect, state: &TabBar
         let mut grew = false;
         if right < state.tabs.len() {
             let new_has_right = right + 1 < state.tabs.len();
-            let new_need = total_with_separators(left, right + 1)
-                + reserve(has_left, new_has_right);
+            let new_need =
+                total_with_separators(left, right + 1) + reserve(has_left, new_has_right);
             if new_need <= max_width {
                 right += 1;
                 grew = true;
@@ -98,8 +97,8 @@ pub fn render_tab_bar(frame: &mut ratatui::Frame<'_>, area: Rect, state: &TabBar
         }
         if !grew && left > 0 {
             let new_has_left = left - 1 > 0;
-            let new_need = total_with_separators(left - 1, right)
-                + reserve(new_has_left, has_right);
+            let new_need =
+                total_with_separators(left - 1, right) + reserve(new_has_left, has_right);
             if new_need <= max_width {
                 left -= 1;
                 grew = true;

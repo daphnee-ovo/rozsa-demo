@@ -141,7 +141,11 @@ fn test_live_state_event_accumulation() {
         message: Message::Assistant(a),
     } = &state.messages[1]
     {
-        assert_eq!(a.content.len(), 4, "Should have 4 content blocks after update");
+        assert_eq!(
+            a.content.len(),
+            4,
+            "Should have 4 content blocks after update"
+        );
     } else {
         panic!("Expected assistant message");
     }
@@ -185,7 +189,10 @@ fn test_live_state_event_accumulation() {
         messages: final_messages.clone(),
     });
     assert!(changed);
-    assert!(!state.is_streaming, "Should not be streaming after AgentEnd");
+    assert!(
+        !state.is_streaming,
+        "Should not be streaming after AgentEnd"
+    );
     assert_eq!(
         state.messages.len(),
         3,
@@ -215,7 +222,11 @@ fn test_live_state_turn_replacement() {
     state.apply(&AgentEvent::MessageStart {
         message: make_assistant_message(2000),
     });
-    assert_eq!(state.messages.len(), 3, "Should have history + 2 current messages");
+    assert_eq!(
+        state.messages.len(),
+        3,
+        "Should have history + 2 current messages"
+    );
 
     // AgentEnd - 应该 truncate 到 turn_base，然后 extend 新的权威列表
     let final_messages = vec![
@@ -260,47 +271,100 @@ fn test_ui_snapshot_serialization_format() {
 
     // 序列化每个消息，检查 JSON 结构
     let user_json = serde_json::to_value(&user_msg).expect("Failed to serialize user message");
-    eprintln!("USER JSON:\n{}\n", serde_json::to_string_pretty(&user_json).unwrap());
+    eprintln!(
+        "USER JSON:\n{}\n",
+        serde_json::to_string_pretty(&user_json).unwrap()
+    );
 
     assert_eq!(user_json["kind"], "standard", "kind should be 'standard'");
-    assert!(user_json["message"]["content"].is_array(), "content should be array");
-    assert_eq!(user_json["message"]["role"], "user", "role should be 'user'");
-    assert_eq!(user_json["message"]["timestamp"], 1000, "timestamp should match");
+    assert!(
+        user_json["message"]["content"].is_array(),
+        "content should be array"
+    );
+    assert_eq!(
+        user_json["message"]["role"], "user",
+        "role should be 'user'"
+    );
+    assert_eq!(
+        user_json["message"]["timestamp"], 1000,
+        "timestamp should match"
+    );
     let user_content = user_json["message"]["content"].as_array().unwrap();
     assert_eq!(user_content.len(), 1, "User content should have 1 block");
-    assert_eq!(user_content[0]["type"], "text", "First block should be text");
+    assert_eq!(
+        user_content[0]["type"], "text",
+        "First block should be text"
+    );
     assert_eq!(user_content[0]["text"], "test user message");
 
-    let assistant_json = serde_json::to_value(&assistant_msg).expect("Failed to serialize assistant message");
-    eprintln!("ASSISTANT JSON:\n{}\n", serde_json::to_string_pretty(&assistant_json).unwrap());
+    let assistant_json =
+        serde_json::to_value(&assistant_msg).expect("Failed to serialize assistant message");
+    eprintln!(
+        "ASSISTANT JSON:\n{}\n",
+        serde_json::to_string_pretty(&assistant_json).unwrap()
+    );
 
     assert_eq!(assistant_json["kind"], "standard");
-    assert!(assistant_json["message"]["content"].is_array(), "content should be array");
+    assert!(
+        assistant_json["message"]["content"].is_array(),
+        "content should be array"
+    );
     let content_arr = assistant_json["message"]["content"].as_array().unwrap();
-    assert!(content_arr.len() >= 3, "Should have thinking + text + tool call");
+    assert!(
+        content_arr.len() >= 3,
+        "Should have thinking + text + tool call"
+    );
 
     // 验证 thinking block
-    assert_eq!(content_arr[0]["type"], "thinking", "First block should be thinking");
+    assert_eq!(
+        content_arr[0]["type"], "thinking",
+        "First block should be thinking"
+    );
     assert_eq!(content_arr[0]["thinking"], "analyzing request");
 
     // 验证 text block
-    assert_eq!(content_arr[1]["type"], "text", "Second block should be text");
+    assert_eq!(
+        content_arr[1]["type"], "text",
+        "Second block should be text"
+    );
     assert_eq!(content_arr[1]["text"], "I'll run a bash command");
 
     // 验证 tool call block
-    assert_eq!(content_arr[2]["type"], "toolCall", "Third block should be toolCall");
+    assert_eq!(
+        content_arr[2]["type"], "toolCall",
+        "Third block should be toolCall"
+    );
     assert_eq!(content_arr[2]["id"], "tc_001");
     assert_eq!(content_arr[2]["name"], "Bash");
-    assert!(content_arr[2]["arguments"].is_object(), "arguments should be object");
+    assert!(
+        content_arr[2]["arguments"].is_object(),
+        "arguments should be object"
+    );
 
-    let tool_result_json = serde_json::to_value(&tool_result).expect("Failed to serialize tool result");
-    eprintln!("TOOL_RESULT JSON:\n{}\n", serde_json::to_string_pretty(&tool_result_json).unwrap());
+    let tool_result_json =
+        serde_json::to_value(&tool_result).expect("Failed to serialize tool result");
+    eprintln!(
+        "TOOL_RESULT JSON:\n{}\n",
+        serde_json::to_string_pretty(&tool_result_json).unwrap()
+    );
 
     assert_eq!(tool_result_json["kind"], "standard");
-    assert_eq!(tool_result_json["message"]["toolCallId"], "tc_001", "toolCallId should use camelCase");
-    assert_eq!(tool_result_json["message"]["toolName"], "Bash", "toolName should use camelCase");
-    assert_eq!(tool_result_json["message"]["isError"], false, "isError should use camelCase");
-    assert!(tool_result_json["message"]["content"].is_array(), "content should be array");
+    assert_eq!(
+        tool_result_json["message"]["toolCallId"], "tc_001",
+        "toolCallId should use camelCase"
+    );
+    assert_eq!(
+        tool_result_json["message"]["toolName"], "Bash",
+        "toolName should use camelCase"
+    );
+    assert_eq!(
+        tool_result_json["message"]["isError"], false,
+        "isError should use camelCase"
+    );
+    assert!(
+        tool_result_json["message"]["content"].is_array(),
+        "content should be array"
+    );
 }
 
 #[test]
@@ -312,11 +376,18 @@ fn test_custom_message_format() {
         4000,
     );
 
-    let custom_json = serde_json::to_value(&custom_msg).expect("Failed to serialize custom message");
-    eprintln!("CUSTOM JSON:\n{}\n", serde_json::to_string_pretty(&custom_json).unwrap());
+    let custom_json =
+        serde_json::to_value(&custom_msg).expect("Failed to serialize custom message");
+    eprintln!(
+        "CUSTOM JSON:\n{}\n",
+        serde_json::to_string_pretty(&custom_json).unwrap()
+    );
 
     assert_eq!(custom_json["kind"], "custom", "kind should be 'custom'");
-    assert_eq!(custom_json["message"]["message_type"], "status_update", "message_type should match");
+    assert_eq!(
+        custom_json["message"]["message_type"], "status_update",
+        "message_type should match"
+    );
     assert_eq!(custom_json["message"]["payload"]["status"], "processing");
     assert_eq!(custom_json["message"]["payload"]["progress"], 50);
     assert_eq!(custom_json["message"]["timestamp"], 4000);
@@ -354,9 +425,18 @@ fn test_messages_array_in_ui_snapshot() {
 
     // 验证消息的 role（通过检查 message 字段的类型）
     // user message 有 content 数组
-    assert!(messages_json[0]["message"]["content"].is_array(), "User content should be array");
-    assert_eq!(messages_json[0]["message"]["role"], "user", "First message should be user");
-    assert!(messages_json[0]["message"]["model"].is_null(), "User message should not have model field");
+    assert!(
+        messages_json[0]["message"]["content"].is_array(),
+        "User content should be array"
+    );
+    assert_eq!(
+        messages_json[0]["message"]["role"], "user",
+        "First message should be user"
+    );
+    assert!(
+        messages_json[0]["message"]["model"].is_null(),
+        "User message should not have model field"
+    );
 
     // assistant message 有 model 和 provider
     assert_eq!(messages_json[1]["message"]["model"], "claude-opus-4");

@@ -1,4 +1,4 @@
-use rozsa_app::skills::loader::{load_skills_from_dirs, strip_frontmatter, SkillScope};
+use rozsa_app::skills::loader::{SkillScope, load_skills_from_dirs, strip_frontmatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;

@@ -48,7 +48,10 @@ fn loads_generated_model_metadata() {
     assert_eq!(model.base_url, "https://api.openai.com/v1");
     assert_eq!(
         model.input_modalities,
-        vec![rozsa_model::types::InputModality::Text, rozsa_model::types::InputModality::Image]
+        vec![
+            rozsa_model::types::InputModality::Text,
+            rozsa_model::types::InputModality::Image
+        ]
     );
     assert_eq!(model.cost.input, 1.0);
     assert_eq!(model.cost.output, 2.0);
@@ -199,6 +202,65 @@ fn merges_models_json_overrides_and_custom_models() {
             .max_tokens,
         16_384
     );
+}
+
+#[test]
+fn keeps_provider_api_keys_across_multiple_config_files() {
+    let mut registry = ModelRegistry::from_generated_json(generated_json()).unwrap();
+
+    registry
+        .apply_models_config_json(
+            r#"{
+                "providers": {
+                    "custom-provider": {
+                        "baseUrl": "https://custom.example.com/v1",
+                        "apiKey": "CUSTOM_API_KEY",
+                        "api": "openai-completions",
+                        "models": [{ "id": "custom-model" }]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+    registry
+        .apply_models_config_json(
+            r#"{
+                "providers": {
+                    "amazon-bedrock": {
+                        "baseUrl": "https://bedrock-runtime.us-east-1.amazonaws.com",
+                        "api": "bedrock-converse-stream",
+                        "models": [{ "id": "amazon.nova-lite-v1:0" }]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+    assert_eq!(registry.first_available().unwrap().id, "custom-model");
+    assert!(registry.is_user_configured("custom-provider", "custom-model"));
+}
+
+#[test]
+fn accepts_auth_header_provider_without_api_key() {
+    let mut registry = ModelRegistry::from_generated_json(generated_json()).unwrap();
+
+    registry
+        .apply_models_config_json(
+            r#"{
+                "providers": {
+                    "codex-oauth": {
+                        "baseUrl": "https://api.openai.com/v1",
+                        "api": "openai-responses",
+                        "authHeader": true,
+                        "models": [{ "id": "gpt-4o" }]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+    assert!(registry.find("codex-oauth", "gpt-4o").is_some());
 }
 
 #[test]

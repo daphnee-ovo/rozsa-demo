@@ -68,7 +68,12 @@ pub struct Margin {
 
 impl Margin {
     pub fn uniform(m: u16) -> Self {
-        Self { top: m, bottom: m, left: m, right: m }
+        Self {
+            top: m,
+            bottom: m,
+            left: m,
+            right: m,
+        }
     }
 }
 
@@ -93,8 +98,12 @@ pub fn calculate_rect(config: &OverlayConfig, viewport: Rect) -> Option<Rect> {
         return None;
     }
 
-    let available_w = viewport.width.saturating_sub(config.margin.left + config.margin.right);
-    let available_h = viewport.height.saturating_sub(config.margin.top + config.margin.bottom);
+    let available_w = viewport
+        .width
+        .saturating_sub(config.margin.left + config.margin.right);
+    let available_h = viewport
+        .height
+        .saturating_sub(config.margin.top + config.margin.bottom);
 
     let w = config.width.resolve(available_w);
     let h = config.height.resolve(available_h);
@@ -176,7 +185,9 @@ impl OverlayStack {
 
     /// 当前有焦点捕获的 overlay
     pub fn focus_target(&self) -> Option<&OverlayHandle> {
-        self.stack.iter().rev().find(|h| h.visible && h.config.captures_focus)
+        self.stack
+            .iter()
+            .rev()
+            .find(|h| h.visible && h.config.captures_focus)
     }
 }
-

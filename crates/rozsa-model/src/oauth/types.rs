@@ -16,13 +16,25 @@ pub struct OAuthCredentials {
 #[derive(Debug, Clone)]
 pub enum OAuthFlowEvent {
     /// Show an authorization URL for the user to open in their browser.
-    AuthUrl { url: String, instructions: Option<String> },
+    AuthUrl {
+        url: String,
+        instructions: Option<String>,
+    },
     /// Show a device code for the user to enter at the verification URI.
-    DeviceCode { user_code: String, verification_uri: String },
+    DeviceCode {
+        user_code: String,
+        verification_uri: String,
+    },
     /// Request text input from the user (e.g., enterprise domain, manual code paste).
-    Prompt { message: String, placeholder: Option<String> },
+    Prompt {
+        message: String,
+        placeholder: Option<String>,
+    },
     /// Request a selection from the user.
-    Select { message: String, options: Vec<String> },
+    Select {
+        message: String,
+        options: Vec<String>,
+    },
     /// Progress update (e.g., "Polling for authorization...").
     Progress { message: String },
     /// Waiting/polling indicator.

@@ -265,8 +265,7 @@ fn handle_list_key(
                 Some(graph)
             }
             KeyCode::Char('j') if !graph.searching => {
-                graph.selected =
-                    (graph.selected + 1).min(graph.filtered.len().saturating_sub(1));
+                graph.selected = (graph.selected + 1).min(graph.filtered.len().saturating_sub(1));
                 graph.refresh_tab_highlight();
                 Some(graph)
             }
@@ -283,8 +282,7 @@ fn handle_list_key(
             }
             KeyCode::Left | KeyCode::BackTab if !graph.searching => {
                 if graph.tabs.len() > 1 {
-                    graph.active_tab =
-                        (graph.active_tab + graph.tabs.len() - 1) % graph.tabs.len();
+                    graph.active_tab = (graph.active_tab + graph.tabs.len() - 1) % graph.tabs.len();
                     graph.apply_filter();
                     graph.selected = graph.filtered.len().saturating_sub(1);
                     graph.refresh_tab_highlight();
@@ -397,26 +395,68 @@ fn render_list(frame: &mut ratatui::Frame<'_>, area: Rect, graph: &GraphState) {
 
     let hints: Vec<HintItem> = if graph.searching {
         vec![
-            HintItem { key: "Type".into(), action: "filter".into() },
-            HintItem { key: "Backspace".into(), action: "delete".into() },
-            HintItem { key: "Esc".into(), action: "clear".into() },
+            HintItem {
+                key: "Type".into(),
+                action: "filter".into(),
+            },
+            HintItem {
+                key: "Backspace".into(),
+                action: "delete".into(),
+            },
+            HintItem {
+                key: "Esc".into(),
+                action: "clear".into(),
+            },
         ]
     } else if has_tab_bar {
         vec![
-            HintItem { key: "/".into(), action: "search".into() },
-            HintItem { key: "↑↓".into(), action: "navigate".into() },
-            HintItem { key: "←→/Tab".into(), action: "switch agent".into() },
-            HintItem { key: "Enter".into(), action: "expand".into() },
-            HintItem { key: "o".into(), action: "tools".into() },
-            HintItem { key: "Esc".into(), action: "close".into() },
+            HintItem {
+                key: "/".into(),
+                action: "search".into(),
+            },
+            HintItem {
+                key: "↑↓".into(),
+                action: "navigate".into(),
+            },
+            HintItem {
+                key: "←→/Tab".into(),
+                action: "switch agent".into(),
+            },
+            HintItem {
+                key: "Enter".into(),
+                action: "expand".into(),
+            },
+            HintItem {
+                key: "o".into(),
+                action: "tools".into(),
+            },
+            HintItem {
+                key: "Esc".into(),
+                action: "close".into(),
+            },
         ]
     } else {
         vec![
-            HintItem { key: "/".into(), action: "search".into() },
-            HintItem { key: "↑↓".into(), action: "navigate".into() },
-            HintItem { key: "Enter".into(), action: "expand".into() },
-            HintItem { key: "o".into(), action: "tools".into() },
-            HintItem { key: "Esc".into(), action: "close".into() },
+            HintItem {
+                key: "/".into(),
+                action: "search".into(),
+            },
+            HintItem {
+                key: "↑↓".into(),
+                action: "navigate".into(),
+            },
+            HintItem {
+                key: "Enter".into(),
+                action: "expand".into(),
+            },
+            HintItem {
+                key: "o".into(),
+                action: "tools".into(),
+            },
+            HintItem {
+                key: "Esc".into(),
+                action: "close".into(),
+            },
         ]
     };
     render_hints_bar(frame, hints_area, &hints);
@@ -444,9 +484,15 @@ fn render_node_list(area: Rect, graph: &GraphState) -> Paragraph<'static> {
         let summary = super::sidebar::truncate(&node.summary, summary_max);
 
         let mut spans = vec![
-            Span::styled(cursor, Style::default().fg(if selected { THEME.accent } else { THEME.text })),
+            Span::styled(
+                cursor,
+                Style::default().fg(if selected { THEME.accent } else { THEME.text }),
+            ),
             Span::styled(format!("{icon} "), Style::default().fg(role_color)),
-            Span::styled(format!("{} ", node.timestamp), Style::default().fg(THEME.muted)),
+            Span::styled(
+                format!("{} ", node.timestamp),
+                Style::default().fg(THEME.muted),
+            ),
             Span::styled("· ", Style::default().fg(THEME.border_muted)),
         ];
         let text_color = if selected { THEME.text } else { THEME.muted };
@@ -486,7 +532,12 @@ fn render_preview(area: Rect, graph: &GraphState) -> Paragraph<'static> {
                 Style::default().fg(role_color).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("  {}  {}/{}", node.timestamp, graph.selected + 1, graph.filtered.len()),
+                format!(
+                    "  {}  {}/{}",
+                    node.timestamp,
+                    graph.selected + 1,
+                    graph.filtered.len()
+                ),
                 Style::default().fg(THEME.muted),
             ),
         ]),
@@ -496,7 +547,10 @@ fn render_preview(area: Rect, graph: &GraphState) -> Paragraph<'static> {
         ),
     ];
     let parsed = parse_markdown(&node.full_text);
-    for line in parsed.into_iter().take(area.height.saturating_sub(5) as usize) {
+    for line in parsed
+        .into_iter()
+        .take(area.height.saturating_sub(5) as usize)
+    {
         lines.push(line);
     }
     lines.push(Line::styled(

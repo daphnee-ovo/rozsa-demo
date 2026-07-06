@@ -9,10 +9,7 @@
 // Related Docs:
 // - [TUI Design](../../../docs/rozsa_framework.md#rozsa-tui--ratatui-终端前端)
 
-use std::{
-    collections::BTreeMap,
-    error::Error,
-};
+use std::{collections::BTreeMap, error::Error};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -24,8 +21,8 @@ use ratatui::{
 
 use crate::{
     input::keymap::matches_action,
-    protocol::{send, ClientMessage, NativePermissionPrompt},
     panels::sidebar::truncate,
+    protocol::{ClientMessage, NativePermissionPrompt, send},
     theme::THEME,
 };
 
@@ -87,11 +84,19 @@ fn handle_main_key(
         enter_trust(permission, writer)
     } else if matches_action(keybindings, key, "tui.select.up") {
         let max = 3; // 4 options: approve, trust, reject, reject_alternative
-        permission.selected = if permission.selected == 0 { max } else { permission.selected - 1 };
+        permission.selected = if permission.selected == 0 {
+            max
+        } else {
+            permission.selected - 1
+        };
         Ok(Some(permission))
     } else if matches_action(keybindings, key, "tui.select.down") {
         let max = 3;
-        permission.selected = if permission.selected >= max { 0 } else { permission.selected + 1 };
+        permission.selected = if permission.selected >= max {
+            0
+        } else {
+            permission.selected + 1
+        };
         Ok(Some(permission))
     } else if matches_action(keybindings, key, "tui.select.confirm") {
         match permission.selected {
@@ -163,12 +168,7 @@ fn handle_trust_key(
                 let index = ch.to_digit(10).unwrap_or(0).saturating_sub(1) as usize;
                 if index < permission.prompt.trust_levels.len() {
                     let trust_key = get_trust_key(&permission.prompt);
-                    send_permission(
-                        writer,
-                        &permission.prompt.id,
-                        "allow-session",
-                        trust_key,
-                    )?;
+                    send_permission(writer, &permission.prompt.id, "allow-session", trust_key)?;
                     Ok(None)
                 } else {
                     Ok(Some(permission))
@@ -233,10 +233,7 @@ pub fn render_permission(frame: &mut ratatui::Frame<'_>, area: Rect, permission:
                 Span::raw(truncate(&level.label, width.saturating_sub(6))),
             ]));
         }
-        lines.push(Line::styled(
-            "Esc back",
-            Style::default().fg(THEME.muted),
-        ));
+        lines.push(Line::styled("Esc back", Style::default().fg(THEME.muted)));
     } else {
         let options = [
             ("y", "approve"),

@@ -144,16 +144,16 @@ fn parse_frontmatter_field(frontmatter: &str, key: &str) -> Option<String> {
         if let Some(rest) = trimmed.strip_prefix(&prefix) {
             let value = rest.trim();
             // 带引号的值：显式空引号 "" 或 '' 视为存在但为空
-            let (value, was_quoted) =
-                if let Some(inner) = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
-                    (inner, true)
-                } else if let Some(inner) =
-                    value.strip_prefix('\'').and_then(|v| v.strip_suffix('\''))
-                {
-                    (inner, true)
-                } else {
-                    (value, false)
-                };
+            let (value, was_quoted) = if let Some(inner) =
+                value.strip_prefix('"').and_then(|v| v.strip_suffix('"'))
+            {
+                (inner, true)
+            } else if let Some(inner) = value.strip_prefix('\'').and_then(|v| v.strip_suffix('\''))
+            {
+                (inner, true)
+            } else {
+                (value, false)
+            };
 
             if value == "|" || value == ">" {
                 // 多行值：收集后续缩进行

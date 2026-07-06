@@ -1,5 +1,5 @@
-use rozsa_app::skills::loader::{LoadedSkill, SkillScope};
 use rozsa_app::skills::SkillRegistry;
+use rozsa_app::skills::loader::{LoadedSkill, SkillScope};
 use std::path::PathBuf;
 
 fn make_skill(name: &str, scope: SkillScope) -> LoadedSkill {

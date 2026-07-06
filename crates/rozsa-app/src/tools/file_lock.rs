@@ -1,7 +1,7 @@
-use std::path::PathBuf;
-use std::sync::Arc;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 static FILE_LOCKS: Lazy<DashMap<PathBuf, Arc<Mutex<()>>>> = Lazy::new(DashMap::new);

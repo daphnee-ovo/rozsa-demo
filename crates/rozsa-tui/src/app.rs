@@ -34,13 +34,13 @@ use tokio_stream::StreamExt;
 
 use crate::{
     backend::{AgentBackend, BackendEvent, socket::SocketBackend},
+    input::keymap::KeybindingsManager,
+    input::{InputState, handle_key},
     panels::autocomplete::AutocompleteState,
     panels::graph::GraphState,
     panels::model_selector::ModelSelectorState,
     panels::permission::PermissionState,
     panels::session_selector::SessionSelectorState,
-    input::{InputState, handle_key},
-    input::keymap::KeybindingsManager,
     protocol::{ClientMessage, NativeUiState},
     render::render,
 };
@@ -112,7 +112,9 @@ impl DialogState {
                 Some(i)
             })
             .collect();
-        self.selected = self.selected.min(self.filtered_indices.len().saturating_sub(1));
+        self.selected = self
+            .selected
+            .min(self.filtered_indices.len().saturating_sub(1));
     }
 }
 
@@ -300,8 +302,14 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
 }
 
 /// Run the TUI with a NativeBackend (pure Rust, no TS subprocess).
-pub async fn run_native(session: rozsa_app::agent_session::AgentSession) -> Result<(), Box<dyn Error>> {
-    run_native_with(session, crate::backend::native::NativeBackendConfig::default()).await
+pub async fn run_native(
+    session: rozsa_app::agent_session::AgentSession,
+) -> Result<(), Box<dyn Error>> {
+    run_native_with(
+        session,
+        crate::backend::native::NativeBackendConfig::default(),
+    )
+    .await
 }
 
 /// Run the TUI with a NativeBackend, supplying construction-time config
@@ -347,7 +355,10 @@ pub async fn run_native_with(
     let result = run_app(&mut terminal, &mut event_rx, &writer, Some(agents_view)).await;
 
     if kitty_keyboard_enabled {
-        let _ = execute!(terminal.backend_mut(), crossterm::event::PopKeyboardEnhancementFlags);
+        let _ = execute!(
+            terminal.backend_mut(),
+            crossterm::event::PopKeyboardEnhancementFlags
+        );
     }
     disable_raw_mode()?;
     execute!(
@@ -380,26 +391,43 @@ impl crate::input::CommandSink for NativeCommandSink {
         match msg {
             ClientMessage::Submit { text, .. } => {
                 let text = text.to_string();
-                tokio::spawn(async move { let _ = backend.submit(&text, vec![]).await; });
+                tokio::spawn(async move {
+                    let _ = backend.submit(&text, vec![]).await;
+                });
             }
             ClientMessage::Abort => {
-                tokio::spawn(async move { let _ = backend.abort().await; });
+                tokio::spawn(async move {
+                    let _ = backend.abort().await;
+                });
             }
             ClientMessage::Exit => {
-                tokio::spawn(async move { let _ = backend.exit().await; });
+                tokio::spawn(async move {
+                    let _ = backend.exit().await;
+                });
             }
             ClientMessage::FollowUp { text, .. } => {
                 let text = text.to_string();
-                tokio::spawn(async move { let _ = backend.follow_up(&text, vec![]).await; });
+                tokio::spawn(async move {
+                    let _ = backend.follow_up(&text, vec![]).await;
+                });
             }
             ClientMessage::Steer { text, .. } => {
                 let text = text.to_string();
-                tokio::spawn(async move { let _ = backend.steer(&text, vec![]).await; });
+                tokio::spawn(async move {
+                    let _ = backend.steer(&text, vec![]).await;
+                });
             }
             ClientMessage::Compact => {
-                tokio::spawn(async move { let _ = backend.compact().await; });
+                tokio::spawn(async move {
+                    let _ = backend.compact().await;
+                });
             }
-            ClientMessage::AutocompleteRequest { text, cursor, force, .. } => {
+            ClientMessage::AutocompleteRequest {
+                text,
+                cursor,
+                force,
+                ..
+            } => {
                 let text = text.to_string();
                 let cursor = *cursor;
                 let force = *force;
@@ -408,8 +436,14 @@ impl crate::input::CommandSink for NativeCommandSink {
                 });
             }
             ClientMessage::CycleModel { direction } => {
-                let dir = if *direction == "backward" { Direction::Backward } else { Direction::Forward };
-                tokio::spawn(async move { let _ = backend.cycle_model(dir).await; });
+                let dir = if *direction == "backward" {
+                    Direction::Backward
+                } else {
+                    Direction::Forward
+                };
+                tokio::spawn(async move {
+                    let _ = backend.cycle_model(dir).await;
+                });
             }
             ClientMessage::CycleThinking => {
                 tokio::spawn(async move {
@@ -417,9 +451,16 @@ impl crate::input::CommandSink for NativeCommandSink {
                 });
             }
             ClientMessage::CycleEditMode => {
-                tokio::spawn(async move { let _ = backend.cycle_edit_mode().await; });
+                tokio::spawn(async move {
+                    let _ = backend.cycle_edit_mode().await;
+                });
             }
-            ClientMessage::DialogResponse { id, value, confirmed, cancelled } => {
+            ClientMessage::DialogResponse {
+                id,
+                value,
+                confirmed,
+                cancelled,
+            } => {
                 let id = id.to_string();
                 let value = value.map(|s| s.to_string());
                 let confirmed = *confirmed;
@@ -430,7 +471,11 @@ impl crate::input::CommandSink for NativeCommandSink {
                         .await;
                 });
             }
-            ClientMessage::PermissionResponse { id, choice, trust_key } => {
+            ClientMessage::PermissionResponse {
+                id,
+                choice,
+                trust_key,
+            } => {
                 let id = id.to_string();
                 let choice = choice.to_string();
                 let trust_key = trust_key.map(|s| s.to_string());
@@ -442,44 +487,64 @@ impl crate::input::CommandSink for NativeCommandSink {
             }
             ClientMessage::Bash { command } => {
                 let command = command.to_string();
-                tokio::spawn(async move { let _ = backend.run_bash(&command).await; });
+                tokio::spawn(async move {
+                    let _ = backend.run_bash(&command).await;
+                });
             }
             ClientMessage::SwitchAgent { id } => {
                 let id = id.to_string();
-                tokio::spawn(async move { let _ = backend.switch_agent(&id).await; });
+                tokio::spawn(async move {
+                    let _ = backend.switch_agent(&id).await;
+                });
             }
             ClientMessage::SwitchModel { provider, id } => {
                 let provider = provider.to_string();
                 let id = id.to_string();
-                tokio::spawn(async move { let _ = backend.switch_model(&provider, &id).await; });
+                tokio::spawn(async move {
+                    let _ = backend.switch_model(&provider, &id).await;
+                });
             }
             ClientMessage::SwitchSession { path } => {
                 let path = path.to_string();
-                tokio::spawn(async move { let _ = backend.switch_session(&path).await; });
+                tokio::spawn(async move {
+                    let _ = backend.switch_session(&path).await;
+                });
             }
             ClientMessage::DeleteSession { path } => {
                 let path = path.to_string();
-                tokio::spawn(async move { let _ = backend.delete_session(&path).await; });
+                tokio::spawn(async move {
+                    let _ = backend.delete_session(&path).await;
+                });
             }
             ClientMessage::RenameSession { path, name } => {
                 let path = path.to_string();
                 let name = name.to_string();
-                tokio::spawn(async move { let _ = backend.rename_session(&path, &name).await; });
+                tokio::spawn(async move {
+                    let _ = backend.rename_session(&path, &name).await;
+                });
             }
             ClientMessage::ListSessions { .. } => {
-                tokio::spawn(async move { let _ = backend.list_sessions().await; });
+                tokio::spawn(async move {
+                    let _ = backend.list_sessions().await;
+                });
             }
             ClientMessage::ListModels => {
-                tokio::spawn(async move { let _ = backend.list_models().await; });
+                tokio::spawn(async move {
+                    let _ = backend.list_models().await;
+                });
             }
             ClientMessage::UpdateSetting { key, value } => {
                 let key = key.to_string();
                 let value = value.to_string();
-                tokio::spawn(async move { let _ = backend.update_setting(&key, &value).await; });
+                tokio::spawn(async move {
+                    let _ = backend.update_setting(&key, &value).await;
+                });
             }
             ClientMessage::ForkSession { message_index } => {
                 let idx = *message_index;
-                tokio::spawn(async move { let _ = backend.fork_session(idx).await; });
+                tokio::spawn(async move {
+                    let _ = backend.fork_session(idx).await;
+                });
             }
         }
         Ok(())
@@ -563,7 +628,11 @@ async fn run_with_socket(socket_path: String) -> Result<(), Box<dyn Error>> {
 }
 
 /// 将 BackendEvent 映射到 AppState 变更
-fn apply_backend_event(state: &mut AppState, event: BackendEvent, editor: &crate::input::InputState) {
+fn apply_backend_event(
+    state: &mut AppState,
+    event: BackendEvent,
+    editor: &crate::input::InputState,
+) {
     match event {
         BackendEvent::State(ui) => {
             if !state.auto_scroll && state.ui.is_streaming {
@@ -580,9 +649,7 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent, editor: &crate
             let was_compacting = state.compacting;
             state.compacting = ui.is_compacting;
             // compaction 完成 — 重置滚动到底部
-            let is_compaction = |m: &rozsa_core::messages::AgentMessage| {
-                matches!(m, rozsa_core::messages::AgentMessage::Custom { message } if message.message_type == "compactionSummary")
-            };
+            let is_compaction = |m: &rozsa_core::messages::AgentMessage| matches!(m, rozsa_core::messages::AgentMessage::Custom { message } if message.message_type == "compactionSummary");
             let new_has_compaction = ui.messages.first().is_some_and(is_compaction);
             let old_has_compaction = state.ui.messages.first().is_some_and(&is_compaction);
             if (was_compacting && !ui.is_compacting)
@@ -630,7 +697,11 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent, editor: &crate
             {
                 let theme_label = format!(
                     "[Display] Theme: < {} >",
-                    if crate::theme::is_dark_theme() { "dark" } else { "light" }
+                    if crate::theme::is_dark_theme() {
+                        "dark"
+                    } else {
+                        "light"
+                    }
                 );
                 options.push(theme_label);
             }
@@ -639,7 +710,8 @@ fn apply_backend_event(state: &mut AppState, event: BackendEvent, editor: &crate
                 if existing.id == id {
                     existing.options = options;
                     if let Some(sel) = selected {
-                        existing.selected = sel.min(existing.filtered_indices.len().saturating_sub(1));
+                        existing.selected =
+                            sel.min(existing.filtered_indices.len().saturating_sub(1));
                     }
                     existing.apply_tab_filter();
                     return;

@@ -8,10 +8,10 @@
 // - completion_text 的三种模式（slash / dir / normal）
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-use rozsa_tui::panels::autocomplete::{
-    apply_completion, handle_autocomplete_key, AutocompleteAction, AutocompleteState,
-};
 use rozsa_tui::input::keys::is_autocomplete_context;
+use rozsa_tui::panels::autocomplete::{
+    AutocompleteAction, AutocompleteState, apply_completion, handle_autocomplete_key,
+};
 use rozsa_tui::protocol::NativeAutocompleteItem;
 
 fn item(value: &str, label: &str, desc: Option<&str>) -> NativeAutocompleteItem {

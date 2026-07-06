@@ -595,8 +595,17 @@ pub fn infer_risk_level(tool_name: &str, args: &Value) -> RiskLevel {
             return RiskLevel::Git;
         }
         // Network commands
-        let network_prefixes = ["curl ", "wget ", "npm install", "npm publish",
-            "pnpm ", "yarn ", "bun install", "pip install", "cargo install"];
+        let network_prefixes = [
+            "curl ",
+            "wget ",
+            "npm install",
+            "npm publish",
+            "pnpm ",
+            "yarn ",
+            "bun install",
+            "pip install",
+            "cargo install",
+        ];
         for prefix in network_prefixes {
             if cmd.contains(prefix) {
                 return RiskLevel::Network;
@@ -605,8 +614,12 @@ pub fn infer_risk_level(tool_name: &str, args: &Value) -> RiskLevel {
     }
 
     // File tools: check if path is a secret file
-    if (tool_name == "Read" || tool_name == "Write" || tool_name == "Edit"
-        || tool_name == "read" || tool_name == "write" || tool_name == "edit")
+    if (tool_name == "Read"
+        || tool_name == "Write"
+        || tool_name == "Edit"
+        || tool_name == "read"
+        || tool_name == "write"
+        || tool_name == "edit")
         && let Some(path) = args.get("file_path").and_then(|v| v.as_str())
         && is_secret_path(path)
     {
@@ -619,9 +632,16 @@ pub fn infer_risk_level(tool_name: &str, args: &Value) -> RiskLevel {
 /// 检测路径是否指向敏感文件。
 fn is_secret_path(path: &str) -> bool {
     let secret_patterns = [
-        ".env", "id_rsa", "id_ed25519", ".npmrc", ".pypirc",
-        "credentials", "secrets", ".aws/credentials",
-        "token", ".netrc",
+        ".env",
+        "id_rsa",
+        "id_ed25519",
+        ".npmrc",
+        ".pypirc",
+        "credentials",
+        "secrets",
+        ".aws/credentials",
+        "token",
+        ".netrc",
     ];
     let lower = path.to_lowercase();
     secret_patterns.iter().any(|pat| lower.contains(pat))

@@ -84,10 +84,7 @@ fn value_to_agent_message(mut value: Value) -> Result<AgentMessage, String> {
             Ok(AgentMessage::Standard { message: msg })
         }
         _ => {
-            let timestamp = value
-                .get("timestamp")
-                .and_then(Value::as_i64)
-                .unwrap_or(0);
+            let timestamp = value.get("timestamp").and_then(Value::as_i64).unwrap_or(0);
             if let Value::Object(ref mut map) = value {
                 map.remove("role");
                 map.remove("timestamp");
@@ -305,10 +302,7 @@ pub enum ClientMessage<'a> {
     #[serde(rename = "list_models")]
     ListModels,
     #[serde(rename = "update_setting")]
-    UpdateSetting {
-        key: &'a str,
-        value: &'a str,
-    },
+    UpdateSetting { key: &'a str, value: &'a str },
     #[serde(rename = "fork_session")]
     ForkSession { message_index: usize },
     #[serde(rename = "exit")]

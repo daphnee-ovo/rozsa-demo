@@ -8,7 +8,10 @@ fn normal_mode_allows_all_tools() {
     let mode = EditMode::Normal;
     assert!(mode.check_tool_blocked("edit", &json!({})).is_none());
     assert!(mode.check_tool_blocked("write", &json!({})).is_none());
-    assert!(mode.check_tool_blocked("bash", &json!({"command": "rm -rf /"})).is_none());
+    assert!(
+        mode.check_tool_blocked("bash", &json!({"command": "rm -rf /"}))
+            .is_none()
+    );
 }
 
 #[test]
@@ -30,10 +33,17 @@ fn think_first_blocks_write_tool() {
 #[test]
 fn think_first_allows_read_only_bash() {
     let mode = EditMode::ThinkFirst;
-    let allowed = ["ls -la", "cat foo.txt", "grep -rn foo", "git status", "git log --oneline"];
+    let allowed = [
+        "ls -la",
+        "cat foo.txt",
+        "grep -rn foo",
+        "git status",
+        "git log --oneline",
+    ];
     for cmd in allowed {
         assert!(
-            mode.check_tool_blocked("bash", &json!({"command": cmd})).is_none(),
+            mode.check_tool_blocked("bash", &json!({"command": cmd}))
+                .is_none(),
             "should allow: {cmd}"
         );
     }

@@ -1,6 +1,6 @@
 use rozsa_app::permissions::{
-    build_trust_key, classify_risk, generate_trust_levels, infer_risk_level, split_shell_segments,
-    PermissionMode, PermissionPolicy, PolicyVerdict, RiskLevel,
+    PermissionMode, PermissionPolicy, PolicyVerdict, RiskLevel, build_trust_key, classify_risk,
+    generate_trust_levels, infer_risk_level, split_shell_segments,
 };
 
 #[test]
@@ -39,20 +39,44 @@ fn read_tools_auto_allow_in_on_request_mode() {
     let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
 
     let read_args = serde_json::json!({"file_path": "/src/main.rs"});
-    assert!(matches!(policy.evaluate("Read", &read_args), PolicyVerdict::Allow));
-    assert!(matches!(policy.evaluate("read", &read_args), PolicyVerdict::Allow));
+    assert!(matches!(
+        policy.evaluate("Read", &read_args),
+        PolicyVerdict::Allow
+    ));
+    assert!(matches!(
+        policy.evaluate("read", &read_args),
+        PolicyVerdict::Allow
+    ));
 
     let grep_args = serde_json::json!({"pattern": "TODO", "path": "/src"});
-    assert!(matches!(policy.evaluate("Grep", &grep_args), PolicyVerdict::Allow));
-    assert!(matches!(policy.evaluate("grep", &grep_args), PolicyVerdict::Allow));
+    assert!(matches!(
+        policy.evaluate("Grep", &grep_args),
+        PolicyVerdict::Allow
+    ));
+    assert!(matches!(
+        policy.evaluate("grep", &grep_args),
+        PolicyVerdict::Allow
+    ));
 
     let ls_args = serde_json::json!({"path": "/src"});
-    assert!(matches!(policy.evaluate("Ls", &ls_args), PolicyVerdict::Allow));
-    assert!(matches!(policy.evaluate("ls", &ls_args), PolicyVerdict::Allow));
+    assert!(matches!(
+        policy.evaluate("Ls", &ls_args),
+        PolicyVerdict::Allow
+    ));
+    assert!(matches!(
+        policy.evaluate("ls", &ls_args),
+        PolicyVerdict::Allow
+    ));
 
     let find_args = serde_json::json!({"pattern": "*.rs"});
-    assert!(matches!(policy.evaluate("Find", &find_args), PolicyVerdict::Allow));
-    assert!(matches!(policy.evaluate("find", &find_args), PolicyVerdict::Allow));
+    assert!(matches!(
+        policy.evaluate("Find", &find_args),
+        PolicyVerdict::Allow
+    ));
+    assert!(matches!(
+        policy.evaluate("find", &find_args),
+        PolicyVerdict::Allow
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -386,7 +410,10 @@ fn session_approval_prefix_matching() {
 
     // "cargo test --release" should match via prefix
     let args = serde_json::json!({"command": "cargo test --release"});
-    assert!(matches!(policy.evaluate("Bash", &args), PolicyVerdict::Allow));
+    assert!(matches!(
+        policy.evaluate("Bash", &args),
+        PolicyVerdict::Allow
+    ));
 
     // "cargo build" should NOT match
     let args = serde_json::json!({"command": "cargo build"});

@@ -181,7 +181,11 @@ pub(super) fn render_messages(frame: &mut ratatui::Frame<'_>, area: Rect, state:
             is_last_streaming,
             msg_width,
         );
-        let skip = if i == first_msg_idx { first_msg_line_offset } else { 0 };
+        let skip = if i == first_msg_idx {
+            first_msg_line_offset
+        } else {
+            0
+        };
         for line in lines.into_iter().skip(skip) {
             if produced >= content_capacity {
                 break;
@@ -200,7 +204,9 @@ pub(super) fn render_messages(frame: &mut ratatui::Frame<'_>, area: Rect, state:
     // tail 在所有消息之后；它的第一行对应全局 line = msg_lines_total
     if produced < content_capacity && line_cursor >= msg_lines_total {
         let tail_start = line_cursor.saturating_sub(msg_lines_total);
-        let tail_end = view_end_line.saturating_sub(msg_lines_total).min(tail_lines.len());
+        let tail_end = view_end_line
+            .saturating_sub(msg_lines_total)
+            .min(tail_lines.len());
         for line in tail_lines.iter().take(tail_end).skip(tail_start) {
             if produced >= content_capacity {
                 break;
@@ -374,13 +380,9 @@ pub(super) fn message_lines(
     match message {
         AgentMessage::Standard { message } => match message {
             Message::User(u) => user_message_lines(u, width),
-            Message::Assistant(a) => assistant_message_lines(
-                a,
-                thinking_visible,
-                show_images,
-                is_last_streaming,
-                width,
-            ),
+            Message::Assistant(a) => {
+                assistant_message_lines(a, thinking_visible, show_images, is_last_streaming, width)
+            }
             Message::ToolResult(t) => tool_result_message_lines(t, tools_expanded, width),
         },
         AgentMessage::Custom { message } => {
@@ -540,7 +542,12 @@ fn bash_execution_lines(payload: &Value, width: usize) -> Vec<Line<'static>> {
         .bg(bg)
         .fg(THEME.text)
         .add_modifier(Modifier::BOLD);
-    lines.extend(wrap_padded_line(&cmd_display, cmd_style, block_style, width));
+    lines.extend(wrap_padded_line(
+        &cmd_display,
+        cmd_style,
+        block_style,
+        width,
+    ));
 
     // 输出内容 — 按渲染行数折叠
     let rendered_output = render_tool_output_lines(output, bg, width, false);
@@ -617,12 +624,10 @@ fn compaction_summary_lines(payload: &Value) -> Vec<Line<'static>> {
 fn compaction_collapsed_lines(payload: &Value) -> Vec<Line<'static>> {
     let summary = payload.get("summary").and_then(Value::as_str).unwrap_or("");
     let line_count = summary.lines().count();
-    vec![Line::from(vec![
-        Span::styled(
-            format!("  [compaction] ({line_count} lines — Ctrl+O to expand)"),
-            Style::default().fg(THEME.muted),
-        ),
-    ])]
+    vec![Line::from(vec![Span::styled(
+        format!("  [compaction] ({line_count} lines — Ctrl+O to expand)"),
+        Style::default().fg(THEME.muted),
+    )])]
 }
 
 fn branch_summary_lines(payload: &Value) -> Vec<Line<'static>> {
@@ -830,7 +835,7 @@ fn append_content_block_lines(
             let block_style = Style::default().bg(bg);
             let pad_line = " ".repeat(width);
             lines.push(Line::raw("")); // Spacer(1)
-                                       // 顶部 padding
+            // 顶部 padding
             lines.push(Line::styled(pad_line.clone(), block_style));
 
             if is_bash {
@@ -889,12 +894,12 @@ fn append_content_block_lines(
                     Style::default().fg(THEME.muted),
                 ));
             } else {
-                let rendered = base64::Engine::decode(
-                    &base64::engine::general_purpose::STANDARD,
-                    data,
-                )
-                .ok()
-                .and_then(|bytes| crate::util::terminal_image::render_image(&bytes, 60, 20));
+                let rendered =
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
+                        .ok()
+                        .and_then(|bytes| {
+                            crate::util::terminal_image::render_image(&bytes, 60, 20)
+                        });
                 if let Some((seq, rows)) = rendered {
                     lines.push(Line::raw(format!("  {seq}")));
                     for _ in 1..rows {
@@ -1201,7 +1206,6 @@ fn wrap_padded_line(
         result
     }
 }
-
 
 fn strip_ansi_sgr(text: &str) -> String {
     let mut result = String::new();

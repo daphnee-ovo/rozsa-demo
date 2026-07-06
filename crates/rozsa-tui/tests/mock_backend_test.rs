@@ -71,10 +71,7 @@ async fn mock_backend_all_methods_callable() {
 
     backend.connect().await.unwrap();
     backend.abort().await.unwrap();
-    backend
-        .follow_up("follow", vec![])
-        .await
-        .unwrap();
+    backend.follow_up("follow", vec![]).await.unwrap();
     backend.steer("steer", vec![]).await.unwrap();
     backend.list_models().await.unwrap();
     backend.switch_model("openai", "gpt-4").await.unwrap();
@@ -82,10 +79,7 @@ async fn mock_backend_all_methods_callable() {
     backend.list_sessions().await.unwrap();
     backend.switch_session("/tmp/s1").await.unwrap();
     backend.delete_session("/tmp/s2").await.unwrap();
-    backend
-        .rename_session("/tmp/s3", "new_name")
-        .await
-        .unwrap();
+    backend.rename_session("/tmp/s3", "new_name").await.unwrap();
     backend
         .respond_permission("p1", "approve_once", None)
         .await

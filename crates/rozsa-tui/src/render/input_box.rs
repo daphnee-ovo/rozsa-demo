@@ -13,7 +13,12 @@ fn has_at_completion_token(text: &str) -> bool {
     text.split_whitespace().any(|token| token.starts_with('@'))
 }
 
-pub(super) fn render_input(frame: &mut ratatui::Frame<'_>, area: Rect, input: &InputState, state: &AppState) {
+pub(super) fn render_input(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    input: &InputState,
+    state: &AppState,
+) {
     let visible_rows = area.height.saturating_sub(2) as usize; // 减去上下边框
 
     let full_text = input.text();
@@ -93,7 +98,10 @@ pub(super) fn render_input(frame: &mut ratatui::Frame<'_>, area: Rect, input: &I
         .border_style(Style::default().fg(border_color));
 
     if is_bash_mode {
-        block = block.title_top(Line::styled(" $ bash ", Style::default().fg(THEME.bash_mode)));
+        block = block.title_top(Line::styled(
+            " $ bash ",
+            Style::default().fg(THEME.bash_mode),
+        ));
     }
 
     if lines_above > 0 {

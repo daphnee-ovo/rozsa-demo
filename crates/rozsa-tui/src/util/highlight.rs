@@ -25,9 +25,7 @@ use syntect::{
 
 use crate::theme::THEME;
 
-static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(|| {
-    two_face::syntax::extra_newlines()
-});
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(|| two_face::syntax::extra_newlines());
 
 fn normalize_language(lang: &str) -> String {
     match lang.to_lowercase().as_str() {
@@ -74,9 +72,7 @@ pub fn highlight_code(code: &str, language: &str) -> Option<Vec<Line<'static>>> 
     let mut lines = Vec::new();
 
     for line_text in LinesWithEndings::from(code) {
-        let ranges = highlighter
-            .highlight_line(line_text, &SYNTAX_SET)
-            .ok()?;
+        let ranges = highlighter.highlight_line(line_text, &SYNTAX_SET).ok()?;
 
         let spans: Vec<Span<'static>> = ranges
             .into_iter()

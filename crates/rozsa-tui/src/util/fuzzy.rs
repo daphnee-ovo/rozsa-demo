@@ -25,10 +25,18 @@ pub fn fuzzy_match(query: &str, text: &str) -> FuzzyMatch {
     let text_lower: Vec<char> = text.to_lowercase().chars().collect();
 
     if query_lower.is_empty() {
-        return FuzzyMatch { matches: true, score: 0.0, positions: vec![] };
+        return FuzzyMatch {
+            matches: true,
+            score: 0.0,
+            positions: vec![],
+        };
     }
     if query_lower.len() > text_lower.len() {
-        return FuzzyMatch { matches: false, score: 0.0, positions: vec![] };
+        return FuzzyMatch {
+            matches: false,
+            score: 0.0,
+            positions: vec![],
+        };
     }
 
     let result = match_query(&query_lower, &text_lower);
@@ -63,9 +71,8 @@ fn match_query(query: &[char], text: &[char]) -> FuzzyMatch {
             break;
         }
         if ch == query[query_idx] {
-            let is_word_boundary = i == 0 || matches!(
-                text[i - 1], ' ' | '\t' | '-' | '_' | '.' | '/' | ':'
-            );
+            let is_word_boundary =
+                i == 0 || matches!(text[i - 1], ' ' | '\t' | '-' | '_' | '.' | '/' | ':');
 
             if let Some(last) = last_match_idx {
                 if last == i - 1 {
@@ -89,7 +96,11 @@ fn match_query(query: &[char], text: &[char]) -> FuzzyMatch {
     }
 
     if query_idx < query.len() {
-        return FuzzyMatch { matches: false, score: 0.0, positions: vec![] };
+        return FuzzyMatch {
+            matches: false,
+            score: 0.0,
+            positions: vec![],
+        };
     }
 
     // exact match 加分
@@ -97,7 +108,11 @@ fn match_query(query: &[char], text: &[char]) -> FuzzyMatch {
         score -= 100.0;
     }
 
-    FuzzyMatch { matches: true, score, positions }
+    FuzzyMatch {
+        matches: true,
+        score,
+        positions,
+    }
 }
 
 /// 尝试交换 alpha 和 digit 部分（如 "abc123" → "123abc"）

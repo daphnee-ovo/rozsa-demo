@@ -11,9 +11,9 @@
 // └── terminal_image.rs — 终端图片协议
 
 pub mod ansi;
-pub mod markdown;
+pub mod fuzzy;
 pub mod highlight;
 pub mod hyperlink;
-pub mod fuzzy;
+pub mod markdown;
 pub mod terminal_caps;
 pub mod terminal_image;

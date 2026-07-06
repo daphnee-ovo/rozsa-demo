@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
-use rozsa_tui::app::{should_process_key_event, AppState};
+use rozsa_tui::app::{AppState, should_process_key_event};
 use rozsa_tui::input::mouse::handle_mouse;
 
 #[test]

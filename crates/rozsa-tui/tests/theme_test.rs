@@ -1,5 +1,5 @@
 use ratatui::style::Color;
-use rozsa_tui::theme::{set_theme, Theme};
+use rozsa_tui::theme::{Theme, set_theme};
 
 #[test]
 fn dark_theme_default() {

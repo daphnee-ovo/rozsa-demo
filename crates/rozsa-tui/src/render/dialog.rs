@@ -31,7 +31,10 @@ pub(super) fn render_dialog(frame: &mut ratatui::Frame<'_>, area: Rect, dialog: 
             }
             let label = format!(" {} ", tab_name);
             let style = if i == dialog.active_tab {
-                Style::default().bg(THEME.accent).fg(Color::Black).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(THEME.accent)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(THEME.text)
             };
@@ -45,7 +48,9 @@ pub(super) fn render_dialog(frame: &mut ratatui::Frame<'_>, area: Rect, dialog: 
     }
     if dialog.kind == "select" || dialog.kind == "confirm" {
         let (display_options, selected_index) = if has_tabs {
-            let opts: Vec<String> = dialog.filtered_indices.iter()
+            let opts: Vec<String> = dialog
+                .filtered_indices
+                .iter()
                 .map(|&i| strip_category_prefix(&dialog.options[i]))
                 .collect();
             (opts, dialog.selected)
@@ -59,31 +64,43 @@ pub(super) fn render_dialog(frame: &mut ratatui::Frame<'_>, area: Rect, dialog: 
         let scroll_offset = if visible_height == 0 || total <= visible_height {
             0
         } else {
-            selected_index.saturating_sub(visible_height / 2).min(total.saturating_sub(visible_height))
+            selected_index
+                .saturating_sub(visible_height / 2)
+                .min(total.saturating_sub(visible_height))
         };
         let end = (scroll_offset + visible_height).min(total);
         if scroll_offset > 0 {
-            lines.push(Line::styled("  ↑ more", Style::default().fg(Color::DarkGray)));
+            lines.push(Line::styled(
+                "  ↑ more",
+                Style::default().fg(Color::DarkGray),
+            ));
         }
         for index in scroll_offset..end {
             let option = &display_options[index];
             let marker = if index == selected_index { "> " } else { "  " };
             let style = if index == selected_index {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
             lines.push(Line::styled(format!("{marker}{option}"), style));
         }
         if end < total {
-            lines.push(Line::styled("  ↓ more", Style::default().fg(Color::DarkGray)));
+            lines.push(Line::styled(
+                "  ↓ more",
+                Style::default().fg(Color::DarkGray),
+            ));
         }
     } else {
         lines.push(Line::raw(dialog.input.clone()));
     }
-    let paragraph = Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title(dialog.title.clone()));
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(dialog.title.clone()),
+    );
     frame.render_widget(paragraph, area);
 }
 

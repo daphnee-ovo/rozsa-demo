@@ -9,12 +9,12 @@
 // 相关文档:
 // - [SPEC](../../../../.dev-doc/refactor/tui/SPEC.md)
 
-pub mod keys;
-pub mod mouse;
-pub mod keymap;
-pub mod kill_ring;
-pub mod undo;
 pub mod editor;
+pub mod keymap;
+pub mod keys;
+pub mod kill_ring;
+pub mod mouse;
+pub mod undo;
 
 pub use keys::handle_key;
 
@@ -27,7 +27,10 @@ use crate::input::{
 
 /// Command sink trait — abstracts how the TUI sends commands to the backend.
 pub trait CommandSink: Send + Sync {
-    fn send_command(&self, msg: &crate::protocol::ClientMessage<'_>) -> Result<(), Box<dyn std::error::Error>>;
+    fn send_command(
+        &self,
+        msg: &crate::protocol::ClientMessage<'_>,
+    ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 /// Writer type alias — any CommandSink implementor.
