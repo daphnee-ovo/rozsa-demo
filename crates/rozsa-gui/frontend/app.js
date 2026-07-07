@@ -31,6 +31,9 @@ let toolCounts = {};
 let currentSettings = null;
 let isStreaming = false;
 let acSelectedIndex = -1;
+let acRequestSeq = 0;
+let acPrefix = '';
+let acItems = [];
 let activeSessionIdx = 0;
 // 跟踪每个 session 的 streaming 状态（path → bool）
 let sessionStreamingState = {};
@@ -982,43 +985,38 @@ function autoResize(el) {
 
 let acVisible = false;
 
-function updateAutocomplete() {
+async function updateAutocomplete() {
   const input = document.getElementById('msgInput');
   const popup = document.getElementById('autocomplete');
   if (!input || !popup) return;
   const val = input.value;
-
-  // Show autocomplete when typing a slash command prefix
-  if (/^\/\S*$/.test(val) && !val.includes(' ')) {
-    const q = val.slice(1).toLowerCase();
-    const matches = slashCommands.filter(c => {
-      const name = c.cmd.slice(1);
-      return name.startsWith(q) || name.includes(q);
-    });
-
-    // Sort: startsWith first, then includes
-    matches.sort((a, b) => {
-      const aStarts = a.cmd.slice(1).startsWith(q) ? 0 : 1;
-      const bStarts = b.cmd.slice(1).startsWith(q) ? 0 : 1;
-      if (aStarts !== bStarts) return aStarts - bStarts;
-      return a.cmd.localeCompare(b.cmd);
-    });
-
-    if (matches.length > 0) {
-      acSelectedIndex = -1;
-      popup.innerHTML = matches.map((m, i) =>
-        '<div class="ac-item" data-index="' + i + '" onmousedown="selectSlashCmd(\'' + m.cmd + '\')" ' +
-        'onmouseenter="acHighlight(' + i + ')">' +
-        '<div class="ac-cmd">' + escapeHtml(m.cmd) + '</div>' +
-        '<div class="ac-desc">' + escapeHtml(m.desc) + '</div>' +
-        '<div class="ac-hint">' + escapeHtml(m.category || '') + '</div></div>'
-      ).join('');
-      popup.classList.add('visible');
-      acVisible = true;
-      return;
-    }
+  const cursor = input.selectionStart || val.length;
+  const seq = ++acRequestSeq;
+  let result = null;
+  try {
+    result = await invoke('autocomplete_input', { text: val, cursor });
+  } catch (e) {
+    hideAutocomplete();
+    return;
   }
-  hideAutocomplete();
+  if (seq !== acRequestSeq) return;
+  setInputMatchState(!!result.validMatch);
+  if (!result.items || result.items.length === 0 || !result.prefix) {
+    hideAutocomplete(!result.validMatch);
+    return;
+  }
+
+  acPrefix = result.prefix;
+  acItems = result.items;
+  acSelectedIndex = -1;
+  popup.innerHTML = acItems.map((m, i) =>
+    '<div class="ac-item" data-index="' + i + '" onmousedown="selectAutocomplete(' + i + ')" ' +
+    'onmouseenter="acHighlight(' + i + ')">' +
+    '<div class="ac-cmd">' + escapeHtml(m.label || m.value) + '</div>' +
+    '<div class="ac-desc">' + escapeHtml(m.description || '') + '</div></div>'
+  ).join('');
+  popup.classList.add('visible');
+  acVisible = true;
 }
 
 function acHighlight(index) {
@@ -1056,30 +1054,39 @@ function confirmAutocomplete() {
   // 没有选中项时默认选第一个
   const idx = acSelectedIndex >= 0 ? acSelectedIndex : 0;
   if (items[idx]) {
-    const cmd = items[idx].querySelector('.ac-cmd');
-    if (cmd) {
-      selectSlashCmd(cmd.textContent);
-      return true;
-    }
+    selectAutocomplete(idx);
+    return true;
   }
   return false;
 }
 
-function selectSlashCmd(cmd) {
+function selectAutocomplete(index) {
   const input = document.getElementById('msgInput');
-  if (input) {
-    input.value = cmd + ' ';
-    input.focus();
-    autoResize(input);
-  }
+  const item = acItems[index];
+  if (!input || !item || !acPrefix) return;
+  const cursor = input.selectionStart || input.value.length;
+  const start = Math.max(0, cursor - acPrefix.length);
+  input.value = input.value.slice(0, start) + item.value + input.value.slice(cursor);
+  const nextCursor = start + item.value.length;
+  input.setSelectionRange(nextCursor, nextCursor);
+  input.focus();
+  autoResize(input);
   hideAutocomplete();
 }
 
-function hideAutocomplete() {
+function hideAutocomplete(clearMatch = true) {
   const popup = document.getElementById('autocomplete');
   if (popup) popup.classList.remove('visible');
   acVisible = false;
   acSelectedIndex = -1;
+  acPrefix = '';
+  acItems = [];
+  if (clearMatch) setInputMatchState(false);
+}
+
+function setInputMatchState(valid) {
+  const wrapper = document.querySelector('.input-wrapper');
+  if (wrapper) wrapper.classList.toggle('valid-token', valid);
 }
 
 // =============== Keyboard Shortcuts ===============

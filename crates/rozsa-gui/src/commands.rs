@@ -72,12 +72,17 @@ pub async fn send_message(
         }
     };
 
+    let expansion = crate::file_refs::expand_file_references(&message, &state.shared.cwd);
+
     // 发送消息（后台执行，不阻塞 IPC 返回）
     let shared = state.shared.clone();
     let tabs_ref = state.tabs.clone();
     let active_tab_ref = state.active_tab.clone();
     tokio::spawn(async move {
-        if let Err(e) = agent.prompt(&message).await {
+        if let Err(e) = agent
+            .prompt_with_prefix_blocks(&message, expansion.blocks, expansion.display_text)
+            .await
+        {
             append_prompt_error(idx, &agent, &tabs_ref, &shared, &app, e.to_string()).await;
         }
         // 完成后推送最终状态
@@ -100,6 +105,82 @@ pub struct SlashCommandResult {
     pub handled: bool,
     pub action: Option<String>,
     pub value: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutocompleteResponse {
+    pub prefix: String,
+    pub items: Vec<crate::file_refs::AutocompleteItem>,
+    pub valid_match: bool,
+}
+
+#[tauri::command]
+pub async fn autocomplete_input(
+    state: State<'_, GuiState>,
+    text: String,
+    cursor: usize,
+) -> Result<AutocompleteResponse, String> {
+    let cursor = cursor.min(text.len());
+    let head = &text[..cursor];
+
+    if let Some(prefix) = parse_slash_completion_prefix(head) {
+        let mut items = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
+            .iter()
+            .filter(|cmd| cmd.name.starts_with(&prefix.to_ascii_lowercase()))
+            .map(|cmd| crate::file_refs::AutocompleteItem {
+                value: format!("/{} ", cmd.name),
+                label: format!("/{}", cmd.name),
+                description: Some(cmd.description.to_string()),
+            })
+            .collect::<Vec<_>>();
+
+        if let Ok(agent) = active_agent(&state).await {
+            for skill in agent.skill_registry().list() {
+                let name = format!("skill:{}", skill.name);
+                if name.starts_with(&prefix.to_ascii_lowercase()) {
+                    items.push(crate::file_refs::AutocompleteItem {
+                        value: format!("/{name} "),
+                        label: format!("/{name}"),
+                        description: Some(skill.description.clone()),
+                    });
+                }
+            }
+        }
+
+        items.sort_by(|a, b| a.label.cmp(&b.label));
+        let valid_match = items
+            .iter()
+            .any(|item| item.label.trim_start_matches('/') == prefix);
+        return Ok(AutocompleteResponse {
+            prefix: format!("/{prefix}"),
+            items,
+            valid_match,
+        });
+    }
+
+    if let Some(prefix) = parse_at_completion_prefix(head) {
+        let items = crate::file_refs::complete_file_reference(&prefix, &state.shared.cwd);
+        let path = prefix
+            .strip_prefix("@\"")
+            .or_else(|| prefix.strip_prefix('@'))
+            .unwrap_or(&prefix)
+            .trim_end_matches('"');
+        let valid_match = resolved_autocomplete_path(path, &state.shared.cwd)
+            .as_ref()
+            .is_some_and(|path| path.exists());
+        return Ok(AutocompleteResponse {
+            prefix,
+            items,
+            valid_match,
+        });
+    }
+
+    Ok(AutocompleteResponse {
+        prefix: String::new(),
+        items: Vec::new(),
+        valid_match: false,
+    })
 }
 
 #[tauri::command]
@@ -770,6 +851,52 @@ fn slash_action_arg(action: &str, value: String) -> Result<SlashCommandResult, S
 
 fn emit_info(app: &AppHandle, message: &str) {
     let _ = app.emit("notification", message.to_string());
+}
+
+fn parse_slash_completion_prefix(head: &str) -> Option<String> {
+    let trimmed = head.trim_start();
+    if !trimmed.starts_with('/') || trimmed[1..].contains(char::is_whitespace) {
+        return None;
+    }
+    Some(trimmed[1..].to_ascii_lowercase())
+}
+
+fn parse_at_completion_prefix(head: &str) -> Option<String> {
+    if let Some(start) = head.rfind("@\"") {
+        let after = &head[start + 2..];
+        if (start == 0 || head[..start].ends_with(char::is_whitespace)) && !after.contains('"') {
+            return Some(head[start..].to_string());
+        }
+    }
+
+    let chars = head.char_indices().collect::<Vec<_>>();
+    for (idx, ch) in chars.iter().rev() {
+        if *ch == '@' && (*idx == 0 || head[..*idx].ends_with(char::is_whitespace)) {
+            return Some(head[*idx..].to_string());
+        }
+        if ch.is_whitespace() {
+            break;
+        }
+    }
+    None
+}
+
+fn resolved_autocomplete_path(path: &str, cwd: &std::path::Path) -> Option<std::path::PathBuf> {
+    if path.is_empty() {
+        return None;
+    }
+    if path == "~" {
+        return dirs::home_dir();
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        return dirs::home_dir().map(|home| home.join(rest));
+    }
+    let parsed = std::path::PathBuf::from(path);
+    if parsed.is_absolute() {
+        Some(parsed)
+    } else {
+        Some(cwd.join(parsed))
+    }
 }
 
 async fn active_agent(state: &State<'_, GuiState>) -> Result<Arc<AgentSession>, String> {

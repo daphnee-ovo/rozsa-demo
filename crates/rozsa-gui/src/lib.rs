@@ -4,6 +4,7 @@
 
 mod commands;
 mod events;
+pub mod file_refs;
 pub mod state;
 
 use std::path::PathBuf;
@@ -96,6 +97,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::rename_session,
             commands::delete_session,
             commands::run_bash,
+            commands::autocomplete_input,
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {

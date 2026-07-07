@@ -37,8 +37,8 @@ use rozsa_core::messages::AgentMessage;
 use rozsa_core::tool::{Tool, ToolExecutionMode};
 use rozsa_model::event_stream::EventStream;
 use rozsa_model::types::{
-    CacheRetention, Message, Model, SimpleStreamOptions, StreamOptions, ThinkingLevel, ToolSchema,
-    Transport, UserContent, UserMessage,
+    CacheRetention, ContentBlock, Message, Model, SimpleStreamOptions, StreamOptions,
+    ThinkingLevel, ToolSchema, Transport, UserContent, UserMessage,
 };
 
 use crate::resources::LoadedResources;
@@ -293,6 +293,20 @@ impl AgentSession {
     /// message, runs the core loop, persists resulting messages, and returns
     /// the event stream collected as a Vec.
     pub async fn prompt(&self, message: &str) -> Result<Vec<AgentEvent>> {
+        self.prompt_with_prefix_blocks(message, Vec::new(), None)
+            .await
+    }
+
+    /// Send a user message with extra leading content blocks.
+    ///
+    /// GUI file mentions use this to keep the visible user text unchanged via
+    /// `display_text` while sending expanded file/image context to the model.
+    pub async fn prompt_with_prefix_blocks(
+        &self,
+        message: &str,
+        mut prefix_blocks: Vec<ContentBlock>,
+        display_text_override: Option<String>,
+    ) -> Result<Vec<AgentEvent>> {
         // Atomically claim the running slot — concurrent submits get rejected.
         if self
             .is_running
@@ -307,10 +321,20 @@ impl AgentSession {
 
         // Expand /skill:name commands
         let (expanded_text, display_text) = self.expand_skill_command(message);
+        let display_text = display_text_override.or(display_text);
+        let content = if prefix_blocks.is_empty() {
+            UserContent::Text(expanded_text.clone())
+        } else {
+            prefix_blocks.push(ContentBlock::Text {
+                text: expanded_text.clone(),
+                signature: None,
+            });
+            UserContent::Blocks(prefix_blocks.clone())
+        };
 
         // Build user message
         let user_msg = AgentMessage::standard(Message::User(UserMessage {
-            content: UserContent::Text(expanded_text.clone()),
+            content: content.clone(),
             display_text: display_text.clone(),
             timestamp: current_timestamp_ms(),
         }));
@@ -320,7 +344,7 @@ impl AgentSession {
             .lock()
             .await
             .append_message(Message::User(UserMessage {
-                content: UserContent::Text(expanded_text),
+                content,
                 display_text,
                 timestamp: current_timestamp_ms(),
             }))?;

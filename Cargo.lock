@@ -4298,6 +4298,7 @@ dependencies = [
 name = "rozsa-gui"
 version = "1.0.4"
 dependencies = [
+ "base64 0.22.1",
  "dashmap",
  "dirs",
  "rozsa-app",
@@ -4307,6 +4308,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "tempfile",
  "tokio",
  "tokio-util",
  "tracing",
