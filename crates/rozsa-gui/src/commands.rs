@@ -361,12 +361,63 @@ pub async fn dispatch_slash_command(
                 );
             }
         }
-        "main" | "subagents" | "tree" | "graph" | "fork" | "clone" | "import" | "share"
-        | "reload" | "changelog" | "gc" => {
-            emit_info(
-                &app,
-                &format!("/{cmd} is recognized but not supported by the GUI yet"),
-            );
+        "main" => {
+            let agent = active_agent(&state).await?;
+            agent.set_viewing_subagent(None).await;
+            emit_info(&app, "Switched to main agent");
+        }
+        "subagent" | "subagents" => {
+            emit_info(&app, &subagents_summary(&state).await?);
+        }
+        "tree" => {
+            emit_info(&app, &session_tree_summary(&state).await?);
+        }
+        "graph" => {
+            emit_info(&app, &conversation_graph_summary(&state).await?);
+        }
+        "fork" => {
+            emit_info(&app, &fork_points_summary(&state).await?);
+        }
+        "clone" => {
+            let message = clone_active_session(&state).await?;
+            emit_info(&app, &message);
+            return slash_action("refreshSessions");
+        }
+        "import" => {
+            let path = if args.is_empty() {
+                "session-export.jsonl"
+            } else {
+                args.as_str()
+            };
+            emit_info(&app, &import_session_summary(path));
+        }
+        "share" => {
+            let message = share_active_session(&state).await?;
+            emit_info(&app, &message);
+        }
+        "reload" => {
+            let agent = active_agent(&state).await?;
+            let diagnostics = agent.reload_skills();
+            for diagnostic in &diagnostics {
+                emit_info(
+                    &app,
+                    &format!(
+                        "Skill load warning: {} - {}",
+                        diagnostic.path.display(),
+                        diagnostic.message
+                    ),
+                );
+            }
+            let count = agent.skill_registry().list().len();
+            emit_info(&app, &format!("Reloaded skills ({count} loaded)"));
+        }
+        "changelog" => {
+            emit_info(&app, "No changelog entries available in GUI mode");
+        }
+        "gc" => {
+            let days = args.parse::<u64>().unwrap_or(30);
+            let message = gc_old_sessions(&state, days).await?;
+            emit_info(&app, &message);
         }
         "quit" => app.exit(0),
         _ => {
@@ -1231,6 +1282,198 @@ async fn search_messages(state: &State<'_, GuiState>, pattern: &str) -> String {
     }
 }
 
+async fn subagents_summary(state: &State<'_, GuiState>) -> Result<String, String> {
+    let agent = active_agent(state).await?;
+    let manager = agent.subagent_manager().await;
+    let list = manager.list().await;
+    drop(manager);
+    if list.is_empty() {
+        return Ok("No subagents".to_string());
+    }
+    Ok(format!(
+        "Subagents:\n{}",
+        list.iter()
+            .map(|agent| format!("{} ({}) - {:?}", agent.name, agent.id, agent.status))
+            .collect::<Vec<_>>()
+            .join("\n")
+    ))
+}
+
+async fn session_tree_summary(state: &State<'_, GuiState>) -> Result<String, String> {
+    let agent = active_agent(state).await?;
+    let manager = agent.session_manager().await;
+    let entries = manager.entries();
+    drop(manager);
+    if entries.is_empty() {
+        return Ok("Session tree is empty".to_string());
+    }
+    Ok(format!(
+        "Session tree ({} entries):\n{}",
+        entries.len(),
+        entries
+            .iter()
+            .enumerate()
+            .map(|(idx, entry)| format!("{:>3}. {}", idx + 1, session_entry_summary(entry)))
+            .collect::<Vec<_>>()
+            .join("\n")
+    ))
+}
+
+async fn conversation_graph_summary(state: &State<'_, GuiState>) -> Result<String, String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    let tab = tabs.get(idx).ok_or("No active tab")?;
+    if tab.messages().is_empty() {
+        return Ok("Conversation graph is empty".to_string());
+    }
+    Ok(format!(
+        "Conversation graph ({} messages):\n{}",
+        tab.messages().len(),
+        tab.messages()
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, message)| {
+                let standard = message.as_standard()?;
+                Some(format!("{:>3}. {}", idx + 1, message_summary(standard)))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    ))
+}
+
+async fn fork_points_summary(state: &State<'_, GuiState>) -> Result<String, String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    let tab = tabs.get(idx).ok_or("No active tab")?;
+    let points = tab
+        .messages()
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, message)| match message.as_standard()? {
+            Message::User(user) => Some(format!(
+                "{:>3}. {}",
+                idx + 1,
+                truncate_chars(&user.content.text(), 100)
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if points.is_empty() {
+        Ok("No user messages available to fork from".to_string())
+    } else {
+        Ok(format!("Fork points:\n{}", points.join("\n")))
+    }
+}
+
+async fn clone_active_session(state: &State<'_, GuiState>) -> Result<String, String> {
+    let agent = active_agent(state).await?;
+    let manager = agent.session_manager().await;
+    let entries = manager.entries();
+    let cwd = agent.cwd().to_string_lossy().to_string();
+    drop(manager);
+
+    let session_dir = state
+        .session_dir
+        .as_ref()
+        .ok_or("No session directory configured")?;
+    let new_id = uuid::Uuid::new_v4().to_string();
+    let new_path = session_dir.join(format!("{new_id}.jsonl"));
+    let mut new_manager =
+        SessionManager::create(&new_path, new_id, cwd, None).map_err(|e| e.to_string())?;
+    let mut count = 0usize;
+    for entry in &entries {
+        if let rozsa_app::session::manager::SessionEntry::Message(message_entry) = entry {
+            new_manager
+                .append_message(message_entry.message.clone())
+                .map_err(|e| e.to_string())?;
+            count += 1;
+        }
+    }
+    Ok(format!(
+        "Cloned {count} messages to new session: {}",
+        new_path.display()
+    ))
+}
+
+fn import_session_summary(path: &str) -> String {
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            let count = content
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .filter(|line| serde_json::from_str::<serde_json::Value>(line).is_ok())
+                .count();
+            format!("Imported {count} entries from {path}")
+        }
+        Err(e) => format!("Import failed: {e}"),
+    }
+}
+
+async fn share_active_session(state: &State<'_, GuiState>) -> Result<String, String> {
+    let agent = active_agent(state).await?;
+    let manager = agent.session_manager().await;
+    let entries = manager.entries();
+    drop(manager);
+
+    let temp_dir = state.shared.cwd.join("temp");
+    std::fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+    let export_path = temp_dir.join("rozsa-share-export.jsonl");
+    let mut lines = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        lines.push(serde_json::to_string(entry).map_err(|e| e.to_string())?);
+    }
+    std::fs::write(&export_path, lines.join("\n") + "\n").map_err(|e| e.to_string())?;
+
+    let output = Command::new("gh")
+        .args([
+            "gist",
+            "create",
+            "--public=false",
+            &export_path.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run gh: {e}"))?;
+    if output.status.success() {
+        Ok(format!(
+            "Shared as gist: {}",
+            String::from_utf8_lossy(&output.stdout).trim()
+        ))
+    } else {
+        Ok(format!(
+            "gh gist create failed: {}\nExport kept at {}",
+            String::from_utf8_lossy(&output.stderr).trim(),
+            export_path.display()
+        ))
+    }
+}
+
+async fn gc_old_sessions(state: &State<'_, GuiState>, days: u64) -> Result<String, String> {
+    let session_dir = state
+        .session_dir
+        .as_ref()
+        .ok_or("No session directory configured")?;
+    let cutoff = SystemTime::now() - Duration::from_secs(days * 86_400);
+    let mut removed = 0usize;
+    for entry in std::fs::read_dir(session_dir).map_err(|e| e.to_string())?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if modified < cutoff && move_to_trash(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(format!(
+        "GC: moved {removed} session files older than {days} days to trash"
+    ))
+}
+
 async fn export_active_session(state: &State<'_, GuiState>, path: &str) -> Result<(), String> {
     let agent = active_agent(state).await?;
     let manager = agent.session_manager().await;
@@ -1244,6 +1487,51 @@ async fn export_active_session(state: &State<'_, GuiState>, path: &str) -> Resul
     std::fs::write(path, lines.join("\n") + "\n").map_err(|e| e.to_string())
 }
 
+fn session_entry_summary(entry: &rozsa_app::session::manager::SessionEntry) -> String {
+    match entry {
+        rozsa_app::session::manager::SessionEntry::Message(message_entry) => {
+            message_summary(&message_entry.message)
+        }
+        rozsa_app::session::manager::SessionEntry::ThinkingLevelChange(entry) => {
+            format!("thinking_change {}", entry.thinking_level)
+        }
+        rozsa_app::session::manager::SessionEntry::ModelChange(entry) => {
+            format!("model_change {}/{}", entry.provider, entry.model_id)
+        }
+        rozsa_app::session::manager::SessionEntry::Compaction(entry) => {
+            format!("compaction {}", truncate_chars(&entry.summary, 80))
+        }
+        rozsa_app::session::manager::SessionEntry::Custom(entry) => {
+            format!("custom {}", entry.custom_type)
+        }
+        rozsa_app::session::manager::SessionEntry::Label(entry) => {
+            format!("label {}", entry.label.clone().unwrap_or_default())
+        }
+        rozsa_app::session::manager::SessionEntry::SessionInfo(entry) => {
+            format!("session_info {}", entry.name.clone().unwrap_or_default())
+        }
+    }
+}
+
+fn message_summary(message: &Message) -> String {
+    match message {
+        Message::User(user) => format!("user {}", truncate_chars(&user.content.text(), 80)),
+        Message::Assistant(assistant) => {
+            let text = text_from_blocks(&assistant.content);
+            if text.is_empty() {
+                "assistant (tool calls)".to_string()
+            } else {
+                format!("assistant {}", truncate_chars(&text, 80))
+            }
+        }
+        Message::ToolResult(result) => format!(
+            "tool_result [{}] {}",
+            result.tool_name,
+            truncate_chars(&text_from_blocks(&result.content), 80)
+        ),
+    }
+}
+
 fn text_from_blocks(blocks: &[ContentBlock]) -> String {
     blocks
         .iter()
@@ -1253,6 +1541,68 @@ fn text_from_blocks(blocks: &[ContentBlock]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn truncate_chars(text: &str, max: usize) -> String {
+    let mut out = String::new();
+    for (idx, ch) in text.chars().enumerate() {
+        if idx >= max {
+            out.push_str("...");
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn move_to_trash(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "tell application \"Finder\" to delete POSIX file \"{}\"",
+            path.to_string_lossy().replace('"', "\\\"")
+        );
+        let status = Command::new("osascript")
+            .args(["-e", &script])
+            .status()
+            .map_err(|e| e.to_string())?;
+        return status
+            .success()
+            .then_some(())
+            .ok_or_else(|| format!("Failed to move {} to trash", path.display()));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let script = format!(
+            "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('{}', 'OnlyErrorDialogs', 'SendToRecycleBin')",
+            path.to_string_lossy().replace('\'', "''")
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .status()
+            .map_err(|e| e.to_string())?;
+        return status
+            .success()
+            .then_some(())
+            .ok_or_else(|| format!("Failed to move {} to recycle bin", path.display()));
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        for program in ["gio", "trash-put"] {
+            let status = if program == "gio" {
+                Command::new(program).args(["trash", &path.to_string_lossy()]).status()
+            } else {
+                Command::new(program).arg(path).status()
+            };
+            if status.map(|status| status.success()).unwrap_or(false) {
+                return Ok(());
+            }
+        }
+        Err(format!(
+            "No supported trash command found for {}. Install gio or trash-cli.",
+            path.display()
+        ))
+    }
 }
 
 async fn persist_settings(state: &State<'_, GuiState>) {
