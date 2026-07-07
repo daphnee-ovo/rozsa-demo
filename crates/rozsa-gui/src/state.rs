@@ -207,6 +207,10 @@ pub struct ContextUsage {
     pub percent: f64,
     pub tokens: u64,
     pub context_window: usize,
+    pub input_tokens: u64,
+    pub uncached_input_tokens: u64,
+    pub cached_input_tokens: u64,
+    pub output_tokens: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -237,14 +241,17 @@ impl UiSnapshot {
             .filter_map(|m| serde_json::to_value(m).ok())
             .collect();
 
-        let mut input_tokens: u64 = 0;
+        let mut uncached_input_tokens: u64 = 0;
+        let mut cached_input_tokens: u64 = 0;
         let mut output_tokens: u64 = 0;
         for msg in tab.messages() {
             if let Some(rozsa_model::types::Message::Assistant(a)) = msg.as_standard() {
-                input_tokens += a.usage.input;
+                uncached_input_tokens += a.usage.input;
+                cached_input_tokens += a.usage.cache_read + a.usage.cache_write;
                 output_tokens += a.usage.output;
             }
         }
+        let input_tokens = uncached_input_tokens + cached_input_tokens;
 
         let model_guard = shared.model.try_lock().unwrap_or_else(|_| unreachable!());
         let model_info = ModelInfo {
@@ -279,6 +286,10 @@ impl UiSnapshot {
                 percent: context_percent,
                 tokens: input_tokens,
                 context_window,
+                input_tokens,
+                uncached_input_tokens,
+                cached_input_tokens,
+                output_tokens,
             },
             runtime_state: RuntimeState {
                 prompt_tokens: input_tokens,

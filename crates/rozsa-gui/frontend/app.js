@@ -203,12 +203,17 @@ async function refreshRateLimits(showResult) {
 
 function updateSidebar(snap) {
   if (snap.contextUsage) {
-    const pct = Math.round(snap.contextUsage.percent);
-    const tokens = snap.contextUsage.tokens;
+    const pct = clampPercent(Number(snap.contextUsage.percent || 0));
+    const tokens = Number(snap.contextUsage.tokens || 0);
     const ctxEl = document.getElementById('contextTokens');
-    if (ctxEl) ctxEl.textContent = tokens > 1000 ? Math.round(tokens / 1000) + 'k' : tokens;
+    if (ctxEl) ctxEl.textContent = formatCompactTokens(tokens);
     const ring = document.querySelector('.context-ring circle:last-child');
     if (ring) ring.setAttribute('stroke-dashoffset', 44 - (44 * pct / 100));
+    const ringWrap = document.querySelector('.context-ring');
+    if (ringWrap) {
+      ringWrap.removeAttribute('title');
+      ringWrap.dataset.quotaTooltip = formatContextTooltip(snap.contextUsage);
+    }
   }
 
   const branchEl = document.getElementById('gitBranch');
@@ -1339,6 +1344,36 @@ function showHotkeys() {
 function clampPercent(value) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, value));
+}
+
+function formatCompactTokens(value) {
+  const n = Number(value || 0);
+  if (n >= 1000000) return (n / 1000000).toFixed(n >= 10000000 ? 0 : 1) + 'm';
+  if (n >= 1000) return Math.round(n / 1000) + 'k';
+  return String(n);
+}
+
+function formatContextTooltip(usage) {
+  const pct = Math.round(clampPercent(Number(usage.percent || 0)));
+  const used = formatFullTokens(usage.tokens);
+  const windowTokens = formatFullTokens(usage.contextWindow);
+  const input = formatFullTokens(usage.inputTokens);
+  const uncached = formatFullTokens(usage.uncachedInputTokens);
+  const cached = formatFullTokens(usage.cachedInputTokens);
+  const output = formatFullTokens(usage.outputTokens);
+  return [
+    'Context window: ' + pct + '%',
+    'Used: ' + used + ' / ' + windowTokens,
+    'Input: ' + input + ' (' + uncached + ' uncached + ' + cached + ' cached)',
+    'Cached input: ' + cached,
+    'Output: ' + output,
+  ].join('\n');
+}
+
+function formatFullTokens(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return '0';
+  return Math.round(n).toLocaleString('en-US');
 }
 
 function formatResetTitle(label, window) {
