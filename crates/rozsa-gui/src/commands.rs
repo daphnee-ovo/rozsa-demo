@@ -195,8 +195,8 @@ pub async fn autocomplete_input(
 }
 
 #[tauri::command]
-pub async fn pick_attachment() -> Result<Option<String>, String> {
-    pick_attachment_path()
+pub async fn pick_attachment(mode: String) -> Result<Option<String>, String> {
+    pick_attachment_path(AttachmentPickMode::parse(&mode)?)
 }
 
 #[tauri::command]
@@ -910,6 +910,24 @@ fn resolved_autocomplete_path(path: &str, cwd: &std::path::Path) -> Option<std::
     }
 }
 
+#[derive(Clone, Copy)]
+enum AttachmentPickMode {
+    Any,
+    File,
+    Directory,
+}
+
+impl AttachmentPickMode {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "" | "any" => Ok(Self::Any),
+            "file" => Ok(Self::File),
+            "directory" => Ok(Self::Directory),
+            other => Err(format!("Unknown attachment picker mode: {other}")),
+        }
+    }
+}
+
 fn normalize_skill_command(agent: &AgentSession, cmd: &str, args: &str) -> Option<String> {
     let skill_name = cmd.strip_prefix("skill:").unwrap_or(cmd);
     let exists = agent.skill_registry().find_by_name(skill_name).is_some();
@@ -924,25 +942,102 @@ fn normalize_skill_command(agent: &AgentSession, cmd: &str, args: &str) -> Optio
 }
 
 #[cfg(target_os = "macos")]
-fn pick_attachment_path() -> Result<Option<String>, String> {
-    let script = r#"
+fn pick_attachment_path(mode: AttachmentPickMode) -> Result<Option<String>, String> {
+    let choose_files = !matches!(mode, AttachmentPickMode::Directory);
+    let choose_dirs = !matches!(mode, AttachmentPickMode::File);
+    let script = format!(
+        r#"
 ObjC.import('AppKit');
 const panel = $.NSOpenPanel.openPanel;
-panel.canChooseFiles = true;
-panel.canChooseDirectories = true;
+panel.canChooseFiles = {};
+panel.canChooseDirectories = {};
 panel.allowsMultipleSelection = false;
 panel.resolvesAliases = true;
 const result = panel.runModal();
-if (result == $.NSModalResponseOK) {
+if (result == $.NSModalResponseOK) {{
   ObjC.unwrap(panel.URLs.objectAtIndex(0).path);
-} else {
+}} else {{
   '';
-}
-"#;
+}}
+"#,
+        choose_files, choose_dirs
+    );
     let output = Command::new("osascript")
-        .args(["-l", "JavaScript", "-e", script])
+        .args(["-l", "JavaScript", "-e", &script])
         .output()
         .map_err(|e| format!("Failed to open attachment picker: {e}"))?;
+    read_picker_output(output)
+}
+
+#[cfg(target_os = "windows")]
+fn pick_attachment_path(mode: AttachmentPickMode) -> Result<Option<String>, String> {
+    let script = match mode {
+        AttachmentPickMode::Any | AttachmentPickMode::File => {
+            r#"
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.CheckFileExists = $true
+$dialog.Multiselect = $false
+$dialog.Title = 'Attach file'
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  Write-Output $dialog.FileName
+}
+"#
+        }
+        AttachmentPickMode::Directory => {
+            r#"
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'Attach directory'
+$dialog.ShowNewFolderButton = $false
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  Write-Output $dialog.SelectedPath
+}
+"#
+        }
+    };
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-STA", "-Command", script])
+        .output()
+        .map_err(|e| format!("Failed to open attachment picker: {e}"))?;
+    read_picker_output(output)
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn pick_attachment_path(mode: AttachmentPickMode) -> Result<Option<String>, String> {
+    let directory = matches!(mode, AttachmentPickMode::Directory);
+    let mut candidates: Vec<(&str, Vec<&str>)> = Vec::new();
+    if directory {
+        candidates.push(("zenity", vec!["--file-selection", "--directory"]));
+        candidates.push(("kdialog", vec!["--getexistingdirectory"]));
+    } else {
+        candidates.push(("zenity", vec!["--file-selection"]));
+        candidates.push(("kdialog", vec!["--getopenfilename"]));
+    }
+
+    let mut last_error = String::new();
+    for (program, args) in candidates {
+        match Command::new(program).args(args).output() {
+            Ok(output) if output.status.success() => return read_picker_output(output),
+            Ok(output) if output.status.code() == Some(1) => return Ok(None),
+            Ok(output) => {
+                last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            }
+            Err(e) => {
+                last_error = e.to_string();
+            }
+        }
+    }
+    Err(if last_error.is_empty() {
+        "No supported Linux attachment picker found. Install zenity or kdialog.".to_string()
+    } else {
+        format!("Attachment picker failed: {last_error}")
+    })
+}
+
+fn read_picker_output(output: std::process::Output) -> Result<Option<String>, String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if stderr.is_empty() {
@@ -953,11 +1048,6 @@ if (result == $.NSModalResponseOK) {
     }
     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok((!path.is_empty()).then_some(path))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn pick_attachment_path() -> Result<Option<String>, String> {
-    Err("Attachment picker is currently implemented for macOS only.".to_string())
 }
 
 async fn active_agent(state: &State<'_, GuiState>) -> Result<Arc<AgentSession>, String> {

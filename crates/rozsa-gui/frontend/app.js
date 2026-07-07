@@ -982,9 +982,17 @@ async function saveSetting(key, value) {
 
 // =============== Input Handling ===============
 
-async function attachFileReference() {
+function toggleAttachmentMenu() {
+  const menu = document.getElementById('attachmentMenu');
+  if (!menu) return;
+  menu.classList.toggle('visible');
+}
+
+async function attachFileReference(mode = 'file') {
+  const menu = document.getElementById('attachmentMenu');
+  if (menu) menu.classList.remove('visible');
   try {
-    const path = await invoke('pick_attachment');
+    const path = await invoke('pick_attachment', { mode });
     if (!path) return;
     insertInputText(formatFileReference(path));
   } catch (e) {
@@ -1253,6 +1261,13 @@ document.addEventListener('mouseout', function(e) {
   const target = e.target.closest('[data-quota-tooltip]');
   if (!target || (e.relatedTarget && target.contains(e.relatedTarget))) return;
   hideQuotaTooltip();
+});
+
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('attachmentMenu');
+  if (!menu || !menu.classList.contains('visible')) return;
+  if (e.target.closest('[data-attachment-control]')) return;
+  menu.classList.remove('visible');
 });
 
 document.addEventListener('scroll', hideQuotaTooltip, true);

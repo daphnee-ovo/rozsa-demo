@@ -1065,6 +1065,32 @@ body {
   transition: all 0.12s;
 }
 .input-tool-btn:hover { background: var(--code-bg); color: var(--fg); transform: translateY(-1px); }
+.attachment-menu {
+  position: absolute;
+  bottom: 34px;
+  left: 8px;
+  display: none;
+  min-width: 116px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px oklch(0% 0 0 / 0.08);
+  z-index: 60;
+}
+.attachment-menu.visible { display: block; }
+.attachment-menu button {
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.attachment-menu button:hover { background: var(--code-bg); }
 .input-spacer { flex: 1; }
 .input-hint {
   font-size: 10.5px;
@@ -1812,7 +1838,11 @@ button:focus-visible, .session-item:focus-visible,
         <div class="input-highlight" id="inputHighlight" aria-hidden="true"></div>
         <textarea id="msgInput" placeholder="向 Rózsa 发送消息，支持 Markdown…" rows="1" oninput="autoResize(this);updateAutocomplete()" onscroll="syncInputHighlightScroll()"></textarea>
         <div class="input-toolbar">
-          <button class="input-tool-btn" title="附加文件" aria-label="附加文件" onclick="attachFileReference()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
+          <div class="attachment-menu" id="attachmentMenu" data-attachment-control>
+            <button onclick="attachFileReference('file')">文件</button>
+            <button onclick="attachFileReference('directory')">目录</button>
+          </div>
+          <button class="input-tool-btn" title="附加文件或目录" aria-label="附加文件或目录" data-attachment-control onclick="toggleAttachmentMenu()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
           <button class="input-tool-btn" title="斜杠命令" aria-label="斜杠命令" onclick="insertSlashCommandPrefix()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 2.5L6 13.5"/></svg></button>
           <div class="input-spacer"></div>
           <span class="input-hint">Markdown · ⏎ 发送 · ⇧⏎ 换行 · ⌃T 思考</span>
