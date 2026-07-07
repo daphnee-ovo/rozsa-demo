@@ -98,6 +98,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::delete_session,
             commands::run_bash,
             commands::autocomplete_input,
+            commands::pick_attachment,
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {

@@ -976,6 +976,39 @@ async function saveSetting(key, value) {
 
 // =============== Input Handling ===============
 
+async function attachFileReference() {
+  try {
+    const path = await invoke('pick_attachment');
+    if (!path) return;
+    insertInputText(formatFileReference(path));
+  } catch (e) {
+    showError('Attachment picker failed: ' + String(e));
+  }
+}
+
+function insertSlashCommandPrefix() {
+  insertInputText('/');
+}
+
+function insertInputText(text) {
+  const input = document.getElementById('msgInput');
+  if (!input) return;
+  const start = input.selectionStart || input.value.length;
+  const end = input.selectionEnd || start;
+  input.value = input.value.slice(0, start) + text + input.value.slice(end);
+  const cursor = start + text.length;
+  input.setSelectionRange(cursor, cursor);
+  input.focus();
+  autoResize(input);
+  updateAutocomplete();
+}
+
+function formatFileReference(path) {
+  if (path.includes('"')) return '@' + path + ' ';
+  if (/\s/.test(path)) return '@"' + path + '" ';
+  return '@' + path + ' ';
+}
+
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';

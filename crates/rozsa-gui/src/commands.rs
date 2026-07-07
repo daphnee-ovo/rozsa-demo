@@ -184,6 +184,11 @@ pub async fn autocomplete_input(
 }
 
 #[tauri::command]
+pub async fn pick_attachment() -> Result<Option<String>, String> {
+    pick_attachment_path()
+}
+
+#[tauri::command]
 pub async fn dispatch_slash_command(
     state: State<'_, GuiState>,
     app: AppHandle,
@@ -897,6 +902,43 @@ fn resolved_autocomplete_path(path: &str, cwd: &std::path::Path) -> Option<std::
     } else {
         Some(cwd.join(parsed))
     }
+}
+
+#[cfg(target_os = "macos")]
+fn pick_attachment_path() -> Result<Option<String>, String> {
+    let script = r#"
+ObjC.import('AppKit');
+const panel = $.NSOpenPanel.openPanel;
+panel.canChooseFiles = true;
+panel.canChooseDirectories = true;
+panel.allowsMultipleSelection = false;
+panel.resolvesAliases = true;
+const result = panel.runModal();
+if (result == $.NSModalResponseOK) {
+  ObjC.unwrap(panel.URLs.objectAtIndex(0).path);
+} else {
+  '';
+}
+"#;
+    let output = Command::new("osascript")
+        .args(["-l", "JavaScript", "-e", script])
+        .output()
+        .map_err(|e| format!("Failed to open attachment picker: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "Attachment picker failed.".to_string()
+        } else {
+            format!("Attachment picker failed: {stderr}")
+        });
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok((!path.is_empty()).then_some(path))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn pick_attachment_path() -> Result<Option<String>, String> {
+    Err("Attachment picker is currently implemented for macOS only.".to_string())
 }
 
 async fn active_agent(state: &State<'_, GuiState>) -> Result<Arc<AgentSession>, String> {
