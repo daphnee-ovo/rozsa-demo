@@ -125,33 +125,44 @@ pub async fn autocomplete_input(
     let head = &text[..cursor];
 
     if let Some(prefix) = parse_slash_completion_prefix(head) {
-        let mut items = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
-            .iter()
-            .filter(|cmd| cmd.name.starts_with(&prefix.to_ascii_lowercase()))
-            .map(|cmd| crate::file_refs::AutocompleteItem {
-                value: format!("/{} ", cmd.name),
-                label: format!("/{}", cmd.name),
-                description: Some(cmd.description.to_string()),
-            })
-            .collect::<Vec<_>>();
+        use rozsa_app::slash_commands::{
+            AutocompleteEngine, SlashCommandInfo, SlashCommandSource, BUILTIN_SLASH_COMMANDS,
+        };
+
+        let prefix_lower = prefix.to_ascii_lowercase();
+        let mut dynamic = Vec::new();
 
         if let Ok(agent) = active_agent(&state).await {
             for skill in agent.skill_registry().list() {
-                let name = format!("skill:{}", skill.name);
-                if name.starts_with(&prefix.to_ascii_lowercase()) {
-                    items.push(crate::file_refs::AutocompleteItem {
-                        value: format!("/{name} "),
-                        label: format!("/{name}"),
-                        description: Some(skill.description.clone()),
-                    });
-                }
+                let builtin_conflict = BUILTIN_SLASH_COMMANDS
+                    .iter()
+                    .any(|cmd| cmd.name == skill.name);
+                let name = if builtin_conflict {
+                    format!("skill:{}", skill.name)
+                } else {
+                    skill.name.clone()
+                };
+                dynamic.push(SlashCommandInfo {
+                    name,
+                    description: Some(skill.description.clone()),
+                    source: SlashCommandSource::Skill,
+                });
             }
         }
 
-        items.sort_by(|a, b| a.label.cmp(&b.label));
+        let items = AutocompleteEngine::with_dynamic(dynamic)
+            .complete(head, cursor)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| crate::file_refs::AutocompleteItem {
+                value: format!("/{} ", item.value),
+                label: item.label,
+                description: item.description,
+            })
+            .collect::<Vec<_>>();
         let valid_match = items
             .iter()
-            .any(|item| item.label.trim_start_matches('/') == prefix);
+            .any(|item| item.label.trim_start_matches('/').to_ascii_lowercase() == prefix_lower);
         return Ok(AutocompleteResponse {
             prefix: format!("/{prefix}"),
             items,
@@ -360,12 +371,7 @@ pub async fn dispatch_slash_command(
         "quit" => app.exit(0),
         _ => {
             let agent = active_agent(&state).await?;
-            if agent.skill_registry().find_by_name(&cmd).is_some() || cmd.starts_with("skill:") {
-                let prompt = if args.is_empty() {
-                    format!("/{cmd}")
-                } else {
-                    format!("/{cmd} {args}")
-                };
+            if let Some(prompt) = normalize_skill_command(&agent, &cmd, &args) {
                 send_message(state, app, prompt).await?;
             } else {
                 return Ok(SlashCommandResult {
@@ -901,6 +907,19 @@ fn resolved_autocomplete_path(path: &str, cwd: &std::path::Path) -> Option<std::
         Some(parsed)
     } else {
         Some(cwd.join(parsed))
+    }
+}
+
+fn normalize_skill_command(agent: &AgentSession, cmd: &str, args: &str) -> Option<String> {
+    let skill_name = cmd.strip_prefix("skill:").unwrap_or(cmd);
+    let exists = agent.skill_registry().find_by_name(skill_name).is_some();
+    if !exists {
+        return None;
+    }
+    if args.is_empty() {
+        Some(format!("/skill:{skill_name}"))
+    } else {
+        Some(format!("/skill:{skill_name} {args}"))
     }
 }
 

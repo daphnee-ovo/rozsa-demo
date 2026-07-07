@@ -956,6 +956,7 @@ body {
   background: var(--code-bg);
   transition: border-color 0.15s, background 0.15s;
   overflow: hidden;
+  position: relative;
 }
 .input-wrapper:focus-within {
   border-color: var(--accent);
@@ -1015,16 +1016,42 @@ body {
   padding: 10px 14px 6px;
   font-family: var(--font-ui);
   font-size: 13px;
-  color: var(--fg);
+  color: transparent;
+  caret-color: var(--fg);
   background: transparent;
   line-height: 1.5;
   min-height: 38px;
   max-height: 120px;
   appearance: none;
   box-shadow: none;
+  position: relative;
+  z-index: 1;
 }
 .input-wrapper textarea:focus-visible { outline: none; }
 .input-wrapper textarea::placeholder { color: oklch(70% 0.008 350); }
+.input-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 38px;
+  max-height: 120px;
+  overflow: hidden;
+  padding: 10px 14px 6px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+  pointer-events: none;
+  z-index: 0;
+}
+.valid-token-text {
+  color: var(--success);
+  background: color-mix(in oklch, var(--success-bg) 70%, transparent);
+  border-radius: 3px;
+}
 .input-toolbar {
   display: flex;
   align-items: center;
@@ -1782,7 +1809,8 @@ button:focus-visible, .session-item:focus-visible,
             </button>
           </div>
         </div>
-        <textarea id="msgInput" placeholder="向 Rózsa 发送消息，支持 Markdown…" rows="1" oninput="autoResize(this);updateAutocomplete()"></textarea>
+        <div class="input-highlight" id="inputHighlight" aria-hidden="true"></div>
+        <textarea id="msgInput" placeholder="向 Rózsa 发送消息，支持 Markdown…" rows="1" oninput="autoResize(this);updateAutocomplete()" onscroll="syncInputHighlightScroll()"></textarea>
         <div class="input-toolbar">
           <button class="input-tool-btn" title="附加文件" aria-label="附加文件" onclick="attachFileReference()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
           <button class="input-tool-btn" title="斜杠命令" aria-label="斜杠命令" onclick="insertSlashCommandPrefix()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 2.5L6 13.5"/></svg></button>

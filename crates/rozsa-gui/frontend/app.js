@@ -34,6 +34,7 @@ let acSelectedIndex = -1;
 let acRequestSeq = 0;
 let acPrefix = '';
 let acItems = [];
+let inputHighlightPrefix = '';
 let activeSessionIdx = 0;
 // 跟踪每个 session 的 streaming 状态（path → bool）
 let sessionStreamingState = {};
@@ -1017,6 +1018,7 @@ function formatFileReference(path) {
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  if (!inputHighlightPrefix) updateInputHighlight('');
 }
 
 // =============== Slash Command Autocomplete ===============
@@ -1039,6 +1041,7 @@ async function updateAutocomplete() {
   }
   if (seq !== acRequestSeq) return;
   setInputMatchState(!!result.validMatch);
+  updateInputHighlight(result.validMatch ? result.prefix : '');
   if (!result.items || result.items.length === 0 || !result.prefix) {
     hideAutocomplete(!result.validMatch);
     return;
@@ -1119,12 +1122,47 @@ function hideAutocomplete(clearMatch = true) {
   acSelectedIndex = -1;
   acPrefix = '';
   acItems = [];
-  if (clearMatch) setInputMatchState(false);
+  if (clearMatch) {
+    setInputMatchState(false);
+    updateInputHighlight('');
+  }
 }
 
 function setInputMatchState(valid) {
   const wrapper = document.querySelector('.input-wrapper');
   if (wrapper) wrapper.classList.toggle('valid-token', valid);
+}
+
+function updateInputHighlight(prefix) {
+  inputHighlightPrefix = prefix || '';
+  const input = document.getElementById('msgInput');
+  const layer = document.getElementById('inputHighlight');
+  if (!input || !layer) return;
+  const text = input.value;
+  const cursor = input.selectionStart || text.length;
+  if (!inputHighlightPrefix || cursor < inputHighlightPrefix.length) {
+    layer.textContent = text;
+    syncInputHighlightScroll();
+    return;
+  }
+  const start = cursor - inputHighlightPrefix.length;
+  if (text.slice(start, cursor) !== inputHighlightPrefix) {
+    layer.textContent = text;
+    syncInputHighlightScroll();
+    return;
+  }
+  const before = escapeHtml(text.slice(0, start));
+  const token = escapeHtml(text.slice(start, cursor));
+  const after = escapeHtml(text.slice(cursor));
+  layer.innerHTML = before + '<span class="valid-token-text">' + token + '</span>' + after;
+  syncInputHighlightScroll();
+}
+
+function syncInputHighlightScroll() {
+  const input = document.getElementById('msgInput');
+  const layer = document.getElementById('inputHighlight');
+  if (!input || !layer) return;
+  layer.scrollTop = input.scrollTop;
 }
 
 // =============== Keyboard Shortcuts ===============
