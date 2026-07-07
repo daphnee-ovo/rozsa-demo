@@ -634,96 +634,64 @@ async function sendMessage() {
 }
 
 async function dispatchSlashCommand(text) {
-  const parts = text.slice(1).split(/\s+/);
-  const cmd = parts[0].toLowerCase();
-  const args = parts.slice(1).join(' ');
+  try {
+    const result = await invoke('dispatch_slash_command', { text });
+    if (!result || !result.handled) return false;
+    await handleSlashAction(result.action, result.value);
+    return true;
+  } catch (e) {
+    showError(String(e));
+    return true;
+  }
+}
 
-  switch (cmd) {
-    case 'clear':
-    case 'new':
-      await newSession();
-      return true;
-
-    case 'model':
-      if (args) {
-        // Fuzzy match and switch
-        const match = models.find(m =>
-          m.id.toLowerCase().includes(args.toLowerCase()) ||
-          m.name.toLowerCase().includes(args.toLowerCase())
-        );
-        if (match) await onModelChange(match.id);
-        else {
-          await onModelChange(args);
-          showNotification('Using custom model id: ' + args);
-        }
-      } else {
-        toggleSettings();
-        switchSettingsTab('models', document.querySelectorAll('.settings-tab')[1]);
-      }
-      return true;
-
+async function handleSlashAction(action, value) {
+  switch (action) {
+    case 'modelPicker':
+      await showModelPicker();
+      return;
     case 'settings':
       toggleSettings();
-      return true;
-
-    case 'thinking': {
-      const levels = ['off', 'low', 'medium', 'high'];
-      let level = args.toLowerCase();
-      if (!levels.includes(level)) {
-        // Cycle to next
-        const current = currentSettings?.thinking_level?.toLowerCase() || 'off';
-        const idx = levels.indexOf(current);
-        level = levels[(idx + 1) % levels.length];
-      }
-      await saveSetting('thinking', level);
-      showNotification('Thinking level: ' + level);
-      return true;
-    }
-
+      return;
     case 'help':
-      showHelp(args);
-      return true;
-
+      showHelp(value || '');
+      return;
     case 'hotkeys':
       showHotkeys();
-      return true;
-
-    case 'login':
-      try {
-        showNotification('Starting codex-oauth login...');
-        const message = await invoke('auth_login');
-        showNotification(message);
-        models = await invoke('list_models');
-        renderModelSelector();
-        await refreshRateLimits(false);
-      } catch (e) { showError(String(e)); }
-      return true;
-
-    case 'logout':
-      try {
-        const message = await invoke('auth_logout');
-        showNotification(message);
-        updateQuotaBars(null);
-      } catch (e) { showError(String(e)); }
-      return true;
-
-    case 'usage':
-      await refreshRateLimits(true);
-      return true;
-
-    case 'quit':
-      try { await invoke('quit'); } catch (e) { /* ignore */ }
-      return true;
-
-    case 'compact':
-      // Send to backend (it handles compaction)
-      try { await invoke('send_message', { message: text }); } catch (e) { showError(String(e)); }
-      return true;
-
+      return;
+    case 'refreshSessions':
+      sessions = await invoke('get_sessions');
+      renderSessionList();
+      return;
+    case 'refreshModels':
+      models = await invoke('list_models');
+      renderModelSelector();
+      await refreshRateLimits(false);
+      return;
+    case 'copy':
+      await copyText(value || '');
+      showNotification('Copied last assistant message');
+      return;
     default:
-      // Not a locally-handled command, send to backend
-      return false;
+      return;
   }
+}
+
+async function copyText(text) {
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
 }
 
 async function abortAgent() {

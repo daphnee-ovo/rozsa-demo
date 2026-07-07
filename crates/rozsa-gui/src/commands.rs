@@ -3,14 +3,19 @@
 // Tauri IPC 命令。多会话架构：操作都针对当前活跃 tab。
 
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use rozsa_app::agent_session::AgentSession;
 use rozsa_app::permissions::PermissionResponse;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_core::messages::AgentMessage;
-use rozsa_model::types::{AssistantMessage, Message, StopReason, Usage};
+use rozsa_model::types::{
+    AssistantMessage, ContentBlock, Message, StopReason, ThinkingLevel, Usage,
+};
 
 use crate::state::{GuiState, SessionTab, UiSnapshot};
 
@@ -87,6 +92,210 @@ pub async fn send_message(
     });
 
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlashCommandResult {
+    pub handled: bool,
+    pub action: Option<String>,
+    pub value: Option<String>,
+}
+
+#[tauri::command]
+pub async fn dispatch_slash_command(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+    text: String,
+) -> Result<SlashCommandResult, String> {
+    let trimmed = text.trim();
+    let Some(rest) = trimmed.strip_prefix('/') else {
+        return Ok(SlashCommandResult {
+            handled: false,
+            action: None,
+            value: None,
+        });
+    };
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return Ok(SlashCommandResult {
+            handled: false,
+            action: None,
+            value: None,
+        });
+    }
+
+    let (cmd, args) = match rest.split_once(char::is_whitespace) {
+        Some((cmd, args)) => (cmd.to_ascii_lowercase(), args.trim().to_string()),
+        None => (rest.to_ascii_lowercase(), String::new()),
+    };
+
+    match cmd.as_str() {
+        "model" => {
+            if args.is_empty() {
+                return slash_action("modelPicker");
+            }
+            switch_model_reference(&state, &args).await?;
+            emit_info(&app, &format!("Model: {args}"));
+        }
+        "settings" => return slash_action("settings"),
+        "help" => return slash_action_arg("help", args),
+        "hotkeys" => return slash_action("hotkeys"),
+        "clear" | "new" => {
+            create_new_session(&state, &app).await?;
+            emit_info(&app, "Started new session");
+            return slash_action("refreshSessions");
+        }
+        "compact" => {
+            compact_active_session(&state).await?;
+            emit_info(&app, "Compaction started");
+        }
+        "thinking" => {
+            let level = parse_thinking_level(&args)?;
+            set_thinking_level(&state, level).await;
+            emit_info(&app, &format!("Thinking: {}", format!("{level:?}").to_lowercase()));
+        }
+        "login" => {
+            let message = auth_login(app.clone()).await?;
+            emit_info(&app, &message);
+            return slash_action("refreshModels");
+        }
+        "logout" => {
+            let message = auth_logout().await?;
+            emit_info(&app, &message);
+            return slash_action("refreshModels");
+        }
+        "usage" => {
+            let snapshot = get_rate_limits().await?;
+            emit_info(
+                &app,
+                &rozsa_app::rate_limit::format_rate_limit_display(&snapshot),
+            );
+        }
+        "session" => {
+            let (path, count) = active_session_summary(&state).await?;
+            emit_info(&app, &format!("Session\nFile: {path}\nMessages: {count}"));
+        }
+        "name" => {
+            let agent = active_agent(&state).await?;
+            if args.is_empty() {
+                let name = agent
+                    .session_manager()
+                    .await
+                    .current_name()
+                    .unwrap_or_else(|| "(unnamed)".to_string());
+                emit_info(&app, &format!("Session name: {name}"));
+            } else {
+                agent
+                    .session_manager()
+                    .await
+                    .append_session_info(Some(args.clone()))
+                    .map_err(|e| e.to_string())?;
+                emit_info(&app, &format!("Session name set: {args}"));
+                return slash_action("refreshSessions");
+            }
+        }
+        "permissions" => {
+            let mode = &state.shared.settings_manager.resolved().permissions.mode;
+            emit_info(&app, &format!("Permission mode: {mode}"));
+        }
+        "scoped-models" => {
+            let registry = state
+                .model_registry
+                .as_ref()
+                .ok_or("No model registry available")?;
+            let lines = registry
+                .all()
+                .iter()
+                .map(|m| format!("[{}] {}", m.provider, m.id))
+                .collect::<Vec<_>>();
+            emit_info(
+                &app,
+                &format!("Available models ({}):\n{}", lines.len(), lines.join("\n")),
+            );
+        }
+        "copy" => {
+            let text = last_assistant_text(&state).await?;
+            if text.is_empty() {
+                emit_info(&app, "No assistant message to copy");
+            } else {
+                return Ok(SlashCommandResult {
+                    handled: true,
+                    action: Some("copy".to_string()),
+                    value: Some(text),
+                });
+            }
+        }
+        "search" => {
+            if args.is_empty() {
+                emit_info(&app, "Usage: /search <pattern>");
+            } else {
+                let results = search_messages(&state, &args).await;
+                emit_info(&app, &results);
+            }
+        }
+        "export" => {
+            let path = if args.is_empty() {
+                "session-export.jsonl".to_string()
+            } else {
+                args.clone()
+            };
+            export_active_session(&state, &path).await?;
+            emit_info(&app, &format!("Exported current session to {path}"));
+        }
+        "resume" => return slash_action("refreshSessions"),
+        "lsp" => {
+            if args.is_empty() {
+                let current = state.runtime_settings.lock().await.lsp_mode.clone();
+                emit_info(
+                    &app,
+                    &format!(
+                        "LSP auto-diagnostics mode: {current}\nOptions: agent_end | edit_write | disabled"
+                    ),
+                );
+            } else if matches!(args.as_str(), "agent_end" | "edit_write" | "disabled") {
+                state.runtime_settings.lock().await.lsp_mode = args.clone();
+                persist_settings(&state).await;
+                emit_info(&app, &format!("LSP mode set to: {args}"));
+            } else {
+                emit_info(
+                    &app,
+                    &format!("Unknown LSP mode '{args}'. Options: agent_end | edit_write | disabled"),
+                );
+            }
+        }
+        "main" | "subagents" | "tree" | "graph" | "fork" | "clone" | "import" | "share"
+        | "reload" | "changelog" | "gc" => {
+            emit_info(
+                &app,
+                &format!("/{cmd} is recognized but not supported by the GUI yet"),
+            );
+        }
+        "quit" => app.exit(0),
+        _ => {
+            let agent = active_agent(&state).await?;
+            if agent.skill_registry().find_by_name(&cmd).is_some() || cmd.starts_with("skill:") {
+                let prompt = if args.is_empty() {
+                    format!("/{cmd}")
+                } else {
+                    format!("/{cmd} {args}")
+                };
+                send_message(state, app, prompt).await?;
+            } else {
+                return Ok(SlashCommandResult {
+                    handled: false,
+                    action: None,
+                    value: None,
+                });
+            }
+        }
+    }
+
+    Ok(SlashCommandResult {
+        handled: true,
+        action: None,
+        value: None,
+    })
 }
 
 #[tauri::command]
@@ -542,6 +751,231 @@ pub async fn run_bash(
 }
 
 // --- 辅助 ---
+
+fn slash_action(action: &str) -> Result<SlashCommandResult, String> {
+    Ok(SlashCommandResult {
+        handled: true,
+        action: Some(action.to_string()),
+        value: None,
+    })
+}
+
+fn slash_action_arg(action: &str, value: String) -> Result<SlashCommandResult, String> {
+    Ok(SlashCommandResult {
+        handled: true,
+        action: Some(action.to_string()),
+        value: Some(value),
+    })
+}
+
+fn emit_info(app: &AppHandle, message: &str) {
+    let _ = app.emit("notification", message.to_string());
+}
+
+async fn active_agent(state: &State<'_, GuiState>) -> Result<Arc<AgentSession>, String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    match tabs.get(idx) {
+        Some(SessionTab::Active { agent, .. }) => Ok(agent.clone()),
+        _ => Err("No active agent".to_string()),
+    }
+}
+
+async fn active_session_summary(state: &State<'_, GuiState>) -> Result<(String, usize), String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    let tab = tabs.get(idx).ok_or("No active tab")?;
+    Ok((tab.path().to_string(), tab.messages().len()))
+}
+
+async fn create_new_session(state: &State<'_, GuiState>, app: &AppHandle) -> Result<String, String> {
+    let session_dir = state
+        .session_dir
+        .as_ref()
+        .ok_or("No session directory configured")?;
+
+    let new_id = uuid::Uuid::new_v4().to_string();
+    let cwd = state.shared.cwd.to_string_lossy().to_string();
+    let path = session_dir.join(format!("{new_id}.jsonl"));
+
+    let _manager =
+        SessionManager::create(&path, new_id.clone(), cwd, None).map_err(|e| e.to_string())?;
+
+    let path_str = path.to_string_lossy().to_string();
+    let mut tabs = state.tabs.lock().await;
+    tabs.push(SessionTab::Loaded {
+        path: path_str,
+        messages: vec![],
+    });
+    let new_idx = tabs.len() - 1;
+    drop(tabs);
+
+    *state.active_tab.lock().await = new_idx;
+    let tabs = state.tabs.lock().await;
+    if let Some(tab) = tabs.get(new_idx) {
+        let snapshot = UiSnapshot::from_tab(tab, &state.shared);
+        let _ = app.emit("ui-state", &snapshot);
+    }
+
+    Ok(new_id)
+}
+
+async fn switch_model_reference(state: &State<'_, GuiState>, reference: &str) -> Result<(), String> {
+    let registry = state
+        .model_registry
+        .as_ref()
+        .ok_or("No model registry available")?;
+
+    let model = if let Some((provider, id)) = reference.split_once('/') {
+        registry
+            .resolve(provider, id)
+            .ok_or_else(|| format!("Model {provider}/{id} not found"))?
+    } else {
+        registry
+            .all()
+            .iter()
+            .find(|m| {
+                m.id == reference || m.id.contains(reference) || m.id.ends_with(reference)
+            })
+            .cloned()
+            .ok_or_else(|| format!("Model not found: {reference}"))?
+    };
+
+    *state.shared.model.lock().await = model.clone();
+    {
+        let mut settings = state.runtime_settings.lock().await;
+        settings.default_model = Some(model.id.clone());
+        settings.default_provider = Some(model.provider.as_str().to_string());
+    }
+    persist_settings(state).await;
+
+    let tabs = state.tabs.lock().await;
+    for tab in tabs.iter() {
+        if let SessionTab::Active { agent, .. } = tab {
+            agent.set_model(model.clone()).await;
+        }
+    }
+    Ok(())
+}
+
+fn parse_thinking_level(value: &str) -> Result<ThinkingLevel, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "" | "off" => Ok(ThinkingLevel::Off),
+        "minimal" | "min" => Ok(ThinkingLevel::Minimal),
+        "low" | "l" => Ok(ThinkingLevel::Low),
+        "medium" | "med" | "m" => Ok(ThinkingLevel::Medium),
+        "high" | "h" => Ok(ThinkingLevel::High),
+        "xhigh" | "x" => Ok(ThinkingLevel::XHigh),
+        other => Err(format!(
+            "Unknown thinking level: {other}. Use: off/minimal/low/medium/high/xhigh"
+        )),
+    }
+}
+
+async fn set_thinking_level(state: &State<'_, GuiState>, level: ThinkingLevel) {
+    *state.shared.thinking_level.lock().await = level;
+    let tabs = state.tabs.lock().await;
+    for tab in tabs.iter() {
+        if let SessionTab::Active { agent, .. } = tab {
+            agent.set_thinking_level(level).await;
+        }
+    }
+    drop(tabs);
+    {
+        let mut settings = state.runtime_settings.lock().await;
+        settings.default_thinking_level = Some(level);
+    }
+    persist_settings(state).await;
+}
+
+async fn compact_active_session(state: &State<'_, GuiState>) -> Result<(), String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    if let Some(SessionTab::Active { agent, .. }) = tabs.get(idx) {
+        agent.compact().await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+async fn last_assistant_text(state: &State<'_, GuiState>) -> Result<String, String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    let tab = tabs.get(idx).ok_or("No active tab")?;
+    Ok(tab
+        .messages()
+        .iter()
+        .rev()
+        .find_map(|msg| match msg.as_standard()? {
+            Message::Assistant(a) => Some(text_from_blocks(&a.content)),
+            _ => None,
+        })
+        .unwrap_or_default())
+}
+
+async fn search_messages(state: &State<'_, GuiState>, pattern: &str) -> String {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    let Some(tab) = tabs.get(idx) else {
+        return "No active tab".to_string();
+    };
+    let needle = pattern.to_ascii_lowercase();
+    let mut results = Vec::new();
+    for msg in tab.messages() {
+        let Some(standard) = msg.as_standard() else {
+            continue;
+        };
+        let text = match standard {
+            Message::Assistant(a) => text_from_blocks(&a.content),
+            Message::ToolResult(tr) => text_from_blocks(&tr.content),
+            Message::User(u) => u.content.text(),
+        };
+        for line in text.lines() {
+            if line.to_ascii_lowercase().contains(&needle) {
+                results.push(line.to_string());
+                if results.len() >= 50 {
+                    break;
+                }
+            }
+        }
+        if results.len() >= 50 {
+            break;
+        }
+    }
+    if results.is_empty() {
+        format!("No matches for '{pattern}'")
+    } else {
+        format!(
+            "Search results for '{}' ({} matches):\n{}",
+            pattern,
+            results.len(),
+            results.join("\n")
+        )
+    }
+}
+
+async fn export_active_session(state: &State<'_, GuiState>, path: &str) -> Result<(), String> {
+    let agent = active_agent(state).await?;
+    let manager = agent.session_manager().await;
+    let entries = manager.entries();
+    drop(manager);
+
+    let mut lines = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        lines.push(serde_json::to_string(entry).map_err(|e| e.to_string())?);
+    }
+    std::fs::write(path, lines.join("\n") + "\n").map_err(|e| e.to_string())
+}
+
+fn text_from_blocks(blocks: &[ContentBlock]) -> String {
+    blocks
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 async fn persist_settings(state: &State<'_, GuiState>) {
     if let Some(ref path) = state.global_settings_path {
