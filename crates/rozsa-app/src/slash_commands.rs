@@ -275,7 +275,7 @@ impl AutocompleteEngine {
         let mut items: Vec<AutocompleteItem> = Vec::new();
 
         for cmd in BUILTIN_SLASH_COMMANDS {
-            if cmd.name.starts_with(&prefix_lower) {
+            if slash_match(cmd.name, Some(cmd.description), &prefix_lower) {
                 items.push(AutocompleteItem {
                     value: cmd.name.to_string(),
                     label: format!("/{}", cmd.name),
@@ -285,7 +285,7 @@ impl AutocompleteEngine {
         }
 
         for cmd in &self.dynamic {
-            if cmd.name.to_ascii_lowercase().starts_with(&prefix_lower) {
+            if slash_match(&cmd.name, cmd.description.as_deref(), &prefix_lower) {
                 items.push(AutocompleteItem {
                     value: cmd.name.clone(),
                     label: format!("/{}", cmd.name),
@@ -294,8 +294,39 @@ impl AutocompleteEngine {
             }
         }
 
-        items.sort_by(|a, b| a.value.cmp(&b.value));
+        items.sort_by(|a, b| {
+            slash_score(&a.value, a.description.as_deref(), &prefix_lower)
+                .cmp(&slash_score(&b.value, b.description.as_deref(), &prefix_lower))
+                .then_with(|| a.value.cmp(&b.value))
+        });
         Some(items)
+    }
+}
+
+fn slash_match(name: &str, description: Option<&str>, prefix_lower: &str) -> bool {
+    prefix_lower.is_empty()
+        || name.to_ascii_lowercase().contains(prefix_lower)
+        || description
+            .map(|value| value.to_ascii_lowercase().contains(prefix_lower))
+            .unwrap_or(false)
+}
+
+fn slash_score(name: &str, description: Option<&str>, prefix_lower: &str) -> u8 {
+    if prefix_lower.is_empty() {
+        return 0;
+    }
+    let name_lower = name.to_ascii_lowercase();
+    if name_lower.starts_with(prefix_lower) {
+        0
+    } else if name_lower.contains(prefix_lower) {
+        1
+    } else if description
+        .map(|value| value.to_ascii_lowercase().contains(prefix_lower))
+        .unwrap_or(false)
+    {
+        2
+    } else {
+        3
     }
 }
 

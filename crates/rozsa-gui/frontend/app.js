@@ -34,7 +34,7 @@ let acSelectedIndex = -1;
 let acRequestSeq = 0;
 let acPrefix = '';
 let acItems = [];
-let inputHighlightPrefix = '';
+let inputHighlightRanges = [];
 let activeSessionIdx = 0;
 // 跟踪每个 session 的 streaming 状态（path → bool）
 let sessionStreamingState = {};
@@ -1026,7 +1026,7 @@ function formatFileReference(path) {
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-  if (!inputHighlightPrefix) updateInputHighlight('');
+  updateInputHighlight(inputHighlightRanges);
 }
 
 // =============== Slash Command Autocomplete ===============
@@ -1049,7 +1049,7 @@ async function updateAutocomplete() {
   }
   if (seq !== acRequestSeq) return;
   setInputMatchState(!!result.validMatch);
-  updateInputHighlight(result.validMatch ? result.prefix : '');
+  updateInputHighlight(result.highlightRanges || []);
   if (!result.items || result.items.length === 0 || !result.prefix) {
     hideAutocomplete(!result.validMatch);
     return;
@@ -1120,7 +1120,8 @@ function selectAutocomplete(index) {
   input.setSelectionRange(nextCursor, nextCursor);
   input.focus();
   autoResize(input);
-  hideAutocomplete();
+  hideAutocomplete(false);
+  updateAutocomplete();
 }
 
 function hideAutocomplete(clearMatch = true) {
@@ -1132,7 +1133,7 @@ function hideAutocomplete(clearMatch = true) {
   acItems = [];
   if (clearMatch) {
     setInputMatchState(false);
-    updateInputHighlight('');
+    updateInputHighlight([]);
   }
 }
 
@@ -1141,28 +1142,37 @@ function setInputMatchState(valid) {
   if (wrapper) wrapper.classList.toggle('valid-token', valid);
 }
 
-function updateInputHighlight(prefix) {
-  inputHighlightPrefix = prefix || '';
+function updateInputHighlight(ranges) {
+  inputHighlightRanges = Array.isArray(ranges) ? ranges : [];
   const input = document.getElementById('msgInput');
   const layer = document.getElementById('inputHighlight');
   if (!input || !layer) return;
   const text = input.value;
-  const cursor = input.selectionStart || text.length;
-  if (!inputHighlightPrefix || cursor < inputHighlightPrefix.length) {
+  if (inputHighlightRanges.length === 0) {
     layer.textContent = text;
     syncInputHighlightScroll();
     return;
   }
-  const start = cursor - inputHighlightPrefix.length;
-  if (text.slice(start, cursor) !== inputHighlightPrefix) {
-    layer.textContent = text;
-    syncInputHighlightScroll();
-    return;
+  const chars = Array.from(text);
+  let html = '';
+  let cursor = 0;
+  const normalized = inputHighlightRanges
+    .map(range => ({
+      start: Math.max(0, Math.min(chars.length, Number(range.start || 0))),
+      end: Math.max(0, Math.min(chars.length, Number(range.end || 0))),
+    }))
+    .filter(range => range.end > range.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  for (const range of normalized) {
+    if (range.start < cursor) continue;
+    html += escapeHtml(chars.slice(cursor, range.start).join(''));
+    html += '<span class="valid-token-text">' +
+      escapeHtml(chars.slice(range.start, range.end).join('')) +
+      '</span>';
+    cursor = range.end;
   }
-  const before = escapeHtml(text.slice(0, start));
-  const token = escapeHtml(text.slice(start, cursor));
-  const after = escapeHtml(text.slice(cursor));
-  layer.innerHTML = before + '<span class="valid-token-text">' + token + '</span>' + after;
+  html += escapeHtml(chars.slice(cursor).join(''));
+  layer.innerHTML = html;
   syncInputHighlightScroll();
 }
 

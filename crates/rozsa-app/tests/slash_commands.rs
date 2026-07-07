@@ -39,6 +39,22 @@ fn dynamic_commands_merge_with_builtins() {
 }
 
 #[test]
+fn complete_matches_substring_and_description() {
+    let dynamic = vec![SlashCommandInfo {
+        name: "ask".to_string(),
+        description: Some("Ask project-specific questions".to_string()),
+        source: SlashCommandSource::Skill,
+    }];
+    let engine = AutocompleteEngine::with_dynamic(dynamic);
+
+    let by_name = engine.complete("/sk", 3).expect("inside slash token");
+    assert!(by_name.iter().any(|i| i.value == "ask"));
+
+    let by_description = engine.complete("/project", 8).expect("inside slash token");
+    assert!(by_description.iter().any(|i| i.value == "ask"));
+}
+
+#[test]
 fn complete_empty_prefix_lists_all() {
     let engine = AutocompleteEngine::new();
     let items = engine.complete("/", 1).expect("inside slash token");

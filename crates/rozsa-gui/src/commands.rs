@@ -113,6 +113,14 @@ pub struct AutocompleteResponse {
     pub prefix: String,
     pub items: Vec<crate::file_refs::AutocompleteItem>,
     pub valid_match: bool,
+    pub highlight_ranges: Vec<InputHighlightRange>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputHighlightRange {
+    pub start: usize,
+    pub end: usize,
 }
 
 #[tauri::command]
@@ -123,6 +131,9 @@ pub async fn autocomplete_input(
 ) -> Result<AutocompleteResponse, String> {
     let cursor = cursor.min(text.len());
     let head = &text[..cursor];
+    let active_agent = active_agent(&state).await.ok();
+    let highlight_ranges =
+        input_highlight_ranges(&text, &state.shared.cwd, active_agent.as_deref());
 
     if let Some(prefix) = parse_slash_completion_prefix(head) {
         use rozsa_app::slash_commands::{
@@ -132,7 +143,7 @@ pub async fn autocomplete_input(
         let prefix_lower = prefix.to_ascii_lowercase();
         let mut dynamic = Vec::new();
 
-        if let Ok(agent) = active_agent(&state).await {
+        if let Some(agent) = active_agent.as_deref() {
             for skill in agent.skill_registry().list() {
                 let builtin_conflict = BUILTIN_SLASH_COMMANDS
                     .iter()
@@ -167,6 +178,7 @@ pub async fn autocomplete_input(
             prefix: format!("/{prefix}"),
             items,
             valid_match,
+            highlight_ranges,
         });
     }
 
@@ -184,6 +196,7 @@ pub async fn autocomplete_input(
             prefix,
             items,
             valid_match,
+            highlight_ranges,
         });
     }
 
@@ -191,6 +204,7 @@ pub async fn autocomplete_input(
         prefix: String::new(),
         items: Vec::new(),
         valid_match: false,
+        highlight_ranges,
     })
 }
 
@@ -941,6 +955,132 @@ fn parse_at_completion_prefix(head: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn input_highlight_ranges(
+    text: &str,
+    cwd: &std::path::Path,
+    agent: Option<&AgentSession>,
+) -> Vec<InputHighlightRange> {
+    let mut ranges = Vec::new();
+    if let Some((start, end)) = slash_command_range(text, agent) {
+        ranges.push(InputHighlightRange {
+            start: char_offset(text, start),
+            end: char_offset(text, end),
+        });
+    }
+    for (start, end) in file_reference_ranges(text, cwd) {
+        ranges.push(InputHighlightRange {
+            start: char_offset(text, start),
+            end: char_offset(text, end),
+        });
+    }
+    ranges
+}
+
+fn slash_command_range(text: &str, agent: Option<&AgentSession>) -> Option<(usize, usize)> {
+    let start = text
+        .char_indices()
+        .find_map(|(idx, ch)| (!ch.is_whitespace()).then_some(idx))?;
+    if !text[start..].starts_with('/') {
+        return None;
+    }
+    let command_start = start + 1;
+    let command_end = text[command_start..]
+        .char_indices()
+        .find_map(|(idx, ch)| ch.is_whitespace().then_some(command_start + idx))
+        .unwrap_or(text.len());
+    if command_end == command_start {
+        return None;
+    }
+    let command = &text[command_start..command_end];
+    if valid_slash_command(command, agent) {
+        Some((start, command_end))
+    } else {
+        None
+    }
+}
+
+fn valid_slash_command(command: &str, agent: Option<&AgentSession>) -> bool {
+    let builtin = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
+        .iter()
+        .any(|cmd| cmd.name == command);
+    if builtin {
+        return true;
+    }
+    let Some(agent) = agent else {
+        return false;
+    };
+    let skill_name = command.strip_prefix("skill:").unwrap_or(command);
+    if command != skill_name
+        && agent
+            .skill_registry()
+            .find_by_name(skill_name)
+            .is_some()
+    {
+        return true;
+    }
+    let has_builtin_conflict = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
+        .iter()
+        .any(|cmd| cmd.name == skill_name);
+    !has_builtin_conflict && agent.skill_registry().find_by_name(skill_name).is_some()
+}
+
+fn file_reference_ranges(text: &str, cwd: &std::path::Path) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut iter = text.char_indices().peekable();
+    while let Some((start, ch)) = iter.next() {
+        if ch != '@' || (start > 0 && !text[..start].ends_with(char::is_whitespace)) {
+            continue;
+        }
+
+        let Some((next_idx, next_ch)) = iter.peek().copied() else {
+            continue;
+        };
+        if next_ch == '"' {
+            iter.next();
+            let mut end = None;
+            while let Some((idx, ch)) = iter.next() {
+                if ch == '"' {
+                    end = Some(idx + ch.len_utf8());
+                    break;
+                }
+            }
+            let Some(end_idx) = end else {
+                continue;
+            };
+            let path = &text[next_idx + 1..end_idx - 1];
+            if resolved_autocomplete_path(path, cwd)
+                .as_ref()
+                .is_some_and(|path| path.exists())
+            {
+                ranges.push((start, end_idx));
+            }
+            continue;
+        }
+
+        let mut end = text.len();
+        while let Some((idx, ch)) = iter.peek().copied() {
+            if ch.is_whitespace() {
+                end = idx;
+                break;
+            }
+            iter.next();
+        }
+        let path = &text[next_idx..end];
+        if !path.is_empty()
+            && resolved_autocomplete_path(path, cwd)
+                .as_ref()
+                .is_some_and(|path| path.exists())
+        {
+            ranges.push((start, end));
+        }
+    }
+    ranges
+}
+
+fn char_offset(text: &str, byte_idx: usize) -> usize {
+    text[..byte_idx].chars().count()
 }
 
 fn resolved_autocomplete_path(path: &str, cwd: &std::path::Path) -> Option<std::path::PathBuf> {
