@@ -162,8 +162,10 @@ pub async fn autocomplete_input(
             });
         }
 
+        let completion_text = format!("/{prefix}");
+        let completion_cursor = completion_text.len();
         let items = AutocompleteEngine::with_dynamic(dynamic)
-            .complete(head, cursor)
+            .complete(&completion_text, completion_cursor)
             .unwrap_or_default()
             .into_iter()
             .map(|item| crate::file_refs::AutocompleteItem {
@@ -224,7 +226,8 @@ pub async fn dispatch_slash_command(
     let skill_commands =
         collect_skill_slash_commands(active_agent_for_match.as_deref(), &state.shared.cwd);
     let Some((cmd, args)) =
-        first_dispatchable_slash_command(&text, &skill_commands)
+        first_builtin_slash_command(&text)
+            .or_else(|| first_skill_slash_command(&text, &skill_commands))
     else {
         return Ok(SlashCommandResult {
             handled: false,
@@ -427,7 +430,7 @@ pub async fn dispatch_slash_command(
         }
         "quit" => app.exit(0),
         _ => {
-            if let Some(prompt) = normalize_skill_command(&skill_commands, &cmd, &args) {
+            if let Some(prompt) = normalize_skill_commands_in_text(&text, &skill_commands) {
                 send_message(state, app, prompt).await?;
             } else {
                 return Ok(SlashCommandResult {
@@ -921,11 +924,16 @@ fn emit_info(app: &AppHandle, message: &str) {
 }
 
 fn parse_slash_completion_prefix(head: &str) -> Option<String> {
-    let trimmed = head.trim_start();
-    if !trimmed.starts_with('/') || trimmed[1..].contains(char::is_whitespace) {
-        return None;
+    let chars = head.char_indices().collect::<Vec<_>>();
+    for (idx, ch) in chars.iter().rev() {
+        if *ch == '/' && (*idx == 0 || head[..*idx].ends_with(char::is_whitespace)) {
+            return Some(head[*idx + 1..].to_ascii_lowercase());
+        }
+        if ch.is_whitespace() {
+            break;
+        }
     }
-    Some(trimmed[1..].to_ascii_lowercase())
+    None
 }
 
 fn parse_at_completion_prefix(head: &str) -> Option<String> {
@@ -1010,13 +1018,26 @@ fn slash_command_ranges(text: &str, skill_commands: &[SkillSlashCommand]) -> Vec
         .collect()
 }
 
-fn first_dispatchable_slash_command(
+fn first_builtin_slash_command(text: &str) -> Option<(String, String)> {
+    slash_command_tokens(text)
+        .into_iter()
+        .filter(|token| is_builtin_slash_command(token.command))
+        .map(|token| {
+            (
+                token.command.to_ascii_lowercase(),
+                text[token.end..].trim().to_string(),
+            )
+        })
+        .next()
+}
+
+fn first_skill_slash_command(
     text: &str,
     skill_commands: &[SkillSlashCommand],
 ) -> Option<(String, String)> {
     slash_command_tokens(text)
         .into_iter()
-        .filter(|token| valid_slash_command(token.command, skill_commands))
+        .filter(|token| skill_name_for_command(token.command, skill_commands).is_some())
         .map(|token| {
             (
                 token.command.to_ascii_lowercase(),
@@ -1056,21 +1077,30 @@ fn slash_command_tokens(text: &str) -> Vec<SlashCommandToken<'_>> {
 }
 
 fn valid_slash_command(command: &str, skill_commands: &[SkillSlashCommand]) -> bool {
+    is_builtin_slash_command(command) || skill_name_for_command(command, skill_commands).is_some()
+}
+
+fn is_builtin_slash_command(command: &str) -> bool {
     let command = command.to_ascii_lowercase();
-    let builtin = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
+    rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
         .iter()
-        .any(|cmd| cmd.name == command);
-    if builtin {
-        return true;
-    }
+        .any(|cmd| cmd.name == command)
+}
+
+fn skill_name_for_command(command: &str, skill_commands: &[SkillSlashCommand]) -> Option<String> {
+    let command = command.to_ascii_lowercase();
     let skill_name = command.strip_prefix("skill:").unwrap_or(&command);
-    if command != skill_name && skill_commands.iter().any(|skill| skill.name == skill_name) {
-        return true;
+    if command != skill_name {
+        return skill_commands
+            .iter()
+            .any(|skill| skill.name == skill_name)
+            .then(|| skill_name.to_string());
     }
     let has_builtin_conflict = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
         .iter()
         .any(|cmd| cmd.name == skill_name);
-    !has_builtin_conflict && skill_commands.iter().any(|skill| skill.name == skill_name)
+    (!has_builtin_conflict && skill_commands.iter().any(|skill| skill.name == skill_name))
+        .then(|| skill_name.to_string())
 }
 
 fn file_reference_ranges(text: &str, cwd: &std::path::Path) -> Vec<(usize, usize)> {
@@ -1162,7 +1192,7 @@ mod token_tests {
             vec![(7, 12), (20, 26)]
         );
         assert_eq!(
-            first_dispatchable_slash_command(text, &skill_commands),
+            first_builtin_slash_command(text),
             Some(("tree".to_string(), "suffix /model".to_string()))
         );
     }
@@ -1177,8 +1207,28 @@ mod token_tests {
 
         assert_eq!(slash_command_ranges(text, &skill_commands), vec![(7, 18)]);
         assert_eq!(
-            first_dispatchable_slash_command(text, &skill_commands),
+            first_skill_slash_command(text, &skill_commands),
             Some(("brainstorm".to_string(), "suffix".to_string()))
+        );
+    }
+
+    #[test]
+    fn skill_tokens_normalize_all_matches() {
+        let text = "prefix /brainstorm and /ask suffix";
+        let skill_commands = vec![
+            SkillSlashCommand {
+                name: "brainstorm".to_string(),
+                description: "Collaborative exploration".to_string(),
+            },
+            SkillSlashCommand {
+                name: "ask".to_string(),
+                description: "Ask".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            normalize_skill_commands_in_text(text, &skill_commands),
+            Some("prefix /skill:brainstorm and /skill:ask suffix".to_string())
         );
     }
 
@@ -1209,21 +1259,28 @@ impl AttachmentPickMode {
     }
 }
 
-fn normalize_skill_command(
+fn normalize_skill_commands_in_text(
+    text: &str,
     skill_commands: &[SkillSlashCommand],
-    cmd: &str,
-    args: &str,
 ) -> Option<String> {
-    let skill_name = cmd.strip_prefix("skill:").unwrap_or(cmd);
-    let exists = skill_commands.iter().any(|skill| skill.name == skill_name);
-    if !exists {
+    let mut normalized = String::new();
+    let mut cursor = 0;
+    let mut changed = false;
+    for token in slash_command_tokens(text) {
+        let Some(skill_name) = skill_name_for_command(token.command, skill_commands) else {
+            continue;
+        };
+        normalized.push_str(&text[cursor..token.start]);
+        normalized.push_str("/skill:");
+        normalized.push_str(&skill_name);
+        cursor = token.end;
+        changed = true;
+    }
+    if !changed {
         return None;
     }
-    if args.is_empty() {
-        Some(format!("/skill:{skill_name}"))
-    } else {
-        Some(format!("/skill:{skill_name} {args}"))
-    }
+    normalized.push_str(&text[cursor..]);
+    Some(normalized)
 }
 
 #[cfg(target_os = "macos")]

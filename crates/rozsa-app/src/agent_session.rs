@@ -773,42 +773,38 @@ impl AgentSession {
 
     // --- Private helpers ---
 
-    /// Expand `/skill:name [args]` into XML block, returning (expanded_text, display_text).
-    /// If not a skill command or skill not found, returns (original, None).
+    /// Expand all `/skill:name` tokens into XML blocks, returning (expanded_text, display_text).
+    /// If no skill command is found, returns (original, None).
     fn expand_skill_command(&self, text: &str) -> (String, Option<String>) {
-        if !text.starts_with("/skill:") {
-            return (text.to_string(), None);
-        }
-
-        let space_idx = text.find(' ');
-        let skill_name = match space_idx {
-            Some(idx) => &text[7..idx],
-            None => &text[7..],
-        };
-        let args = space_idx.map(|idx| text[idx + 1..].trim()).unwrap_or("");
-
         let registry = self.skill_registry.read().unwrap();
-        let Some(skill) = registry.find_by_name(skill_name) else {
-            return (text.to_string(), None);
-        };
 
-        let content = match std::fs::read_to_string(&skill.file_path) {
-            Ok(c) => c,
-            Err(_) => return (text.to_string(), None),
-        };
-
-        let body = crate::skills::loader::strip_frontmatter(&content).trim();
-        let base_dir = skill.base_dir.display();
-        let mut expanded = format!(
-            "<skill>\n<name>{}</name>\n<content>\n{}\n</content>\n<base_dir>{}</base_dir>\n</skill>",
-            skill_name, body, base_dir
-        );
-
-        if !args.is_empty() {
-            expanded.push_str("\n\n");
-            expanded.push_str(args);
+        let mut expanded = String::new();
+        let mut cursor = 0;
+        let mut changed = false;
+        for (start, end, skill_name) in skill_command_tokens(text) {
+            let Some(skill) = registry.find_by_name(skill_name) else {
+                continue;
+            };
+            let content = match std::fs::read_to_string(&skill.file_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let body = crate::skills::loader::strip_frontmatter(&content).trim();
+            let base_dir = skill.base_dir.display();
+            expanded.push_str(&text[cursor..start]);
+            expanded.push_str(&format!(
+                "<skill>\n<name>{}</name>\n<content>\n{}\n</content>\n<base_dir>{}</base_dir>\n</skill>",
+                skill_name, body, base_dir
+            ));
+            cursor = end;
+            changed = true;
         }
 
+        if !changed {
+            return (text.to_string(), None);
+        }
+
+        expanded.push_str(&text[cursor..]);
         (expanded, Some(text.to_string()))
     }
 
@@ -984,6 +980,29 @@ impl AgentSession {
     }
 }
 
+fn skill_command_tokens(text: &str) -> Vec<(usize, usize, &str)> {
+    let mut tokens = Vec::new();
+    for (start, ch) in text.char_indices() {
+        if ch != '/' || (start > 0 && !text[..start].ends_with(char::is_whitespace)) {
+            continue;
+        }
+        let command_start = start + ch.len_utf8();
+        if !text[command_start..].starts_with("skill:") {
+            continue;
+        }
+        let command_end = text[command_start..]
+            .char_indices()
+            .find_map(|(idx, ch)| ch.is_whitespace().then_some(command_start + idx))
+            .unwrap_or(text.len());
+        let skill_name_start = command_start + "skill:".len();
+        if command_end == skill_name_start {
+            continue;
+        }
+        tokens.push((start, command_end, &text[skill_name_start..command_end]));
+    }
+    tokens
+}
+
 /// Convert AgentMessages to LLM-compatible Messages, filtering out custom messages.
 fn convert_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
     messages
@@ -1139,6 +1158,7 @@ fn current_timestamp_ms() -> i64 {
 mod tests {
     use super::oauth_auth_provider_id;
     use super::oauth_request_headers;
+    use super::skill_command_tokens;
     use rozsa_model::types::Provider;
 
     #[test]
@@ -1172,6 +1192,15 @@ mod tests {
             oauth_request_headers("anthropic", "/no/such/auth.json", "token")
                 .unwrap()
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn finds_multiple_skill_command_tokens() {
+        let tokens = skill_command_tokens("prefix /skill:ask and /skill:brainstorm suffix");
+        assert_eq!(
+            tokens,
+            vec![(7, 17, "ask"), (22, 39, "brainstorm")]
         );
     }
 }
