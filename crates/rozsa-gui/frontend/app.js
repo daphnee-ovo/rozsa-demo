@@ -624,6 +624,7 @@ async function sendMessage() {
   if (!text) return;
   input.value = '';
   input.style.height = 'auto';
+  updateInputHighlight([]);
   hideAutocomplete();
 
   if (text.includes('/')) {
@@ -1047,10 +1048,11 @@ async function updateAutocomplete() {
     return;
   }
   if (seq !== acRequestSeq) return;
-  setInputMatchState(!!result.validMatch);
-  updateInputHighlight(result.highlightRanges || []);
+  const highlightRanges = result.highlightRanges || [];
+  setInputMatchState(!!result.validMatch || highlightRanges.length > 0);
+  updateInputHighlight(highlightRanges);
   if (!result.items || result.items.length === 0 || !result.prefix) {
-    hideAutocomplete(!result.validMatch);
+    hideAutocomplete(false);
     return;
   }
 
@@ -1131,8 +1133,7 @@ function hideAutocomplete(clearMatch = true) {
   acPrefix = '';
   acItems = [];
   if (clearMatch) {
-    setInputMatchState(false);
-    updateInputHighlight([]);
+    setInputMatchState(inputHighlightRanges.length > 0);
   }
 }
 
