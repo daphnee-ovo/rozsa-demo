@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, State};
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::permissions::PermissionResponse;
 use rozsa_app::session::manager::SessionManager;
+use rozsa_app::skills::SkillRegistry;
 use rozsa_core::messages::AgentMessage;
 use rozsa_model::types::{
     AssistantMessage, ContentBlock, Message, StopReason, ThinkingLevel, Usage,
@@ -132,8 +133,10 @@ pub async fn autocomplete_input(
     let cursor = cursor.min(text.len());
     let head = &text[..cursor];
     let active_agent = active_agent(&state).await.ok();
+    let skill_commands =
+        collect_skill_slash_commands(active_agent.as_deref(), &state.shared.cwd);
     let highlight_ranges =
-        input_highlight_ranges(&text, &state.shared.cwd, active_agent.as_deref());
+        input_highlight_ranges(&text, &state.shared.cwd, &skill_commands);
 
     if let Some(prefix) = parse_slash_completion_prefix(head) {
         use rozsa_app::slash_commands::{
@@ -143,22 +146,20 @@ pub async fn autocomplete_input(
         let prefix_lower = prefix.to_ascii_lowercase();
         let mut dynamic = Vec::new();
 
-        if let Some(agent) = active_agent.as_deref() {
-            for skill in agent.skill_registry().list() {
-                let builtin_conflict = BUILTIN_SLASH_COMMANDS
-                    .iter()
-                    .any(|cmd| cmd.name == skill.name);
-                let name = if builtin_conflict {
-                    format!("skill:{}", skill.name)
-                } else {
-                    skill.name.clone()
-                };
-                dynamic.push(SlashCommandInfo {
-                    name,
-                    description: Some(skill.description.clone()),
-                    source: SlashCommandSource::Skill,
-                });
-            }
+        for skill in &skill_commands {
+            let builtin_conflict = BUILTIN_SLASH_COMMANDS
+                .iter()
+                .any(|cmd| cmd.name == skill.name);
+            let name = if builtin_conflict {
+                format!("skill:{}", skill.name)
+            } else {
+                skill.name.clone()
+            };
+            dynamic.push(SlashCommandInfo {
+                name,
+                description: Some(skill.description.clone()),
+                source: SlashCommandSource::Skill,
+            });
         }
 
         let items = AutocompleteEngine::with_dynamic(dynamic)
@@ -220,8 +221,10 @@ pub async fn dispatch_slash_command(
     text: String,
 ) -> Result<SlashCommandResult, String> {
     let active_agent_for_match = active_agent(&state).await.ok();
+    let skill_commands =
+        collect_skill_slash_commands(active_agent_for_match.as_deref(), &state.shared.cwd);
     let Some((cmd, args)) =
-        first_dispatchable_slash_command(&text, active_agent_for_match.as_deref())
+        first_dispatchable_slash_command(&text, &skill_commands)
     else {
         return Ok(SlashCommandResult {
             handled: false,
@@ -424,8 +427,7 @@ pub async fn dispatch_slash_command(
         }
         "quit" => app.exit(0),
         _ => {
-            let agent = active_agent(&state).await?;
-            if let Some(prompt) = normalize_skill_command(&agent, &cmd, &args) {
+            if let Some(prompt) = normalize_skill_command(&skill_commands, &cmd, &args) {
                 send_message(state, app, prompt).await?;
             } else {
                 return Ok(SlashCommandResult {
@@ -949,10 +951,10 @@ fn parse_at_completion_prefix(head: &str) -> Option<String> {
 fn input_highlight_ranges(
     text: &str,
     cwd: &std::path::Path,
-    agent: Option<&AgentSession>,
+    skill_commands: &[SkillSlashCommand],
 ) -> Vec<InputHighlightRange> {
     let mut ranges = Vec::new();
-    for (start, end) in slash_command_ranges(text, agent) {
+    for (start, end) in slash_command_ranges(text, skill_commands) {
         ranges.push(InputHighlightRange {
             start: char_offset(text, start),
             end: char_offset(text, end),
@@ -967,22 +969,54 @@ fn input_highlight_ranges(
     ranges
 }
 
-fn slash_command_ranges(text: &str, agent: Option<&AgentSession>) -> Vec<(usize, usize)> {
+#[derive(Clone)]
+struct SkillSlashCommand {
+    name: String,
+    description: String,
+}
+
+fn collect_skill_slash_commands(
+    agent: Option<&AgentSession>,
+    cwd: &std::path::Path,
+) -> Vec<SkillSlashCommand> {
+    if let Some(agent) = agent {
+        return agent
+            .skill_registry()
+            .list()
+            .iter()
+            .map(|skill| SkillSlashCommand {
+                name: skill.name.clone(),
+                description: skill.description.clone(),
+            })
+            .collect();
+    }
+
+    SkillRegistry::load_from_defaults(cwd)
+        .list()
+        .iter()
+        .map(|skill| SkillSlashCommand {
+            name: skill.name.clone(),
+            description: skill.description.clone(),
+        })
+        .collect()
+}
+
+fn slash_command_ranges(text: &str, skill_commands: &[SkillSlashCommand]) -> Vec<(usize, usize)> {
     slash_command_tokens(text)
         .into_iter()
         .filter_map(|token| {
-            valid_slash_command(token.command, agent).then_some((token.start, token.end))
+            valid_slash_command(token.command, skill_commands).then_some((token.start, token.end))
         })
         .collect()
 }
 
 fn first_dispatchable_slash_command(
     text: &str,
-    agent: Option<&AgentSession>,
+    skill_commands: &[SkillSlashCommand],
 ) -> Option<(String, String)> {
     slash_command_tokens(text)
         .into_iter()
-        .filter(|token| valid_slash_command(token.command, agent))
+        .filter(|token| valid_slash_command(token.command, skill_commands))
         .map(|token| {
             (
                 token.command.to_ascii_lowercase(),
@@ -1021,7 +1055,7 @@ fn slash_command_tokens(text: &str) -> Vec<SlashCommandToken<'_>> {
     tokens
 }
 
-fn valid_slash_command(command: &str, agent: Option<&AgentSession>) -> bool {
+fn valid_slash_command(command: &str, skill_commands: &[SkillSlashCommand]) -> bool {
     let command = command.to_ascii_lowercase();
     let builtin = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
         .iter()
@@ -1029,22 +1063,14 @@ fn valid_slash_command(command: &str, agent: Option<&AgentSession>) -> bool {
     if builtin {
         return true;
     }
-    let Some(agent) = agent else {
-        return false;
-    };
     let skill_name = command.strip_prefix("skill:").unwrap_or(&command);
-    if command != skill_name
-        && agent
-            .skill_registry()
-            .find_by_name(skill_name)
-            .is_some()
-    {
+    if command != skill_name && skill_commands.iter().any(|skill| skill.name == skill_name) {
         return true;
     }
     let has_builtin_conflict = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
         .iter()
         .any(|cmd| cmd.name == skill_name);
-    !has_builtin_conflict && agent.skill_registry().find_by_name(skill_name).is_some()
+    !has_builtin_conflict && skill_commands.iter().any(|skill| skill.name == skill_name)
 }
 
 fn file_reference_ranges(text: &str, cwd: &std::path::Path) -> Vec<(usize, usize)> {
@@ -1129,11 +1155,30 @@ mod token_tests {
     #[test]
     fn slash_tokens_highlight_anywhere_in_input() {
         let text = "prefix /tree suffix /model";
+        let skill_commands = Vec::new();
 
-        assert_eq!(slash_command_ranges(text, None), vec![(7, 12), (20, 26)]);
         assert_eq!(
-            first_dispatchable_slash_command(text, None),
+            slash_command_ranges(text, &skill_commands),
+            vec![(7, 12), (20, 26)]
+        );
+        assert_eq!(
+            first_dispatchable_slash_command(text, &skill_commands),
             Some(("tree".to_string(), "suffix /model".to_string()))
+        );
+    }
+
+    #[test]
+    fn skill_tokens_highlight_without_active_agent() {
+        let text = "prefix /brainstorm suffix";
+        let skill_commands = vec![SkillSlashCommand {
+            name: "brainstorm".to_string(),
+            description: "Collaborative exploration".to_string(),
+        }];
+
+        assert_eq!(slash_command_ranges(text, &skill_commands), vec![(7, 18)]);
+        assert_eq!(
+            first_dispatchable_slash_command(text, &skill_commands),
+            Some(("brainstorm".to_string(), "suffix".to_string()))
         );
     }
 
@@ -1164,9 +1209,13 @@ impl AttachmentPickMode {
     }
 }
 
-fn normalize_skill_command(agent: &AgentSession, cmd: &str, args: &str) -> Option<String> {
+fn normalize_skill_command(
+    skill_commands: &[SkillSlashCommand],
+    cmd: &str,
+    args: &str,
+) -> Option<String> {
     let skill_name = cmd.strip_prefix("skill:").unwrap_or(cmd);
-    let exists = agent.skill_registry().find_by_name(skill_name).is_some();
+    let exists = skill_commands.iter().any(|skill| skill.name == skill_name);
     if !exists {
         return None;
     }

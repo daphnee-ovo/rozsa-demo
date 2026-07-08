@@ -1017,6 +1017,7 @@ body {
   font-family: var(--font-ui);
   font-size: 13px;
   color: transparent;
+  -webkit-text-fill-color: transparent;
   caret-color: var(--fg);
   background: transparent;
   line-height: 1.5;
@@ -1028,7 +1029,10 @@ body {
   z-index: 1;
 }
 .input-wrapper textarea:focus-visible { outline: none; }
-.input-wrapper textarea::placeholder { color: oklch(70% 0.008 350); }
+.input-wrapper textarea::placeholder {
+  color: oklch(70% 0.008 350);
+  -webkit-text-fill-color: oklch(70% 0.008 350);
+}
 .input-highlight {
   position: absolute;
   top: 0;
