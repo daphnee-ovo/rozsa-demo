@@ -1049,12 +1049,16 @@ body {
   word-break: break-word;
   color: var(--fg);
   pointer-events: none;
-  z-index: 0;
+  z-index: 2;
 }
 .valid-token-text {
   color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
-  border-radius: 3px;
+  background: color-mix(in oklch, var(--accent) 11%, white);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 11%, white);
+  border-radius: 4px;
+  font-weight: 600;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 .input-toolbar {
   display: flex;
