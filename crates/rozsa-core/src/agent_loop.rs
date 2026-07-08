@@ -319,14 +319,26 @@ async fn stream_assistant_response(
     context: &mut AgentContext,
 ) -> Option<AssistantMessage> {
     let mut added_partial = false;
+    let mut current_partial: Option<AssistantMessage> = None;
 
     loop {
         let event = match signal {
             Some(token) => {
                 tokio::select! {
                     _ = token.cancelled() => {
-                        if added_partial {
-                            context.messages.pop();
+                        if let Some(message) = current_partial.take() {
+                            let message = aborted_partial_message(message);
+                            let final_msg = assistant_agent_message(message.clone());
+                            if added_partial {
+                                *context.messages.last_mut().unwrap() = final_msg.clone();
+                            } else {
+                                context.messages.push(final_msg.clone());
+                                emit.push(AgentEvent::MessageStart {
+                                    message: final_msg.clone(),
+                                });
+                            }
+                            emit.push(AgentEvent::MessageEnd { message: final_msg });
+                            return Some(message);
                         }
                         return None;
                     }
@@ -343,6 +355,7 @@ async fn stream_assistant_response(
         match event {
             StreamEvent::Start { partial } => {
                 added_partial = true;
+                current_partial = Some(partial.clone());
                 let msg = assistant_agent_message(partial);
                 context.messages.push(msg.clone());
                 emit.push(AgentEvent::MessageStart { message: msg });
@@ -381,6 +394,7 @@ async fn stream_assistant_response(
                     *context.messages.last_mut().unwrap() =
                         assistant_agent_message(partial.clone());
                 }
+                current_partial = Some(partial.clone());
                 emit.push(AgentEvent::MessageUpdate {
                     message: assistant_agent_message(partial),
                     stream_event: event,
@@ -414,6 +428,12 @@ fn stream_event_partial(event: &StreamEvent) -> Option<AssistantMessage> {
 
 fn assistant_agent_message(message: AssistantMessage) -> AgentMessage {
     AgentMessage::standard(Message::Assistant(message))
+}
+
+fn aborted_partial_message(mut message: AssistantMessage) -> AssistantMessage {
+    message.stop_reason = StopReason::Aborted;
+    message.error_message = None;
+    message
 }
 
 fn aborted_assistant_message() -> AssistantMessage {

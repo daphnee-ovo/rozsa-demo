@@ -1231,8 +1231,17 @@ async fn cancel_during_model_stream_stops_waiting_for_next_event() {
     let config = config_with_stream(|| {
         let (sender, stream) = create_event_stream();
         tokio::spawn(async move {
+            let partial = assistant_message(vec![ContentBlock::Text {
+                text: "partial text".to_string(),
+                signature: None,
+            }]);
             sender.push(StreamEvent::Start {
                 partial: assistant_message(Vec::new()),
+            });
+            sender.push(StreamEvent::TextDelta {
+                content_index: 0,
+                delta: "partial text".to_string(),
+                partial,
             });
             std::future::pending::<()>().await;
         });
@@ -1273,6 +1282,30 @@ async fn cancel_during_model_stream_stops_waiting_for_next_event() {
         })
         .expect("cancelled stream should emit a turn end");
     assert_eq!(turn_end.stop_reason, StopReason::Aborted);
+    assert!(turn_end.content.iter().any(
+        |block| matches!(block, ContentBlock::Text { text, .. } if text == "partial text")
+    ));
+
+    let persisted = events
+        .iter()
+        .find_map(|event| {
+            if let AgentEvent::AgentEnd { messages } = event {
+                messages.iter().find_map(|msg| {
+                    if let Some(Message::Assistant(message)) = msg.as_standard() {
+                        Some(message)
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        })
+        .expect("cancelled partial assistant message should be included in AgentEnd");
+    assert_eq!(persisted.stop_reason, StopReason::Aborted);
+    assert!(persisted.content.iter().any(
+        |block| matches!(block, ContentBlock::Text { text, .. } if text == "partial text")
+    ));
     assert!(
         events
             .iter()
