@@ -1227,6 +1227,60 @@ async fn parallel_panic_produces_error_result_not_silent_drop() {
 }
 
 #[tokio::test]
+async fn cancel_during_model_stream_stops_waiting_for_next_event() {
+    let config = config_with_stream(|| {
+        let (sender, stream) = create_event_stream();
+        tokio::spawn(async move {
+            sender.push(StreamEvent::Start {
+                partial: assistant_message(Vec::new()),
+            });
+            std::future::pending::<()>().await;
+        });
+        stream
+    });
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("hello".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let cancel_token = CancellationToken::new();
+    let cancel_clone = cancel_token.clone();
+
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        cancel_clone.cancel();
+    });
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, Some(cancel_token));
+    let events = tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
+        let mut events = Vec::new();
+        while let Some(event) = stream.next().await {
+            events.push(event);
+        }
+        events
+    })
+    .await
+    .expect("agent loop should stop when model stream is cancelled");
+
+    let turn_end = events
+        .iter()
+        .find_map(|event| {
+            if let AgentEvent::TurnEnd { message, .. } = event {
+                Some(message)
+            } else {
+                None
+            }
+        })
+        .expect("cancelled stream should emit a turn end");
+    assert_eq!(turn_end.stop_reason, StopReason::Aborted);
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AgentEvent::AgentEnd { .. }))
+    );
+}
+
+#[tokio::test]
 async fn parallel_cancel_aborts_pending_handles() {
     struct SlowTool {
         name: String,

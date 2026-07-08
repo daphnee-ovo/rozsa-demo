@@ -42,6 +42,7 @@ let quotaEligible = false;
 let quotaModelKey = '';
 let quotaLoaded = false;
 let quotaLoading = false;
+let chatAutoScrollPaused = false;
 
 // =============== Slash Commands Registry ===============
 
@@ -99,6 +100,8 @@ const LOCAL_COMMANDS = new Set([
 // =============== Initialization ===============
 
 window.addEventListener('DOMContentLoaded', async () => {
+  setupChatScrollLock();
+
   let retries = 0;
   while (!window.__TAURI__ && retries < 30) {
     await new Promise(r => setTimeout(r, 100));
@@ -129,7 +132,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 function renderState(snap) {
   if (!snap) return;
+  const wasStreaming = isStreaming;
   isStreaming = !!snap.isStreaming;
+  if (wasStreaming && !isStreaming) chatAutoScrollPaused = false;
   // 记录当前活跃 session 的 streaming 状态
   if (sessions[activeSessionIdx]) {
     sessionStreamingState[sessions[activeSessionIdx].path] = isStreaming;
@@ -307,6 +312,7 @@ function updateAbortButton() {
 function renderMessages(messages, streaming) {
   const container = document.getElementById('chatMessages');
   if (!container) return;
+  const shouldStickToBottom = !streaming || (!chatAutoScrollPaused && isChatNearBottom(container));
 
   if (!messages || messages.length === 0) {
     container.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">R</div>' +
@@ -350,7 +356,36 @@ function renderMessages(messages, streaming) {
   }
 
   renderToolChips();
+  if (shouldStickToBottom) scrollChatToBottom(container);
+}
+
+function isChatNearBottom(container) {
+  const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+  return distance <= 48;
+}
+
+function scrollChatToBottom(container) {
   container.scrollTop = container.scrollHeight;
+}
+
+function setupChatScrollLock() {
+  const container = document.getElementById('chatMessages');
+  if (!container) return;
+  container.addEventListener('wheel', ev => {
+    if (!isStreaming) {
+      chatAutoScrollPaused = false;
+      return;
+    }
+    if (ev.deltaY < 0) {
+      chatAutoScrollPaused = true;
+      return;
+    }
+    if (ev.deltaY > 0) {
+      requestAnimationFrame(() => {
+        if (isChatNearBottom(container)) chatAutoScrollPaused = false;
+      });
+    }
+  }, { passive: true });
 }
 
 function renderMessage(raw, toolResultMap, isActiveStream = false) {
@@ -1320,7 +1355,7 @@ document.addEventListener('keydown', function(e) {
     if (document.getElementById('settingsPanel').classList.contains('visible')) {
       closeSettings(); return;
     }
-    if (isStreaming) { abortAgent(); return; }
+    if (isStreaming) { e.preventDefault(); abortAgent(); return; }
     return;
   }
 

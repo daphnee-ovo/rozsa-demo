@@ -321,14 +321,20 @@ async fn stream_assistant_response(
     let mut added_partial = false;
 
     loop {
-        let event = stream.next().await;
-
-        if is_cancelled(signal) {
-            if added_partial {
-                context.messages.pop();
+        let event = match signal {
+            Some(token) => {
+                tokio::select! {
+                    _ = token.cancelled() => {
+                        if added_partial {
+                            context.messages.pop();
+                        }
+                        return None;
+                    }
+                    event = stream.next() => event,
+                }
             }
-            return None;
-        }
+            None => stream.next().await,
+        };
 
         let Some(event) = event else {
             break;
