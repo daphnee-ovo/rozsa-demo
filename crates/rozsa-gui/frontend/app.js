@@ -38,6 +38,10 @@ let inputHighlightRanges = [];
 let activeSessionIdx = 0;
 // 跟踪每个 session 的 streaming 状态（path → bool）
 let sessionStreamingState = {};
+let quotaEligible = false;
+let quotaModelKey = '';
+let quotaLoaded = false;
+let quotaLoading = false;
 
 // =============== Slash Commands Registry ===============
 
@@ -192,17 +196,30 @@ function setQuotaTooltip(row, bar, valueEl, text) {
 }
 
 async function refreshRateLimits(showResult) {
+  if (!quotaEligible) {
+    updateQuotaBars(null);
+    if (showResult) showNotification('当前模型没有订阅限额');
+    return;
+  }
+  if (quotaLoading) return;
+  quotaLoading = true;
   try {
     const snapshot = await invoke('get_rate_limits');
     updateQuotaBars(snapshot);
+    quotaLoaded = true;
     if (showResult) showNotification(formatRateLimitSnapshot(snapshot));
   } catch (e) {
     updateQuotaBars(null);
+    quotaLoaded = true;
     if (showResult) showError('Rate limit query failed: ' + String(e));
+  } finally {
+    quotaLoading = false;
   }
 }
 
 function updateSidebar(snap) {
+  updateQuotaVisibility(snap.model);
+
   if (snap.contextUsage) {
     const pct = clampPercent(Number(snap.contextUsage.percent || 0));
     const tokens = Number(snap.contextUsage.tokens || 0);
@@ -233,6 +250,44 @@ function updateSidebar(snap) {
     if (delEl) delEl.textContent = '—';
     if (filesEl) filesEl.textContent = '—';
   }
+}
+
+function updateQuotaVisibility(model) {
+  const nextEligible = modelHasRateLimit(model);
+  const nextKey = modelKey(model);
+  const group = document.getElementById('quotaGroup');
+  quotaEligible = nextEligible;
+  if (group) group.style.display = nextEligible ? '' : 'none';
+  if (!nextEligible) {
+    quotaLoaded = false;
+    quotaLoading = false;
+    quotaModelKey = nextKey;
+    updateQuotaBars(null);
+    hideQuotaTooltip();
+    return;
+  }
+  if (quotaModelKey !== nextKey) {
+    quotaModelKey = nextKey;
+    quotaLoaded = false;
+    updateQuotaBars(null);
+  }
+  if (!quotaLoaded) refreshRateLimits(false);
+}
+
+function modelHasRateLimit(model) {
+  return modelProviderKey(model) === 'codex-oauth';
+}
+
+function modelKey(model) {
+  if (!model) return '';
+  return modelProviderKey(model) + '/' + String(model.id || '');
+}
+
+function modelProviderKey(model) {
+  if (!model || !model.provider) return '';
+  const raw = String(model.provider);
+  const custom = raw.match(/^Custom\("(.+)"\)$/);
+  return (custom ? custom[1] : raw).toLowerCase();
 }
 
 function updateAbortButton() {

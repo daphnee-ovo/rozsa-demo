@@ -32,3 +32,6 @@
 
 ## 2026-07-06
 - 10:57 fix: ISSUE-I081：GUI regression: session list and model picker broken after tool row changes
+
+## 2026-07-08
+- 00:17 fix: ISSUE-I084：fix: complete GUI slash, file mention, attachment, and context integration
