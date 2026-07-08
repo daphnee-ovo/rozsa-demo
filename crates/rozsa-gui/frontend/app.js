@@ -617,12 +617,72 @@ function hidePermPanel() {
 
 // =============== Send Message & Slash Command Dispatch ===============
 
+function getInputText(input) {
+  return input ? (input.textContent || '') : '';
+}
+
+function setInputText(input, text) {
+  if (!input) return;
+  if (!text) {
+    input.replaceChildren();
+    return;
+  }
+  input.replaceChildren(document.createTextNode(text));
+}
+
+function getInputSelection(input) {
+  const text = getInputText(input);
+  const sel = window.getSelection();
+  if (!input || !sel || sel.rangeCount === 0) return { start: text.length, end: text.length };
+  const range = sel.getRangeAt(0);
+  if (!input.contains(range.startContainer) || !input.contains(range.endContainer)) {
+    return { start: text.length, end: text.length };
+  }
+  const startRange = range.cloneRange();
+  startRange.selectNodeContents(input);
+  startRange.setEnd(range.startContainer, range.startOffset);
+  const endRange = range.cloneRange();
+  endRange.selectNodeContents(input);
+  endRange.setEnd(range.endContainer, range.endOffset);
+  return { start: startRange.toString().length, end: endRange.toString().length };
+}
+
+function getInputCursor(input) {
+  return getInputSelection(input).end;
+}
+
+function textPositionAt(input, offset) {
+  const walker = document.createTreeWalker(input, NodeFilter.SHOW_TEXT);
+  let remaining = Math.max(0, offset);
+  let node = walker.nextNode();
+  while (node) {
+    const length = node.nodeValue.length;
+    if (remaining <= length) return { node, offset: remaining };
+    remaining -= length;
+    node = walker.nextNode();
+  }
+  return { node: input, offset: input.childNodes.length };
+}
+
+function setInputSelection(input, start, end = start) {
+  if (!input) return;
+  const range = document.createRange();
+  const startPos = textPositionAt(input, start);
+  const endPos = textPositionAt(input, end);
+  range.setStart(startPos.node, startPos.offset);
+  range.setEnd(endPos.node, endPos.offset);
+  const sel = window.getSelection();
+  if (!sel) return;
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 async function sendMessage() {
   const input = document.getElementById('msgInput');
   if (!input) return;
-  const text = input.value.trim();
+  const text = getInputText(input).trim();
   if (!text) return;
-  input.value = '';
+  setInputText(input, '');
   input.style.height = 'auto';
   updateInputHighlight([]);
   hideAutocomplete();
@@ -1007,11 +1067,13 @@ function insertSlashCommandPrefix() {
 function insertInputText(text) {
   const input = document.getElementById('msgInput');
   if (!input) return;
-  const start = input.selectionStart || input.value.length;
-  const end = input.selectionEnd || start;
-  input.value = input.value.slice(0, start) + text + input.value.slice(end);
+  const current = getInputText(input);
+  const selection = getInputSelection(input);
+  const start = selection.start;
+  const end = selection.end;
+  setInputText(input, current.slice(0, start) + text + current.slice(end));
   const cursor = start + text.length;
-  input.setSelectionRange(cursor, cursor);
+  setInputSelection(input, cursor);
   input.focus();
   autoResize(input);
   updateAutocomplete();
@@ -1026,7 +1088,6 @@ function formatFileReference(path) {
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-  updateInputHighlight(inputHighlightRanges);
 }
 
 // =============== Slash Command Autocomplete ===============
@@ -1037,8 +1098,8 @@ async function updateAutocomplete() {
   const input = document.getElementById('msgInput');
   const popup = document.getElementById('autocomplete');
   if (!input || !popup) return;
-  const val = input.value;
-  const cursor = input.selectionStart || val.length;
+  const val = getInputText(input);
+  const cursor = getInputCursor(input);
   const seq = ++acRequestSeq;
   let result = null;
   try {
@@ -1114,11 +1175,12 @@ function selectAutocomplete(index) {
   const input = document.getElementById('msgInput');
   const item = acItems[index];
   if (!input || !item || !acPrefix) return;
-  const cursor = input.selectionStart || input.value.length;
+  const text = getInputText(input);
+  const cursor = getInputCursor(input);
   const start = Math.max(0, cursor - acPrefix.length);
-  input.value = input.value.slice(0, start) + item.value + input.value.slice(cursor);
+  setInputText(input, text.slice(0, start) + item.value + text.slice(cursor));
   const nextCursor = start + item.value.length;
-  input.setSelectionRange(nextCursor, nextCursor);
+  setInputSelection(input, nextCursor);
   input.focus();
   autoResize(input);
   hideAutocomplete(false);
@@ -1145,16 +1207,17 @@ function setInputMatchState(valid) {
 function updateInputHighlight(ranges) {
   inputHighlightRanges = Array.isArray(ranges) ? ranges : [];
   const input = document.getElementById('msgInput');
-  const layer = document.getElementById('inputHighlight');
-  if (!input || !layer) return;
-  const text = input.value;
+  if (!input) return;
+  const text = getInputText(input);
+  const selection = getInputSelection(input);
   if (inputHighlightRanges.length === 0) {
-    layer.textContent = text;
-    syncInputHighlightScroll();
+    setInputText(input, text);
+    setInputSelection(input, selection.start, selection.end);
+    autoResize(input);
     return;
   }
   const chars = Array.from(text);
-  let html = '';
+  const fragment = document.createDocumentFragment();
   let cursor = 0;
   const normalized = inputHighlightRanges
     .map(range => ({
@@ -1165,22 +1228,21 @@ function updateInputHighlight(ranges) {
     .sort((a, b) => a.start - b.start || a.end - b.end);
   for (const range of normalized) {
     if (range.start < cursor) continue;
-    html += escapeHtml(chars.slice(cursor, range.start).join(''));
-    html += '<span class="valid-token-text">' +
-      escapeHtml(chars.slice(range.start, range.end).join('')) +
-      '</span>';
+    fragment.appendChild(document.createTextNode(chars.slice(cursor, range.start).join('')));
+    const span = document.createElement('span');
+    span.className = 'valid-token-text';
+    span.textContent = chars.slice(range.start, range.end).join('');
+    fragment.appendChild(span);
     cursor = range.end;
   }
-  html += escapeHtml(chars.slice(cursor).join(''));
-  layer.innerHTML = html;
-  syncInputHighlightScroll();
+  fragment.appendChild(document.createTextNode(chars.slice(cursor).join('')));
+  input.replaceChildren(fragment);
+  setInputSelection(input, selection.start, selection.end);
+  autoResize(input);
 }
 
 function syncInputHighlightScroll() {
-  const input = document.getElementById('msgInput');
-  const layer = document.getElementById('inputHighlight');
-  if (!input || !layer) return;
-  layer.scrollTop = input.scrollTop;
+  // contenteditable renders highlights directly; no overlay scroll sync is needed.
 }
 
 // =============== Keyboard Shortcuts ===============
@@ -1234,6 +1296,12 @@ document.addEventListener('keydown', function(e) {
 
   // Input field shortcuts
   if (document.activeElement === input) {
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      insertInputText('\n');
+      return;
+    }
+
     // Autocomplete navigation
     if (acVisible) {
       if (e.key === 'ArrowDown') { e.preventDefault(); navigateAutocomplete('down'); return; }
@@ -1259,6 +1327,15 @@ document.addEventListener('keydown', function(e) {
     input.focus();
     // Don't prevent default - let the / character be typed
   }
+});
+
+document.addEventListener('paste', function(e) {
+  const input = document.getElementById('msgInput');
+  if (document.activeElement !== input) return;
+  const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (!text) return;
+  e.preventDefault();
+  insertInputText(text);
 });
 
 document.addEventListener('mouseover', function(e) {

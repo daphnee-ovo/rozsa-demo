@@ -1007,7 +1007,7 @@ body {
   color: oklch(72% 0.008 350);
   flex-shrink: 0;
 }
-.input-wrapper textarea {
+.rich-input {
   display: block;
   width: 100%;
   border: none;
@@ -1016,47 +1016,29 @@ body {
   padding: 10px 14px 6px;
   font-family: var(--font-ui);
   font-size: 13px;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: var(--fg);
   caret-color: var(--fg);
   background: transparent;
   line-height: 1.5;
   min-height: 38px;
   max-height: 120px;
+  overflow-y: auto;
   appearance: none;
   box-shadow: none;
-  position: relative;
-  z-index: 1;
-}
-.input-wrapper textarea:focus-visible { outline: none; }
-.input-wrapper textarea::placeholder {
-  color: oklch(70% 0.008 350);
-  -webkit-text-fill-color: oklch(70% 0.008 350);
-}
-.input-highlight {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  min-height: 38px;
-  max-height: 120px;
-  overflow: hidden;
-  padding: 10px 14px 6px;
-  font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--fg);
+}
+.rich-input:focus-visible { outline: none; }
+.rich-input:empty::before {
+  content: attr(data-placeholder);
+  color: oklch(70% 0.008 350);
   pointer-events: none;
-  z-index: 0;
 }
 .valid-token-text {
   color: var(--accent);
   background: color-mix(in oklch, var(--accent) 11%, white);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 11%, white);
   border-radius: 4px;
-  font-weight: 600;
+  padding: 1px 3px;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
@@ -1843,8 +1825,7 @@ button:focus-visible, .session-item:focus-visible,
             </button>
           </div>
         </div>
-        <div class="input-highlight" id="inputHighlight" aria-hidden="true"></div>
-        <textarea id="msgInput" placeholder="向 Rózsa 发送消息，支持 Markdown…" rows="1" oninput="autoResize(this);updateAutocomplete()" onscroll="syncInputHighlightScroll()"></textarea>
+        <div id="msgInput" class="rich-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="向 Rózsa 发送消息，支持 Markdown…" oninput="autoResize(this);updateAutocomplete()"></div>
         <div class="input-toolbar">
           <div class="attachment-menu" id="attachmentMenu" data-attachment-control>
             <button onclick="attachFileReference('file')">文件</button>
