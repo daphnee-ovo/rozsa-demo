@@ -626,8 +626,7 @@ async function sendMessage() {
   input.style.height = 'auto';
   hideAutocomplete();
 
-  // Check if this is a slash command
-  if (text.startsWith('/')) {
+  if (text.includes('/')) {
     const handled = await dispatchSlashCommand(text);
     if (handled) return;
   }

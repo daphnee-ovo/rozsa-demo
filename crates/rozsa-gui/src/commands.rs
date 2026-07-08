@@ -219,26 +219,15 @@ pub async fn dispatch_slash_command(
     app: AppHandle,
     text: String,
 ) -> Result<SlashCommandResult, String> {
-    let trimmed = text.trim();
-    let Some(rest) = trimmed.strip_prefix('/') else {
+    let active_agent_for_match = active_agent(&state).await.ok();
+    let Some((cmd, args)) =
+        first_dispatchable_slash_command(&text, active_agent_for_match.as_deref())
+    else {
         return Ok(SlashCommandResult {
             handled: false,
             action: None,
             value: None,
         });
-    };
-    let rest = rest.trim();
-    if rest.is_empty() {
-        return Ok(SlashCommandResult {
-            handled: false,
-            action: None,
-            value: None,
-        });
-    }
-
-    let (cmd, args) = match rest.split_once(char::is_whitespace) {
-        Some((cmd, args)) => (cmd.to_ascii_lowercase(), args.trim().to_string()),
-        None => (rest.to_ascii_lowercase(), String::new()),
     };
 
     match cmd.as_str() {
@@ -963,7 +952,7 @@ fn input_highlight_ranges(
     agent: Option<&AgentSession>,
 ) -> Vec<InputHighlightRange> {
     let mut ranges = Vec::new();
-    if let Some((start, end)) = slash_command_range(text, agent) {
+    for (start, end) in slash_command_ranges(text, agent) {
         ranges.push(InputHighlightRange {
             start: char_offset(text, start),
             end: char_offset(text, end),
@@ -978,30 +967,62 @@ fn input_highlight_ranges(
     ranges
 }
 
-fn slash_command_range(text: &str, agent: Option<&AgentSession>) -> Option<(usize, usize)> {
-    let start = text
-        .char_indices()
-        .find_map(|(idx, ch)| (!ch.is_whitespace()).then_some(idx))?;
-    if !text[start..].starts_with('/') {
-        return None;
+fn slash_command_ranges(text: &str, agent: Option<&AgentSession>) -> Vec<(usize, usize)> {
+    slash_command_tokens(text)
+        .into_iter()
+        .filter_map(|token| {
+            valid_slash_command(token.command, agent).then_some((token.start, token.end))
+        })
+        .collect()
+}
+
+fn first_dispatchable_slash_command(
+    text: &str,
+    agent: Option<&AgentSession>,
+) -> Option<(String, String)> {
+    slash_command_tokens(text)
+        .into_iter()
+        .filter(|token| valid_slash_command(token.command, agent))
+        .map(|token| {
+            (
+                token.command.to_ascii_lowercase(),
+                text[token.end..].trim().to_string(),
+            )
+        })
+        .next()
+}
+
+struct SlashCommandToken<'a> {
+    start: usize,
+    end: usize,
+    command: &'a str,
+}
+
+fn slash_command_tokens(text: &str) -> Vec<SlashCommandToken<'_>> {
+    let mut tokens = Vec::new();
+    for (start, ch) in text.char_indices() {
+        if ch != '/' || (start > 0 && !text[..start].ends_with(char::is_whitespace)) {
+            continue;
+        }
+        let command_start = start + ch.len_utf8();
+        let command_end = text[command_start..]
+            .char_indices()
+            .find_map(|(idx, ch)| ch.is_whitespace().then_some(command_start + idx))
+            .unwrap_or(text.len());
+        if command_end == command_start {
+            continue;
+        }
+        tokens.push(SlashCommandToken {
+            start,
+            end: command_end,
+            command: &text[command_start..command_end],
+        });
     }
-    let command_start = start + 1;
-    let command_end = text[command_start..]
-        .char_indices()
-        .find_map(|(idx, ch)| ch.is_whitespace().then_some(command_start + idx))
-        .unwrap_or(text.len());
-    if command_end == command_start {
-        return None;
-    }
-    let command = &text[command_start..command_end];
-    if valid_slash_command(command, agent) {
-        Some((start, command_end))
-    } else {
-        None
-    }
+    tokens
 }
 
 fn valid_slash_command(command: &str, agent: Option<&AgentSession>) -> bool {
+    let command = command.to_ascii_lowercase();
     let builtin = rozsa_app::slash_commands::BUILTIN_SLASH_COMMANDS
         .iter()
         .any(|cmd| cmd.name == command);
@@ -1011,7 +1032,7 @@ fn valid_slash_command(command: &str, agent: Option<&AgentSession>) -> bool {
     let Some(agent) = agent else {
         return false;
     };
-    let skill_name = command.strip_prefix("skill:").unwrap_or(command);
+    let skill_name = command.strip_prefix("skill:").unwrap_or(&command);
     if command != skill_name
         && agent
             .skill_registry()
@@ -1098,6 +1119,30 @@ fn resolved_autocomplete_path(path: &str, cwd: &std::path::Path) -> Option<std::
         Some(parsed)
     } else {
         Some(cwd.join(parsed))
+    }
+}
+
+#[cfg(test)]
+mod token_tests {
+    use super::*;
+
+    #[test]
+    fn slash_tokens_highlight_anywhere_in_input() {
+        let text = "prefix /tree suffix /model";
+
+        assert_eq!(slash_command_ranges(text, None), vec![(7, 12), (20, 26)]);
+        assert_eq!(
+            first_dispatchable_slash_command(text, None),
+            Some(("tree".to_string(), "suffix /model".to_string()))
+        );
+    }
+
+    #[test]
+    fn file_reference_tokens_highlight_anywhere_in_input() {
+        let cwd = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let text = "prefix @src/commands.rs suffix";
+
+        assert_eq!(file_reference_ranges(text, cwd), vec![(7, 23)]);
     }
 }
 
