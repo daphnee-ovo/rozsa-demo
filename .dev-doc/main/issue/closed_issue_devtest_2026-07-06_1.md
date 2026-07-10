@@ -3,7 +3,7 @@ source: devtest
 nums: 1
 ---
 
-- [x] ISSUE-I001：devtest failed: TASK-T061: feat: 接入 GUI codex-oauth 5小时和周限额
+- [x] ISSUE-I070：devtest failed: TASK-T061: feat: 接入 GUI codex-oauth 5小时和周限额
   - severity: P1
   - location：TASK-T061: feat: 接入 GUI codex-oauth 5小时和周限额
   - description：

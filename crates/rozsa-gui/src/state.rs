@@ -4,18 +4,96 @@
 // 每个 session tab 有三种状态：Idle → Loaded → Active
 // 只有 Active 状态的 session 有独立的 AgentSession 后端。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
+use dashmap::DashMap;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use rozsa_app::agent_session::AgentSession;
+use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::model_registry::ModelRegistry;
-use rozsa_app::permissions::PendingApprovals;
+use rozsa_app::permissions::{PendingApprovals, PermissionResponse, TrustLevel};
+use rozsa_app::session::manager::SessionManager;
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
+
+pub type PreToolUseHook = Arc<
+    dyn Fn(
+            rozsa_core::config::PreToolUseContext,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Option<rozsa_core::config::PreToolUseResult>>
+                    + Send,
+            >,
+        > + Send
+        + Sync,
+>;
+
+pub type PreToolUseHookFactory = Arc<dyn Fn(String) -> PreToolUseHook + Send + Sync>;
+
+pub struct CreatedGuiSession {
+    pub id: String,
+    pub path: String,
+    pub agent: AgentSession,
+}
+
+/// A permission request emitted by a session-owned pre-tool-use hook.
+pub struct PermissionRequest {
+    pub session_id: String,
+    pub turn_id: String,
+    pub request_id: String,
+    pub tool_name: String,
+    pub args: serde_json::Value,
+    pub info: rozsa_app::permissions::ApprovalInfo,
+}
+
+#[derive(Clone)]
+pub struct PendingPermissionContext {
+    pub tool_name: String,
+    pub args: serde_json::Value,
+    pub info: rozsa_app::permissions::ApprovalInfo,
+}
+
+pub fn permission_pending_key(session_id: &str, request_id: &str) -> String {
+    format!("{session_id}:{request_id}")
+}
+
+pub fn session_id_from_path(path: &str) -> String {
+    Path::new(path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+pub fn find_tab_index_by_session(tabs: &[SessionTab], session_id: &str) -> Option<usize> {
+    tabs.iter().position(|tab| tab.session_id() == session_id)
+}
+
+/// Resolve outstanding approvals so a closed, deleted, aborted, or failed session
+/// cannot leave its agent loop waiting on a sender that will never receive UI input.
+pub fn deny_pending_approvals(approvals: &PendingApprovals, session_id: Option<&str>) -> usize {
+    let prefix = session_id.map(|id| format!("{id}:"));
+    let keys = approvals
+        .iter()
+        .filter_map(|entry| {
+            prefix
+                .as_deref()
+                .map_or(true, |prefix| entry.key().starts_with(prefix))
+                .then(|| entry.key().clone())
+        })
+        .collect::<Vec<_>>();
+    let mut resolved = 0;
+    for key in keys {
+        if let Some((_, sender)) = approvals.remove(&key) {
+            let _ = sender.send(PermissionResponse::Deny);
+            resolved += 1;
+        }
+    }
+    resolved
+}
 
 /// 单个 session tab 的状态
 pub enum SessionTab {
@@ -48,6 +126,10 @@ impl SessionTab {
         }
     }
 
+    pub fn session_id(&self) -> String {
+        session_id_from_path(self.path())
+    }
+
     pub fn messages(&self) -> &[AgentMessage] {
         match self {
             Self::Idle { .. } => &[],
@@ -76,6 +158,8 @@ pub struct GuiState {
     pub model_registry: Option<Arc<ModelRegistry>>,
     pub session_dir: Option<PathBuf>,
     pub pending_approvals: Option<PendingApprovals>,
+    pub pending_permission_contexts: Arc<DashMap<String, PendingPermissionContext>>,
+    pub permission_controller: Arc<rozsa_app::permissions::PermissionController>,
     pub global_settings_path: Option<PathBuf>,
     pub runtime_settings: Arc<Mutex<rozsa_app::settings::Settings>>,
 }
@@ -88,20 +172,62 @@ pub struct SharedResources {
     pub system_prompt: String,
     pub model: Mutex<rozsa_model::types::Model>,
     pub thinking_level: Mutex<rozsa_model::types::ThinkingLevel>,
-    pub pre_tool_use: Option<
-        Arc<
-            dyn Fn(
-                    rozsa_core::config::PreToolUseContext,
-                ) -> std::pin::Pin<
-                    Box<
-                        dyn std::future::Future<
-                                Output = Option<rozsa_core::config::PreToolUseResult>,
-                            > + Send,
-                    >,
-                > + Send
-                + Sync,
-        >,
-    >,
+    pub pre_tool_use_factory: Option<PreToolUseHookFactory>,
+    pub model_stream: Option<rozsa_app::agent_session::ModelStream>,
+}
+
+impl SharedResources {
+    /// Create a lazy session and AgentSession through the GUI-owned factory.
+    pub async fn create_new_agent(
+        &self,
+        session_dir: &Path,
+        parent_session: Option<String>,
+    ) -> Result<CreatedGuiSession, String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let path = session_dir.join(format!("{id}.jsonl"));
+        let session_manager = SessionManager::create_lazy(
+            &path,
+            id.clone(),
+            self.cwd.to_string_lossy().to_string(),
+            parent_session,
+        );
+        let agent = self.create_agent(session_manager).await;
+        Ok(CreatedGuiSession {
+            id,
+            path: path.to_string_lossy().to_string(),
+            agent,
+        })
+    }
+
+    /// Restore a persisted session through the same factory used for new sessions.
+    pub async fn restore_agent(&self, path: &Path) -> Result<AgentSession, String> {
+        let session_manager = SessionManager::open(path).map_err(|error| error.to_string())?;
+        Ok(self.create_agent(session_manager).await)
+    }
+
+    async fn create_agent(&self, session_manager: SessionManager) -> AgentSession {
+        let session_id = session_manager.session_id().to_string();
+        let model = self.model.lock().await.clone();
+        let thinking_level = *self.thinking_level.lock().await;
+        let pre_tool_use = self.pre_tool_use_factory.as_ref().map(|factory| {
+            let hook = factory(session_id);
+            Box::new(move |context| hook(context)) as _
+        });
+
+        let session = AgentSession::new(AgentSessionConfig {
+            model,
+            thinking_level,
+            system_prompt: self.system_prompt.clone(),
+            cwd: self.cwd.clone(),
+            session_manager,
+            settings_manager: self.settings_manager.clone(),
+            resources: self.resources.clone(),
+            pre_tool_use,
+            model_stream: self.model_stream.clone(),
+        });
+        session.register_default_tools(&self.cwd).await;
+        session
+    }
 }
 
 /// 消息累积器
@@ -110,7 +236,27 @@ pub struct LiveState {
     pub messages: Vec<AgentMessage>,
     pub is_streaming: bool,
     pub turn_base: usize,
+    pub turn_id: u64,
+    pub turn_activity: TurnActivity,
     pub(crate) streaming_message_index: Option<usize>,
+}
+
+#[derive(Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnActivity {
+    pub changed_files: Vec<String>,
+    pub verification: Option<VerificationResult>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerificationResult {
+    pub command: String,
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub timed_out: bool,
+    pub truncated: bool,
+    pub duration_ms: u64,
 }
 
 impl LiveState {
@@ -118,7 +264,9 @@ impl LiveState {
         match event {
             AgentEvent::AgentStart => {
                 self.turn_base = self.messages.len();
+                self.turn_id = self.turn_id.saturating_add(1);
                 self.is_streaming = true;
+                self.turn_activity = TurnActivity::default();
                 self.streaming_message_index = None;
                 true
             }
@@ -145,9 +293,13 @@ impl LiveState {
                 self.streaming_message_index = None;
                 true
             }
-            AgentEvent::ToolExecutionStart { .. }
-            | AgentEvent::ToolExecutionUpdate { .. }
-            | AgentEvent::ToolExecutionEnd { .. } => true,
+            AgentEvent::ToolExecutionEnd {
+                tool_name, result, ..
+            } => {
+                self.record_tool_activity(tool_name, result);
+                true
+            }
+            AgentEvent::ToolExecutionStart { .. } | AgentEvent::ToolExecutionUpdate { .. } => true,
             _ => false,
         }
     }
@@ -170,6 +322,58 @@ impl LiveState {
             self.streaming_message_index = Some(index);
         }
     }
+
+    fn record_tool_activity(
+        &mut self,
+        tool_name: &str,
+        result: &rozsa_model::types::ToolResultMessage,
+    ) {
+        if let Some(files) = result
+            .details
+            .get("changed_files")
+            .and_then(|value| value.as_array())
+        {
+            for path in files.iter().filter_map(|value| value.as_str()) {
+                if !self
+                    .turn_activity
+                    .changed_files
+                    .iter()
+                    .any(|existing| existing == path)
+                {
+                    self.turn_activity.changed_files.push(path.to_string());
+                }
+            }
+        }
+
+        if tool_name.eq_ignore_ascii_case("bash") {
+            let details = &result.details;
+            if let Some(command) = details.get("command").and_then(|value| value.as_str()) {
+                self.turn_activity.verification = Some(VerificationResult {
+                    command: command.to_string(),
+                    success: details
+                        .get("success")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false),
+                    exit_code: details
+                        .get("exit_code")
+                        .and_then(|value| value.as_i64())
+                        .map(|value| value as i32),
+                    timed_out: details
+                        .get("timed_out")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false),
+                    truncated: details
+                        .get("truncated")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false),
+                    duration_ms: details
+                        .get("duration_ms")
+                        .and_then(|value| value.as_u64())
+                        .unwrap_or(0),
+                });
+            }
+        }
+    }
 }
 
 fn is_assistant_message(message: &AgentMessage) -> bool {
@@ -183,6 +387,8 @@ fn is_assistant_message(message: &AgentMessage) -> bool {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiSnapshot {
+    pub session_id: String,
+    pub turn_id: u64,
     pub messages: Vec<serde_json::Value>,
     pub is_streaming: bool,
     pub model: Option<ModelInfo>,
@@ -192,6 +398,7 @@ pub struct UiSnapshot {
     pub git: Option<GitStatus>,
     pub context_usage: ContextUsage,
     pub runtime_state: RuntimeState,
+    pub turn_activity: TurnActivity,
 }
 
 #[derive(Clone, Serialize)]
@@ -275,6 +482,11 @@ impl UiSnapshot {
         };
 
         Self {
+            session_id: tab.session_id(),
+            turn_id: match tab {
+                SessionTab::Active { live, .. } => live.turn_id,
+                _ => 0,
+            },
             messages,
             is_streaming: tab.is_streaming(),
             model: Some(model_info),
@@ -295,6 +507,10 @@ impl UiSnapshot {
                 prompt_tokens: input_tokens,
                 completion_tokens: output_tokens,
                 session_total_tokens: input_tokens + output_tokens,
+            },
+            turn_activity: match tab {
+                SessionTab::Active { live, .. } => live.turn_activity.clone(),
+                _ => TurnActivity::default(),
             },
         }
     }
@@ -401,11 +617,14 @@ fn git_diff_stat(cwd: &PathBuf) -> (u64, u64) {
 /// 权限请求事件
 #[derive(Clone, Serialize)]
 pub struct PermissionEvent {
-    pub id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub request_id: String,
     pub tool: String,
     pub summary: String,
     pub risk: String,
     pub trust_key: String,
+    pub trust_levels: Vec<TrustLevel>,
 }
 
 /// 工具执行事件
@@ -413,14 +632,19 @@ pub struct PermissionEvent {
 #[serde(tag = "type")]
 pub enum ToolEvent {
     Start {
+        session_id: String,
+        turn_id: u64,
         id: String,
         name: String,
         args: serde_json::Value,
     },
     End {
+        session_id: String,
+        turn_id: u64,
         id: String,
         name: String,
         success: bool,
         output: String,
+        details: serde_json::Value,
     },
 }

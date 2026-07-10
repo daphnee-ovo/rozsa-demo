@@ -21,12 +21,18 @@ fn parse_permission_mode() {
 }
 
 #[test]
-fn free_permission_always_allows() {
+fn free_permission_allows_non_blocked_commands_only() {
     let policy = PermissionPolicy::new(PermissionMode::FreePermission, vec![], vec![], vec![]);
-    let args = serde_json::json!({"command": "rm -rf /"});
+    let args = serde_json::json!({"command": "git status"});
     assert!(matches!(
         policy.evaluate("Bash", &args),
         PolicyVerdict::Allow
+    ));
+
+    let args = serde_json::json!({"command": "rm -rf /"});
+    assert!(matches!(
+        policy.evaluate("Bash", &args),
+        PolicyVerdict::Block { .. }
     ));
 }
 
@@ -335,7 +341,6 @@ fn generate_trust_levels_compound_command() {
     let args = serde_json::json!({"command": "make && make install"});
     let levels = generate_trust_levels("Bash", &args);
 
-    assert!(levels.contains(&"Bash:make && make install".to_string()));
     assert!(levels.contains(&"Bash:make".to_string()));
     assert!(levels.contains(&"Bash:make install".to_string()));
 }

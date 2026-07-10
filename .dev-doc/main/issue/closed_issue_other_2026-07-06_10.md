@@ -3,7 +3,7 @@ source: other
 nums: 1
 ---
 
-- [x] ISSUE-I078：Responses replay: tool call ids can serialize as empty call_id
+- [x] ISSUE-I079：Responses replay: tool call ids can serialize as empty call_id
   - severity: P1
   - location：crates/rozsa-model/src/providers/openai_responses/convert.rs
   - description：Responses API rejects follow-up turns when replayed function_call_output has an empty call_id. Stream handling currently falls back missing call_id to an empty string, and replay serializes empty tool ids directly.

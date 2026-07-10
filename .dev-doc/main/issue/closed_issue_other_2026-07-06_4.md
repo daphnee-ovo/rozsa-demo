@@ -3,7 +3,7 @@ source: other
 nums: 1
 ---
 
-- [x] ISSUE-I072：codex-oauth fallback models are stale
+- [x] ISSUE-I073：codex-oauth fallback models are stale
   - severity: P1
   - location：crates/rozsa-tui/src/backend/native.rs:2208
   - description：codex-oauth fallback model config still seeds old GPT-4/o3/o4 models instead of official bundled Codex catalog.

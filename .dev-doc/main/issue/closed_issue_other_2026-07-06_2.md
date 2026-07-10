@@ -3,7 +3,7 @@ source: other
 nums: 1
 ---
 
-- [x] ISSUE-I070：GUI silently renders empty assistant message for provider errors
+- [x] ISSUE-I071：GUI silently renders empty assistant message for provider errors
   - severity: P0
   - location：crates/rozsa-gui/frontend/app.js:281
   - description：When a selected model cannot be used, core emits an assistant message with error_message, but the GUI assistant renderer ignores errorMessage and renders an empty Rozsa bubble.

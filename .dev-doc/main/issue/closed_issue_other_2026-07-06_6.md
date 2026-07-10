@@ -3,7 +3,7 @@ source: other
 nums: 1
 ---
 
-- [x] ISSUE-I074：codex-oauth login does not store account id
+- [x] ISSUE-I075：codex-oauth login does not store account id
   - severity: P1
   - location：crates/rozsa-model/src/oauth/openai_codex.rs:233
   - description：Rozsa extracts Codex accountId from access token only; official Codex derives chatgpt_account_id from id_token, so GUI login can store auth.json without accountId and codex-oauth requests fail.

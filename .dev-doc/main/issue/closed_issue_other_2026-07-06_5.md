@@ -3,7 +3,7 @@ source: other
 nums: 1
 ---
 
-- [x] ISSUE-I073：GUI migration: auth commands, invalid model send, and status bar git layout
+- [x] ISSUE-I074：GUI migration: auth commands, invalid model send, and status bar git layout
   - severity: P1
   - location：crates/rozsa-gui
   - description：GUI lacks login/logout command wiring, rejects stale unsupported model selection before send, and status bar shows cwd basename instead of git branch with dirty marker while diff stats overlap quota.

@@ -55,6 +55,7 @@ fn create_backend(tmp_dir: &tempfile::TempDir) -> NativeBackend {
         settings_manager,
         resources: LoadedResources::default(),
         pre_tool_use: None,
+        model_stream: None,
     });
 
     NativeBackend::new(session)

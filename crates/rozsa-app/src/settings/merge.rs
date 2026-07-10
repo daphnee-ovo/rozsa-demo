@@ -79,6 +79,9 @@ fn merge_permissions(
     match overlay {
         None => base.clone(),
         Some(o) => PermissionSettings {
+            deny: merge_rule_list(&base.deny, o.deny.as_ref()),
+            ask: merge_rule_list(&base.ask, o.ask.as_ref()),
+            allow: merge_rule_list(&base.allow, o.allow.as_ref()),
             mode: o.mode.clone().unwrap_or_else(|| base.mode.clone()),
             auto_approve_patterns: o
                 .auto_approve_patterns
@@ -94,4 +97,16 @@ fn merge_permissions(
                 .unwrap_or_else(|| base.blocked_commands.clone()),
         },
     }
+}
+
+fn merge_rule_list(base: &[String], overlay: Option<&Vec<String>>) -> Vec<String> {
+    let mut merged = base.to_vec();
+    if let Some(overlay) = overlay {
+        for rule in overlay {
+            if !merged.contains(rule) {
+                merged.push(rule.clone());
+            }
+        }
+    }
+    merged
 }

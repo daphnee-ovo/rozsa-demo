@@ -42,3 +42,32 @@ fn completes_at_file_references() {
     assert!(items.iter().any(|item| item.value == "@Cargo.toml "));
     assert!(items.iter().all(|item| item.value.starts_with('@')));
 }
+
+#[test]
+fn blocks_external_and_secret_mentions_without_blocking_workspace_files() {
+    let workspace = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    fs::write(workspace.path().join("source.rs"), "fn source() {}\n").unwrap();
+    fs::write(workspace.path().join(".env"), "TOKEN=secret\n").unwrap();
+    let external_path = external.path().join("outside.rs");
+    fs::write(&external_path, "fn outside() {}\n").unwrap();
+
+    let expansion = expand_file_references(
+        &format!(
+            "use @source.rs @.env @{}",
+            external_path.to_string_lossy()
+        ),
+        workspace.path(),
+    );
+
+    assert_eq!(expansion.blocks.len(), 1);
+    assert_eq!(expansion.notices.len(), 2);
+    assert!(expansion
+        .notices
+        .iter()
+        .any(|notice| notice.reason.contains("secret-like")));
+    assert!(expansion
+        .notices
+        .iter()
+        .any(|notice| notice.reason.contains("workspace")));
+}

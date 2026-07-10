@@ -152,6 +152,10 @@ impl SettingsManager {
         &self.resolved.permissions
     }
 
+    pub fn project_path(&self) -> Option<&Path> {
+        self.project_path.as_deref()
+    }
+
     pub fn context_window_preference(&self, key: &str) -> Option<u64> {
         self.resolved.context_window_preferences.get(key).copied()
     }
@@ -186,6 +190,63 @@ impl SettingsManager {
                 .push(pattern);
             let _ = self.save_global();
         }
+    }
+
+    /// Append an automatically granted project trust without ever modifying the
+    /// user-level settings file. Global permission rules are manual-only.
+    pub fn add_project_permission_allow(&self, rule: &str) -> Result<(), SettingsError> {
+        let Some(path) = self.project_path.as_ref() else {
+            return Ok(());
+        };
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|source| SettingsError::ReadError {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
+        let mut value = if path.exists() {
+            let content = fs::read_to_string(path).map_err(|source| SettingsError::ReadError {
+                path: path.clone(),
+                source,
+            })?;
+            serde_json::from_str::<serde_json::Value>(&content).map_err(|source| {
+                SettingsError::ParseError {
+                    path: path.clone(),
+                    source,
+                }
+            })?
+        } else {
+            serde_json::json!({})
+        };
+        let root = value
+            .as_object_mut()
+            .expect("settings JSON root must be object");
+        let permission = root
+            .entry("permission".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        let permission = permission
+            .as_object_mut()
+            .expect("permission settings must be an object");
+        let allow = permission
+            .entry("allow".to_string())
+            .or_insert_with(|| serde_json::json!([]));
+        let allow = allow
+            .as_array_mut()
+            .expect("permission.allow must be an array");
+        if !allow.iter().any(|value| value.as_str() == Some(rule)) {
+            allow.push(serde_json::Value::String(rule.to_string()));
+            let json = serde_json::to_string_pretty(&value).map_err(|source| {
+                SettingsError::ParseError {
+                    path: path.clone(),
+                    source,
+                }
+            })?;
+            fs::write(path, json).map_err(|source| SettingsError::ReadError {
+                path: path.clone(),
+                source,
+            })?;
+        }
+        Ok(())
     }
 
     /// Persist current resolved settings to the global settings file.

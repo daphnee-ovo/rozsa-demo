@@ -2,6 +2,7 @@
 //
 // Tauri IPC 命令。多会话架构：操作都针对当前活跃 tab。
 
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,7 +19,10 @@ use rozsa_model::types::{
     AssistantMessage, ContentBlock, Message, StopReason, ThinkingLevel, Usage,
 };
 
-use crate::state::{GuiState, SessionTab, UiSnapshot};
+use crate::state::{
+    GuiState, SessionTab, UiSnapshot, deny_pending_approvals, permission_pending_key,
+    session_id_from_path,
+};
 
 // --- 对话 ---
 
@@ -33,11 +37,12 @@ pub async fn send_message(
 
     // 确保当前 tab 是 Active 状态（懒加载：首次发消息时激活）
     let tab = tabs.get_mut(idx).ok_or("No active tab")?;
+    let session_id = tab.session_id();
     let agent = match tab {
         SessionTab::Active { agent, .. } => agent.clone(),
         SessionTab::Loaded { path, messages } => {
             // 升级为 Active：创建 AgentSession
-            let agent = activate_session(path, messages.clone(), &state).await?;
+            let agent = activate_session(path, &state).await?;
             let path_owned = path.clone();
             let agent_arc = std::sync::Arc::new(agent);
             *tab = SessionTab::Active {
@@ -50,14 +55,18 @@ pub async fn send_message(
             };
             // 启动事件转发
             drop(tabs);
-            crate::events::spawn_event_forwarder_for_tab(app.clone(), idx, state.inner().clone());
+            crate::events::spawn_event_forwarder_for_session(
+                app.clone(),
+                session_id.clone(),
+                state.inner().clone(),
+            );
             agent_arc
         }
         SessionTab::Idle { path, .. } => {
             // 从 Idle 直接激活（加载历史 + 创建 agent）
             let path_owned = path.clone();
             let messages = load_session_messages(&path_owned)?;
-            let agent = activate_session(&path_owned, messages.clone(), &state).await?;
+            let agent = activate_session(&path_owned, &state).await?;
             let agent_arc = std::sync::Arc::new(agent);
             *tab = SessionTab::Active {
                 path: path_owned,
@@ -68,23 +77,37 @@ pub async fn send_message(
                 },
             };
             drop(tabs);
-            crate::events::spawn_event_forwarder_for_tab(app.clone(), idx, state.inner().clone());
+            crate::events::spawn_event_forwarder_for_session(
+                app.clone(),
+                session_id.clone(),
+                state.inner().clone(),
+            );
             agent_arc
         }
     };
 
     let expansion = crate::file_refs::expand_file_references(&message, &state.shared.cwd);
+    for notice in &expansion.notices {
+        let _ = app.emit(
+            "notification",
+            format!("Skipped @{}: {}.", notice.path, notice.reason),
+        );
+    }
 
     // 发送消息（后台执行，不阻塞 IPC 返回）
     let shared = state.shared.clone();
     let tabs_ref = state.tabs.clone();
     let active_tab_ref = state.active_tab.clone();
+    let pending_approvals = state.pending_approvals.clone();
     tokio::spawn(async move {
         if let Err(e) = agent
             .prompt_with_prefix_blocks(&message, expansion.blocks, expansion.display_text)
             .await
         {
             append_prompt_error(idx, &agent, &tabs_ref, &shared, &app, e.to_string()).await;
+        }
+        if let Some(approvals) = &pending_approvals {
+            deny_pending_approvals(approvals, Some(&session_id));
         }
         // 完成后推送最终状态
         let current_idx = *active_tab_ref.lock().await;
@@ -133,14 +156,12 @@ pub async fn autocomplete_input(
     let cursor = cursor.min(text.len());
     let head = &text[..cursor];
     let active_agent = active_agent(&state).await.ok();
-    let skill_commands =
-        collect_skill_slash_commands(active_agent.as_deref(), &state.shared.cwd);
-    let highlight_ranges =
-        input_highlight_ranges(&text, &state.shared.cwd, &skill_commands);
+    let skill_commands = collect_skill_slash_commands(active_agent.as_deref(), &state.shared.cwd);
+    let highlight_ranges = input_highlight_ranges(&text, &state.shared.cwd, &skill_commands);
 
     if let Some(prefix) = parse_slash_completion_prefix(head) {
         use rozsa_app::slash_commands::{
-            AutocompleteEngine, SlashCommandInfo, SlashCommandSource, BUILTIN_SLASH_COMMANDS,
+            AutocompleteEngine, BUILTIN_SLASH_COMMANDS, SlashCommandInfo, SlashCommandSource,
         };
 
         let prefix_lower = prefix.to_ascii_lowercase();
@@ -225,9 +246,8 @@ pub async fn dispatch_slash_command(
     let active_agent_for_match = active_agent(&state).await.ok();
     let skill_commands =
         collect_skill_slash_commands(active_agent_for_match.as_deref(), &state.shared.cwd);
-    let Some((cmd, args)) =
-        first_builtin_slash_command(&text)
-            .or_else(|| first_skill_slash_command(&text, &skill_commands))
+    let Some((cmd, args)) = first_builtin_slash_command(&text)
+        .or_else(|| first_skill_slash_command(&text, &skill_commands))
     else {
         return Ok(SlashCommandResult {
             handled: false,
@@ -259,7 +279,10 @@ pub async fn dispatch_slash_command(
         "thinking" => {
             let level = parse_thinking_level(&args)?;
             set_thinking_level(&state, level).await;
-            emit_info(&app, &format!("Thinking: {}", format!("{level:?}").to_lowercase()));
+            emit_info(
+                &app,
+                &format!("Thinking: {}", format!("{level:?}").to_lowercase()),
+            );
         }
         "login" => {
             let message = auth_login(app.clone()).await?;
@@ -366,7 +389,9 @@ pub async fn dispatch_slash_command(
             } else {
                 emit_info(
                     &app,
-                    &format!("Unknown LSP mode '{args}'. Options: agent_end | edit_write | disabled"),
+                    &format!(
+                        "Unknown LSP mode '{args}'. Options: agent_end | edit_write | disabled"
+                    ),
                 );
             }
         }
@@ -453,7 +478,15 @@ pub async fn dispatch_slash_command(
 pub async fn abort(state: State<'_, GuiState>) -> Result<(), String> {
     let idx = *state.active_tab.lock().await;
     let tabs = state.tabs.lock().await;
-    if let Some(SessionTab::Active { agent, .. }) = tabs.get(idx) {
+    let active = tabs.get(idx).and_then(|tab| match tab {
+        SessionTab::Active { agent, .. } => Some((tab.session_id(), agent.clone())),
+        _ => None,
+    });
+    drop(tabs);
+    if let Some((session_id, agent)) = active {
+        if let Some(approvals) = &state.pending_approvals {
+            deny_pending_approvals(approvals, Some(&session_id));
+        }
         agent.abort().await;
     }
     Ok(())
@@ -538,39 +571,7 @@ pub async fn switch_session(
 
 #[tauri::command]
 pub async fn new_session(state: State<'_, GuiState>, app: AppHandle) -> Result<String, String> {
-    let session_dir = state
-        .session_dir
-        .as_ref()
-        .ok_or("No session directory configured")?;
-
-    let new_id = uuid::Uuid::new_v4().to_string();
-    let cwd = state.shared.cwd.to_string_lossy().to_string();
-    let path = session_dir.join(format!("{new_id}.jsonl"));
-
-    let _manager =
-        SessionManager::create(&path, new_id.clone(), cwd, None).map_err(|e| e.to_string())?;
-
-    let path_str = path.to_string_lossy().to_string();
-
-    // 新建一个 Loaded tab（空消息，等用户发消息时才激活 agent）
-    let mut tabs = state.tabs.lock().await;
-    tabs.push(SessionTab::Loaded {
-        path: path_str.clone(),
-        messages: vec![],
-    });
-    let new_idx = tabs.len() - 1;
-    drop(tabs);
-
-    *state.active_tab.lock().await = new_idx;
-
-    // 推送空状态
-    let tabs = state.tabs.lock().await;
-    if let Some(tab) = tabs.get(new_idx) {
-        let snapshot = UiSnapshot::from_tab(tab, &state.shared);
-        let _ = app.emit("ui-state", &snapshot);
-    }
-
-    Ok(new_id)
+    create_new_session(&state, &app).await
 }
 
 // --- 权限 ---
@@ -578,6 +579,7 @@ pub async fn new_session(state: State<'_, GuiState>, app: AppHandle) -> Result<S
 #[tauri::command]
 pub async fn respond_permission(
     state: State<'_, GuiState>,
+    session_id: String,
     id: String,
     choice: String,
     trust_key: Option<String>,
@@ -587,14 +589,26 @@ pub async fn respond_permission(
         .as_ref()
         .ok_or("Permission system not initialized")?;
 
-    let (_, sender) = approvals
-        .remove(&id)
-        .ok_or_else(|| format!("No pending approval: {id}"))?;
+    let pending_key = permission_pending_key(&session_id, &id);
+    let context = state
+        .pending_permission_contexts
+        .get(&pending_key)
+        .map(|context| context.clone())
+        .ok_or_else(|| format!("No pending approval context: {session_id}:{id}"))?;
 
     let response = match choice.as_str() {
         "allow" => PermissionResponse::Allow,
         "allow-session" => {
             if let Some(key) = trust_key {
+                if !context
+                    .info
+                    .trust_levels
+                    .iter()
+                    .any(|level| level.key == key)
+                {
+                    return Err("Selected trust scope is not valid for this request".to_string());
+                }
+                state.permission_controller.record_project_approval(&key)?;
                 PermissionResponse::AllowSession { trust_key: key }
             } else {
                 PermissionResponse::Allow
@@ -603,9 +617,59 @@ pub async fn respond_permission(
         _ => PermissionResponse::Deny,
     };
 
+    let (_, sender) = approvals
+        .remove(&pending_key)
+        .ok_or_else(|| format!("No pending approval: {session_id}:{id}"))?;
+    state.pending_permission_contexts.remove(&pending_key);
+
     sender
         .send(response)
         .map_err(|_| "Failed to send permission response".to_string())
+}
+
+/// Re-evaluate a queued request immediately before showing it. A trust granted
+/// for an earlier request may have made this one safe without another prompt.
+#[tauri::command]
+pub async fn prepare_permission(
+    state: State<'_, GuiState>,
+    session_id: String,
+    id: String,
+) -> Result<Option<rozsa_app::permissions::ApprovalInfo>, String> {
+    let pending_key = permission_pending_key(&session_id, &id);
+    let context = state
+        .pending_permission_contexts
+        .get(&pending_key)
+        .map(|context| context.clone())
+        .ok_or_else(|| format!("No pending approval context: {session_id}:{id}"))?;
+    match state
+        .permission_controller
+        .evaluate(&session_id, &context.tool_name, &context.args)
+    {
+        rozsa_app::permissions::PolicyVerdict::NeedApproval { info } => {
+            if let Some(mut context) = state.pending_permission_contexts.get_mut(&pending_key) {
+                context.info = info.clone();
+            }
+            Ok(Some(info))
+        }
+        rozsa_app::permissions::PolicyVerdict::Allow => {
+            if let Some(approvals) = &state.pending_approvals
+                && let Some((_, sender)) = approvals.remove(&pending_key)
+            {
+                let _ = sender.send(PermissionResponse::Allow);
+            }
+            state.pending_permission_contexts.remove(&pending_key);
+            Ok(None)
+        }
+        rozsa_app::permissions::PolicyVerdict::Block { .. } => {
+            if let Some(approvals) = &state.pending_approvals
+                && let Some((_, sender)) = approvals.remove(&pending_key)
+            {
+                let _ = sender.send(PermissionResponse::Deny);
+            }
+            state.pending_permission_contexts.remove(&pending_key);
+            Ok(None)
+        }
+    }
 }
 
 // --- 设置 ---
@@ -670,6 +734,14 @@ pub async fn update_setting(
         "permission_mode" => {
             let mut s = state.runtime_settings.lock().await;
             s.permissions.mode = value;
+            let mode = rozsa_app::permissions::PermissionMode::parse(&s.permissions.mode)
+                .ok_or_else(|| format!("Invalid permission mode: {}", s.permissions.mode))?;
+            state.permission_controller.update(
+                mode,
+                s.permissions.auto_approve_patterns.clone(),
+                s.permissions.allowed_tools.clone(),
+                s.permissions.blocked_commands.clone(),
+            );
             drop(s);
             persist_settings(&state).await;
             Ok(())
@@ -870,6 +942,10 @@ pub async fn rename_session(
 
 #[tauri::command]
 pub async fn delete_session(state: State<'_, GuiState>, path: String) -> Result<(), String> {
+    let session_id = session_id_from_path(&path);
+    if let Some(approvals) = &state.pending_approvals {
+        deny_pending_approvals(approvals, Some(&session_id));
+    }
     // 从 tabs 移除该 session
     let mut tabs = state.tabs.lock().await;
     tabs.retain(|t| t.path() != path);
@@ -1408,39 +1484,46 @@ async fn active_session_summary(state: &State<'_, GuiState>) -> Result<(String, 
     Ok((tab.path().to_string(), tab.messages().len()))
 }
 
-async fn create_new_session(state: &State<'_, GuiState>, app: &AppHandle) -> Result<String, String> {
+async fn create_new_session(
+    state: &State<'_, GuiState>,
+    app: &AppHandle,
+) -> Result<String, String> {
     let session_dir = state
         .session_dir
         .as_ref()
-        .ok_or("No session directory configured")?;
-
-    let new_id = uuid::Uuid::new_v4().to_string();
-    let cwd = state.shared.cwd.to_string_lossy().to_string();
-    let path = session_dir.join(format!("{new_id}.jsonl"));
-
-    let _manager =
-        SessionManager::create(&path, new_id.clone(), cwd, None).map_err(|e| e.to_string())?;
-
-    let path_str = path.to_string_lossy().to_string();
+        .ok_or("No session directory configured")?
+        .clone();
+    let created = state.shared.create_new_agent(&session_dir, None).await?;
+    let session_id = created.id.clone();
+    let agent = Arc::new(created.agent);
     let mut tabs = state.tabs.lock().await;
-    tabs.push(SessionTab::Loaded {
-        path: path_str,
-        messages: vec![],
+    tabs.push(SessionTab::Active {
+        path: created.path,
+        agent,
+        live: crate::state::LiveState::default(),
     });
     let new_idx = tabs.len() - 1;
     drop(tabs);
 
     *state.active_tab.lock().await = new_idx;
+    crate::events::spawn_event_forwarder_for_session(
+        app.clone(),
+        session_id,
+        state.inner().clone(),
+    );
     let tabs = state.tabs.lock().await;
     if let Some(tab) = tabs.get(new_idx) {
         let snapshot = UiSnapshot::from_tab(tab, &state.shared);
         let _ = app.emit("ui-state", &snapshot);
     }
 
-    Ok(new_id)
+    Ok(created.id)
 }
 
-async fn switch_model_reference(state: &State<'_, GuiState>, reference: &str) -> Result<(), String> {
+async fn switch_model_reference(
+    state: &State<'_, GuiState>,
+    reference: &str,
+) -> Result<(), String> {
     let registry = state
         .model_registry
         .as_ref()
@@ -1454,9 +1537,7 @@ async fn switch_model_reference(state: &State<'_, GuiState>, reference: &str) ->
         registry
             .all()
             .iter()
-            .find(|m| {
-                m.id == reference || m.id.contains(reference) || m.id.ends_with(reference)
-            })
+            .find(|m| m.id == reference || m.id.contains(reference) || m.id.ends_with(reference))
             .cloned()
             .ok_or_else(|| format!("Model not found: {reference}"))?
     };
@@ -1745,7 +1826,10 @@ async fn gc_old_sessions(state: &State<'_, GuiState>, days: u64) -> Result<Strin
         .ok_or("No session directory configured")?;
     let cutoff = SystemTime::now() - Duration::from_secs(days * 86_400);
     let mut removed = 0usize;
-    for entry in std::fs::read_dir(session_dir).map_err(|e| e.to_string())?.flatten() {
+    for entry in std::fs::read_dir(session_dir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
             continue;
@@ -1881,7 +1965,9 @@ fn move_to_trash(path: &std::path::Path) -> Result<(), String> {
     {
         for program in ["gio", "trash-put"] {
             let status = if program == "gio" {
-                Command::new(program).args(["trash", &path.to_string_lossy()]).status()
+                Command::new(program)
+                    .args(["trash", &path.to_string_lossy()])
+                    .status()
             } else {
                 Command::new(program).arg(path).status()
             };
@@ -1899,8 +1985,25 @@ fn move_to_trash(path: &std::path::Path) -> Result<(), String> {
 async fn persist_settings(state: &State<'_, GuiState>) {
     if let Some(ref path) = state.global_settings_path {
         let s = state.runtime_settings.lock().await;
-        if let Ok(json) = serde_json::to_string_pretty(&*s) {
-            let _ = std::fs::write(path, json);
+        if let Ok(mut updated) = serde_json::to_value(&*s) {
+            let existing = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            if let (Some(updated), Some(mut existing)) =
+                (updated.as_object_mut(), existing.as_object().cloned())
+            {
+                // permission is deliberately excluded: global permission rules
+                // are manual-only and project Trust is persisted separately.
+                updated.remove("permission");
+                updated.remove("permissions");
+                for (key, value) in updated {
+                    existing.insert(key.clone(), value.clone());
+                }
+                if let Ok(json) = serde_json::to_string_pretty(&existing) {
+                    let _ = std::fs::write(path, json);
+                }
+            }
         }
     }
 }
@@ -2031,29 +2134,9 @@ fn load_session_messages(path: &str) -> Result<Vec<AgentMessage>, String> {
 
 async fn activate_session(
     path: &str,
-    _messages: Vec<AgentMessage>,
     state: &State<'_, GuiState>,
 ) -> Result<rozsa_app::agent_session::AgentSession, String> {
-    use rozsa_app::agent_session::AgentSessionConfig;
-
-    let model = state.shared.model.lock().await.clone();
-    let thinking = *state.shared.thinking_level.lock().await;
-    let session_manager = SessionManager::open(path).map_err(|e| e.to_string())?;
-
-    let config = AgentSessionConfig {
-        model,
-        thinking_level: thinking,
-        system_prompt: state.shared.system_prompt.clone(),
-        cwd: state.shared.cwd.clone(),
-        session_manager,
-        settings_manager: state.shared.settings_manager.clone(),
-        resources: state.shared.resources.clone(),
-        pre_tool_use: None, // TODO: 注入权限 hook
-    };
-
-    let session = rozsa_app::agent_session::AgentSession::new(config);
-    session.register_default_tools(&state.shared.cwd).await;
-    Ok(session)
+    state.shared.restore_agent(Path::new(path)).await
 }
 
 // --- 序列化类型 ---

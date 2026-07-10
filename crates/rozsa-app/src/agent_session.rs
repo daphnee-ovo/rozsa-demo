@@ -31,7 +31,7 @@ use tokio::sync::{Mutex, broadcast};
 use tokio_util::sync::CancellationToken;
 
 use rozsa_core::agent_loop::{agent_loop, agent_loop_continue};
-use rozsa_core::config::{AgentContext, AgentLoopConfig, ModelStreamFn, ShouldStopContext};
+use rozsa_core::config::{AgentContext, AgentLoopConfig, ShouldStopContext};
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 use rozsa_core::tool::{Tool, ToolExecutionMode};
@@ -83,7 +83,19 @@ pub struct AgentSessionConfig {
                 + Sync,
         >,
     >,
+    /// Optional model stream override used by an embedded runtime or scripted test.
+    pub model_stream: Option<ModelStream>,
 }
+
+pub type ModelStream = Arc<
+    dyn Fn(
+            &Model,
+            &rozsa_model::types::Context,
+            &SimpleStreamOptions,
+        ) -> EventStream<rozsa_model::types::StreamEvent>
+        + Send
+        + Sync,
+>;
 
 /// Static (immutable per session) parts of AgentSessionConfig.
 struct StaticConfig {
@@ -148,6 +160,7 @@ pub struct AgentSession {
     subagent_manager: Arc<tokio::sync::Mutex<crate::subagent::SubagentManager>>,
     /// Currently-viewed subagent in the UI (None = main session).
     viewing_subagent_id: tokio::sync::Mutex<Option<String>>,
+    model_stream: ModelStream,
 }
 
 impl AgentSession {
@@ -164,6 +177,7 @@ impl AgentSession {
             settings_manager,
             resources,
             pre_tool_use,
+            model_stream,
         } = config;
         let permission_mode = settings_manager.resolved().permissions.mode.clone();
         let skill_registry = crate::skills::SkillRegistry::load_from_defaults(&cwd);
@@ -190,8 +204,9 @@ impl AgentSession {
             >,
         > = pre_tool_use.map(|f| Arc::from(f) as _);
 
+        let model_stream = model_stream.unwrap_or_else(default_model_stream);
         let shared = crate::subagent::SharedResources {
-            model_stream: Arc::new(|m, c, o| rozsa_model::stream::stream_simple(m, c, o)),
+            model_stream: model_stream.clone(),
             convert_to_llm: Arc::new(convert_to_llm),
             main_tools: tools_arc.clone(),
             main_model: model.clone(),
@@ -234,6 +249,7 @@ impl AgentSession {
             skill_registry: std::sync::RwLock::new(skill_registry),
             subagent_manager,
             viewing_subagent_id: tokio::sync::Mutex::new(None),
+            model_stream,
         }
     }
 
@@ -884,7 +900,10 @@ impl AgentSession {
             model: model.clone(),
             reasoning,
             stream_options,
-            model_stream: build_model_stream_fn(),
+            model_stream: {
+                let model_stream = self.model_stream.clone();
+                Box::new(move |model, context, options| model_stream(model, context, options))
+            },
             convert_to_llm: Box::new(convert_to_llm),
             transform_context: None,
             get_api_key: None,
@@ -1022,9 +1041,9 @@ fn should_stop_for_compaction(ctx: &ShouldStopContext, threshold_tokens: u64) ->
     latest_input >= threshold_tokens
 }
 
-/// Build the model_stream function that delegates to rozsa_model's provider registry.
-fn build_model_stream_fn() -> ModelStreamFn {
-    Box::new(
+/// Build the default model stream that delegates to rozsa_model's provider registry.
+fn default_model_stream() -> ModelStream {
+    Arc::new(
         |model: &Model, context: &rozsa_model::types::Context, options: &SimpleStreamOptions| {
             rozsa_model::stream::stream_simple(model, context, options)
         },

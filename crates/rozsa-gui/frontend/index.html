@@ -228,6 +228,17 @@ body {
 .tool-status.s-error { background: var(--error); }
 .tool-status.s-running { background: var(--warning); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.turn-activity {
+  margin: 0 20px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font: 11px/1.6 var(--font-mono);
+}
+.turn-activity-label { color: var(--fg); font-weight: 600; }
+.turn-activity code { color: var(--fg); font: inherit; }
 .tool-name { color: var(--fg); font-weight: 500; }
 
 /* 侧边栏底部 */
@@ -1161,6 +1172,22 @@ body {
   line-height: 1.5;
   margin: 0;
 }
+.perm-panel-trust {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.perm-panel-trust select {
+  width: 100%;
+  border: 1px solid var(--code-border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--fg);
+  padding: 6px 8px;
+  font: 12px var(--font-mono);
+}
 .perm-panel-actions {
   display: flex;
   flex-direction: column;
@@ -1793,6 +1820,7 @@ button:focus-visible, .session-item:focus-visible,
         <div class="chat-empty-hint">向 Rózsa 描述你的编码任务<div class="chat-empty-kbd"><kbd>Enter</kbd> 发送 <kbd>⇧ Enter</kbd> 换行</div></div>
       </div>
     </div>
+    <div class="turn-activity" data-od-id="turn-activity" id="turnActivity" hidden></div>
 
     <!-- 输入框 -->
     <div data-od-id="chat-input">
@@ -1806,6 +1834,10 @@ button:focus-visible, .session-item:focus-visible,
           </div>
           <div class="perm-panel-cmd" id="permCmd">—</div>
           <p class="perm-panel-desc" id="permDesc">—</p>
+          <label class="perm-panel-trust" id="permTrustScope" hidden>
+            <span>本会话信任范围</span>
+            <select id="permTrustLevel" aria-label="本会话信任范围" onchange="selectPermissionTrustLevel(this.value)"></select>
+          </label>
           <div class="perm-panel-actions" id="permPanelActions">
             <button class="perm-panel-opt" onclick="respondPermission('allow')">
               <span class="perm-panel-opt-key">Y</span>
@@ -1813,7 +1845,7 @@ button:focus-visible, .session-item:focus-visible,
             </button>
             <button class="perm-panel-opt" onclick="respondPermission('allow-session')">
               <span class="perm-panel-opt-key">T</span>
-              <span class="perm-panel-opt-label">本次会话信任此命令</span>
+              <span class="perm-panel-opt-label">按所选范围信任本会话</span>
             </button>
             <button class="perm-panel-opt" onclick="respondPermission('deny')">
               <span class="perm-panel-opt-key">N</span>

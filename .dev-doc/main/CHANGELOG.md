@@ -35,3 +35,6 @@
 
 ## 2026-07-08
 - 00:17 fix: ISSUE-I084：fix: complete GUI slash, file mention, attachment, and context integration
+
+## 2026-07-11
+- 02:04 fix: ISSUE-I085：fix: complete GUI slash, file mention, attachment, and context integration

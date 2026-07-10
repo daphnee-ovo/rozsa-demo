@@ -18,6 +18,7 @@
 pub mod audit;
 
 use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
@@ -25,6 +26,164 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::oneshot;
+
+use crate::settings::SettingsManager;
+
+/// Runtime-owned permission state shared by GUI-created sessions.
+/// Configuration is replaceable; session trust never leaks across session ids.
+pub struct PermissionController {
+    config: std::sync::RwLock<PermissionConfig>,
+    session_approvals: DashMap<String, HashSet<String>>,
+    workspace_root: PathBuf,
+    settings_manager: Option<SettingsManager>,
+}
+
+#[derive(Clone)]
+struct PermissionConfig {
+    mode: PermissionMode,
+    auto_approve_patterns: Vec<String>,
+    allowed_tools: Vec<String>,
+    blocked_commands: Vec<String>,
+    deny: Vec<String>,
+    ask: Vec<String>,
+    allow: Vec<String>,
+}
+
+impl PermissionController {
+    pub fn new(
+        mode: PermissionMode,
+        auto_approve_patterns: Vec<String>,
+        allowed_tools: Vec<String>,
+        blocked_commands: Vec<String>,
+    ) -> Self {
+        Self {
+            config: std::sync::RwLock::new(PermissionConfig {
+                mode,
+                auto_approve_patterns,
+                allowed_tools,
+                blocked_commands,
+                deny: Vec::new(),
+                ask: Vec::new(),
+                allow: Vec::new(),
+            }),
+            session_approvals: DashMap::new(),
+            workspace_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            settings_manager: None,
+        }
+    }
+
+    pub fn with_project_rules(
+        mode: PermissionMode,
+        auto_approve_patterns: Vec<String>,
+        allowed_tools: Vec<String>,
+        blocked_commands: Vec<String>,
+        deny: Vec<String>,
+        ask: Vec<String>,
+        allow: Vec<String>,
+        workspace_root: PathBuf,
+        settings_manager: SettingsManager,
+    ) -> Self {
+        Self {
+            config: std::sync::RwLock::new(PermissionConfig {
+                mode,
+                auto_approve_patterns,
+                allowed_tools,
+                blocked_commands,
+                deny,
+                ask,
+                allow,
+            }),
+            session_approvals: DashMap::new(),
+            workspace_root,
+            settings_manager: Some(settings_manager),
+        }
+    }
+
+    pub fn update(
+        &self,
+        mode: PermissionMode,
+        auto_approve_patterns: Vec<String>,
+        allowed_tools: Vec<String>,
+        blocked_commands: Vec<String>,
+    ) {
+        let mut config = self.config.write().unwrap();
+        config.mode = mode;
+        config.auto_approve_patterns = auto_approve_patterns;
+        config.allowed_tools = allowed_tools;
+        config.blocked_commands = blocked_commands;
+    }
+
+    pub fn evaluate(&self, session_id: &str, tool_name: &str, args: &Value) -> PolicyVerdict {
+        let config = self.config.read().unwrap().clone();
+        let policy = PermissionPolicy::new(
+            config.mode,
+            config.auto_approve_patterns,
+            config.allowed_tools,
+            config.blocked_commands,
+        );
+        let verdict = policy.evaluate(tool_name, args);
+        if matches!(verdict, PolicyVerdict::Block { .. }) {
+            return verdict;
+        }
+
+        if rules_match_any(&config.deny, tool_name, args, &self.workspace_root) {
+            return PolicyVerdict::Block {
+                reason: "blocked by permission.deny rule".to_string(),
+            };
+        }
+        if rules_match_any(&config.ask, tool_name, args, &self.workspace_root) {
+            return PolicyVerdict::NeedApproval {
+                info: approval_info(tool_name, args, Vec::new()),
+            };
+        }
+        if rules_cover_request(&config.allow, tool_name, args, &self.workspace_root) {
+            return PolicyVerdict::Allow;
+        }
+
+        let Some(keys) = self.session_approvals.get(session_id) else {
+            return verdict;
+        };
+        if request_matches_session_approval(&keys, tool_name, args) {
+            return PolicyVerdict::Allow;
+        }
+
+        match verdict {
+            PolicyVerdict::NeedApproval { mut info } => {
+                info.trust_levels = untrusted_trust_levels(&keys, tool_name, args);
+                info.trust_key = info
+                    .trust_levels
+                    .first()
+                    .map(|level| level.key.clone())
+                    .unwrap_or_else(|| request_trust_key(tool_name, args));
+                PolicyVerdict::NeedApproval { info }
+            }
+            other => other,
+        }
+    }
+
+    pub fn record_session_approval(&self, session_id: &str, trust_key: String) {
+        self.session_approvals
+            .entry(session_id.to_string())
+            .or_default()
+            .insert(trust_key);
+    }
+
+    pub fn record_project_approval(&self, trust_key: &str) -> Result<(), String> {
+        let rule = trust_key_to_project_rule(trust_key)?;
+        {
+            let mut config = self.config.write().unwrap();
+            if !config.allow.contains(&rule) {
+                config.allow.push(rule.clone());
+            }
+        }
+        if let Some(settings_manager) = &self.settings_manager {
+            settings_manager
+                .add_project_permission_allow(&rule)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+}
 
 // ---------------------------------------------------------------------------
 // PermissionMode
@@ -104,6 +263,16 @@ pub struct ApprovalInfo {
     pub args_summary: String,
     pub risk: RiskLevel,
     pub trust_key: String,
+    /// User-selectable session scopes. Compound shell commands contain only
+    /// scopes for segments that are not already trusted.
+    pub trust_levels: Vec<TrustLevel>,
+}
+
+/// A trust scope that can be selected in the approval UI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustLevel {
+    pub label: String,
+    pub key: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -192,16 +361,6 @@ impl PermissionPolicy {
 
     /// 评估一次工具调用是否允许执行。
     pub fn evaluate(&self, tool_name: &str, args: &Value) -> PolicyVerdict {
-        // FreePermission 模式：一律放行。
-        if self.mode == PermissionMode::FreePermission {
-            return PolicyVerdict::Allow;
-        }
-
-        // allowed_tools 检查：匹配的工具名称直接放行。
-        if self.allowed_tools.iter().any(|name| name == tool_name) {
-            return PolicyVerdict::Allow;
-        }
-
         // blocked_commands 检查：对 Bash/bash 工具检查命令前缀。
         if tool_name == "Bash" || tool_name == "bash" {
             if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
@@ -225,34 +384,43 @@ impl PermissionPolicy {
             };
         }
 
+        // FreePermission 与 allowed_tools 不得绕过硬编码或用户配置的拦截。
+        if self.mode == PermissionMode::FreePermission
+            || self.allowed_tools.iter().any(|name| name == tool_name)
+        {
+            return PolicyVerdict::Allow;
+        }
+
         // 工作区只读工具自动放行（不需要用户审批）。
         if WORKSPACE_READ_TOOLS.contains(&tool_name) {
             return PolicyVerdict::Allow;
         }
 
-        // 生成 trust_key。
-        let trust_key = build_trust_key(tool_name, args);
-
-        // 检查会话审批记忆（prefix match：批准 "Bash:cargo" → "Bash:cargo test" 也通过）。
+        // 复合 shell 命令必须逐段命中已授予的 trust，不能由第一段放行整条命令。
         {
             let approvals = self.session_approvals.lock().unwrap();
-            if matches_session_approval(&approvals, &trust_key) {
+            if request_matches_session_approval(&approvals, tool_name, args) {
                 return PolicyVerdict::Allow;
             }
         }
 
-        // AutoApprove 模式：匹配 auto_approve_patterns 则放行。
-        if self.mode == PermissionMode::AutoApprove {
-            for pattern in &self.auto_approve_patterns {
-                if pattern.is_match(&trust_key) {
-                    return PolicyVerdict::Allow;
-                }
-            }
+        // AutoApprove 的规则也必须覆盖每个 shell 段。
+        if self.mode == PermissionMode::AutoApprove
+            && patterns_cover_request(&self.auto_approve_patterns, tool_name, args)
+        {
+            return PolicyVerdict::Allow;
         }
 
         // 其余情况需要审批。
         let risk = infer_risk_level(tool_name, args);
         let args_summary = summarize_args(tool_name, args);
+
+        let approvals = self.session_approvals.lock().unwrap();
+        let trust_levels = untrusted_trust_levels(&approvals, tool_name, args);
+        let trust_key = trust_levels
+            .first()
+            .map(|level| level.key.clone())
+            .unwrap_or_else(|| request_trust_key(tool_name, args));
 
         PolicyVerdict::NeedApproval {
             info: ApprovalInfo {
@@ -260,6 +428,7 @@ impl PermissionPolicy {
                 args_summary,
                 risk,
                 trust_key,
+                trust_levels,
             },
         }
     }
@@ -685,66 +854,334 @@ pub fn build_trust_key(tool_name: &str, args: &Value) -> String {
 /// 审批时保存最精确的 key，匹配时检查所有 session approvals 是否是当前 key 的前缀。
 #[doc(hidden)]
 pub fn generate_trust_levels(tool_name: &str, args: &Value) -> Vec<String> {
-    let mut levels = Vec::new();
-    let exact_key = build_trust_key(tool_name, args);
-    levels.push(exact_key.clone());
+    generate_trust_level_options(tool_name, args)
+        .into_iter()
+        .map(|level| level.key)
+        .collect()
+}
 
+/// Generate the scopes shown by the approval UI. Compound commands expose the
+/// independent scopes for their segments so trust can accumulate safely.
+pub fn generate_trust_level_options(tool_name: &str, args: &Value) -> Vec<TrustLevel> {
     match tool_name {
         "Bash" | "bash" => {
-            if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
-                // Generate progressively shorter prefix keys.
-                let words: Vec<&str> = cmd.split_whitespace().collect();
-                for i in (1..words.len()).rev() {
-                    let prefix_cmd = words[..i].join(" ");
-                    let key = format!("{}:{}", tool_name, truncate_str(&prefix_cmd, 40));
-                    if key != exact_key && !levels.contains(&key) {
-                        levels.push(key);
+            let Some(command) = args.get("command").and_then(|value| value.as_str()) else {
+                return Vec::new();
+            };
+            let command = first_effective_line(command);
+            let segments = split_shell_segments(command);
+            let targets = if segments.len() > 1 {
+                segments
+            } else {
+                vec![command]
+            };
+            targets
+                .into_iter()
+                .flat_map(|segment| command_trust_levels(tool_name, segment))
+                .fold(Vec::new(), |mut levels, level| {
+                    if !levels
+                        .iter()
+                        .any(|existing: &TrustLevel| existing.key == level.key)
+                    {
+                        levels.push(level);
                     }
-                }
-
-                // For compound commands, add keys for each segment.
-                let segments = split_shell_segments(cmd);
-                if segments.len() > 1 {
-                    for segment in &segments {
-                        let seg_key = format!("{}:{}", tool_name, truncate_str(segment, 40));
-                        if !levels.contains(&seg_key) {
-                            levels.push(seg_key);
-                        }
-                    }
-                }
-            }
+                    levels
+                })
         }
         "Read" | "Write" | "Edit" | "read" | "write" | "edit" => {
-            if let Some(path) = args.get("file_path").and_then(|v| v.as_str()) {
-                // Add directory-level trust key.
-                if let Some(dir) = std::path::Path::new(path).parent() {
-                    let dir_key = format!("{}:{}/", tool_name, dir.display());
-                    if !levels.contains(&dir_key) {
-                        levels.push(dir_key);
-                    }
-                }
+            let Some(path) = args.get("file_path").and_then(|value| value.as_str()) else {
+                return Vec::new();
+            };
+            let mut levels = vec![TrustLevel {
+                label: path.to_string(),
+                key: format!("{tool_name}:{path}"),
+            }];
+            if let Some(dir) = std::path::Path::new(path).parent() {
+                let dir = format!("{}/", dir.display());
+                levels.push(TrustLevel {
+                    label: format!("{dir}*"),
+                    key: format!("{tool_name}:{dir}"),
+                });
             }
+            levels
         }
-        _ => {}
+        _ => vec![TrustLevel {
+            label: request_trust_key(tool_name, args),
+            key: request_trust_key(tool_name, args),
+        }],
     }
+}
 
+fn command_trust_levels(tool_name: &str, command: &str) -> Vec<TrustLevel> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Vec::new();
+    }
+    let mut levels = vec![TrustLevel {
+        label: command.to_string(),
+        key: format!("{tool_name}:{command}"),
+    }];
+    let words = command.split_whitespace().collect::<Vec<_>>();
+    for count in (1..words.len()).rev() {
+        let prefix = words[..count].join(" ");
+        levels.push(TrustLevel {
+            label: format!("{prefix} *"),
+            key: format!("{tool_name}:{prefix}"),
+        });
+    }
     levels
 }
 
-/// 检查是否有任何 session approval 是给定 trust_key 的前缀匹配。
-///
-/// 例如 session 中批准了 "Bash:cargo test"，则 "Bash:cargo test --release" 也匹配。
-fn matches_session_approval(approvals: &HashSet<String>, trust_key: &str) -> bool {
-    if approvals.contains(trust_key) {
-        return true;
+fn first_effective_line(command: &str) -> &str {
+    command
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .trim()
+}
+
+fn request_trust_key(tool_name: &str, args: &Value) -> String {
+    if matches!(tool_name, "Bash" | "bash") {
+        let command = args
+            .get("command")
+            .and_then(|value| value.as_str())
+            .map(first_effective_line)
+            .unwrap_or_default();
+        return format!("{tool_name}:{command}");
     }
-    // Check if any approved key is a prefix of this trust_key.
-    for approved in approvals {
-        if trust_key.starts_with(approved.as_str()) {
-            return true;
+    build_trust_key(tool_name, args)
+}
+
+fn request_matches_session_approval(
+    approvals: &HashSet<String>,
+    tool_name: &str,
+    args: &Value,
+) -> bool {
+    if matches!(tool_name, "Bash" | "bash") {
+        let Some(command) = args.get("command").and_then(|value| value.as_str()) else {
+            return false;
+        };
+        let command = first_effective_line(command);
+        let segments = split_shell_segments(command);
+        let targets = if segments.len() > 1 {
+            segments
+        } else {
+            vec![command]
+        };
+        return targets
+            .into_iter()
+            .all(|segment| command_matches_session_approval(approvals, tool_name, segment));
+    }
+
+    let trust_key = request_trust_key(tool_name, args);
+    approvals.iter().any(|approved| {
+        approved == &trust_key
+            || (approved.starts_with(&format!("{tool_name}:"))
+                && approved.ends_with('/')
+                && trust_key.starts_with(approved))
+    })
+}
+
+fn command_matches_session_approval(
+    approvals: &HashSet<String>,
+    tool_name: &str,
+    command: &str,
+) -> bool {
+    let prefix = format!("{tool_name}:");
+    approvals.iter().any(|approved| {
+        let Some(approved_command) = approved.strip_prefix(&prefix) else {
+            return false;
+        };
+        command == approved_command
+            || command
+                .strip_prefix(approved_command)
+                .and_then(|suffix| suffix.chars().next())
+                .is_some_and(char::is_whitespace)
+    })
+}
+
+fn patterns_cover_request(patterns: &[Regex], tool_name: &str, args: &Value) -> bool {
+    if !matches!(tool_name, "Bash" | "bash") {
+        return patterns
+            .iter()
+            .any(|pattern| pattern.is_match(&request_trust_key(tool_name, args)));
+    }
+    let Some(command) = args.get("command").and_then(|value| value.as_str()) else {
+        return false;
+    };
+    let command = first_effective_line(command);
+    let segments = split_shell_segments(command);
+    let targets = if segments.len() > 1 {
+        segments
+    } else {
+        vec![command]
+    };
+    targets.into_iter().all(|segment| {
+        let key = format!("{tool_name}:{}", segment.trim());
+        patterns.iter().any(|pattern| pattern.is_match(&key))
+    })
+}
+
+fn untrusted_trust_levels(
+    approvals: &HashSet<String>,
+    tool_name: &str,
+    args: &Value,
+) -> Vec<TrustLevel> {
+    if !matches!(tool_name, "Bash" | "bash") {
+        return generate_trust_level_options(tool_name, args);
+    }
+    let Some(command) = args.get("command").and_then(|value| value.as_str()) else {
+        return Vec::new();
+    };
+    let command = first_effective_line(command);
+    let segments = split_shell_segments(command);
+    let targets = if segments.len() > 1 {
+        segments
+    } else {
+        vec![command]
+    };
+    targets
+        .into_iter()
+        .filter(|segment| !command_matches_session_approval(approvals, tool_name, segment))
+        .flat_map(|segment| command_trust_levels(tool_name, segment))
+        .fold(Vec::new(), |mut levels, level| {
+            if !levels
+                .iter()
+                .any(|existing: &TrustLevel| existing.key == level.key)
+            {
+                levels.push(level);
+            }
+            levels
+        })
+}
+
+fn approval_info(tool_name: &str, args: &Value, trust_levels: Vec<TrustLevel>) -> ApprovalInfo {
+    let trust_levels = if trust_levels.is_empty() {
+        generate_trust_level_options(tool_name, args)
+    } else {
+        trust_levels
+    };
+    let trust_key = trust_levels
+        .first()
+        .map(|level| level.key.clone())
+        .unwrap_or_else(|| request_trust_key(tool_name, args));
+    ApprovalInfo {
+        tool_name: tool_name.to_string(),
+        args_summary: summarize_args(tool_name, args),
+        risk: infer_risk_level(tool_name, args),
+        trust_key,
+        trust_levels,
+    }
+}
+
+fn rules_match_any(rules: &[String], tool_name: &str, args: &Value, workspace_root: &Path) -> bool {
+    request_targets(tool_name, args).iter().any(|target| {
+        rules
+            .iter()
+            .any(|rule| rule_matches(rule, tool_name, target, workspace_root))
+    })
+}
+
+fn rules_cover_request(
+    rules: &[String],
+    tool_name: &str,
+    args: &Value,
+    workspace_root: &Path,
+) -> bool {
+    let targets = request_targets(tool_name, args);
+    !targets.is_empty()
+        && targets.iter().all(|target| {
+            rules
+                .iter()
+                .any(|rule| rule_matches(rule, tool_name, target, workspace_root))
+        })
+}
+
+fn request_targets(tool_name: &str, args: &Value) -> Vec<String> {
+    if matches!(tool_name, "Bash" | "bash") {
+        let Some(command) = args.get("command").and_then(|value| value.as_str()) else {
+            return Vec::new();
+        };
+        return split_shell_segments(first_effective_line(command))
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+    }
+    args.get("file_path")
+        .and_then(|value| value.as_str())
+        .map(|path| vec![path.to_string()])
+        .unwrap_or_default()
+}
+
+fn rule_matches(rule: &str, tool_name: &str, target: &str, workspace_root: &Path) -> bool {
+    let Some((tool, pattern)) = rule.split_once('(') else {
+        return false;
+    };
+    let Some(pattern) = pattern.strip_suffix(')') else {
+        return false;
+    };
+    if tool != "*" && !tool.eq_ignore_ascii_case(tool_name) {
+        return false;
+    }
+    if matches!(tool_name, "Bash" | "bash") {
+        let prefix = pattern.trim_end().strip_suffix('*').map(str::trim_end);
+        return prefix.map_or_else(
+            || target.trim() == pattern.trim(),
+            |prefix| {
+                target.trim() == prefix
+                    || target
+                        .trim()
+                        .strip_prefix(prefix)
+                        .and_then(|suffix| suffix.chars().next())
+                        .is_some_and(char::is_whitespace)
+            },
+        );
+    }
+
+    let target = normalize_rule_path(target, workspace_root);
+    let wildcard = pattern.trim_end().ends_with('*');
+    let pattern = pattern.trim_end().trim_end_matches('*').trim_end();
+    let pattern = normalize_rule_path(pattern, workspace_root);
+    target == pattern || ((wildcard || pattern.ends_with('/')) && target.starts_with(&pattern))
+}
+
+fn normalize_rule_path(path: &str, workspace_root: &Path) -> String {
+    let path = Path::new(path);
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace_root.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            component => normalized.push(component.as_os_str()),
         }
     }
-    false
+    let mut text = normalized.to_string_lossy().replace('\\', "/");
+    if normalized.is_dir() || text.ends_with('/') {
+        text = format!("{}/", text.trim_end_matches('/'));
+    }
+    text
+}
+
+fn trust_key_to_project_rule(trust_key: &str) -> Result<String, String> {
+    let (tool, target) = trust_key
+        .split_once(':')
+        .ok_or_else(|| format!("Invalid trust key: {trust_key}"))?;
+    if target.is_empty() {
+        return Err("Cannot persist an empty trust scope".to_string());
+    }
+    let suffix = if matches!(tool, "Bash" | "bash") {
+        " *"
+    } else {
+        "*"
+    };
+    Ok(format!("{tool}({target}{suffix})"))
 }
 
 /// 生成参数摘要用于审批 UI 展示。

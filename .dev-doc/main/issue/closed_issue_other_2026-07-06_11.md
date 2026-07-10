@@ -3,7 +3,7 @@ source: other
 nums: 1
 ---
 
-- [x] ISSUE-I079：GUI: tool call rows and quota sidebar show misleading data
+- [x] ISSUE-I080：GUI: tool call rows and quota sidebar show misleading data
   - severity: P1
   - location：crates/rozsa-gui/frontend/app.js; crates/rozsa-gui/src/state.rs
   - description：GUI tool call rows display raw internal tool names and flattened previews instead of command-style tool name plus primary argument and folded result. Sidebar quota bars show context/session token values as 5h/weekly quota, which is misleading.

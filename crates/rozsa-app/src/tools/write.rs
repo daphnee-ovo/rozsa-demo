@@ -163,6 +163,8 @@ impl Tool for WriteTool {
                 }],
                 details: json!({
                     "file_path": params.file_path,
+                    "changed_files": [params.file_path],
+                    "success": true,
                     "bytes_written": params.content.len(),
                     "line_count": params.content.lines().count(),
                 }),

@@ -29,6 +29,13 @@ pub struct FileMention {
 pub struct FileReferenceExpansion {
     pub blocks: Vec<ContentBlock>,
     pub display_text: Option<String>,
+    pub notices: Vec<FileReferenceNotice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileReferenceNotice {
+    pub path: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -45,14 +52,38 @@ pub fn expand_file_references(text: &str, cwd: &Path) -> FileReferenceExpansion 
         return FileReferenceExpansion {
             blocks: Vec::new(),
             display_text: None,
+            notices: Vec::new(),
         };
     }
 
     let mut seen = HashSet::new();
     let mut blocks = Vec::new();
+    let mut notices = Vec::new();
+    let workspace = cwd.canonicalize().ok();
     for mention in mentions {
         let path = resolve_mention_path(cwd, &mention.path);
-        if !seen.insert(path.clone()) || !path.exists() {
+        let Ok(path) = path.canonicalize() else {
+            continue;
+        };
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+
+        if is_secret_path(&path) {
+            notices.push(FileReferenceNotice {
+                path: mention.path,
+                reason: "secret-like paths cannot be attached".to_string(),
+            });
+            continue;
+        }
+        if !workspace
+            .as_ref()
+            .is_some_and(|root| path.starts_with(root))
+        {
+            notices.push(FileReferenceNotice {
+                path: mention.path,
+                reason: "only workspace files can be attached".to_string(),
+            });
             continue;
         }
 
@@ -93,6 +124,7 @@ pub fn expand_file_references(text: &str, cwd: &Path) -> FileReferenceExpansion 
             Some(text.to_string())
         },
         blocks,
+        notices,
     }
 }
 
@@ -344,6 +376,29 @@ fn is_unsupported_binary(path: &Path) -> bool {
             .as_deref(),
         Some("pdf" | "doc" | "docx" | "ppt" | "pptx" | "xls" | "xlsx" | "zip" | "gz" | "tar")
     )
+}
+
+fn is_secret_path(path: &Path) -> bool {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if file_name == ".env"
+        || file_name.starts_with(".env.")
+        || matches!(
+            file_name.as_str(),
+            "id_rsa" | "id_ed25519" | "credentials" | "auth.json"
+        )
+    {
+        return true;
+    }
+    path.components().any(|component| {
+        matches!(
+            component.as_os_str().to_str(),
+            Some(".ssh" | ".aws" | ".gnupg" | ".secrets")
+        )
+    })
 }
 
 fn text_block(text: String) -> ContentBlock {

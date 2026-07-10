@@ -7,8 +7,7 @@ use dashmap::DashMap;
 use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::{
-    ApprovalInfo, PendingApprovals, PermissionMode, PermissionPolicy, PermissionResponse,
-    PolicyVerdict,
+    PendingApprovals, PermissionController, PermissionMode, PermissionResponse, PolicyVerdict,
 };
 use rozsa_app::resources::ResourceLoader;
 use rozsa_app::session::manager::SessionManager;
@@ -25,7 +24,7 @@ pub async fn run(args: &Args) -> Result<()> {
     let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let agent_dir = home.join(".rozsa").join("agent");
     let global_settings_path = agent_dir.join("settings.json");
-    let project_settings_path = cwd.join(".claude").join("settings.json");
+    let project_settings_path = cwd.join(".rozsa").join("agent").join("settings.json");
 
     let settings_manager = SettingsManager::load(
         global_settings_path.clone(),
@@ -117,8 +116,9 @@ pub async fn run(args: &Args) -> Result<()> {
     let session_dir = agent_dir.join("sessions").join(format!("-{cwd_encoded}-"));
     std::fs::create_dir_all(&session_dir)?;
 
-    // Handle --continue and --resume
-    let (session_id, session_path, parent_id) = if args.continue_session {
+    // Resolve only a session locator for GUI startup. The GUI owns creating
+    // its initial SessionManager and AgentSession through its own factory.
+    let initial_parent_session = if args.continue_session {
         // Find the most recent session file
         let mut entries: Vec<_> = std::fs::read_dir(&session_dir)?
             .filter_map(|e| e.ok())
@@ -139,9 +139,7 @@ pub async fn run(args: &Args) -> Result<()> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
                 .to_string();
-            let new_session_id = uuid::Uuid::new_v4().to_string();
-            let new_path = session_dir.join(format!("{new_session_id}.jsonl"));
-            (new_session_id, new_path, Some(old_session_id))
+            Some(old_session_id)
         } else {
             anyhow::bail!("No previous session found to continue");
         }
@@ -151,22 +149,10 @@ pub async fn run(args: &Args) -> Result<()> {
         if !existing_path.exists() {
             anyhow::bail!("Session {} not found", resume_id);
         }
-        let new_session_id = uuid::Uuid::new_v4().to_string();
-        let new_path = session_dir.join(format!("{new_session_id}.jsonl"));
-        (new_session_id, new_path, Some(resume_id.clone()))
+        Some(resume_id.clone())
     } else {
-        // Create new session
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let session_path = session_dir.join(format!("{session_id}.jsonl"));
-        (session_id, session_path, None)
+        None
     };
-
-    let session_manager = SessionManager::create_lazy(
-        &session_path,
-        session_id,
-        cwd.to_string_lossy().to_string(),
-        parent_id,
-    );
 
     let thinking_level = if let Some(ref thinking_arg) = args.thinking {
         // Parse --thinking argument
@@ -208,84 +194,126 @@ pub async fn run(args: &Args) -> Result<()> {
         .blocked_commands
         .clone();
 
-    let mut policy = PermissionPolicy::new(
+    let permission_controller = Arc::new(PermissionController::with_project_rules(
         permission_mode,
         auto_approve_patterns,
         allowed_tools,
         blocked_commands,
-    );
-
-    // Persist session approvals to settings file for cross-session reuse.
-    let settings_for_persist = Arc::new(std::sync::Mutex::new(settings_manager.clone()));
-    {
-        let settings_for_cb = settings_for_persist.clone();
-        policy.set_on_approval(Box::new(move |trust_key| {
-            if let Ok(mut mgr) = settings_for_cb.lock() {
-                mgr.add_trusted_pattern(trust_key);
-            }
-        }));
-    }
-
-    let policy = Arc::new(policy);
+        settings_manager.resolved().permissions.deny.clone(),
+        settings_manager.resolved().permissions.ask.clone(),
+        settings_manager.resolved().permissions.allow.clone(),
+        cwd.clone(),
+        settings_manager.clone(),
+    ));
     let pending_approvals: PendingApprovals = Arc::new(DashMap::new());
-    let (perm_req_tx, perm_req_rx) =
-        tokio::sync::mpsc::unbounded_channel::<(String, ApprovalInfo)>();
+    let (perm_req_tx, mut perm_req_rx) =
+        tokio::sync::mpsc::unbounded_channel::<rozsa_gui::state::PermissionRequest>();
 
-    let pre_tool_use_hook = {
-        let policy = policy.clone();
+    let pre_tool_use_factory: rozsa_gui::state::PreToolUseHookFactory = {
+        let controller = permission_controller.clone();
         let pending = pending_approvals.clone();
         let perm_req_tx = perm_req_tx.clone();
-        let hook: Box<
-            dyn Fn(
-                    rozsa_core::config::PreToolUseContext,
-                ) -> std::pin::Pin<
-                    Box<
-                        dyn std::future::Future<
-                                Output = Option<rozsa_core::config::PreToolUseResult>,
-                            > + Send,
-                    >,
-                > + Send
-                + Sync,
-        > = Box::new(move |ctx| {
-            let policy = policy.clone();
+        Arc::new(move |session_id| {
+            let controller = controller.clone();
             let pending = pending.clone();
             let perm_req_tx = perm_req_tx.clone();
-            Box::pin(async move {
-                let verdict = policy.evaluate(&ctx.tool_name, &ctx.args);
-                match verdict {
-                    PolicyVerdict::Allow => None,
-                    PolicyVerdict::Block { reason } => Some(rozsa_core::config::PreToolUseResult {
-                        block: true,
-                        reason: Some(reason),
-                    }),
-                    PolicyVerdict::NeedApproval { info } => {
-                        let (tx, rx) = tokio::sync::oneshot::channel();
-                        let request_id = ctx.tool_call_id.clone();
-                        pending.insert(request_id.clone(), tx);
-                        let _ = perm_req_tx.send((request_id, info));
+            Arc::new(move |ctx| {
+                let controller = controller.clone();
+                let pending = pending.clone();
+                let perm_req_tx = perm_req_tx.clone();
+                let session_id = session_id.clone();
+                Box::pin(async move {
+                    let verdict = controller.evaluate(&session_id, &ctx.tool_name, &ctx.args);
+                    match verdict {
+                        PolicyVerdict::Allow => None,
+                        PolicyVerdict::Block { reason } => {
+                            Some(rozsa_core::config::PreToolUseResult {
+                                block: true,
+                                reason: Some(reason),
+                            })
+                        }
+                        PolicyVerdict::NeedApproval { info } => {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let request_id = ctx.tool_call_id.clone();
+                            pending.insert(
+                                rozsa_gui::state::permission_pending_key(&session_id, &request_id),
+                                tx,
+                            );
+                            let _ = perm_req_tx.send(rozsa_gui::state::PermissionRequest {
+                                session_id: session_id.clone(),
+                                turn_id: ctx
+                                    .assistant_message
+                                    .response_id
+                                    .clone()
+                                    .unwrap_or_else(|| ctx.tool_call_id.clone()),
+                                request_id,
+                                tool_name: ctx.tool_name.clone(),
+                                args: ctx.args.clone(),
+                                info,
+                            });
 
-                        match rx.await {
-                            Ok(PermissionResponse::Allow) => None,
-                            Ok(PermissionResponse::AllowSession { trust_key }) => {
-                                policy.record_session_approval(trust_key);
-                                None
-                            }
-                            Ok(PermissionResponse::Deny) | Err(_) => {
-                                Some(rozsa_core::config::PreToolUseResult {
-                                    block: true,
-                                    reason: Some("Permission denied by user".to_string()),
-                                })
+                            match rx.await {
+                                Ok(PermissionResponse::Allow) => None,
+                                Ok(PermissionResponse::AllowSession { trust_key }) => {
+                                    if let Err(error) =
+                                        controller.record_project_approval(&trust_key)
+                                    {
+                                        return Some(rozsa_core::config::PreToolUseResult {
+                                            block: true,
+                                            reason: Some(format!(
+                                                "Failed to persist project trust: {error}"
+                                            )),
+                                        });
+                                    }
+                                    None
+                                }
+                                Ok(PermissionResponse::Deny) | Err(_) => {
+                                    Some(rozsa_core::config::PreToolUseResult {
+                                        block: true,
+                                        reason: Some("Permission denied by user".to_string()),
+                                    })
+                                }
                             }
                         }
                     }
-                }
+                })
             })
-        });
-        hook
+        })
     };
 
-    let gui_system_prompt = system_prompt.clone();
-    let gui_resources = resources.clone();
+    if args.print && args.prompt.is_none() {
+        anyhow::bail!("--print requires a prompt argument");
+    }
+
+    if args.prompt.is_none() && !args.tui {
+        return rozsa_gui::run(rozsa_gui::GuiConfig {
+            initial_parent_session,
+            model,
+            thinking_level,
+            cwd,
+            settings_manager,
+            model_registry: Some(Arc::new(registry)),
+            session_dir,
+            global_settings_path: Some(global_settings_path),
+            pending_approvals: Some(pending_approvals),
+            permission_request_rx: Some(perm_req_rx),
+            permission_controller,
+            pre_tool_use_factory: Some(pre_tool_use_factory),
+            system_prompt,
+            resources,
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"));
+    }
+
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let session_path = session_dir.join(format!("{session_id}.jsonl"));
+    let session_manager = SessionManager::create_lazy(
+        &session_path,
+        session_id.clone(),
+        cwd.to_string_lossy().to_string(),
+        initial_parent_session,
+    );
 
     let config = AgentSessionConfig {
         model,
@@ -295,15 +323,15 @@ pub async fn run(args: &Args) -> Result<()> {
         session_manager,
         settings_manager,
         resources,
-        pre_tool_use: Some(pre_tool_use_hook),
+        pre_tool_use: Some({
+            let hook = pre_tool_use_factory(session_id.clone());
+            Box::new(move |context| hook(context))
+        }),
+        model_stream: None,
     };
 
     let session = AgentSession::new(config);
     session.register_default_tools(&cwd).await;
-
-    if args.print && args.prompt.is_none() {
-        anyhow::bail!("--print requires a prompt argument");
-    }
 
     if let Some(ref prompt) = args.prompt {
         let events = session.prompt(prompt).await?;
@@ -339,6 +367,13 @@ pub async fn run(args: &Args) -> Result<()> {
     // No prompt — launch interactive GUI (default) or TUI (--tui flag)
     #[cfg(feature = "tui")]
     if args.tui {
+        let (tui_permission_tx, tui_permission_rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(request) = perm_req_rx.recv().await {
+                let id = format!("{}:{}", request.session_id, request.request_id);
+                let _ = tui_permission_tx.send((id, request.info));
+            }
+        });
         return rozsa_tui::app::run_native_with(
             session,
             rozsa_tui::backend::native::NativeBackendConfig {
@@ -346,7 +381,7 @@ pub async fn run(args: &Args) -> Result<()> {
                 session_dir: Some(session_dir),
                 global_settings_path: Some(global_settings_path),
                 pending_approvals: Some(pending_approvals),
-                permission_request_rx: Some(perm_req_rx),
+                permission_request_rx: Some(tui_permission_rx),
             },
         )
         .await
@@ -358,18 +393,7 @@ pub async fn run(args: &Args) -> Result<()> {
         anyhow::bail!("TUI mode not available. Rebuild with --features tui");
     }
 
-    rozsa_gui::run(rozsa_gui::GuiConfig {
-        session,
-        model_registry: Some(Arc::new(registry)),
-        session_dir: Some(session_dir),
-        global_settings_path: Some(global_settings_path),
-        pending_approvals: Some(pending_approvals),
-        permission_request_rx: Some(perm_req_rx),
-        system_prompt: gui_system_prompt,
-        resources: gui_resources,
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("{e}"))
+    anyhow::bail!("No interactive frontend selected")
 }
 
 async fn check_version() {

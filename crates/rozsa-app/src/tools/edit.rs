@@ -302,6 +302,8 @@ impl Tool for EditTool {
                     }],
                     details: json!({
                         "file_path": params.file_path,
+                        "changed_files": [params.file_path],
+                        "success": true,
                         "replacements": replacement_count,
                     }),
                     terminate: false,

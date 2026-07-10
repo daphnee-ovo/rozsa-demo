@@ -3,7 +3,7 @@ source: audit
 nums: 1
 ---
 
-- [x] ISSUE-I083：fix: remove duplicate GUI /quit slash arm
+- [x] ISSUE-I084：fix: remove duplicate GUI /quit slash arm
   - severity: P2
   - location：crates/rozsa-gui/src/commands.rs
   - description：dispatch_slash_command contains duplicate "quit" match arms.

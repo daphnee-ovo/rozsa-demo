@@ -2,16 +2,17 @@
 //
 // 事件转发：每个 Active session tab 有独立的事件监听任务。
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
-use rozsa_app::permissions::ApprovalInfo;
 use rozsa_core::events::AgentEvent;
 
-use crate::state::{GuiState, PermissionEvent, SessionTab, ToolEvent, UiSnapshot};
+use crate::state::{
+    GuiState, PermissionEvent, PermissionRequest, SessionTab, ToolEvent, UiSnapshot,
+    find_tab_index_by_session,
+};
 
-/// 为指定 tab index 的 Active session 启动事件转发任务。
-/// 只有 Active 状态的 tab 才能调用此函数。
-pub fn spawn_event_forwarder_for_tab(app: AppHandle, tab_idx: usize, gui_state: GuiState) {
+/// Start an event forwarder addressed to an immutable session id, not a tab index.
+pub fn spawn_event_forwarder_for_session(app: AppHandle, session_id: String, gui_state: GuiState) {
     let tabs = gui_state.tabs.clone();
     let active_tab = gui_state.active_tab.clone();
     let shared = gui_state.shared.clone();
@@ -20,7 +21,9 @@ pub fn spawn_event_forwarder_for_tab(app: AppHandle, tab_idx: usize, gui_state: 
         // 获取该 tab 的 agent 的 event receiver
         let rx = {
             let tabs_guard = tabs.lock().await;
-            match tabs_guard.get(tab_idx) {
+            match find_tab_index_by_session(&tabs_guard, &session_id)
+                .and_then(|index| tabs_guard.get(index))
+            {
                 Some(SessionTab::Active { agent, .. }) => agent.subscribe(),
                 _ => return,
             }
@@ -30,6 +33,20 @@ pub fn spawn_event_forwarder_for_tab(app: AppHandle, tab_idx: usize, gui_state: 
         loop {
             match rx.recv().await {
                 Ok(event) => {
+                    let (changed, turn_id) = {
+                        let mut tabs_guard = tabs.lock().await;
+                        let Some(index) = find_tab_index_by_session(&tabs_guard, &session_id)
+                        else {
+                            break;
+                        };
+                        let Some(SessionTab::Active { live, .. }) = tabs_guard.get_mut(index)
+                        else {
+                            break;
+                        };
+                        let changed = live.apply(&event);
+                        (changed, live.turn_id)
+                    };
+
                     // 工具事件单独推送
                     match &event {
                         AgentEvent::ToolExecutionStart {
@@ -40,6 +57,8 @@ pub fn spawn_event_forwarder_for_tab(app: AppHandle, tab_idx: usize, gui_state: 
                             let _ = app.emit(
                                 "tool-event",
                                 ToolEvent::Start {
+                                    session_id: session_id.clone(),
+                                    turn_id,
                                     id: tool_call_id.clone(),
                                     name: tool_name.clone(),
                                     args: args.clone(),
@@ -66,32 +85,28 @@ pub fn spawn_event_forwarder_for_tab(app: AppHandle, tab_idx: usize, gui_state: 
                             let _ = app.emit(
                                 "tool-event",
                                 ToolEvent::End {
+                                    session_id: session_id.clone(),
+                                    turn_id,
                                     id: tool_call_id.clone(),
                                     name: tool_name.clone(),
                                     success: !result.is_error,
                                     output,
+                                    details: result.details.clone(),
                                 },
                             );
                         }
                         _ => {}
                     }
 
-                    // 累积事件到该 tab 的 LiveState
-                    let changed = {
-                        let mut tabs_guard = tabs.lock().await;
-                        if let Some(SessionTab::Active { live, .. }) = tabs_guard.get_mut(tab_idx) {
-                            live.apply(&event)
-                        } else {
-                            false
-                        }
-                    };
-
-                    // 只有当前正在看这个 tab 时才 emit 给前端
+                    // Only emit a snapshot when this immutable session is active.
                     if changed {
                         let current_active = *active_tab.lock().await;
-                        if current_active == tab_idx {
-                            let tabs_guard = tabs.lock().await;
-                            if let Some(tab) = tabs_guard.get(tab_idx) {
+                        let tabs_guard = tabs.lock().await;
+                        if tabs_guard
+                            .get(current_active)
+                            .is_some_and(|tab| tab.session_id() == session_id)
+                        {
+                            if let Some(tab) = tabs_guard.get(current_active) {
                                 let snapshot = UiSnapshot::from_tab(tab, &shared);
                                 let _ = app.emit("ui-state", &snapshot);
                             }
@@ -100,7 +115,9 @@ pub fn spawn_event_forwarder_for_tab(app: AppHandle, tab_idx: usize, gui_state: 
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("GUI event forwarder for tab {tab_idx} lagged by {n} events");
+                    tracing::warn!(
+                        "GUI event forwarder for session {session_id} lagged by {n} events"
+                    );
                 }
             }
         }
@@ -110,16 +127,29 @@ pub fn spawn_event_forwarder_for_tab(app: AppHandle, tab_idx: usize, gui_state: 
 /// 权限请求监听
 pub fn spawn_permission_listener(
     app: AppHandle,
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<(String, ApprovalInfo)>,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<PermissionRequest>,
 ) {
     tokio::spawn(async move {
-        while let Some((request_id, info)) = rx.recv().await {
+        while let Some(request) = rx.recv().await {
+            let context_key =
+                crate::state::permission_pending_key(&request.session_id, &request.request_id);
+            app.state::<GuiState>().pending_permission_contexts.insert(
+                context_key,
+                crate::state::PendingPermissionContext {
+                    tool_name: request.tool_name.clone(),
+                    args: request.args.clone(),
+                    info: request.info.clone(),
+                },
+            );
             let event = PermissionEvent {
-                id: request_id,
-                tool: info.tool_name.clone(),
-                summary: info.args_summary.clone(),
-                risk: format!("{:?}", info.risk),
-                trust_key: info.trust_key.clone(),
+                session_id: request.session_id,
+                turn_id: request.turn_id,
+                request_id: request.request_id,
+                tool: request.info.tool_name.clone(),
+                summary: request.info.args_summary.clone(),
+                risk: format!("{:?}", request.info.risk),
+                trust_key: request.info.trust_key.clone(),
+                trust_levels: request.info.trust_levels.clone(),
             };
             let _ = app.emit("permission-request", &event);
         }

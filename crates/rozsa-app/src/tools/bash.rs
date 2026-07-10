@@ -3,7 +3,7 @@ use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::select;
@@ -24,9 +24,13 @@ struct BashParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BashDetails {
+    command: String,
     exit_code: Option<i32>,
+    success: bool,
+    timed_out: bool,
     truncated: bool,
     timeout_ms: u64,
+    duration_ms: u64,
 }
 
 pub struct BashTool {
@@ -239,9 +243,11 @@ impl Tool for BashTool {
             .map_err(|e| ToolError::Execution(format!("Invalid parameters: {}", e)))?;
 
         let timeout_ms = params.timeout.unwrap_or(DEFAULT_TIMEOUT_MS);
+        let started_at = Instant::now();
 
         let result =
             Self::execute_command(&params.command, &self.working_dir, timeout_ms, signal).await;
+        let duration_ms = started_at.elapsed().as_millis() as u64;
 
         match result {
             Ok((mut output, exit_code, truncated)) => {
@@ -265,9 +271,13 @@ impl Tool for BashTool {
                 };
 
                 let details = serde_json::to_value(BashDetails {
+                    command: params.command,
                     exit_code,
+                    success: exit_code == Some(0) && !truncated,
+                    timed_out: false,
                     truncated,
                     timeout_ms,
+                    duration_ms,
                 })
                 .unwrap_or(json!({}));
 
@@ -283,15 +293,20 @@ impl Tool for BashTool {
             Err(error_msg) => {
                 // Return error as tool result content (not ToolError)
                 // This matches the TypeScript behavior of returning errors as text
+                let timed_out = error_msg.contains("Command timed out after ");
                 Ok(ToolResult {
                     content: vec![ContentBlock::Text {
                         text: error_msg,
                         signature: None,
                     }],
                     details: json!({
+                        "command": params.command,
                         "exit_code": null,
+                        "success": false,
+                        "timed_out": timed_out,
                         "truncated": false,
                         "timeout_ms": timeout_ms,
+                        "duration_ms": duration_ms,
                     }),
                     terminate: false,
                 })

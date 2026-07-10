@@ -43,6 +43,15 @@ impl Default for RetrySettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionSettings {
+    /// User-configured rules. Evaluation order is deny, ask, then allow.
+    #[serde(default)]
+    pub deny: Vec<String>,
+    #[serde(default)]
+    pub ask: Vec<String>,
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// Legacy mode retained for settings compatibility. Explicit rules always
+    /// take precedence over this fallback.
     pub mode: String,
     pub auto_approve_patterns: Vec<String>,
     pub allowed_tools: Vec<String>,
@@ -52,6 +61,9 @@ pub struct PermissionSettings {
 impl Default for PermissionSettings {
     fn default() -> Self {
         Self {
+            deny: Vec::new(),
+            ask: Vec::new(),
+            allow: Vec::new(),
             mode: "on-request".to_string(),
             auto_approve_patterns: Vec::new(),
             allowed_tools: Vec::new(),
@@ -74,6 +86,7 @@ pub struct Settings {
     pub hide_thinking: bool,
     pub steering_mode: String,
     pub follow_up_mode: String,
+    #[serde(rename = "permission", alias = "permissions")]
     pub permissions: PermissionSettings,
     pub context_window_preferences: HashMap<String, u64>,
     pub lsp_mode: String,
@@ -124,6 +137,7 @@ pub struct PartialSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow_up_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "permission", alias = "permissions")]
     pub permissions: Option<PartialPermissionSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window_preferences: Option<HashMap<String, u64>>,
@@ -159,6 +173,12 @@ pub struct PartialRetrySettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartialPermissionSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deny: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ask: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

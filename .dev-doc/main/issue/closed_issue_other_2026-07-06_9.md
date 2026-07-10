@@ -3,7 +3,7 @@ source: other
 nums: 1
 ---
 
-- [x] ISSUE-I077：GUI: Responses reasoning summary, settings persistence, thinking state, and input chrome glitches
+- [x] ISSUE-I078：GUI: Responses reasoning summary, settings persistence, thinking state, and input chrome glitches
   - severity: P1
   - location：crates/rozsa-gui/frontend/app.js; crates/rozsa-model/src/providers/openai_responses
   - description：GUI has follow-up failures after Codex OAuth integration: Responses replay misses summary item type, selected model does not persist across restart, streaming block cursor renders at the end instead of after latest text, THINKING does not settle to THINKED duration, and focused composer shows an internal divider line.

@@ -24,8 +24,10 @@ let invoke, listen;
 let sessions = [];
 let models = [];
 let currentPermissionId = null;
+let currentPermissionSessionId = null;
 let currentPermissionTrustKey = null;
-// 权限请求关联到 session（path → permissionEvent）
+let permissionDisplayInFlight = false;
+// 权限请求按 session id 分队列，避免后台 tab 覆盖当前 tab 的审批。
 let pendingPermissions = {};
 let toolCounts = {};
 let currentSettings = null;
@@ -136,12 +138,14 @@ function renderState(snap) {
   isStreaming = !!snap.isStreaming;
   if (wasStreaming && !isStreaming) chatAutoScrollPaused = false;
   // 记录当前活跃 session 的 streaming 状态
-  if (sessions[activeSessionIdx]) {
-    sessionStreamingState[sessions[activeSessionIdx].path] = isStreaming;
+  if (snap.sessionId) {
+    const approvals = pendingPermissions[snap.sessionId] || [];
+    sessionStreamingState[snap.sessionId] = approvals.length ? 'approval' : (isStreaming ? 'running' : 'idle');
   }
   updateHeader(snap);
   updateSidebar(snap);
   renderMessages(snap.messages, snap.isStreaming);
+  renderTurnActivity(snap.turnActivity);
   updateAbortButton();
   renderSessionList();
 }
@@ -618,6 +622,31 @@ function handleToolEvent(ev) {
   if (ev.type === 'Start') trackTool(ev.name);
 }
 
+function renderTurnActivity(activity) {
+  const el = document.getElementById('turnActivity');
+  if (!el) return;
+  const files = activity && activity.changedFiles ? activity.changedFiles : [];
+  const verification = activity && activity.verification;
+  if (!files.length && !verification) {
+    el.innerHTML = '';
+    el.hidden = true;
+    return;
+  }
+  const fileSummary = files.length
+    ? '<div><span class="turn-activity-label">Changed</span> ' + files.map(escapeHtml).join(', ') + '</div>'
+    : '';
+  const verificationSummary = verification
+    ? '<div><span class="turn-activity-label">Verify</span> <code>' + escapeHtml(verification.command) +
+      '</code> · ' + (verification.success ? 'passed' : 'failed') +
+      (verification.exitCode !== null && verification.exitCode !== undefined ? ' (exit ' + verification.exitCode + ')' : '') +
+      (verification.timedOut ? ' · timed out' : '') +
+      (verification.truncated ? ' · output truncated' : '') +
+      (verification.durationMs ? ' · ' + verification.durationMs + 'ms' : '') + '</div>'
+    : '';
+  el.innerHTML = fileSummary + verificationSummary;
+  el.hidden = false;
+}
+
 function trackTool(name) {
   if (!name) return;
   toolCounts[name] = (toolCounts[name] || 0) + 1;
@@ -649,24 +678,50 @@ function toolIcon(name) {
 // =============== Permissions ===============
 
 function showPermission(ev) {
-  // 权限请求关联到正在跑 agent 的 session（用 activeSessionIdx 当时的 path）
-  // 因为权限请求只会在 agent 运行中产生，此时 activeSessionIdx 可能已经切走了
-  // 存储请求，只有切回对应 session 时才显示面板
-  const permSessionPath = sessions[activeSessionIdx] ? sessions[activeSessionIdx].path : '__current__';
-  pendingPermissions[permSessionPath] = ev;
-  // 如果当前就在看这个 session，立即显示
-  displayPermPanelIfNeeded();
+  if (!ev.session_id) return;
+  const queue = pendingPermissions[ev.session_id] || [];
+  queue.push(ev);
+  pendingPermissions[ev.session_id] = queue;
+  sessionStreamingState[ev.session_id] = 'approval';
+  schedulePermPanelDisplay();
 }
 
-function displayPermPanelIfNeeded() {
-  const currentPath = sessions[activeSessionIdx] ? sessions[activeSessionIdx].path : '__current__';
-  const ev = pendingPermissions[currentPath];
+function schedulePermPanelDisplay() {
+  void displayPermPanelIfNeeded();
+}
+
+async function displayPermPanelIfNeeded() {
+  if (permissionDisplayInFlight) return;
+  permissionDisplayInFlight = true;
+  try {
+  while (true) {
+  const currentSessionId = sessions[activeSessionIdx] ? sessions[activeSessionIdx].id : null;
+  const queue = currentSessionId ? pendingPermissions[currentSessionId] : null;
+  const ev = queue && queue[0];
   if (!ev) {
     hidePermPanel();
     return;
   }
-  currentPermissionId = ev.id;
-  currentPermissionTrustKey = ev.trust_key || ev.trustKey || null;
+  let refreshed;
+  try {
+    refreshed = await invoke('prepare_permission', { sessionId: ev.session_id, id: ev.request_id });
+  } catch (e) {
+    console.error('prepare_permission:', e);
+    return;
+  }
+  if (!refreshed) {
+    pendingPermissions[ev.session_id] = queue.filter(item => item.request_id !== ev.request_id);
+    if (!pendingPermissions[ev.session_id].length) delete pendingPermissions[ev.session_id];
+    continue;
+  }
+  ev.trust_key = refreshed.trust_key;
+  ev.trust_levels = refreshed.trust_levels;
+  currentPermissionId = ev.request_id;
+  currentPermissionSessionId = ev.session_id;
+  const trustLevels = Array.isArray(ev.trust_levels)
+    ? ev.trust_levels
+    : (Array.isArray(ev.trustLevels) ? ev.trustLevels : []);
+  currentPermissionTrustKey = (trustLevels[0] && trustLevels[0].key) || ev.trust_key || ev.trustKey || null;
   const panel = document.getElementById('permPanel');
   if (!panel) return;
   const risk = document.getElementById('permRisk');
@@ -677,23 +732,61 @@ function displayPermPanelIfNeeded() {
   if (tool) tool.textContent = ev.tool || '—';
   if (cmd) cmd.textContent = ev.command || ev.summary || '—';
   if (desc) desc.textContent = ev.description || ev.summary || '—';
+  renderPermissionTrustLevels(trustLevels);
   panel.classList.add('visible');
   document.getElementById('msgInput').style.display = 'none';
+  return;
+  }
+  } finally {
+    permissionDisplayInFlight = false;
+  }
+}
+
+function renderPermissionTrustLevels(levels) {
+  const scope = document.getElementById('permTrustScope');
+  const select = document.getElementById('permTrustLevel');
+  if (!scope || !select) return;
+  select.replaceChildren();
+  if (!levels.length) {
+    scope.hidden = true;
+    return;
+  }
+  for (const level of levels) {
+    if (!level || !level.key) continue;
+    const option = document.createElement('option');
+    option.value = level.key;
+    option.textContent = level.label || level.key;
+    select.appendChild(option);
+  }
+  scope.hidden = select.options.length === 0;
+  if (select.options.length) currentPermissionTrustKey = select.value;
+}
+
+function selectPermissionTrustLevel(trustKey) {
+  currentPermissionTrustKey = trustKey || null;
 }
 
 async function respondPermission(choice) {
   if (!currentPermissionId) return;
   try {
     await invoke('respond_permission', {
+      sessionId: currentPermissionSessionId,
       id: currentPermissionId,
       choice: choice,
       trustKey: choice === 'allow-session' ? currentPermissionTrustKey : null,
     });
   } catch (e) { console.error('respond_permission:', e); }
   // 清除该 session 的 pending permission
-  const currentPath = sessions[activeSessionIdx] ? sessions[activeSessionIdx].path : '__current__';
-  delete pendingPermissions[currentPath];
+  if (currentPermissionSessionId) {
+    const queue = pendingPermissions[currentPermissionSessionId] || [];
+    pendingPermissions[currentPermissionSessionId] = queue.filter(ev => ev.request_id !== currentPermissionId);
+    if (!pendingPermissions[currentPermissionSessionId].length) {
+      delete pendingPermissions[currentPermissionSessionId];
+      sessionStreamingState[currentPermissionSessionId] = 'running';
+    }
+  }
   hidePermPanel();
+  schedulePermPanelDisplay();
 }
 
 function hidePermPanel() {
@@ -702,7 +795,12 @@ function hidePermPanel() {
   const input = document.getElementById('msgInput');
   if (input) { input.style.display = ''; input.focus(); }
   currentPermissionId = null;
+  currentPermissionSessionId = null;
   currentPermissionTrustKey = null;
+  const scope = document.getElementById('permTrustScope');
+  const select = document.getElementById('permTrustLevel');
+  if (scope) scope.hidden = true;
+  if (select) select.replaceChildren();
 }
 
 // =============== Send Message & Slash Command Dispatch ===============
@@ -869,7 +967,7 @@ function renderSessionList() {
   el.innerHTML = sessions.map((s, i) =>
     '<div class="session-item' + (i === activeSessionIdx ? ' active' : '') + '" data-path="' + escapeHtml(s.path) +
     '" onclick="doSwitchSession(' + i + ')">' +
-    '<span class="session-status ' + (sessionStreamingState[s.path] ? 'running' : 'idle') + '"></span>' +
+    '<span class="session-status ' + (sessionStreamingState[s.id] || 'idle') + '"></span>' +
     '<div class="session-name">' + escapeHtml(s.name || s.first_message || 'Untitled') + '</div>' +
     '<div class="session-meta"><span>' + escapeHtml(formatSessionDate(s.modified || s.last_modified)) + '</span>' +
     '</div></div>'
