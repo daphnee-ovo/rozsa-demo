@@ -148,3 +148,6 @@ Rules:
 ## User Override
 
 If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overriding. Only then execute their instructions.
+
+# Other
+- GUI 新元素的增加不应该破坏原有风格
