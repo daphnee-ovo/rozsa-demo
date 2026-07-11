@@ -53,6 +53,7 @@ let renderedMessageKeys = [];
 let renderedRawMessageCount = 0;
 let renderedTurnActivityKey = '';
 let expandedToolCallsBySession = {};
+let expandedThinkingBySession = {};
 let thinkingStartTimes = {};
 let thinkingDurations = {};
 let renderedQueueKey = '';
@@ -442,6 +443,26 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
     container.replaceChildren();
     firstChanged = 0;
   }
+  let patchedThinking = false;
+  if (sameSession && firstChanged === activeStreamIndex && activeStreamIndex >= 0) {
+    patchedThinking = patchStreamingThinking(
+      container,
+      activeStreamIndex,
+      visibleMessages[activeStreamIndex],
+      thinkingDurationForIndex(activeStreamIndex),
+    );
+    if (patchedThinking) firstChanged = -1;
+  }
+
+  let preservedThinkingExpanded = false;
+  if (firstChanged >= 0 && container.children[firstChanged]) {
+    preservedThinkingExpanded = container.children[firstChanged]
+      .querySelector('.thinking-block')?.classList.contains('expanded') === true;
+    if (preservedThinkingExpanded) {
+      expandedThinkingBySession[thinkingStateKey(sessionId, firstChanged)] = true;
+    }
+  }
+
   if (firstChanged >= 0) {
     while (container.children.length > firstChanged) container.lastChild.remove();
     for (let i = firstChanged; i < visibleMessages.length; i++) {
@@ -451,6 +472,7 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
         i === activeStreamIndex,
         activityForVisibleIndex(i),
         thinkingDurationForIndex(i),
+        isThinkingExpanded(sessionId, i),
       ));
     }
   }
@@ -542,7 +564,7 @@ function restoreSessionViewState(sessionId, container, savedView) {
   });
 }
 
-function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null) {
+function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false) {
   const div = document.createElement('div');
 
   if (raw.kind === 'custom') {
@@ -590,7 +612,7 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
       const thinkingDuration = thinkingActive || thinkingDurationMs === null
         ? ''
         : formatThinkingDuration(thinkingDurationMs);
-      body += '<div class="thinking-block' + (thinkingActive ? ' active' : '') + '"><div class="thinking-header" onclick="toggleThinking(this)">' +
+      body += '<div class="thinking-block' + (thinkingActive ? ' active' : '') + (thinkingExpanded ? ' expanded' : '') + '"><div class="thinking-header" role="button" tabindex="0" aria-expanded="' + String(thinkingExpanded) + '" onclick="toggleThinking(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();toggleThinking(this)}">' +
         '<svg class="thinking-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1.5C5 1.5 3 3.5 3 6c0 1.5.8 2.7 2 3.5V12a1 1 0 001 1h4a1 1 0 001-1V9.5c1.2-.8 2-2 2-3.5 0-2.5-2-4.5-5-4.5z"/><path d="M6 14.5h4"/></svg>' +
         '<span class="thinking-label">' + thinkingLabel + '</span>' +
         (thinkingDuration ? '<span class="thinking-duration">' + thinkingDuration + '</span>' : '') +
@@ -763,6 +785,44 @@ function activeStreamMessageIndex(messages, visibleMessages, streaming) {
   const latestBlock = content[content.length - 1];
   if (!latestBlock || (latestBlock.type !== 'text' && latestBlock.type !== 'thinking')) return -1;
   return visibleMessages.lastIndexOf(latest);
+}
+
+function thinkingStateKey(sessionId, index) {
+  return String(sessionId || '') + ':' + String(index);
+}
+
+function isThinkingExpanded(sessionId, index) {
+  return expandedThinkingBySession[thinkingStateKey(sessionId, index)] === true;
+}
+
+function patchStreamingThinking(container, index, raw, thinkingDurationMs) {
+  const messageEl = container.children[index];
+  const block = messageEl && messageEl.querySelector('.thinking-block');
+  const message = raw && raw.message;
+  if (!block || !message || message.role !== 'assistant') return false;
+  const content = message.content || [];
+  const thinking = extractThinking(content);
+  const latestType = content.length ? content[content.length - 1].type : '';
+  if (!thinking || latestType !== 'thinking') return false;
+
+  const label = block.querySelector('.thinking-label');
+  const duration = block.querySelector('.thinking-duration');
+  const markdown = block.querySelector('.thinking-markdown');
+  if (label) label.textContent = 'THINKING';
+  if (duration) duration.remove();
+  if (thinkingDurationMs !== null && thinkingDurationMs !== undefined) {
+    const nextDuration = document.createElement('span');
+    nextDuration.className = 'thinking-duration';
+    nextDuration.textContent = formatThinkingDuration(thinkingDurationMs);
+    const header = block.querySelector('.thinking-header');
+    const chevron = block.querySelector('.thinking-chevron');
+    if (header && chevron) header.insertBefore(nextDuration, chevron);
+  }
+  if (markdown) markdown.innerHTML = renderMarkdown(thinking);
+  block.classList.add('active');
+  const contentEl = block.querySelector('.thinking-content');
+  if (contentEl) contentEl.setAttribute('data-stream-cursor-target', 'thinking');
+  return true;
 }
 
 function attachStreamCursor(messageEl) {
@@ -2142,7 +2202,14 @@ function toggleToolCall(el) {
 
 function toggleThinking(header) {
   const block = header.closest('.thinking-block');
-  if (block) block.classList.toggle('expanded');
+  if (!block) return;
+  const expanded = block.classList.toggle('expanded');
+  header.setAttribute('aria-expanded', String(expanded));
+  const message = block.closest('.msg');
+  const container = document.getElementById('chatMessages');
+  if (message && container && activeSessionId) {
+    expandedThinkingBySession[thinkingStateKey(activeSessionId, [...container.children].indexOf(message))] = expanded;
+  }
 }
 
 function showError(message) {
