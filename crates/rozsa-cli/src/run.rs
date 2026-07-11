@@ -235,6 +235,13 @@ pub async fn run(args: &Args) -> Result<()> {
                             })
                         }
                         PolicyVerdict::NeedApproval { info } => {
+                            let description = ctx
+                                .context
+                                .tools
+                                .iter()
+                                .find(|tool| tool.name == ctx.tool_name)
+                                .map(|tool| tool.description.clone())
+                                .unwrap_or_default();
                             let (tx, rx) = tokio::sync::oneshot::channel();
                             let request_id = ctx.tool_call_id.clone();
                             pending.insert(
@@ -250,6 +257,7 @@ pub async fn run(args: &Args) -> Result<()> {
                                     .unwrap_or_else(|| ctx.tool_call_id.clone()),
                                 request_id,
                                 tool_name: ctx.tool_name.clone(),
+                                description,
                                 args: ctx.args.clone(),
                                 info,
                             });

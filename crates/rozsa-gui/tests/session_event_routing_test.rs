@@ -49,6 +49,7 @@ fn all_gui_event_payloads_preserve_the_origin_session_id() {
         turn_id: "turn-1".to_string(),
         request_id: "tool-1".to_string(),
         tool: "write".to_string(),
+        description: "Write a file".to_string(),
         summary: "write src/lib.rs".to_string(),
         risk: "Write".to_string(),
         trust_key: "write:src/lib.rs".to_string(),
@@ -73,6 +74,10 @@ fn all_gui_event_payloads_preserve_the_origin_session_id() {
     assert_eq!(
         serde_json::to_value(&permission).unwrap()["session_id"],
         session_id
+    );
+    assert_eq!(
+        serde_json::to_value(&permission).unwrap()["description"],
+        "Write a file"
     );
     assert_eq!(
         serde_json::to_value(&permission).unwrap()["trust_levels"][0]["key"],

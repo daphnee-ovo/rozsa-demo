@@ -47,6 +47,7 @@ pub struct PermissionRequest {
     pub turn_id: String,
     pub request_id: String,
     pub tool_name: String,
+    pub description: String,
     pub args: serde_json::Value,
     pub info: rozsa_app::permissions::ApprovalInfo,
 }
@@ -652,6 +653,7 @@ pub struct PermissionEvent {
     pub turn_id: String,
     pub request_id: String,
     pub tool: String,
+    pub description: String,
     pub summary: String,
     pub risk: String,
     pub trust_key: String,

@@ -171,6 +171,7 @@ pub fn spawn_permission_listener(
                 turn_id: request.turn_id,
                 request_id: request.request_id,
                 tool: request.info.tool_name.clone(),
+                description: request.description,
                 summary: request.info.args_summary.clone(),
                 risk: format!("{:?}", request.info.risk),
                 trust_key: request.info.trust_key.clone(),

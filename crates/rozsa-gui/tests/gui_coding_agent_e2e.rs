@@ -140,6 +140,7 @@ fn approval_factory(
                         turn_id,
                         request_id,
                         tool_name: ctx.tool_name.clone(),
+                        description: "Edit a file".to_string(),
                         args: ctx.args.clone(),
                         info: ApprovalInfo {
                             tool_name: "edit".to_string(),

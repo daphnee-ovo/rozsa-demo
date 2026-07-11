@@ -1008,11 +1008,28 @@ async function displayPermPanelIfNeeded() {
       const risk = document.getElementById('permRisk');
       const tool = document.getElementById('permTool');
       const cmd = document.getElementById('permCmd');
+      const cmdToggle = document.getElementById('permCmdToggle');
       const desc = document.getElementById('permDesc');
       if (risk) risk.textContent = ev.risk || 'Shell';
       if (tool) tool.textContent = ev.tool || '—';
-      if (cmd) cmd.textContent = ev.command || ev.summary || '—';
-      if (desc) desc.textContent = ev.description || ev.summary || '—';
+      const command = ev.command || ev.summary || '—';
+      if (cmd) {
+        cmd.innerHTML = renderPermissionCommand(command, ev.tool || '');
+        cmd.classList.remove('expanded');
+        cmd.classList.add('collapsed');
+      }
+      if (cmdToggle) {
+        cmdToggle.hidden = true;
+        cmdToggle.setAttribute('aria-expanded', 'false');
+        cmdToggle.textContent = '展开全部命令';
+      }
+      if (desc) desc.textContent = ev.description || '—';
+      if (cmd && cmdToggle) {
+        requestAnimationFrame(() => {
+          const overflowing = cmd.scrollHeight > cmd.clientHeight + 1;
+          cmdToggle.hidden = !overflowing;
+        });
+      }
       if (currentPermissionTrustIndex >= 0) renderPermissionTrustPage();
       else showPermissionMainPage();
       panel.classList.add('visible');
@@ -1024,6 +1041,32 @@ async function displayPermPanelIfNeeded() {
   } finally {
     permissionDisplayInFlight = false;
   }
+}
+
+function togglePermissionCommand() {
+  const cmd = document.getElementById('permCmd');
+  const toggle = document.getElementById('permCmdToggle');
+  if (!cmd || !toggle) return;
+  const expanded = cmd.classList.toggle('expanded');
+  cmd.classList.toggle('collapsed', !expanded);
+  toggle.setAttribute('aria-expanded', String(expanded));
+  toggle.textContent = expanded ? '收起命令' : '展开全部命令';
+}
+
+function renderPermissionCommand(command, toolName) {
+  if (!command) return '—';
+  if (toolName.toLowerCase() !== 'bash') return escapeHtml(command);
+  return command
+    .split(/([;\n|&]+)/)
+    .map(part => {
+      if (/^[;\n|&]+$/.test(part)) return escapeHtml(part);
+      const match = /^(\s*)([A-Za-z_][\w.-]*)([\s\S]*)$/.exec(part);
+      if (!match) return escapeHtml(part);
+      const [, leading, executable, rest] = match;
+      const flags = escapeHtml(rest).replace(/(^|\s)(--?[A-Za-z0-9][\w-]*)/g, '$1<span class="perm-syn-flag">$2</span>');
+      return escapeHtml(leading) + '<span class="perm-syn-command">' + escapeHtml(executable) + '</span>' + flags;
+    })
+    .join('');
 }
 
 function showPermissionMainPage() {

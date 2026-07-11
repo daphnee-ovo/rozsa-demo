@@ -1222,7 +1222,42 @@ body {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--fg);
-  word-break: break-all;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+  max-height: 132px;
+}
+.perm-panel-cmd.collapsed {
+  overflow: hidden;
+}
+.perm-panel-cmd.expanded {
+  max-height: min(46vh, 520px);
+}
+.perm-panel-cmd .perm-syn-command {
+  color: oklch(48% 0.13 35);
+  font-weight: 650;
+}
+.perm-panel-cmd .perm-syn-flag {
+  color: oklch(48% 0.11 250);
+}
+.perm-panel-cmd-toggle {
+  align-self: flex-start;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+.perm-panel-cmd-toggle:hover { text-decoration: underline; }
+.perm-panel-cmd-toggle[hidden] { display: none; }
+.perm-panel-description-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .perm-panel-desc {
   font-size: 12px;
@@ -1888,7 +1923,9 @@ button:focus-visible, .session-item:focus-visible,
               <span class="perm-panel-risk" id="permRisk">—</span>
               <span class="perm-panel-tool" id="permTool">—</span>
             </div>
-            <div class="perm-panel-cmd" id="permCmd">—</div>
+            <div class="perm-panel-cmd collapsed" id="permCmd">—</div>
+            <button class="perm-panel-cmd-toggle" id="permCmdToggle" type="button" aria-expanded="false" onclick="togglePermissionCommand()" hidden>展开全部命令</button>
+            <p class="perm-panel-description-label">Description</p>
             <p class="perm-panel-desc" id="permDesc">—</p>
           </div>
           <div class="perm-panel-page" id="permPanelMain">
