@@ -44,7 +44,7 @@ fn free_permission_allows_non_blocked_commands_only() {
 fn read_tools_auto_allow_in_on_request_mode() {
     let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
 
-    let read_args = serde_json::json!({"file_path": "/src/main.rs"});
+    let read_args = serde_json::json!({"file_path": "src/main.rs"});
     assert!(matches!(
         policy.evaluate("Read", &read_args),
         PolicyVerdict::Allow
@@ -52,6 +52,12 @@ fn read_tools_auto_allow_in_on_request_mode() {
     assert!(matches!(
         policy.evaluate("read", &read_args),
         PolicyVerdict::Allow
+    ));
+
+    let outside_read_args = serde_json::json!({"file_path": "/src/main.rs"});
+    assert!(matches!(
+        policy.evaluate("Read", &outside_read_args),
+        PolicyVerdict::NeedApproval { .. }
     ));
 
     let grep_args = serde_json::json!({"pattern": "TODO", "path": "/src"});

@@ -115,11 +115,12 @@ impl PermissionController {
 
     pub fn evaluate(&self, session_id: &str, tool_name: &str, args: &Value) -> PolicyVerdict {
         let config = self.config.read().unwrap().clone();
-        let policy = PermissionPolicy::new(
+        let policy = PermissionPolicy::with_workspace_root(
             config.mode,
             config.auto_approve_patterns,
             config.allowed_tools,
             config.blocked_commands,
+            self.workspace_root.clone(),
         );
         let verdict = policy.evaluate(tool_name, args);
         if matches!(verdict, PolicyVerdict::Block { .. }) {
@@ -352,7 +353,8 @@ pub type PendingApprovals = Arc<DashMap<String, oneshot::Sender<PermissionRespon
 // Read-only tool whitelist (auto-allow without prompting)
 // ---------------------------------------------------------------------------
 
-const WORKSPACE_READ_TOOLS: &[&str] = &["Read", "Grep", "Ls", "Find", "read", "grep", "ls", "find"];
+const WORKSPACE_READ_TOOLS: &[&str] = &["Grep", "Ls", "Find", "grep", "ls", "find"];
+const SAFE_SHELL_COMMANDS: &[&str] = &["head", "tail", "cat", "grep", "sort"];
 
 // ---------------------------------------------------------------------------
 // PermissionPolicy
@@ -370,6 +372,7 @@ pub struct PermissionPolicy {
     auto_approve_patterns: Vec<Regex>,
     allowed_tools: Vec<String>,
     blocked_commands: Vec<String>,
+    workspace_root: PathBuf,
     session_approvals: Mutex<HashSet<String>>,
     on_approval: Option<OnApprovalCallback>,
 }
@@ -386,6 +389,23 @@ impl PermissionPolicy {
         allowed_tools: Vec<String>,
         blocked_commands: Vec<String>,
     ) -> Self {
+        Self::with_workspace_root(
+            mode,
+            auto_approve_patterns,
+            allowed_tools,
+            blocked_commands,
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        )
+    }
+
+    /// Create a policy with an explicit project root for path-scoped approvals.
+    pub fn with_workspace_root(
+        mode: PermissionMode,
+        auto_approve_patterns: Vec<String>,
+        allowed_tools: Vec<String>,
+        blocked_commands: Vec<String>,
+        workspace_root: PathBuf,
+    ) -> Self {
         let blacklist = build_hardcoded_blacklist();
 
         let auto_approve_patterns = auto_approve_patterns
@@ -399,6 +419,7 @@ impl PermissionPolicy {
             auto_approve_patterns,
             allowed_tools,
             blocked_commands,
+            workspace_root,
             session_approvals: Mutex::new(HashSet::new()),
             on_approval: None,
         }
@@ -442,8 +463,15 @@ impl PermissionPolicy {
             return PolicyVerdict::Allow;
         }
 
-        // 工作区只读工具自动放行（不需要用户审批）。
-        if WORKSPACE_READ_TOOLS.contains(&tool_name) {
+        // 工作区只读工具自动放行（不需要用户审批）。Read 还必须留在项目目录内。
+        if Self::is_workspace_read_request(tool_name, args, &self.workspace_root)
+            || WORKSPACE_READ_TOOLS.contains(&tool_name)
+        {
+            return PolicyVerdict::Allow;
+        }
+
+        // 只对没有副作用的常见读取命令自动放行。其余 Bash 命令（包括 echo）仍需审批。
+        if Self::is_safe_readonly_bash_request(tool_name, args, &self.workspace_root) {
             return PolicyVerdict::Allow;
         }
 
@@ -487,6 +515,191 @@ impl PermissionPolicy {
                 trust_groups,
             },
         }
+    }
+
+    fn is_workspace_read_request(tool_name: &str, args: &Value, workspace_root: &Path) -> bool {
+        if !matches!(tool_name, "Read" | "read") {
+            return false;
+        }
+        let Some(path) = args
+            .get("file_path")
+            .or_else(|| args.get("path"))
+            .and_then(Value::as_str)
+        else {
+            return false;
+        };
+        Self::path_is_within_workspace(path, workspace_root)
+    }
+
+    fn is_safe_readonly_bash_request(
+        tool_name: &str,
+        args: &Value,
+        workspace_root: &Path,
+    ) -> bool {
+        if !matches!(tool_name, "Bash" | "bash") {
+            return false;
+        }
+        let Some(command) = args.get("command").and_then(Value::as_str) else {
+            return false;
+        };
+        let command = command.trim();
+        if command.is_empty()
+            || command
+                .chars()
+                .any(|ch| matches!(ch, '\n' | '\r' | ';' | '&' | '<' | '>' | '$' | '`' | '(' | ')' | '\\' | '*' | '?' | '[' | ']'))
+        {
+            return false;
+        }
+
+        let segments = command.split('|').map(str::trim).collect::<Vec<_>>();
+        !segments.is_empty()
+            && segments
+                .iter()
+                .all(|segment| Self::safe_readonly_shell_segment(segment, workspace_root))
+    }
+
+    fn safe_readonly_shell_segment(segment: &str, workspace_root: &Path) -> bool {
+        let tokens = segment.split_whitespace().collect::<Vec<_>>();
+        let Some(executable) = tokens.first().copied() else {
+            return false;
+        };
+        if !SAFE_SHELL_COMMANDS.contains(&executable) {
+            return false;
+        }
+        if executable == "tail"
+            && tokens
+                .iter()
+                .skip(1)
+                .any(|token| matches!(*token, "-f" | "-F" | "--follow"))
+        {
+            return false;
+        }
+        if tokens
+            .iter()
+            .skip(1)
+            .any(|token| Self::is_write_option(executable, token))
+        {
+            return false;
+        }
+
+        let mut positional = Vec::new();
+        let mut option_value = false;
+        let mut end_options = false;
+        for token in tokens.iter().skip(1) {
+            if option_value {
+                if !Self::path_is_within_workspace(token, workspace_root) && *token != "-" {
+                    return false;
+                }
+                option_value = false;
+                continue;
+            }
+            if !end_options && *token == "--" {
+                end_options = true;
+                continue;
+            }
+            if !end_options && token.starts_with('-') {
+                if executable == "grep" && matches!(*token, "-f" | "--file") {
+                    option_value = true;
+                } else if executable == "grep" && token.starts_with("--file=") {
+                    let path = token.trim_start_matches("--file=");
+                    if !Self::path_is_within_workspace(path, workspace_root) && path != "-" {
+                        return false;
+                    }
+                }
+                continue;
+            }
+            positional.push(*token);
+        }
+        if option_value {
+            return false;
+        }
+
+        let paths = if executable == "grep" {
+            positional.into_iter().skip(1).collect::<Vec<_>>()
+        } else {
+            positional
+        };
+        paths
+            .into_iter()
+            .all(|path| path == "-" || Self::path_is_within_workspace(path, workspace_root))
+    }
+
+    fn is_write_option(executable: &str, token: &str) -> bool {
+        match executable {
+            "sort" => {
+                token == "-o"
+                    || token == "--output"
+                    || token.starts_with("-o")
+                    || token.starts_with("--output=")
+                    || token == "-T"
+                    || token.starts_with("-T")
+                    || token == "--temporary-directory"
+                    || token.starts_with("--temporary-directory=")
+            }
+            _ => false,
+        }
+    }
+
+    fn path_is_within_workspace(path: &str, workspace_root: &Path) -> bool {
+        let root = Self::canonicalize_with_missing(workspace_root)
+            .unwrap_or_else(|| Self::lexical_normalize(workspace_root));
+        let candidate = Self::resolve_scoped_path(path, workspace_root);
+        candidate == root || candidate.starts_with(&root)
+    }
+
+    fn resolve_scoped_path(path: &str, workspace_root: &Path) -> PathBuf {
+        let path = Self::expand_home_path(path);
+        let candidate = if path.is_absolute() {
+            path
+        } else {
+            workspace_root.join(path)
+        };
+        Self::canonicalize_with_missing(&candidate)
+            .unwrap_or_else(|| Self::lexical_normalize(&candidate))
+    }
+
+    fn expand_home_path(path: &str) -> PathBuf {
+        if path == "~" {
+            return dirs_next::home_dir().unwrap_or_else(|| PathBuf::from(path));
+        }
+        if let Some(rest) = path.strip_prefix("~/") {
+            if let Some(home) = dirs_next::home_dir() {
+                return home.join(rest);
+            }
+        }
+        PathBuf::from(path)
+    }
+
+    fn canonicalize_with_missing(path: &Path) -> Option<PathBuf> {
+        let mut current = path.to_path_buf();
+        let mut missing = Vec::new();
+        while !current.exists() {
+            missing.push(current.file_name()?.to_os_string());
+            let parent = current.parent()?.to_path_buf();
+            if parent == current {
+                return None;
+            }
+            current = parent;
+        }
+        let mut resolved = current.canonicalize().ok()?;
+        for component in missing.iter().rev() {
+            resolved.push(component);
+        }
+        Some(resolved)
+    }
+
+    fn lexical_normalize(path: &Path) -> PathBuf {
+        let mut normalized = PathBuf::new();
+        for component in path.components() {
+            match component {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    normalized.pop();
+                }
+                component => normalized.push(component.as_os_str()),
+            }
+        }
+        normalized
     }
 
     /// 记录会话级审批：后续相同 trust_key 自动放行。
