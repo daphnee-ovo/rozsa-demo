@@ -38,7 +38,7 @@ use rozsa_core::tool::{Tool, ToolExecutionMode};
 use rozsa_model::event_stream::EventStream;
 use rozsa_model::types::{
     CacheRetention, ContentBlock, Message, Model, SimpleStreamOptions, StreamOptions,
-    ThinkingLevel, ToolSchema, Transport, UserContent, UserMessage,
+    ThinkingLevel, ToolSchema, Transport, Usage, UserContent, UserMessage,
 };
 
 use crate::resources::LoadedResources;
@@ -378,7 +378,16 @@ impl AgentSession {
         let stream = agent_loop(vec![user_msg], context, loop_config, Some(cancel_token));
 
         let events = self.drain_and_broadcast(stream).await;
-        self.persist_new_messages(&events).await?;
+        if let Err(error) = self.persist_new_messages(&events).await {
+            *self.cancel_token.lock().await = None;
+            self.is_running.store(false, Ordering::SeqCst);
+            return Err(error);
+        }
+        if let Err(error) = self.maybe_auto_compact().await {
+            *self.cancel_token.lock().await = None;
+            self.is_running.store(false, Ordering::SeqCst);
+            return Err(error);
+        }
 
         *self.cancel_token.lock().await = None;
         self.is_running.store(false, Ordering::SeqCst);
@@ -415,7 +424,16 @@ impl AgentSession {
         let stream = agent_loop_continue(context, loop_config, Some(cancel_token));
 
         let events = self.drain_and_broadcast(stream).await;
-        self.persist_new_messages(&events).await?;
+        if let Err(error) = self.persist_new_messages(&events).await {
+            *self.cancel_token.lock().await = None;
+            self.is_running.store(false, Ordering::SeqCst);
+            return Err(error);
+        }
+        if let Err(error) = self.maybe_auto_compact().await {
+            *self.cancel_token.lock().await = None;
+            self.is_running.store(false, Ordering::SeqCst);
+            return Err(error);
+        }
 
         *self.cancel_token.lock().await = None;
         self.is_running.store(false, Ordering::SeqCst);
@@ -563,9 +581,14 @@ impl AgentSession {
 
     /// Run compaction: abort loop, summarize old messages, replace history.
     pub async fn compact(&self) -> Result<crate::compaction::CompactionResult> {
-        use crate::compaction::{CompactionEngine, CompactionTrigger};
-
         self.is_compacting.store(true, Ordering::SeqCst);
+        let result = self.compact_inner().await;
+        self.is_compacting.store(false, Ordering::SeqCst);
+        result
+    }
+
+    async fn compact_inner(&self) -> Result<crate::compaction::CompactionResult> {
+        use crate::compaction::{CompactionEngine, CompactionTrigger};
 
         // Abort running loop if any
         if self.is_running() {
@@ -581,10 +604,10 @@ impl AgentSession {
         });
 
         let entries = self.session_manager.lock().await.entries();
-        let plan = engine.prepare(&entries);
+        let context_tokens = self.latest_context_tokens().await;
+        let plan = engine.prepare_with_context(&entries, context_tokens);
 
         let Some(plan) = plan else {
-            self.is_compacting.store(false, Ordering::SeqCst);
             anyhow::bail!("Nothing to compact — token usage below threshold");
         };
 
@@ -595,8 +618,10 @@ impl AgentSession {
         drop(runtime);
 
         let credentials = resolve_credentials(&model).await?;
+        let model_stream = self.model_stream.clone();
         let summarize_fn = |content: String| {
             let model = model.clone();
+            let model_stream = model_stream.clone();
             let api_key = credentials.api_key.clone();
             let headers = merge_headers(model.headers.clone(), credentials.headers.clone());
             async move {
@@ -638,7 +663,7 @@ impl AgentSession {
                     thinking_budgets: None,
                     tool_choice: None,
                 };
-                let mut stream = rozsa_model::stream::stream_simple(&model, &context, &options);
+                let mut stream = model_stream(&model, &context, &options);
                 let mut result_text = String::new();
                 while let Some(event) = stream.next().await {
                     if let rozsa_model::types::StreamEvent::Done { message, .. } = event {
@@ -689,8 +714,32 @@ impl AgentSession {
             .collect();
         drop(messages);
 
-        self.is_compacting.store(false, Ordering::SeqCst);
         Ok(result)
+    }
+
+    async fn maybe_auto_compact(&self) -> Result<()> {
+        let settings = self.static_config.settings_manager.resolved().clone();
+        if !settings.compaction.enabled {
+            return Ok(());
+        }
+        let context_tokens = self.latest_context_tokens().await;
+        if context_tokens < settings.compaction.threshold_tokens {
+            return Ok(());
+        }
+        self.compact().await.map(|_| ())
+    }
+
+    async fn latest_context_tokens(&self) -> u64 {
+        self.messages
+            .lock()
+            .await
+            .iter()
+            .rev()
+            .find_map(|message| match message.as_standard()? {
+                Message::Assistant(assistant) => Some(usage_context_tokens(&assistant.usage)),
+                _ => None,
+            })
+            .unwrap_or(0)
     }
 
     // --- Phase D: Runtime state ---
@@ -1048,8 +1097,19 @@ fn should_stop_for_compaction(ctx: &ShouldStopContext, threshold_tokens: u64) ->
     if !ctx.tool_results.is_empty() {
         return false;
     }
-    let latest_input = ctx.message.usage.input;
-    latest_input >= threshold_tokens
+    usage_context_tokens(&ctx.message.usage) >= threshold_tokens
+}
+
+fn usage_context_tokens(usage: &Usage) -> u64 {
+    let reported_prompt_tokens = usage.total_tokens.saturating_sub(usage.output);
+    if reported_prompt_tokens > 0 {
+        reported_prompt_tokens
+    } else {
+        usage
+            .input
+            .saturating_add(usage.cache_read)
+            .saturating_add(usage.cache_write)
+    }
 }
 
 /// Build the default model stream that delegates to rozsa_model's provider registry.

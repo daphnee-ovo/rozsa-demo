@@ -473,17 +473,15 @@ impl UiSnapshot {
             .filter_map(|m| serde_json::to_value(m).ok())
             .collect();
 
-        let mut uncached_input_tokens: u64 = 0;
-        let mut cached_input_tokens: u64 = 0;
-        let mut output_tokens: u64 = 0;
+        let mut session_input_tokens: u64 = 0;
+        let mut session_output_tokens: u64 = 0;
         for msg in tab.messages() {
             if let Some(rozsa_model::types::Message::Assistant(a)) = msg.as_standard() {
-                uncached_input_tokens += a.usage.input;
-                cached_input_tokens += a.usage.cache_read + a.usage.cache_write;
-                output_tokens += a.usage.output;
+                let context_tokens = usage_context_tokens(&a.usage);
+                session_input_tokens += context_tokens;
+                session_output_tokens += a.usage.output;
             }
         }
-        let input_tokens = uncached_input_tokens + cached_input_tokens;
 
         let model_guard = shared.model.try_lock().unwrap_or_else(|_| unreachable!());
         let model_info = ModelInfo {
@@ -500,11 +498,7 @@ impl UiSnapshot {
         let thinking_str = format!("{:?}", *thinking).to_lowercase();
         drop(thinking);
 
-        let context_percent = if context_window > 0 {
-            (input_tokens as f64 / context_window as f64) * 100.0
-        } else {
-            0.0
-        };
+        let context_usage = context_usage_from_messages(tab.messages(), context_window);
 
         Self {
             session_id: tab.session_id(),
@@ -519,19 +513,11 @@ impl UiSnapshot {
             session_name: None,
             cwd: shared.cwd.to_string_lossy().to_string(),
             git: (!stream_update).then(|| git_status(&shared.cwd)).flatten(),
-            context_usage: ContextUsage {
-                percent: context_percent,
-                tokens: input_tokens,
-                context_window,
-                input_tokens,
-                uncached_input_tokens,
-                cached_input_tokens,
-                output_tokens,
-            },
+            context_usage: context_usage.clone(),
             runtime_state: RuntimeState {
-                prompt_tokens: input_tokens,
-                completion_tokens: output_tokens,
-                session_total_tokens: input_tokens + output_tokens,
+                prompt_tokens: context_usage.input_tokens,
+                completion_tokens: context_usage.output_tokens,
+                session_total_tokens: session_input_tokens + session_output_tokens,
             },
             turn_activity: match tab {
                 SessionTab::Active { live, .. } if live.interaction_active => {
@@ -550,6 +536,52 @@ impl UiSnapshot {
             },
             stream_update,
         }
+    }
+}
+
+pub fn context_usage_from_messages(
+    messages: &[AgentMessage],
+    context_window: usize,
+) -> ContextUsage {
+    let usage = messages.iter().rev().find_map(|message| match message.as_standard()? {
+        rozsa_model::types::Message::Assistant(assistant) => Some(&assistant.usage),
+        _ => None,
+    });
+    let (input_tokens, uncached_input_tokens, cached_input_tokens, output_tokens) = usage
+        .map(|usage| {
+            (
+                usage_context_tokens(usage),
+                usage.input,
+                usage.cache_read + usage.cache_write,
+                usage.output,
+            )
+        })
+        .unwrap_or((0, 0, 0, 0));
+    let percent = if context_window > 0 {
+        (input_tokens as f64 / context_window as f64) * 100.0
+    } else {
+        0.0
+    };
+    ContextUsage {
+        percent,
+        tokens: input_tokens,
+        context_window,
+        input_tokens,
+        uncached_input_tokens,
+        cached_input_tokens,
+        output_tokens,
+    }
+}
+
+fn usage_context_tokens(usage: &rozsa_model::types::Usage) -> u64 {
+    let reported_prompt_tokens = usage.total_tokens.saturating_sub(usage.output);
+    if reported_prompt_tokens > 0 {
+        reported_prompt_tokens
+    } else {
+        usage
+            .input
+            .saturating_add(usage.cache_read)
+            .saturating_add(usage.cache_write)
     }
 }
 

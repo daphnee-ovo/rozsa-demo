@@ -42,20 +42,38 @@ impl CompactionEngine {
     }
 
     pub fn should_compact(&self, context_tokens: u64) -> bool {
-        context_tokens > self.trigger.threshold_tokens
+        context_tokens >= self.trigger.threshold_tokens
     }
 
     pub fn prepare(&self, entries: &[SessionEntry]) -> Option<CompactionPlan> {
+        let estimated_tokens = entries.iter().map(estimate_entry_tokens).sum();
+        self.prepare_with_context(entries, estimated_tokens)
+    }
+
+    /// Prepare a plan using provider-reported context usage when available.
+    /// Serialized session entries are only a fallback estimate and can be much
+    /// smaller than the actual prompt after tools, system instructions, and
+    /// cached context are included.
+    pub fn prepare_with_context(
+        &self,
+        entries: &[SessionEntry],
+        context_tokens: u64,
+    ) -> Option<CompactionPlan> {
         if entries.is_empty() {
             return None;
         }
 
         let total_tokens: u64 = entries.iter().map(|e| estimate_entry_tokens(e)).sum();
-        if total_tokens <= self.trigger.threshold_tokens {
+        if context_tokens < self.trigger.threshold_tokens
+            && total_tokens < self.trigger.threshold_tokens
+        {
             return None;
         }
 
-        let keep_tokens = self.trigger.target_tokens;
+        let keep_tokens = self
+            .trigger
+            .target_tokens
+            .min(self.trigger.threshold_tokens.saturating_sub(1));
         let mut kept = 0u64;
         let mut cut_index = entries.len();
 
@@ -85,7 +103,7 @@ impl CompactionEngine {
         Some(CompactionPlan {
             cut_point_index: cut_index,
             entries_to_remove,
-            estimated_tokens_before: total_tokens,
+            estimated_tokens_before: total_tokens.max(context_tokens),
         })
     }
 
