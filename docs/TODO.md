@@ -9,6 +9,12 @@
 - p0 分析codex cli，真实实现codex oauth
 - ban 掉其他oauth（无法实际测试）
 
+## 延迟项（2026-07-12）
+
+- **GUI packaging and update configuration**（原 TASK-T086）— 暂不处理跨平台安装包、更新配置和签名 endpoint；待发布渠道与平台前置条件明确后再拆任务。
+- **Agent loop async hooks**（原 ISSUE-I033）— 暂不处理同步 hook 改为 async 的接口设计；待明确 compaction、context transform 和 steering queue 的异步需求后再排期。
+- **Package Manager**（原 ISSUE-I057）— 暂不实现扩展/技能安装管理；npm/git 支持范围、包格式、锁文件和离线行为尚未确认。
+
 ## 长线规划（从 TS 差距审计转入）
 
 - **Provider: 7 个 provider 缺失** — OpenAI Responses (WebSocket)、OpenAI Codex Responses、Google Gemini、Google Vertex AI、Mistral、Azure OpenAI Responses、Cloudflare。参考：legacy-ts/packages/ai/src/providers/

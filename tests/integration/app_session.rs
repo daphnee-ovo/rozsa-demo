@@ -56,6 +56,7 @@ async fn agent_session_creates_and_registers_tools() {
         settings_manager,
         resources: LoadedResources::default(),
         pre_tool_use: None,
+        model_stream: None,
     };
 
     let session = AgentSession::new(config);
