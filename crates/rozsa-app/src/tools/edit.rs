@@ -277,6 +277,7 @@ impl Tool for EditTool {
         let params: EditParams = serde_json::from_value(params)
             .map_err(|e| ToolError::Execution(format!("Invalid parameters: {}", e)))?;
 
+        let before = super::file_delta::read_text_if_present(Path::new(&params.file_path));
         let result = Self::edit_file(
             &params.file_path,
             &params.old_string,
@@ -287,6 +288,12 @@ impl Tool for EditTool {
 
         match result {
             Ok(message) => {
+                let after = super::file_delta::read_text_if_present(Path::new(&params.file_path));
+                let delta = super::file_delta::build_file_delta(
+                    params.file_path.clone(),
+                    before,
+                    after,
+                );
                 let replacement_count = if params.replace_all {
                     // Count occurrences in original file (we don't have it here, so we'll use a placeholder)
                     // In a real implementation, we'd need to read the file again or pass this info from edit_file
@@ -305,6 +312,8 @@ impl Tool for EditTool {
                         "changed_files": [params.file_path],
                         "success": true,
                         "replacements": replacement_count,
+                        "file_deltas": delta.into_iter().collect::<Vec<_>>(),
+                        "capture_complete": true,
                     }),
                     terminate: false,
                 })

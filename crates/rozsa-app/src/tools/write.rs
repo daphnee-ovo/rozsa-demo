@@ -153,10 +153,17 @@ impl Tool for WriteTool {
         let params: WriteParams = serde_json::from_value(params)
             .map_err(|e| ToolError::Execution(format!("Invalid parameters: {}", e)))?;
 
+        let before = super::file_delta::read_text_if_present(Path::new(&params.file_path));
         let result = Self::write_file(&params.file_path, &params.content).await;
 
         match result {
-            Ok(message) => Ok(ToolResult {
+            Ok(message) => {
+                let delta = super::file_delta::build_file_delta(
+                    params.file_path.clone(),
+                    before,
+                    Some(params.content.clone()),
+                );
+                Ok(ToolResult {
                 content: vec![ContentBlock::Text {
                     text: message,
                     signature: None,
@@ -167,9 +174,12 @@ impl Tool for WriteTool {
                     "success": true,
                     "bytes_written": params.content.len(),
                     "line_count": params.content.lines().count(),
+                    "file_deltas": delta.into_iter().collect::<Vec<_>>(),
+                    "capture_complete": true,
                 }),
                 terminate: false,
-            }),
+                })
+            }
             Err(error_msg) => Err(ToolError::Execution(error_msg)),
         }
     }

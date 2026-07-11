@@ -3,6 +3,7 @@ use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::process::Stdio;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -31,6 +32,9 @@ struct BashDetails {
     truncated: bool,
     timeout_ms: u64,
     duration_ms: u64,
+    file_deltas: Vec<super::file_delta::FileDelta>,
+    capture_complete: bool,
+    capture_limitation: Option<String>,
 }
 
 pub struct BashTool {
@@ -244,10 +248,24 @@ impl Tool for BashTool {
 
         let timeout_ms = params.timeout.unwrap_or(DEFAULT_TIMEOUT_MS);
         let started_at = Instant::now();
+        let workspace = PathBuf::from(&self.working_dir);
+        let before_root = workspace.clone();
+        let before = tokio::task::spawn_blocking(move || {
+            super::file_delta::snapshot_workspace(&before_root)
+        })
+        .await
+        .map_err(|error| ToolError::Execution(format!("Failed to snapshot workspace: {error}")))?;
 
         let result =
             Self::execute_command(&params.command, &self.working_dir, timeout_ms, signal).await;
         let duration_ms = started_at.elapsed().as_millis() as u64;
+        let after = tokio::task::spawn_blocking(move || {
+            super::file_delta::snapshot_workspace(&workspace)
+        })
+        .await
+        .map_err(|error| ToolError::Execution(format!("Failed to snapshot workspace: {error}")))?;
+        let (file_deltas, capture_complete, capture_limitation) =
+            super::file_delta::diff_snapshots(before, after);
 
         match result {
             Ok((mut output, exit_code, truncated)) => {
@@ -278,6 +296,9 @@ impl Tool for BashTool {
                     truncated,
                     timeout_ms,
                     duration_ms,
+                    file_deltas,
+                    capture_complete,
+                    capture_limitation,
                 })
                 .unwrap_or(json!({}));
 
@@ -307,6 +328,9 @@ impl Tool for BashTool {
                         "truncated": false,
                         "timeout_ms": timeout_ms,
                         "duration_ms": duration_ms,
+                        "file_deltas": file_deltas,
+                        "capture_complete": capture_complete,
+                        "capture_limitation": capture_limitation,
                     }),
                     terminate: false,
                 })
