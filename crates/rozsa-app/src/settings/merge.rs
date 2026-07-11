@@ -35,6 +35,10 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
             .follow_up_mode
             .clone()
             .unwrap_or_else(|| base.follow_up_mode.clone()),
+        running_send_mode: overlay
+            .running_send_mode
+            .clone()
+            .unwrap_or_else(|| base.running_send_mode.clone()),
         permissions: merge_permissions(&base.permissions, overlay.permissions.as_ref()),
         context_window_preferences: overlay
             .context_window_preferences

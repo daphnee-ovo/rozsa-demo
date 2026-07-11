@@ -13,7 +13,6 @@ path = "src/main.rs"
 rozsa-app = { path = "../rozsa-app" }
 rozsa-core = { path = "../rozsa-core" }
 rozsa-model = { path = "../rozsa-model" }
-rozsa-tui = { path = "../rozsa-tui", optional = true }
 rozsa-gui = { path = "../rozsa-gui" }
 clap = { workspace = true }
 tokio = { workspace = true }
@@ -26,6 +25,5 @@ dashmap = "6"
 serde_json = { workspace = true }
 reqwest = { workspace = true }
 
-[features]
-default = []
-tui = ["dep:rozsa-tui"]
+[dev-dependencies]
+tempfile = "3"

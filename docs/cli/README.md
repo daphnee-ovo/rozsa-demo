@@ -9,9 +9,9 @@
 - 初始化 model registry 与认证
 - 创建 session manager
 - 构建 `AgentSession`
-- 启动 TUI 或执行单次 prompt
+- 启动 GUI 或执行单次 prompt
 
-`rozsa-cli` 是应用程序的引导层，将 `rozsa-app`、`rozsa-core`、`rozsa-model` 和 `rozsa-tui` 组装成可运行的 CLI 工具。
+`rozsa-cli` 是应用程序的引导层，将 `rozsa-app`、`rozsa-core`、`rozsa-model` 和 `rozsa-gui` 组装成可运行的 CLI 工具。原生 TUI 已移至 `legacy/`，`--tui` 会明确报错。
 
 ---
 
@@ -168,23 +168,13 @@ if let Some(ref prompt) = args.prompt {
 }
 ```
 
-**交互模式** (未提供 prompt):
+**交互模式** (未提供 prompt 且未指定 `--tui`):
 
 ```rust
-rozsa_tui::app::run_native_with(
-    session,
-    rozsa_tui::backend::native::NativeBackendConfig {
-        model_registry: Some(Arc::new(registry)),
-        session_dir: Some(session_dir),
-        global_settings_path: Some(global_settings_path),
-        pending_approvals: Some(pending_approvals),
-        permission_request_rx: Some(perm_req_rx),
-    },
-)
-.await
+rozsa_gui::run(rozsa_gui::GuiConfig { /* GUI runtime resources */ }).await
 ```
 
-启动基于 `rozsa-tui` 的交互式终端界面。
+启动 GUI。`--tui` 仅保留为迁移期错误提示，不再加载 legacy TUI。
 
 ---
 
@@ -279,7 +269,7 @@ rozsa-cli
   ├─ rozsa-app     (初始化 AgentSession, SessionManager, PermissionPolicy)
   ├─ rozsa-core    (AgentEvent, PreToolUseContext)
   ├─ rozsa-model   (ModelRegistry, providers, types::Message)
-  └─ rozsa-tui     (run_native_with 启动 TUI)
+  └─ rozsa-gui     (run 启动 GUI)
 ```
 
 ### 调用链
@@ -297,7 +287,7 @@ main.rs
       ├─ AgentSession::new()
       ├─ session.register_default_tools()
       └─ 如果无 prompt:
-          └─ rozsa_tui::app::run_native_with(session, backend_config)
+          └─ rozsa_gui::run(gui_config)
       └─ 如果有 prompt:
           └─ session.prompt(prompt).await
 ```
@@ -311,7 +301,7 @@ main.rs
 | `rozsa-app` | `SettingsManager`, `ResourceLoader` | 配置与资源加载 |
 | `rozsa-model` | `ModelRegistry`, `Message` | 模型解析与消息类型 |
 | `rozsa-core` | `AgentEvent`, `PreToolUseContext` | 事件流与 hook 上下文 |
-| `rozsa-tui` | `run_native_with`, `NativeBackendConfig` | TUI 启动 |
+| `rozsa-gui` | `run`, `GuiConfig` | GUI 启动 |
 
 ---
 
@@ -463,7 +453,7 @@ let hook: Box<dyn Fn(PreToolUseContext) -> ...> = Box::new(move |ctx| {
 
 - [rozsa-app API 文档](../rozsa-app/README.md) — `AgentSession`、`PermissionPolicy` 等核心组件
 - [rozsa-model API 文档](../rozsa-model/README.md) — `ModelRegistry`、Provider 注册
-- [rozsa-tui API 文档](../rozsa-tui/README.md) — TUI 启动与 Backend
+- [GUI 使用文档](../gui/UI_USAGE_GUIDELINES.md) — GUI 交互约定
 - [rozsa-core API 文档](../rozsa-core/README.md) — Agent Loop、事件流
 
 ---

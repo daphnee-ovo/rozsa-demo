@@ -19,7 +19,9 @@ use crate::args::Args;
 pub async fn run(args: &Args) -> Result<()> {
     rozsa_model::providers::register_builtin_providers();
 
-    let cwd = std::env::current_dir()?;
+    let process_cwd = std::env::current_dir()?;
+    let (cwd, prompt) =
+        crate::args::resolve_positional_input(args.prompt.as_deref(), &process_cwd, args.print)?;
 
     let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let agent_dir = home.join(".rozsa").join("agent");
@@ -69,7 +71,7 @@ pub async fn run(args: &Args) -> Result<()> {
         Some(m) => m,
         None => {
             // prompt/print 模式必须有模型
-            if args.prompt.is_some() || args.print {
+            if prompt.is_some() || args.print {
                 anyhow::bail!(
                     "No model available. Add model configs to ~/.rozsa/models/ or <project>/.rozsa/models/, or specify --model."
                 );
@@ -206,7 +208,7 @@ pub async fn run(args: &Args) -> Result<()> {
         settings_manager.clone(),
     ));
     let pending_approvals: PendingApprovals = Arc::new(DashMap::new());
-    let (perm_req_tx, mut perm_req_rx) =
+    let (perm_req_tx, perm_req_rx) =
         tokio::sync::mpsc::unbounded_channel::<rozsa_gui::state::PermissionRequest>();
 
     let pre_tool_use_factory: rozsa_gui::state::PreToolUseHookFactory = {
@@ -273,6 +275,12 @@ pub async fn run(args: &Args) -> Result<()> {
                                         reason: Some("Permission denied by user".to_string()),
                                     })
                                 }
+                                Ok(PermissionResponse::DenyWithHint { hint }) => {
+                                    Some(rozsa_core::config::PreToolUseResult {
+                                        block: true,
+                                        reason: Some(format!("Permission denied by user. {hint}")),
+                                    })
+                                }
                             }
                         }
                     }
@@ -281,11 +289,11 @@ pub async fn run(args: &Args) -> Result<()> {
         })
     };
 
-    if args.print && args.prompt.is_none() {
+    if args.print && prompt.is_none() {
         anyhow::bail!("--print requires a prompt argument");
     }
 
-    if args.prompt.is_none() && !args.tui {
+    if prompt.is_none() && !args.tui {
         return rozsa_gui::run(rozsa_gui::GuiConfig {
             initial_parent_session,
             model,
@@ -333,7 +341,7 @@ pub async fn run(args: &Args) -> Result<()> {
     let session = AgentSession::new(config);
     session.register_default_tools(&cwd).await;
 
-    if let Some(ref prompt) = args.prompt {
+    if let Some(ref prompt) = prompt {
         let events = session.prompt(prompt).await?;
 
         match args.output_format {
@@ -364,33 +372,8 @@ pub async fn run(args: &Args) -> Result<()> {
         return Ok(());
     }
 
-    // No prompt — launch interactive GUI (default) or TUI (--tui flag)
-    #[cfg(feature = "tui")]
     if args.tui {
-        let (tui_permission_tx, tui_permission_rx) = tokio::sync::mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(request) = perm_req_rx.recv().await {
-                let id = format!("{}:{}", request.session_id, request.request_id);
-                let _ = tui_permission_tx.send((id, request.info));
-            }
-        });
-        return rozsa_tui::app::run_native_with(
-            session,
-            rozsa_tui::backend::native::NativeBackendConfig {
-                model_registry: Some(Arc::new(registry)),
-                session_dir: Some(session_dir),
-                global_settings_path: Some(global_settings_path),
-                pending_approvals: Some(pending_approvals),
-                permission_request_rx: Some(tui_permission_rx),
-            },
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"));
-    }
-
-    #[cfg(not(feature = "tui"))]
-    if args.tui {
-        anyhow::bail!("TUI mode not available. Rebuild with --features tui");
+        anyhow::bail!("Native TUI has moved to legacy; use the GUI without --tui.");
     }
 
     anyhow::bail!("No interactive frontend selected")

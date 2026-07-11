@@ -86,6 +86,7 @@ pub struct Settings {
     pub hide_thinking: bool,
     pub steering_mode: String,
     pub follow_up_mode: String,
+    pub running_send_mode: String,
     #[serde(rename = "permission", alias = "permissions")]
     pub permissions: PermissionSettings,
     pub context_window_preferences: HashMap<String, u64>,
@@ -105,6 +106,7 @@ impl Default for Settings {
             hide_thinking: false,
             steering_mode: "one-at-a-time".to_string(),
             follow_up_mode: "one-at-a-time".to_string(),
+            running_send_mode: "queue".to_string(),
             permissions: PermissionSettings::default(),
             context_window_preferences: HashMap::new(),
             lsp_mode: "disabled".to_string(),
@@ -136,6 +138,8 @@ pub struct PartialSettings {
     pub steering_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow_up_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_send_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "permission", alias = "permissions")]
     pub permissions: Option<PartialPermissionSettings>,
