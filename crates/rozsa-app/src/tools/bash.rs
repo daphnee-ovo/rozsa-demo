@@ -2,14 +2,17 @@ use rozsa_core::tool::{Tool, ToolError, ToolExecutionMode, ToolResult};
 use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::process::Stdio;
 use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::select;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
+
+use crate::session::manager::SessionManager;
 
 const DEFAULT_TIMEOUT_MS: u64 = 120_000; // 2 minutes
 const MAX_OUTPUT_BYTES: usize = 100 * 1024; // 100KB
@@ -26,6 +29,7 @@ struct BashParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BashDetails {
     command: String,
+    cwd: Option<String>,
     exit_code: Option<i32>,
     success: bool,
     timed_out: bool,
@@ -38,12 +42,31 @@ struct BashDetails {
 }
 
 pub struct BashTool {
-    working_dir: String,
+    workspace_root: PathBuf,
+    working_dir: Arc<tokio::sync::Mutex<PathBuf>>,
+    session_manager: Option<Arc<tokio::sync::Mutex<SessionManager>>>,
 }
 
 impl BashTool {
     pub fn new(working_dir: String) -> Self {
-        Self { working_dir }
+        let working_dir = PathBuf::from(working_dir);
+        Self {
+            workspace_root: working_dir.clone(),
+            working_dir: Arc::new(tokio::sync::Mutex::new(working_dir)),
+            session_manager: None,
+        }
+    }
+
+    pub fn new_with_session(
+        workspace_root: PathBuf,
+        working_dir: Arc<tokio::sync::Mutex<PathBuf>>,
+        session_manager: Arc<tokio::sync::Mutex<SessionManager>>,
+    ) -> Self {
+        Self {
+            workspace_root,
+            working_dir,
+            session_manager: Some(session_manager),
+        }
     }
 
     fn format_size(bytes: usize) -> String {
@@ -58,14 +81,17 @@ impl BashTool {
 
     async fn execute_command(
         command: &str,
-        working_dir: &str,
+        working_dir: &std::path::Path,
         timeout_ms: u64,
         signal: Option<CancellationToken>,
-    ) -> Result<(String, Option<i32>, bool), String> {
+    ) -> Result<(String, Option<i32>, bool, Option<PathBuf>), String> {
+        let wrapped_command = format!(
+            "{{ {command}; }}; status=$?; printf '\\n__ROZSA_CWD__%s\\n' \"$PWD\"; exit \"$status\""
+        );
         // Spawn bash process
         let mut child = Command::new("bash")
             .arg("-c")
-            .arg(command)
+            .arg(wrapped_command)
             .current_dir(working_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -156,11 +182,11 @@ impl BashTool {
 
             // Wait for process to exit
             match child.wait().await {
-                Ok(status) => Ok((
-                    String::from_utf8_lossy(&output_buffer).to_string(),
-                    status.code(),
-                    truncated,
-                )),
+                Ok(status) => {
+                    let (output, cwd) =
+                        split_cwd_marker(String::from_utf8_lossy(&output_buffer).to_string());
+                    Ok((output, status.code(), truncated, cwd))
+                }
                 Err(e) => Err(format!("Failed to wait for process: {}", e)),
             }
         })
@@ -248,7 +274,8 @@ impl Tool for BashTool {
 
         let timeout_ms = params.timeout.unwrap_or(DEFAULT_TIMEOUT_MS);
         let started_at = Instant::now();
-        let workspace = PathBuf::from(&self.working_dir);
+        let working_dir = self.working_dir.lock().await.clone();
+        let workspace = self.workspace_root.clone();
         let before_root = workspace.clone();
         let before = tokio::task::spawn_blocking(move || {
             super::file_delta::snapshot_workspace(&before_root)
@@ -257,7 +284,7 @@ impl Tool for BashTool {
         .map_err(|error| ToolError::Execution(format!("Failed to snapshot workspace: {error}")))?;
 
         let result =
-            Self::execute_command(&params.command, &self.working_dir, timeout_ms, signal).await;
+            Self::execute_command(&params.command, &working_dir, timeout_ms, signal).await;
         let duration_ms = started_at.elapsed().as_millis() as u64;
         let after = tokio::task::spawn_blocking(move || {
             super::file_delta::snapshot_workspace(&workspace)
@@ -268,7 +295,21 @@ impl Tool for BashTool {
             super::file_delta::diff_snapshots(before, after);
 
         match result {
-            Ok((mut output, exit_code, truncated)) => {
+            Ok((mut output, exit_code, truncated, next_cwd)) => {
+                if let Some(next_cwd) = next_cwd.as_ref() {
+                    *self.working_dir.lock().await = next_cwd.clone();
+                    if let Some(session_manager) = &self.session_manager {
+                        session_manager
+                            .lock()
+                            .await
+                            .set_cwd(next_cwd.to_string_lossy().to_string())
+                            .map_err(|error| {
+                                ToolError::Execution(format!(
+                                    "Command ran but failed to persist cwd: {error}"
+                                ))
+                            })?;
+                    }
+                }
                 // Add truncation message if needed
                 if truncated {
                     output.push_str(&format!(
@@ -290,6 +331,7 @@ impl Tool for BashTool {
 
                 let details = serde_json::to_value(BashDetails {
                     command: params.command,
+                    cwd: next_cwd.map(|cwd| cwd.to_string_lossy().to_string()),
                     exit_code,
                     success: exit_code == Some(0) && !truncated,
                     timed_out: false,
@@ -322,6 +364,7 @@ impl Tool for BashTool {
                     }],
                     details: json!({
                         "command": params.command,
+                        "cwd": null,
                         "exit_code": null,
                         "success": false,
                         "timed_out": timed_out,
@@ -341,4 +384,34 @@ impl Tool for BashTool {
 
 pub fn create_bash_tool(working_dir: String) -> Box<dyn Tool> {
     Box::new(BashTool::new(working_dir))
+}
+
+pub fn create_bash_tool_with_session(
+    workspace_root: PathBuf,
+    working_dir: Arc<tokio::sync::Mutex<PathBuf>>,
+    session_manager: Arc<tokio::sync::Mutex<SessionManager>>,
+) -> Box<dyn Tool> {
+    Box::new(BashTool::new_with_session(
+        workspace_root,
+        working_dir,
+        session_manager,
+    ))
+}
+
+fn split_cwd_marker(mut output: String) -> (String, Option<PathBuf>) {
+    const MARKER: &str = "__ROZSA_CWD__";
+    let Some(marker_start) = output.rfind(MARKER) else {
+        return (output, None);
+    };
+    let line_start = output[..marker_start]
+        .rfind('\n')
+        .map_or(0, |index| index + 1);
+    let cwd_start = marker_start + MARKER.len();
+    let line_end = output[cwd_start..]
+        .find('\n')
+        .map_or(output.len(), |index| cwd_start + index + 1);
+    let cwd = output[cwd_start..line_end].trim().to_string();
+    output.replace_range(line_start..line_end, "");
+    let cwd = (!cwd.is_empty()).then(|| PathBuf::from(cwd));
+    (output, cwd)
 }

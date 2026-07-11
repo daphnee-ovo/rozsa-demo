@@ -210,6 +210,7 @@ impl SharedResources {
 
     async fn create_agent(&self, session_manager: SessionManager) -> AgentSession {
         let session_id = session_manager.session_id().to_string();
+        let session_cwd = PathBuf::from(session_manager.cwd());
         let model = self.model.lock().await.clone();
         let thinking_level = *self.thinking_level.lock().await;
         let pre_tool_use = self.pre_tool_use_factory.as_ref().map(|factory| {
@@ -221,7 +222,7 @@ impl SharedResources {
             model,
             thinking_level,
             system_prompt: self.system_prompt.clone(),
-            cwd: self.cwd.clone(),
+            cwd: session_cwd,
             session_manager,
             settings_manager: self.settings_manager.clone(),
             resources: self.resources.clone(),

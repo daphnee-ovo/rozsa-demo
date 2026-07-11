@@ -45,8 +45,8 @@ use crate::resources::LoadedResources;
 use crate::session::manager::SessionManager;
 use crate::settings::SettingsManager;
 use crate::tools::{
-    create_bash_tool, create_edit_tool, create_find_tool, create_grep_tool, create_ls_tool,
-    create_read_tool, create_subagent_tool, create_write_tool,
+    create_bash_tool_with_session, create_edit_tool, create_find_tool, create_grep_tool,
+    create_ls_tool, create_read_tool, create_subagent_tool, create_write_tool,
 };
 
 /// Configuration bundle for creating an AgentSession.
@@ -121,7 +121,8 @@ struct RuntimeParams {
 pub struct AgentSession {
     static_config: StaticConfig,
     runtime: Mutex<RuntimeParams>,
-    session_manager: Mutex<SessionManager>,
+    session_manager: Arc<Mutex<SessionManager>>,
+    current_cwd: Arc<Mutex<PathBuf>>,
     tools: Arc<Mutex<Vec<Arc<dyn Tool>>>>,
     cancel_token: Mutex<Option<CancellationToken>>,
     is_running: AtomicBool,
@@ -179,12 +180,16 @@ impl AgentSession {
             pre_tool_use,
             model_stream,
         } = config;
+        let session_manager_id = session_manager.session_id().to_string();
+        let session_manager_file = Some(session_manager.session_file().to_path_buf());
+        let session_manager = Arc::new(Mutex::new(session_manager));
+        let current_cwd = Arc::new(Mutex::new(cwd.clone()));
         let permission_mode = settings_manager.resolved().permissions.mode.clone();
         let skill_registry = crate::skills::SkillRegistry::load_from_defaults(&cwd);
 
         let tools_arc: Arc<Mutex<Vec<Arc<dyn Tool>>>> = Arc::new(Mutex::new(Vec::new()));
-        let main_session_uuid = session_manager.session_id().to_string();
-        let main_session_file = Some(session_manager.session_file().to_path_buf());
+        let main_session_uuid = session_manager_id;
+        let main_session_file = session_manager_file;
         let session_dir = main_session_file
             .as_ref()
             .and_then(|p| p.parent().map(|d| d.to_path_buf()));
@@ -232,7 +237,8 @@ impl AgentSession {
                 model,
                 thinking_level,
             }),
-            session_manager: Mutex::new(session_manager),
+            session_manager,
+            current_cwd,
             tools: tools_arc,
             cancel_token: Mutex::new(None),
             is_running: AtomicBool::new(false),
@@ -286,12 +292,15 @@ impl AgentSession {
 
     /// Register the default built-in tools (read, write, edit, bash, ls, grep, find, subagent).
     pub async fn register_default_tools(&self, cwd: &Path) {
-        let cwd_str = cwd.to_string_lossy().to_string();
         let defaults: Vec<Box<dyn Tool>> = vec![
             create_read_tool(),
             create_write_tool(),
             create_edit_tool(),
-            create_bash_tool(cwd_str),
+            create_bash_tool_with_session(
+                cwd.to_path_buf(),
+                self.current_cwd.clone(),
+                self.session_manager.clone(),
+            ),
             create_ls_tool(),
             create_grep_tool(),
             create_find_tool(),
@@ -522,9 +531,11 @@ impl AgentSession {
     ) -> anyhow::Result<String> {
         let new_mgr = SessionManager::open(&path)?;
         let mut mgr = self.session_manager.lock().await;
+        let new_cwd = PathBuf::from(new_mgr.cwd());
         let old_path = mgr.session_file().to_string_lossy().to_string();
         *mgr = new_mgr;
         drop(mgr);
+        *self.current_cwd.lock().await = new_cwd;
         // Clear in-memory conversation — the new session has its own history.
         self.messages.lock().await.clear();
         Ok(old_path)
@@ -538,6 +549,11 @@ impl AgentSession {
     /// Get the working directory.
     pub fn cwd(&self) -> &Path {
         &self.static_config.cwd
+    }
+
+    /// Get the session's persisted and currently active working directory.
+    pub async fn current_cwd(&self) -> PathBuf {
+        self.current_cwd.lock().await.clone()
     }
 
     /// Get the current thinking level.

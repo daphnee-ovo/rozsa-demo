@@ -192,6 +192,44 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
+    /// Return the persisted working directory for this session.
+    pub fn cwd(&self) -> &str {
+        &self.cwd
+    }
+
+    /// Update the session working directory and rewrite the session header.
+    pub fn set_cwd(&mut self, cwd: String) -> Result<()> {
+        if self.cwd == cwd {
+            return Ok(());
+        }
+        self.ensure_materialized()?;
+        let content = std::fs::read_to_string(&self.session_file).with_context(|| {
+            format!(
+                "Failed to read session file: {}",
+                self.session_file.display()
+            )
+        })?;
+        let (header_line, rest) = content
+            .split_once('\n')
+            .ok_or_else(|| anyhow::anyhow!("Session file has no header line"))?;
+        let mut header: SessionHeader = serde_json::from_str(header_line)
+            .context("Failed to parse session header while updating cwd")?;
+        header.cwd = cwd.clone();
+        let updated = format!(
+            "{}\n{}",
+            serde_json::to_string(&header).context("Failed to serialize session header")?,
+            rest
+        );
+        std::fs::write(&self.session_file, updated).with_context(|| {
+            format!(
+                "Failed to write session file: {}",
+                self.session_file.display()
+            )
+        })?;
+        self.cwd = cwd;
+        Ok(())
+    }
+
     /// Create a new session file with header.
     ///
     /// # Arguments

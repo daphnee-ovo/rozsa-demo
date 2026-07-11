@@ -32,3 +32,12 @@ fn print_mode_keeps_positional_text_as_the_prompt() {
     assert_eq!(cwd, temp.path());
     assert_eq!(prompt.as_deref(), Some("fix the bug"));
 }
+
+#[test]
+fn missing_positional_input_uses_the_startup_working_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let (cwd, prompt) = args::resolve_positional_input(None, temp.path(), false).unwrap();
+
+    assert_eq!(cwd, temp.path());
+    assert_eq!(prompt, None);
+}

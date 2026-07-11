@@ -9,7 +9,7 @@ pub mod read;
 pub mod subagent;
 pub mod write;
 
-pub use bash::create_bash_tool;
+pub use bash::{create_bash_tool, create_bash_tool_with_session};
 pub use edit::create_edit_tool;
 pub use find::create_find_tool;
 pub use grep::create_grep_tool;

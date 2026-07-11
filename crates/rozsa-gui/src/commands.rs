@@ -1916,7 +1916,7 @@ async fn clone_active_session(state: &State<'_, GuiState>) -> Result<String, Str
     let agent = active_agent(state).await?;
     let manager = agent.session_manager().await;
     let entries = manager.entries();
-    let cwd = agent.cwd().to_string_lossy().to_string();
+    let cwd = agent.current_cwd().await.to_string_lossy().to_string();
     drop(manager);
 
     let session_dir = state
