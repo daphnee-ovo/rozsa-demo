@@ -1941,7 +1941,7 @@ button:focus-visible, .session-item:focus-visible,
             <div class="perm-panel-actions" id="permTrustActions"></div>
           </div>
         </div>
-        <div id="msgInput" class="rich-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="向 Rózsa 发送消息，支持 Markdown…" oninput="autoResize(this);updateAutocomplete();updateAbortButton()"></div>
+        <div id="msgInput" class="rich-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="向 Rózsa 发送消息，支持 Markdown…" oninput="handleInput(this)" oncompositionstart="handleCompositionStart(event)" oncompositionupdate="handleCompositionUpdate(this)" oncompositionend="handleCompositionEnd(this)"></div>
         <div class="input-toolbar">
           <button class="input-tool-btn" id="attachFileButton" title="附加文件或文件夹" aria-label="附加文件或文件夹" onclick="attachFileReference()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
           <button class="input-tool-btn" id="attachDirectoryButton" title="附加文件夹" aria-label="附加文件夹" onclick="attachDirectoryReference()" hidden><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 4.5h4l1.4 1.5h7.1v6.75a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/></svg></button>

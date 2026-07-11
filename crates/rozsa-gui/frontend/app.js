@@ -16,6 +16,7 @@
 // +-- Models (renderModelSelector, onModelChange)
 // +-- Settings (toggleSettings, closeSettings, switchSettingsTab, loadSettings, saveSetting)
 // +-- Slash Command Autocomplete (updateAutocomplete, selectSlashCmd, navigateAutocomplete)
+// +-- Input Composition (IME lifecycle and input refresh)
 // +-- Keyboard Shortcuts (global keydown handler)
 // +-- UI Helpers (toggleToolCall, toggleThinking, copyCode, autoResize, escapeHtml)
 // ===================================================================
@@ -39,6 +40,7 @@ let acRequestSeq = 0;
 let acPrefix = '';
 let acItems = [];
 let inputHighlightRanges = [];
+let isInputComposing = false;
 let activeSessionIdx = 0;
 let activeSessionId = null;
 // 跟踪每个 session 的 streaming 状态（path → bool）
@@ -1275,6 +1277,32 @@ function getInputText(input) {
   return input ? (input.textContent || '') : '';
 }
 
+function handleInput(input) {
+  autoResize(input);
+  if (isInputComposing) {
+    updateAbortButton();
+    return;
+  }
+  updateAutocomplete();
+  updateAbortButton();
+}
+
+function handleCompositionStart() {
+  isInputComposing = true;
+}
+
+function handleCompositionUpdate(input) {
+  isInputComposing = true;
+  autoResize(input);
+}
+
+function handleCompositionEnd(input) {
+  isInputComposing = false;
+  autoResize(input);
+  updateAutocomplete();
+  updateAbortButton();
+}
+
 function setInputText(input, text) {
   if (!input) return;
   if (!text) {
@@ -2022,6 +2050,10 @@ function syncInputHighlightScroll() {
 
 document.addEventListener('keydown', function(e) {
   const input = document.getElementById('msgInput');
+
+  // IME owns composition keystrokes. Let the browser keep the preedit text
+  // intact; Enter/send, autocomplete, and DOM replacement run after commit.
+  if (isInputComposing || e.isComposing || e.keyCode === 229) return;
 
   // Permission panel shortcuts
   if (currentPermissionId) {
