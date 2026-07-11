@@ -3,9 +3,13 @@ source: devtest
 nums: 1
 ---
 
-- [ ] ISSUE-I086：fix: devtest cannot locate completed tasks moved to done_task
+- [ ] ISSUE-I001: devtest failed: TASK-T087: test: verify fake-model GUI event forwarding
   - severity: P1
-  - location：.dev-doc/main/task/done_task_2026-07-05_5.md:5
-  - description：dow test --task TASK-T057 returns No completed task found although TASK-T057 is checked and task show reports done.
-  - reproduce：Run dow task show TASK-T057 then dow test --task TASK-T057.
-  - fix：
+  - source: devtest
+  - location: TASK-T087: test: verify fake-model GUI event forwarding
+  - current: crates/rozsa-gui/tests/gui_event_forwarder_test.rs: crates/rozsa-gui/tests/gui_event_forwarder_test.rs: line 1: use: command not found
+  - expected: task passes devtest
+  - reproduce: dow test --task
+  - root_cause:
+  - fix:
+  - close_when: Re-running devtest returns PASS
