@@ -14,10 +14,12 @@ use tokio::sync::Mutex;
 
 use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::model_registry::ModelRegistry;
-use rozsa_app::permissions::{PendingApprovals, PermissionResponse, TrustLevel};
+use rozsa_app::permissions::{PendingApprovals, PermissionResponse, TrustGroup, TrustLevel};
 use rozsa_app::session::manager::SessionManager;
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
+
+pub use crate::turn_diff::{TurnActivity, TurnSummary, VerificationResult};
 
 pub type PreToolUseHook = Arc<
     dyn Fn(
@@ -238,25 +240,22 @@ pub struct LiveState {
     pub turn_base: usize,
     pub turn_id: u64,
     pub turn_activity: TurnActivity,
+    pub interaction_active: bool,
+    pub completed_summary: Option<TurnActivity>,
+    /// GUI-owned FIFO. One item is started only after the preceding prompt
+    /// has fully returned, so it cannot be coalesced by AgentSession follow-ups.
+    pub queued_messages: Vec<String>,
+    /// Messages supplied through `AgentSession::steer`, shown separately while
+    /// they wait for the next tool result.
+    pub steering_conversation: Vec<SteeringConversationEntry>,
     pub(crate) streaming_message_index: Option<usize>,
 }
 
-#[derive(Clone, Default, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TurnActivity {
-    pub changed_files: Vec<String>,
-    pub verification: Option<VerificationResult>,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerificationResult {
-    pub command: String,
-    pub success: bool,
-    pub exit_code: Option<i32>,
-    pub timed_out: bool,
-    pub truncated: bool,
-    pub duration_ms: u64,
+pub struct SteeringConversationEntry {
+    pub text: String,
+    pub delivered: bool,
 }
 
 impl LiveState {
@@ -266,7 +265,9 @@ impl LiveState {
                 self.turn_base = self.messages.len();
                 self.turn_id = self.turn_id.saturating_add(1);
                 self.is_streaming = true;
-                self.turn_activity = TurnActivity::default();
+                if !self.interaction_active {
+                    self.begin_interaction();
+                }
                 self.streaming_message_index = None;
                 true
             }
@@ -283,13 +284,16 @@ impl LiveState {
             }
             AgentEvent::MessageEnd { message } => {
                 self.update_streaming_message(message);
+                self.remove_delivered_steering_message(message);
                 self.streaming_message_index = None;
                 true
             }
             AgentEvent::AgentEnd { messages } => {
                 self.messages.truncate(self.turn_base);
                 self.messages.extend(messages.iter().cloned());
-                self.is_streaming = false;
+                // Keep the input in its running state while the command layer
+                // starts the next FIFO item after this prompt returns.
+                self.is_streaming = !self.queued_messages.is_empty();
                 self.streaming_message_index = None;
                 true
             }
@@ -297,9 +301,9 @@ impl LiveState {
                 tool_name, result, ..
             } => {
                 self.record_tool_activity(tool_name, result);
-                true
+                false
             }
-            AgentEvent::ToolExecutionStart { .. } | AgentEvent::ToolExecutionUpdate { .. } => true,
+            AgentEvent::ToolExecutionStart { .. } | AgentEvent::ToolExecutionUpdate { .. } => false,
             _ => false,
         }
     }
@@ -328,50 +332,58 @@ impl LiveState {
         tool_name: &str,
         result: &rozsa_model::types::ToolResultMessage,
     ) {
-        if let Some(files) = result
-            .details
-            .get("changed_files")
-            .and_then(|value| value.as_array())
-        {
-            for path in files.iter().filter_map(|value| value.as_str()) {
-                if !self
-                    .turn_activity
-                    .changed_files
-                    .iter()
-                    .any(|existing| existing == path)
-                {
-                    self.turn_activity.changed_files.push(path.to_string());
-                }
-            }
-        }
+        let mut accumulator = crate::turn_diff::TurnDiffAccumulator::new();
+        accumulator.merge_activity(&self.turn_activity);
+        accumulator.merge_result(tool_name, result);
+        self.turn_activity = accumulator.activity();
+    }
 
-        if tool_name.eq_ignore_ascii_case("bash") {
-            let details = &result.details;
-            if let Some(command) = details.get("command").and_then(|value| value.as_str()) {
-                self.turn_activity.verification = Some(VerificationResult {
-                    command: command.to_string(),
-                    success: details
-                        .get("success")
-                        .and_then(|value| value.as_bool())
-                        .unwrap_or(false),
-                    exit_code: details
-                        .get("exit_code")
-                        .and_then(|value| value.as_i64())
-                        .map(|value| value as i32),
-                    timed_out: details
-                        .get("timed_out")
-                        .and_then(|value| value.as_bool())
-                        .unwrap_or(false),
-                    truncated: details
-                        .get("truncated")
-                        .and_then(|value| value.as_bool())
-                        .unwrap_or(false),
-                    duration_ms: details
-                        .get("duration_ms")
-                        .and_then(|value| value.as_u64())
-                        .unwrap_or(0),
-                });
-            }
+    pub fn enqueue_message(&mut self, message: String) {
+        self.queued_messages.push(message);
+    }
+
+    pub fn begin_interaction(&mut self) {
+        self.interaction_active = true;
+        self.turn_activity = TurnActivity::default();
+        self.completed_summary = None;
+    }
+
+    pub fn finish_interaction(&mut self, summary: TurnActivity) {
+        self.interaction_active = false;
+        self.is_streaming = false;
+        self.completed_summary = Some(summary.clone());
+        self.turn_activity = summary;
+    }
+
+    pub fn take_next_queued_message(&mut self) -> Option<String> {
+        (!self.queued_messages.is_empty()).then(|| self.queued_messages.remove(0))
+    }
+
+    pub fn add_steering_message(&mut self, message: String) {
+        self.steering_conversation.push(SteeringConversationEntry {
+            text: message,
+            delivered: false,
+        });
+    }
+
+    fn remove_delivered_steering_message(&mut self, message: &AgentMessage) {
+        let Some(rozsa_model::types::Message::User(user)) = message.as_standard() else {
+            return;
+        };
+        if !user
+            .display_text
+            .as_deref()
+            .is_some_and(|text| text.starts_with("[steer] "))
+        {
+            return;
+        }
+        let delivered = user.content.text();
+        if let Some(index) = self
+            .steering_conversation
+            .iter()
+            .position(|entry| entry.text == delivered)
+        {
+            self.steering_conversation.remove(index);
         }
     }
 }
@@ -399,6 +411,10 @@ pub struct UiSnapshot {
     pub context_usage: ContextUsage,
     pub runtime_state: RuntimeState,
     pub turn_activity: TurnActivity,
+    pub turn_summaries: Vec<TurnSummary>,
+    pub queued_messages: Vec<String>,
+    pub steering_conversation: Vec<SteeringConversationEntry>,
+    pub stream_update: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -442,6 +458,14 @@ pub struct RuntimeState {
 
 impl UiSnapshot {
     pub fn from_tab(tab: &SessionTab, shared: &SharedResources) -> Self {
+        Self::build(tab, shared, false)
+    }
+
+    pub fn from_stream_update(tab: &SessionTab, shared: &SharedResources) -> Self {
+        Self::build(tab, shared, true)
+    }
+
+    fn build(tab: &SessionTab, shared: &SharedResources, stream_update: bool) -> Self {
         let messages: Vec<serde_json::Value> = tab
             .messages()
             .iter()
@@ -493,7 +517,7 @@ impl UiSnapshot {
             thinking_level: thinking_str,
             session_name: None,
             cwd: shared.cwd.to_string_lossy().to_string(),
-            git: git_status(&shared.cwd),
+            git: (!stream_update).then(|| git_status(&shared.cwd)).flatten(),
             context_usage: ContextUsage {
                 percent: context_percent,
                 tokens: input_tokens,
@@ -509,11 +533,46 @@ impl UiSnapshot {
                 session_total_tokens: input_tokens + output_tokens,
             },
             turn_activity: match tab {
-                SessionTab::Active { live, .. } => live.turn_activity.clone(),
+                SessionTab::Active { live, .. } if live.interaction_active => {
+                    live.turn_activity.clone()
+                }
                 _ => TurnActivity::default(),
             },
+            turn_summaries: latest_turn_summary(tab),
+            queued_messages: match tab {
+                SessionTab::Active { live, .. } => live.queued_messages.clone(),
+                _ => Vec::new(),
+            },
+            steering_conversation: match tab {
+                SessionTab::Active { live, .. } => live.steering_conversation.clone(),
+                _ => Vec::new(),
+            },
+            stream_update,
         }
     }
+}
+
+fn latest_turn_summary(tab: &SessionTab) -> Vec<TurnSummary> {
+    let activity = match tab {
+        SessionTab::Active { live, .. } => live.completed_summary.clone(),
+        _ => SessionManager::open(tab.path())
+            .ok()
+            .and_then(|manager| crate::turn_diff::latest_persisted_summary(&manager)),
+    };
+    let Some(activity) = activity else {
+        return Vec::new();
+    };
+    let Some(assistant_message_index) = tab.messages().iter().rposition(is_assistant_message)
+    else {
+        return Vec::new();
+    };
+    if activity.changed_files.is_empty() {
+        return Vec::new();
+    }
+    vec![TurnSummary {
+        assistant_message_index,
+        activity,
+    }]
 }
 
 fn git_status(cwd: &PathBuf) -> Option<GitStatus> {
@@ -583,35 +642,7 @@ fn git_status(cwd: &PathBuf) -> Option<GitStatus> {
 }
 
 fn git_diff_stat(cwd: &PathBuf) -> (u64, u64) {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &cwd.to_string_lossy(),
-            "diff",
-            "--numstat",
-            "HEAD",
-            "--",
-        ])
-        .output();
-    let Ok(output) = output else {
-        return (0, 0);
-    };
-    if !output.status.success() {
-        return (0, 0);
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut added = 0_u64;
-    let mut deleted = 0_u64;
-    for line in text.lines() {
-        let mut parts = line.split_whitespace();
-        if let Some(raw) = parts.next().and_then(|value| value.parse::<u64>().ok()) {
-            added += raw;
-        }
-        if let Some(raw) = parts.next().and_then(|value| value.parse::<u64>().ok()) {
-            deleted += raw;
-        }
-    }
-    (added, deleted)
+    crate::git_diff::workspace_diff_stat(cwd)
 }
 
 /// 权限请求事件
@@ -625,6 +656,7 @@ pub struct PermissionEvent {
     pub risk: String,
     pub trust_key: String,
     pub trust_levels: Vec<TrustLevel>,
+    pub trust_groups: Vec<TrustGroup>,
 }
 
 /// 工具执行事件

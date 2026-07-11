@@ -20,9 +20,10 @@ use rozsa_model::types::{
 };
 
 use crate::state::{
-    GuiState, SessionTab, UiSnapshot, deny_pending_approvals, permission_pending_key,
-    session_id_from_path,
+    GuiState, SessionTab, UiSnapshot, deny_pending_approvals, find_tab_index_by_session,
+    permission_pending_key, session_id_from_path,
 };
+use crate::turn_diff::{INTERACTION_STARTED, INTERACTION_SUMMARY};
 
 // --- 对话 ---
 
@@ -38,53 +39,52 @@ pub async fn send_message(
     // 确保当前 tab 是 Active 状态（懒加载：首次发消息时激活）
     let tab = tabs.get_mut(idx).ok_or("No active tab")?;
     let session_id = tab.session_id();
-    let agent = match tab {
-        SessionTab::Active { agent, .. } => agent.clone(),
+    let (agent, spawn_forwarder) = match tab {
+        SessionTab::Active { agent, .. } => (agent.clone(), false),
         SessionTab::Loaded { path, messages } => {
             // 升级为 Active：创建 AgentSession
             let agent = activate_session(path, &state).await?;
             let path_owned = path.clone();
+            let completed_summary = load_session_summary(&path_owned);
             let agent_arc = std::sync::Arc::new(agent);
             *tab = SessionTab::Active {
                 path: path_owned,
                 agent: agent_arc.clone(),
                 live: crate::state::LiveState {
                     messages: std::mem::take(messages),
+                    completed_summary,
                     ..Default::default()
                 },
             };
-            // 启动事件转发
-            drop(tabs);
-            crate::events::spawn_event_forwarder_for_session(
-                app.clone(),
-                session_id.clone(),
-                state.inner().clone(),
-            );
-            agent_arc
+            (agent_arc, true)
         }
         SessionTab::Idle { path, .. } => {
             // 从 Idle 直接激活（加载历史 + 创建 agent）
             let path_owned = path.clone();
             let messages = load_session_messages(&path_owned)?;
             let agent = activate_session(&path_owned, &state).await?;
+            let completed_summary = load_session_summary(&path_owned);
             let agent_arc = std::sync::Arc::new(agent);
             *tab = SessionTab::Active {
                 path: path_owned,
                 agent: agent_arc.clone(),
                 live: crate::state::LiveState {
                     messages,
+                    completed_summary,
                     ..Default::default()
                 },
             };
-            drop(tabs);
-            crate::events::spawn_event_forwarder_for_session(
-                app.clone(),
-                session_id.clone(),
-                state.inner().clone(),
-            );
-            agent_arc
+            (agent_arc, true)
         }
     };
+    drop(tabs);
+    if spawn_forwarder {
+        crate::events::spawn_event_forwarder_for_session(
+            app.clone(),
+            session_id.clone(),
+            state.inner().clone(),
+        );
+    }
 
     let expansion = crate::file_refs::expand_file_references(&message, &state.shared.cwd);
     for notice in &expansion.notices {
@@ -94,11 +94,25 @@ pub async fn send_message(
         );
     }
 
+    {
+        let mut manager = agent.session_manager().await;
+        manager
+            .append_custom(INTERACTION_STARTED.to_string(), None)
+            .map_err(|error| error.to_string())?;
+    }
+    {
+        let mut tabs = state.tabs.lock().await;
+        if let Some(SessionTab::Active { live, .. }) = tabs.get_mut(idx) {
+            live.begin_interaction();
+        }
+    }
+
     // 发送消息（后台执行，不阻塞 IPC 返回）
     let shared = state.shared.clone();
     let tabs_ref = state.tabs.clone();
     let active_tab_ref = state.active_tab.clone();
     let pending_approvals = state.pending_approvals.clone();
+    let gui_state = state.inner().clone();
     tokio::spawn(async move {
         if let Err(e) = agent
             .prompt_with_prefix_blocks(&message, expansion.blocks, expansion.display_text)
@@ -109,6 +123,7 @@ pub async fn send_message(
         if let Some(approvals) = &pending_approvals {
             deny_pending_approvals(approvals, Some(&session_id));
         }
+        advance_interaction(gui_state, app.clone(), session_id.clone());
         // 完成后推送最终状态
         let current_idx = *active_tab_ref.lock().await;
         if current_idx == idx {
@@ -233,8 +248,64 @@ pub async fn autocomplete_input(
 }
 
 #[tauri::command]
-pub async fn pick_attachment(mode: String) -> Result<Option<String>, String> {
-    pick_attachment_path(AttachmentPickMode::parse(&mode)?)
+pub async fn pick_attachment(app: AppHandle, mode: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let path = match AttachmentPickMode::parse(&mode)? {
+        AttachmentPickMode::Directory => app.dialog().file().blocking_pick_folder(),
+        AttachmentPickMode::File => app.dialog().file().blocking_pick_file(),
+        AttachmentPickMode::Any => return pick_any_attachment(app).await,
+    };
+    Ok(path.map(|path| path.to_string()))
+}
+
+async fn pick_any_attachment(app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let _ = sender.send(pick_any_attachment_macos());
+        })
+        .map_err(|error| format!("Could not open the native attachment picker: {error}"))?;
+
+        return tokio::task::spawn_blocking(move || {
+            receiver
+                .recv()
+                .map_err(|_| "Native attachment picker did not return a result".to_owned())?
+        })
+        .await
+        .map_err(|error| format!("Native attachment picker task failed: {error}"))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("A combined file-and-directory picker is only available on macOS".to_owned())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn pick_any_attachment_macos() -> Result<Option<String>, String> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
+
+    let marker = MainThreadMarker::new()
+        .ok_or_else(|| "Native attachment picker must run on the macOS main thread".to_owned())?;
+    let panel = NSOpenPanel::openPanel(marker);
+    panel.setCanChooseFiles(true);
+    panel.setCanChooseDirectories(true);
+    panel.setAllowsMultipleSelection(false);
+
+    if panel.runModal() != NSModalResponseOK {
+        return Ok(None);
+    }
+
+    panel
+        .URL()
+        .and_then(|url| url.path())
+        .map(|path| path.to_string())
+        .map(Some)
+        .ok_or_else(|| "Native attachment picker did not return a filesystem path".to_owned())
 }
 
 #[tauri::command]
@@ -400,18 +471,14 @@ pub async fn dispatch_slash_command(
             agent.set_viewing_subagent(None).await;
             emit_info(&app, "Switched to main agent");
         }
-        "subagent" | "subagents" => {
-            emit_info(&app, &subagents_summary(&state).await?);
-        }
+        "subagent" | "subagents" => return slash_action("subagentPanel"),
         "tree" => {
             emit_info(&app, &session_tree_summary(&state).await?);
         }
         "graph" => {
             emit_info(&app, &conversation_graph_summary(&state).await?);
         }
-        "fork" => {
-            emit_info(&app, &fork_points_summary(&state).await?);
-        }
+        "fork" => return slash_action("forkPicker"),
         "clone" => {
             let message = clone_active_session(&state).await?;
             emit_info(&app, &message);
@@ -492,6 +559,124 @@ pub async fn abort(state: State<'_, GuiState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn send_running_message(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+    mode: String,
+    message: String,
+) -> Result<(), String> {
+    let message = message.trim();
+    if message.is_empty() {
+        return Ok(());
+    }
+    let idx = *state.active_tab.lock().await;
+    let mut tabs = state.tabs.lock().await;
+    let Some(SessionTab::Active { agent, live, .. }) = tabs.get_mut(idx) else {
+        return Err("No active agent".to_string());
+    };
+    if !live.is_streaming {
+        return Err("Agent is not running".to_string());
+    }
+    match mode.as_str() {
+        "queue" => live.enqueue_message(message.to_string()),
+        "steer" => {
+            agent.steer(message);
+            live.add_steering_message(message.to_string());
+        }
+        _ => return Err(format!("Unknown running send mode: {mode}")),
+    }
+    let snapshot = UiSnapshot::from_tab(&tabs[idx], &state.shared);
+    let _ = app.emit("ui-state", &snapshot);
+    Ok(())
+}
+
+/// Start only the first queued message after the prior prompt has returned.
+/// AgentSession deliberately rejects concurrent prompts, so this function is
+/// called from each prompt completion rather than the AgentEnd event itself.
+fn advance_interaction(gui_state: GuiState, app: AppHandle, session_id: String) {
+    tokio::spawn(async move {
+        let next = {
+            let mut tabs = gui_state.tabs.lock().await;
+            let Some(index) = find_tab_index_by_session(&tabs, &session_id) else {
+                return;
+            };
+            let Some(SessionTab::Active { agent, live, .. }) = tabs.get_mut(index) else {
+                return;
+            };
+            live.take_next_queued_message()
+                .map(|message| (agent.clone(), message))
+        };
+
+        let Some((agent, message)) = next else {
+            finish_interaction(&gui_state, &app, &session_id).await;
+            return;
+        };
+
+        if let Err(error) = agent.prompt(&message).await {
+            append_prompt_error_for_session(
+                &session_id,
+                &agent,
+                &gui_state.tabs,
+                &gui_state.shared,
+                &app,
+                error.to_string(),
+            )
+            .await;
+        }
+        if let Some(approvals) = &gui_state.pending_approvals {
+            deny_pending_approvals(approvals, Some(&session_id));
+        }
+        advance_interaction(gui_state, app, session_id);
+    });
+}
+
+async fn finish_interaction(gui_state: &GuiState, app: &AppHandle, session_id: &str) {
+    let agent = {
+        let tabs = gui_state.tabs.lock().await;
+        let Some(index) = find_tab_index_by_session(&tabs, session_id) else {
+            return;
+        };
+        let Some(SessionTab::Active { agent, live, .. }) = tabs.get(index) else {
+            return;
+        };
+        if !live.interaction_active {
+            return;
+        }
+        agent.clone()
+    };
+
+    let summary = {
+        let mut manager = agent.session_manager().await;
+        let summary = crate::turn_diff::persisted_interaction_activity(&manager);
+        let payload = serde_json::to_value(&summary).ok();
+        if let Err(error) = manager.append_custom(INTERACTION_SUMMARY.to_string(), payload) {
+            let _ = app.emit(
+                "notification",
+                format!("Failed to persist task summary: {error}"),
+            );
+        }
+        summary
+    };
+
+    {
+        let mut tabs = gui_state.tabs.lock().await;
+        let Some(index) = find_tab_index_by_session(&tabs, session_id) else {
+            return;
+        };
+        if let Some(SessionTab::Active { live, .. }) = tabs.get_mut(index) {
+            live.finish_interaction(summary);
+        }
+    }
+
+    let tabs = gui_state.tabs.lock().await;
+    let Some(index) = find_tab_index_by_session(&tabs, session_id) else {
+        return;
+    };
+    let snapshot = UiSnapshot::from_tab(&tabs[index], &gui_state.shared);
+    let _ = app.emit("ui-state", &snapshot);
+}
+
 // --- 状态查询 ---
 
 #[tauri::command]
@@ -500,6 +685,23 @@ pub async fn get_state(state: State<'_, GuiState>) -> Result<UiSnapshot, String>
     let tabs = state.tabs.lock().await;
     let tab = tabs.get(idx).ok_or("No active tab")?;
     Ok(UiSnapshot::from_tab(tab, &state.shared))
+}
+
+#[tauri::command]
+pub async fn get_subagents(
+    state: State<'_, GuiState>,
+) -> Result<Vec<rozsa_app::subagent::SubagentInfo>, String> {
+    let agent = active_agent(&state).await?;
+    let manager = agent.subagent_manager().await;
+    Ok(manager.list().await)
+}
+
+#[tauri::command]
+pub async fn get_file_diff(
+    state: State<'_, GuiState>,
+    path: String,
+) -> Result<crate::git_diff::FileDiff, String> {
+    crate::git_diff::read_workspace_diff(&state.shared.cwd, &path)
 }
 
 // --- 会话管理 ---
@@ -531,6 +733,96 @@ pub async fn get_sessions(state: State<'_, GuiState>) -> Result<Vec<SessionListE
             message_count: m.message_count,
         })
         .collect())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForkPoint {
+    pub message_index: usize,
+    pub label: String,
+}
+
+#[tauri::command]
+pub async fn get_fork_points(state: State<'_, GuiState>) -> Result<Vec<ForkPoint>, String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    let tab = tabs.get(idx).ok_or("No active tab")?;
+    Ok(tab
+        .messages()
+        .iter()
+        .enumerate()
+        .filter_map(|(message_index, message)| match message.as_standard()? {
+            Message::User(user) => Some(ForkPoint {
+                message_index,
+                label: truncate_chars(&user.content.text(), 100),
+            }),
+            _ => None,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn fork_session(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+    message_index: usize,
+) -> Result<String, String> {
+    let (parent_path, copied_messages) = {
+        let idx = *state.active_tab.lock().await;
+        let tabs = state.tabs.lock().await;
+        let tab = tabs.get(idx).ok_or("No active tab")?;
+        let Some(message) = tab.messages().get(message_index) else {
+            return Err("Fork point no longer exists".to_string());
+        };
+        if !matches!(message.as_standard(), Some(Message::User(_))) {
+            return Err("A fork point must be a user message".to_string());
+        }
+        let copied_messages = tab.messages()[..=message_index]
+            .iter()
+            .filter_map(|message| message.as_standard().cloned())
+            .collect::<Vec<_>>();
+        (tab.path().to_string(), copied_messages)
+    };
+
+    let session_dir = state
+        .session_dir
+        .as_ref()
+        .ok_or("No session directory configured")?;
+    let created = state
+        .shared
+        .create_new_agent(session_dir, Some(parent_path))
+        .await?;
+    {
+        let mut manager = created.agent.session_manager().await;
+        for message in copied_messages {
+            manager
+                .append_message(message)
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    let messages = load_session_messages(&created.path)?;
+    let session_id = created.id.clone();
+    let mut tabs = state.tabs.lock().await;
+    tabs.push(SessionTab::Active {
+        path: created.path,
+        agent: Arc::new(created.agent),
+        live: crate::state::LiveState {
+            messages,
+            ..Default::default()
+        },
+    });
+    let new_index = tabs.len() - 1;
+    drop(tabs);
+    *state.active_tab.lock().await = new_index;
+    crate::events::spawn_event_forwarder_for_session(
+        app.clone(),
+        session_id.clone(),
+        state.inner().clone(),
+    );
+    let tabs = state.tabs.lock().await;
+    let snapshot = UiSnapshot::from_tab(&tabs[new_index], &state.shared);
+    let _ = app.emit("ui-state", &snapshot);
+    Ok(session_id)
 }
 
 #[tauri::command]
@@ -583,6 +875,7 @@ pub async fn respond_permission(
     id: String,
     choice: String,
     trust_key: Option<String>,
+    trust_keys: Option<Vec<String>>,
 ) -> Result<(), String> {
     let approvals = state
         .pending_approvals
@@ -599,21 +892,27 @@ pub async fn respond_permission(
     let response = match choice.as_str() {
         "allow" => PermissionResponse::Allow,
         "allow-session" => {
-            if let Some(key) = trust_key {
-                if !context
-                    .info
-                    .trust_levels
-                    .iter()
-                    .any(|level| level.key == key)
-                {
-                    return Err("Selected trust scope is not valid for this request".to_string());
-                }
-                state.permission_controller.record_project_approval(&key)?;
-                PermissionResponse::AllowSession { trust_key: key }
-            } else {
-                PermissionResponse::Allow
+            let keys = trust_keys
+                .or_else(|| trust_key.map(|key| vec![key]))
+                .unwrap_or_default();
+            let valid_keys = context
+                .info
+                .trust_groups
+                .iter()
+                .flat_map(|group| group.levels.iter())
+                .map(|level| level.key.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            if keys.iter().any(|key| !valid_keys.contains(key.as_str())) {
+                return Err("Selected trust scope is not valid for this request".to_string());
             }
+            for key in &keys {
+                state.permission_controller.record_project_approval(key)?;
+            }
+            PermissionResponse::Allow
         }
+        "deny-hint" => PermissionResponse::DenyWithHint {
+            hint: rozsa_app::permissions::safer_alternative_hint(&context.tool_name, &context.args),
+        },
         _ => PermissionResponse::Deny,
     };
 
@@ -694,6 +993,7 @@ pub async fn get_settings(state: State<'_, GuiState>) -> Result<SettingsSnapshot
         auto_compact: rt.compaction.enabled,
         steering_mode: rt.steering_mode.clone(),
         follow_up_mode: rt.follow_up_mode.clone(),
+        running_send_mode: rt.running_send_mode.clone(),
     })
 }
 
@@ -764,6 +1064,14 @@ pub async fn update_setting(
             let mut s = state.runtime_settings.lock().await;
             s.follow_up_mode = value;
             drop(s);
+            persist_settings(&state).await;
+            Ok(())
+        }
+        "running_send_mode" => {
+            if value != "queue" && value != "steer" {
+                return Err(format!("Invalid running send mode: {value}"));
+            }
+            state.runtime_settings.lock().await.running_send_mode = value;
             persist_settings(&state).await;
             Ok(())
         }
@@ -1259,6 +1567,23 @@ mod token_tests {
     use super::*;
 
     #[test]
+    fn attachment_pick_modes_accept_file_directory_and_any() {
+        assert!(matches!(
+            AttachmentPickMode::parse("any"),
+            Ok(AttachmentPickMode::Any)
+        ));
+        assert!(matches!(
+            AttachmentPickMode::parse("file"),
+            Ok(AttachmentPickMode::File)
+        ));
+        assert!(matches!(
+            AttachmentPickMode::parse("directory"),
+            Ok(AttachmentPickMode::Directory)
+        ));
+        assert!(AttachmentPickMode::parse("unsupported").is_err());
+    }
+
+    #[test]
     fn slash_tokens_highlight_anywhere_in_input() {
         let text = "prefix /tree suffix /model";
         let skill_commands = Vec::new();
@@ -1357,115 +1682,6 @@ fn normalize_skill_commands_in_text(
     }
     normalized.push_str(&text[cursor..]);
     Some(normalized)
-}
-
-#[cfg(target_os = "macos")]
-fn pick_attachment_path(mode: AttachmentPickMode) -> Result<Option<String>, String> {
-    let choose_files = !matches!(mode, AttachmentPickMode::Directory);
-    let choose_dirs = !matches!(mode, AttachmentPickMode::File);
-    let script = format!(
-        r#"
-ObjC.import('AppKit');
-const panel = $.NSOpenPanel.openPanel;
-panel.canChooseFiles = {};
-panel.canChooseDirectories = {};
-panel.allowsMultipleSelection = false;
-panel.resolvesAliases = true;
-const result = panel.runModal();
-if (result == $.NSModalResponseOK) {{
-  ObjC.unwrap(panel.URLs.objectAtIndex(0).path);
-}} else {{
-  '';
-}}
-"#,
-        choose_files, choose_dirs
-    );
-    let output = Command::new("osascript")
-        .args(["-l", "JavaScript", "-e", &script])
-        .output()
-        .map_err(|e| format!("Failed to open attachment picker: {e}"))?;
-    read_picker_output(output)
-}
-
-#[cfg(target_os = "windows")]
-fn pick_attachment_path(mode: AttachmentPickMode) -> Result<Option<String>, String> {
-    let script = match mode {
-        AttachmentPickMode::Any | AttachmentPickMode::File => {
-            r#"
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.CheckFileExists = $true
-$dialog.Multiselect = $false
-$dialog.Title = 'Attach file'
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-  Write-Output $dialog.FileName
-}
-"#
-        }
-        AttachmentPickMode::Directory => {
-            r#"
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Attach directory'
-$dialog.ShowNewFolderButton = $false
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-  Write-Output $dialog.SelectedPath
-}
-"#
-        }
-    };
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-STA", "-Command", script])
-        .output()
-        .map_err(|e| format!("Failed to open attachment picker: {e}"))?;
-    read_picker_output(output)
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn pick_attachment_path(mode: AttachmentPickMode) -> Result<Option<String>, String> {
-    let directory = matches!(mode, AttachmentPickMode::Directory);
-    let mut candidates: Vec<(&str, Vec<&str>)> = Vec::new();
-    if directory {
-        candidates.push(("zenity", vec!["--file-selection", "--directory"]));
-        candidates.push(("kdialog", vec!["--getexistingdirectory"]));
-    } else {
-        candidates.push(("zenity", vec!["--file-selection"]));
-        candidates.push(("kdialog", vec!["--getopenfilename"]));
-    }
-
-    let mut last_error = String::new();
-    for (program, args) in candidates {
-        match Command::new(program).args(args).output() {
-            Ok(output) if output.status.success() => return read_picker_output(output),
-            Ok(output) if output.status.code() == Some(1) => return Ok(None),
-            Ok(output) => {
-                last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            }
-            Err(e) => {
-                last_error = e.to_string();
-            }
-        }
-    }
-    Err(if last_error.is_empty() {
-        "No supported Linux attachment picker found. Install zenity or kdialog.".to_string()
-    } else {
-        format!("Attachment picker failed: {last_error}")
-    })
-}
-
-fn read_picker_output(output: std::process::Output) -> Result<Option<String>, String> {
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            "Attachment picker failed.".to_string()
-        } else {
-            format!("Attachment picker failed: {stderr}")
-        });
-    }
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!path.is_empty()).then_some(path))
 }
 
 async fn active_agent(state: &State<'_, GuiState>) -> Result<Arc<AgentSession>, String> {
@@ -1654,23 +1870,6 @@ async fn search_messages(state: &State<'_, GuiState>, pattern: &str) -> String {
     }
 }
 
-async fn subagents_summary(state: &State<'_, GuiState>) -> Result<String, String> {
-    let agent = active_agent(state).await?;
-    let manager = agent.subagent_manager().await;
-    let list = manager.list().await;
-    drop(manager);
-    if list.is_empty() {
-        return Ok("No subagents".to_string());
-    }
-    Ok(format!(
-        "Subagents:\n{}",
-        list.iter()
-            .map(|agent| format!("{} ({}) - {:?}", agent.name, agent.id, agent.status))
-            .collect::<Vec<_>>()
-            .join("\n")
-    ))
-}
-
 async fn session_tree_summary(state: &State<'_, GuiState>) -> Result<String, String> {
     let agent = active_agent(state).await?;
     let manager = agent.session_manager().await;
@@ -1711,30 +1910,6 @@ async fn conversation_graph_summary(state: &State<'_, GuiState>) -> Result<Strin
             .collect::<Vec<_>>()
             .join("\n")
     ))
-}
-
-async fn fork_points_summary(state: &State<'_, GuiState>) -> Result<String, String> {
-    let idx = *state.active_tab.lock().await;
-    let tabs = state.tabs.lock().await;
-    let tab = tabs.get(idx).ok_or("No active tab")?;
-    let points = tab
-        .messages()
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, message)| match message.as_standard()? {
-            Message::User(user) => Some(format!(
-                "{:>3}. {}",
-                idx + 1,
-                truncate_chars(&user.content.text(), 100)
-            )),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if points.is_empty() {
-        Ok("No user messages available to fork from".to_string())
-    } else {
-        Ok(format!("Fork points:\n{}", points.join("\n")))
-    }
 }
 
 async fn clone_active_session(state: &State<'_, GuiState>) -> Result<String, String> {
@@ -2037,7 +2212,7 @@ async fn append_prompt_error(
         }
         live.messages
             .push(AgentMessage::standard(error_message.clone()));
-        live.is_streaming = false;
+        live.is_streaming = !live.queued_messages.is_empty();
         live.turn_base = live.messages.len();
 
         if let Ok(mut manager) = SessionManager::open(path) {
@@ -2046,6 +2221,23 @@ async fn append_prompt_error(
 
         let snapshot = UiSnapshot::from_tab(&tabs[tab_idx], shared);
         let _ = app.emit("ui-state", &snapshot);
+    }
+}
+
+async fn append_prompt_error_for_session(
+    session_id: &str,
+    agent: &rozsa_app::agent_session::AgentSession,
+    tabs_ref: &std::sync::Arc<tokio::sync::Mutex<Vec<SessionTab>>>,
+    shared: &std::sync::Arc<crate::state::SharedResources>,
+    app: &AppHandle,
+    error: String,
+) {
+    let tab_index = {
+        let tabs = tabs_ref.lock().await;
+        find_tab_index_by_session(&tabs, session_id)
+    };
+    if let Some(tab_index) = tab_index {
+        append_prompt_error(tab_index, agent, tabs_ref, shared, app, error).await;
     }
 }
 
@@ -2132,6 +2324,12 @@ fn load_session_messages(path: &str) -> Result<Vec<AgentMessage>, String> {
         .collect())
 }
 
+fn load_session_summary(path: &str) -> Option<crate::turn_diff::TurnActivity> {
+    SessionManager::open(path)
+        .ok()
+        .and_then(|manager| crate::turn_diff::latest_persisted_summary(&manager))
+}
+
 async fn activate_session(
     path: &str,
     state: &State<'_, GuiState>,
@@ -2172,4 +2370,5 @@ pub struct SettingsSnapshot {
     pub auto_compact: bool,
     pub steering_mode: String,
     pub follow_up_mode: String,
+    pub running_send_mode: String,
 }

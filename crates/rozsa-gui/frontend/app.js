@@ -25,7 +25,9 @@ let sessions = [];
 let models = [];
 let currentPermissionId = null;
 let currentPermissionSessionId = null;
-let currentPermissionTrustKey = null;
+let currentPermissionTrustGroups = [];
+let currentPermissionTrustIndex = -1;
+let currentPermissionTrustKeys = [];
 let permissionDisplayInFlight = false;
 // 权限请求按 session id 分队列，避免后台 tab 覆盖当前 tab 的审批。
 let pendingPermissions = {};
@@ -38,6 +40,7 @@ let acPrefix = '';
 let acItems = [];
 let inputHighlightRanges = [];
 let activeSessionIdx = 0;
+let activeSessionId = null;
 // 跟踪每个 session 的 streaming 状态（path → bool）
 let sessionStreamingState = {};
 let quotaEligible = false;
@@ -45,6 +48,21 @@ let quotaModelKey = '';
 let quotaLoaded = false;
 let quotaLoading = false;
 let chatAutoScrollPaused = false;
+let renderedMessageSessionId = null;
+let renderedMessageKeys = [];
+let renderedRawMessageCount = 0;
+let renderedTurnActivityKey = '';
+let expandedToolCallsBySession = {};
+let thinkingStartTimes = {};
+let thinkingDurations = {};
+let renderedQueueKey = '';
+let renderedSteeringKey = '';
+let renderedSessionListKey = '';
+let sessionViewState = {};
+let sessionDraftState = {};
+let permissionUiStateBySession = {};
+let restoringSessionScroll = false;
+let scrollStateFrame = 0;
 
 // =============== Slash Commands Registry ===============
 
@@ -117,6 +135,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   invoke = window.__TAURI__.core.invoke;
   listen = window.__TAURI__.event.listen;
+  configureAttachmentPicker();
 
   await listen('ui-state', ev => renderState(ev.payload));
   await listen('tool-event', ev => handleToolEvent(ev.payload));
@@ -134,20 +153,31 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 function renderState(snap) {
   if (!snap) return;
+  const previousSessionId = activeSessionId;
+  const sessionChanged = !!snap.sessionId && previousSessionId !== snap.sessionId;
+  if (sessionChanged && previousSessionId) captureSessionDraft(previousSessionId);
+  if (sessionChanged && previousSessionId) capturePermissionUiState(previousSessionId);
   const wasStreaming = isStreaming;
   isStreaming = !!snap.isStreaming;
   if (wasStreaming && !isStreaming) chatAutoScrollPaused = false;
   // 记录当前活跃 session 的 streaming 状态
   if (snap.sessionId) {
+    activeSessionId = snap.sessionId;
     const approvals = pendingPermissions[snap.sessionId] || [];
     sessionStreamingState[snap.sessionId] = approvals.length ? 'approval' : (isStreaming ? 'running' : 'idle');
   }
+  if (snap.streamUpdate) {
+    renderMessages(snap.messages, true, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
+    return;
+  }
   updateHeader(snap);
   updateSidebar(snap);
-  renderMessages(snap.messages, snap.isStreaming);
-  renderTurnActivity(snap.turnActivity);
+  renderMessages(snap.messages, snap.isStreaming, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
+  renderRunningMessages(snap.queuedMessages, snap.steeringConversation);
   updateAbortButton();
   renderSessionList();
+  if (sessionChanged) restoreSessionDraft(snap.sessionId);
+  schedulePermPanelDisplay();
 }
 
 function updateHeader(snap) {
@@ -301,11 +331,26 @@ function modelProviderKey(model) {
 
 function updateAbortButton() {
   const sendBtn = document.querySelector('[data-od-id="send-btn"]');
+  const mode = document.getElementById('runningSendMode');
+  const input = document.getElementById('msgInput');
   if (!sendBtn) return;
   if (isStreaming) {
-    sendBtn.textContent = '停止';
-    sendBtn.onclick = abortAgent;
+    const hasText = !!getInputText(input).trim();
+    if (mode) mode.hidden = !hasText;
+    if (hasText) {
+      if (mode && !mode.dataset.initialized) {
+        mode.value = currentSettings?.running_send_mode || 'queue';
+        mode.dataset.initialized = 'true';
+      }
+      const selected = mode ? mode.value : 'queue';
+      sendBtn.textContent = selected === 'steer' ? '引导' : '排队';
+      sendBtn.onclick = sendMessage;
+    } else {
+      sendBtn.textContent = '停止';
+      sendBtn.onclick = abortAgent;
+    }
   } else {
+    if (mode) mode.hidden = true;
     sendBtn.textContent = '发送';
     sendBtn.onclick = sendMessage;
   }
@@ -313,21 +358,31 @@ function updateAbortButton() {
 
 // =============== Message Rendering ===============
 
-function renderMessages(messages, streaming) {
+function renderMessages(messages, streaming, sessionId = null, turnActivity = null, turnSummaries = []) {
   const container = document.getElementById('chatMessages');
   if (!container) return;
-  const shouldStickToBottom = !streaming || (!chatAutoScrollPaused && isChatNearBottom(container));
+  const sessionChanged = renderedMessageSessionId !== sessionId;
+  if (sessionChanged && renderedMessageSessionId) {
+    persistSessionViewState(renderedMessageSessionId, container);
+  }
+  const savedView = sessionId ? sessionViewState[sessionId] : null;
+  if (sessionChanged) chatAutoScrollPaused = savedView?.autoScrollPaused === true;
+  const restoringScroll = sessionChanged && savedView && Number.isFinite(savedView.scrollTop);
+  const shouldStickToBottom = !restoringScroll && !chatAutoScrollPaused &&
+    (sessionChanged ? !savedView : isChatNearBottom(container));
 
   if (!messages || messages.length === 0) {
     container.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">R</div>' +
       '<div class="chat-empty-title">开始新对话</div>' +
       '<div class="chat-empty-hint">向 Rozsa 描述你的编码任务' +
       '<div class="chat-empty-kbd"><kbd>Enter</kbd> 发送 <kbd>Shift+Enter</kbd> 换行</div></div></div>';
+    renderedMessageSessionId = sessionId;
+    renderedMessageKeys = [];
+    renderedRawMessageCount = 0;
+    renderedTurnActivityKey = '';
+    if (sessionId) restoreSessionViewState(sessionId, container, savedView);
     return;
   }
-
-  container.innerHTML = '';
-  toolCounts = {};
 
   // 预建 toolResult 索引: toolCallId → { output, isError, toolName }
   // 每个 toolResult 通过 toolCallId 严格对应一个 toolCall
@@ -338,7 +393,7 @@ function renderMessages(messages, streaming) {
       const id = m.toolCallId;
       if (id) {
         const text = (m.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-        toolResultMap[id] = { output: text, isError: !!m.isError, toolName: m.toolName || '' };
+        toolResultMap[id] = { output: text, isError: !!m.isError, toolName: m.toolName || '', details: m.details || {} };
       }
     }
   }
@@ -346,21 +401,86 @@ function renderMessages(messages, streaming) {
   const visibleMessages = messages.filter(raw =>
     !(raw.kind === 'standard' && raw.message && raw.message.role === 'toolResult')
   );
+  const lastAssistantIndex = streaming ? -1 : visibleMessages.reduce((last, raw, index) =>
+    raw.kind === 'standard' && raw.message && raw.message.role === 'assistant' ? index : last, -1);
+  const turnActivityKey = !streaming && turnActivity ? JSON.stringify(turnActivity) : '';
+  const summariesByRawIndex = new Map((Array.isArray(turnSummaries) ? turnSummaries : [])
+    .map(summary => [summary.assistantMessageIndex, summary.activity]));
+  const activityForVisibleIndex = index => {
+    const rawIndex = messages.indexOf(visibleMessages[index]);
+    return summariesByRawIndex.get(rawIndex) || (index === lastAssistantIndex ? turnActivity : null);
+  };
 
-  const activeStreamIndex = activeStreamMessageIndex(visibleMessages, streaming);
-
-  for (let i = 0; i < visibleMessages.length; i++) {
-    const raw = visibleMessages[i];
-    container.appendChild(renderMessage(raw, toolResultMap, i === activeStreamIndex));
+  const activeStreamIndex = activeStreamMessageIndex(messages, visibleMessages, streaming);
+  const thinkingDurationForIndex = updateThinkingTimings(
+    messages,
+    visibleMessages,
+    activeStreamIndex,
+    sessionId,
+  );
+  const keys = visibleMessages.map((raw, index) => JSON.stringify(raw) +
+    JSON.stringify(activityForVisibleIndex(index)) + ':' + (thinkingDurationForIndex(index) ?? ''));
+  const sameSession = renderedMessageSessionId === sessionId;
+  let firstChanged = -1;
+  if (sameSession) {
+    const shared = Math.min(renderedMessageKeys.length, keys.length);
+    for (let i = 0; i < shared; i++) {
+      if (renderedMessageKeys[i] !== keys[i]) { firstChanged = i; break; }
+    }
+    if (firstChanged < 0 && renderedMessageKeys.length !== keys.length) firstChanged = shared;
+    // Tool results are hidden rows but change the preceding assistant tool card.
+    if (firstChanged < 0 && renderedRawMessageCount !== messages.length) {
+      firstChanged = Math.max(0, visibleMessages.length - 1);
+    }
+    if (firstChanged < 0 && turnActivityKey && turnActivityKey !== renderedTurnActivityKey) {
+      firstChanged = lastAssistantIndex;
+    }
   }
 
+  const needsFullRender = !sameSession || container.children.length !== renderedMessageKeys.length || firstChanged === 0 && renderedMessageKeys.length === 0;
+  if (needsFullRender) {
+    container.replaceChildren();
+    firstChanged = 0;
+  }
+  if (firstChanged >= 0) {
+    while (container.children.length > firstChanged) container.lastChild.remove();
+    for (let i = firstChanged; i < visibleMessages.length; i++) {
+      container.appendChild(renderMessage(
+        visibleMessages[i],
+        toolResultMap,
+        i === activeStreamIndex,
+        activityForVisibleIndex(i),
+        thinkingDurationForIndex(i),
+      ));
+    }
+  }
+
+  container.querySelectorAll('.stream-cursor').forEach(cursor => cursor.remove());
   if (activeStreamIndex >= 0) {
     const active = container.children[activeStreamIndex];
     if (active) attachStreamCursor(active);
   }
 
+  toolCounts = countTools(visibleMessages);
   renderToolChips();
-  if (shouldStickToBottom) scrollChatToBottom(container);
+  renderedMessageSessionId = sessionId;
+  renderedMessageKeys = keys;
+  renderedRawMessageCount = messages.length;
+  if (turnActivityKey) renderedTurnActivityKey = turnActivityKey;
+  if (restoringScroll) restoreSessionViewState(sessionId, container, savedView);
+  else if (shouldStickToBottom) scrollChatToBottom(container);
+}
+
+function countTools(messages) {
+  const counts = {};
+  for (const raw of messages) {
+    const content = raw && raw.message && raw.message.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block.type === 'toolCall' && block.name) counts[block.name] = (counts[block.name] || 0) + 1;
+    }
+  }
+  return counts;
 }
 
 function isChatNearBottom(container) {
@@ -376,10 +496,6 @@ function setupChatScrollLock() {
   const container = document.getElementById('chatMessages');
   if (!container) return;
   container.addEventListener('wheel', ev => {
-    if (!isStreaming) {
-      chatAutoScrollPaused = false;
-      return;
-    }
     if (ev.deltaY < 0) {
       chatAutoScrollPaused = true;
       return;
@@ -390,9 +506,43 @@ function setupChatScrollLock() {
       });
     }
   }, { passive: true });
+  container.addEventListener('scroll', () => {
+    if (restoringSessionScroll || !renderedMessageSessionId) return;
+    chatAutoScrollPaused = !isChatNearBottom(container);
+    if (scrollStateFrame) cancelAnimationFrame(scrollStateFrame);
+    scrollStateFrame = requestAnimationFrame(() => {
+      scrollStateFrame = 0;
+      persistSessionViewState(renderedMessageSessionId, container);
+    });
+  }, { passive: true });
 }
 
-function renderMessage(raw, toolResultMap, isActiveStream = false) {
+function persistSessionViewState(sessionId, container) {
+  if (!sessionId || !container) return;
+  sessionViewState[sessionId] = {
+    scrollTop: container.scrollTop,
+    autoScrollPaused: chatAutoScrollPaused,
+  };
+}
+
+function restoreSessionViewState(sessionId, container, savedView) {
+  const saved = savedView || (sessionId ? sessionViewState[sessionId] : null);
+  if (!saved || !Number.isFinite(saved.scrollTop)) {
+    chatAutoScrollPaused = false;
+    scrollChatToBottom(container);
+    return;
+  }
+  restoringSessionScroll = true;
+  requestAnimationFrame(() => {
+    const maximum = Math.max(0, container.scrollHeight - container.clientHeight);
+    container.scrollTop = Math.min(saved.scrollTop, maximum);
+    chatAutoScrollPaused = saved.autoScrollPaused === true || !isChatNearBottom(container);
+    restoringSessionScroll = false;
+    persistSessionViewState(sessionId, container);
+  });
+}
+
+function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null) {
   const div = document.createElement('div');
 
   if (raw.kind === 'custom') {
@@ -437,14 +587,16 @@ function renderMessage(raw, toolResultMap, isActiveStream = false) {
     if (thinking) {
       const thinkingActive = isActiveStream && latestType === 'thinking';
       const thinkingLabel = thinkingActive ? 'THINKING' : 'THINKED';
-      const thinkingDuration = thinkingActive ? '' : formatThinkingDuration(Date.now() - messageTimestampMs(msg));
+      const thinkingDuration = thinkingActive || thinkingDurationMs === null
+        ? ''
+        : formatThinkingDuration(thinkingDurationMs);
       body += '<div class="thinking-block' + (thinkingActive ? ' active' : '') + '"><div class="thinking-header" onclick="toggleThinking(this)">' +
         '<svg class="thinking-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1.5C5 1.5 3 3.5 3 6c0 1.5.8 2.7 2 3.5V12a1 1 0 001 1h4a1 1 0 001-1V9.5c1.2-.8 2-2 2-3.5 0-2.5-2-4.5-5-4.5z"/><path d="M6 14.5h4"/></svg>' +
         '<span class="thinking-label">' + thinkingLabel + '</span>' +
         (thinkingDuration ? '<span class="thinking-duration">' + thinkingDuration + '</span>' : '') +
         '<span class="thinking-chevron">▸</span></div>' +
         '<div class="thinking-content"' + (thinkingActive ? ' data-stream-cursor-target="thinking"' : '') + '>' +
-        renderMarkdown(thinking) + '</div></div>';
+        '<div class="thinking-markdown markdown-body">' + renderMarkdown(thinking) + '</div></div></div>';
     }
 
     const toolCalls = content.filter(b => b.type === 'toolCall');
@@ -456,8 +608,23 @@ function renderMessage(raw, toolResultMap, isActiveStream = false) {
       const toolTitle = formatToolTitle(tc);
       const resultOutput = result ? result.output : '';
       const bodyOutput = resultOutput || formatToolArgs(tc);
+      const delta = result && Array.isArray(result.details.file_deltas) ? result.details.file_deltas[0] : null;
+      const writeContent = delta && typeof delta.after === 'string'
+        ? delta.after
+        : (tc.arguments && typeof tc.arguments.content === 'string' ? tc.arguments.content : null);
+      let toolBody = escapeHtml(bodyOutput);
+      let toolBodyClass = '';
+      if (tc.name.toLowerCase() === 'write' && writeContent !== null) {
+        toolBody = renderCodeView(writeContent);
+        toolBodyClass = ' code-view';
+      } else if (delta && tc.name.toLowerCase() === 'edit' && typeof delta.patch === 'string') {
+        toolBody = renderDiffView(delta.patch);
+        toolBodyClass = ' diff-view';
+      }
 
-      body += '<div class="tool-call" onclick="toggleToolCall(this)">' +
+      body += '<div class="tool-call' + (isToolCallExpanded(tc.id) ? ' expanded' : '') +
+        '" data-tool-call-id="' + escapeHtml(tc.id || '') + '" data-session-id="' +
+        escapeHtml(activeSessionId || '') + '" onclick="toggleToolCall(this)">' +
         '<div class="tool-track"><div class="tool-icon">' + toolIcon(tc.name) + '</div>' +
         '</div>' +
         '<div class="tool-content"><div class="tool-header">' +
@@ -465,8 +632,9 @@ function renderMessage(raw, toolResultMap, isActiveStream = false) {
         '<span class="tool-name">' + escapeHtml(toolTitle.name) + '</span>' +
         '<span class="tool-call-args">' + escapeHtml(toolTitle.arg) + '</span>' +
         '<span class="tool-call-toggle">▸</span></div></div>' +
-        '<div class="tool-call-body"><pre style="white-space:pre-wrap;margin:0;font-size:11.5px">' +
-        escapeHtml(bodyOutput) + '</pre></div></div>';
+        '<div class="tool-call-body' + toolBodyClass + '">' +
+        (toolBodyClass ? toolBody : '<pre style="white-space:pre-wrap;margin:0;font-size:11.5px">' + toolBody + '</pre>') +
+        '</div></div>';
     }
 
     const text = extractText(content);
@@ -474,6 +642,10 @@ function renderMessage(raw, toolResultMap, isActiveStream = false) {
       const textActive = isActiveStream && latestType === 'text';
       body += '<div class="msg-content markdown-body"' + (textActive ? ' data-stream-cursor-target="text"' : '') +
         '>' + renderMarkdown(text) + '</div>';
+    }
+
+    if (turnActivity && ((turnActivity.changedFiles && turnActivity.changedFiles.length) || turnActivity.verification)) {
+      body += renderTurnActivityCard(turnActivity);
     }
 
     body += '</div>';
@@ -540,6 +712,36 @@ function formatToolTitle(tc) {
   return { name, arg: formatToolArgs(tc) };
 }
 
+function renderCodeView(content) {
+  return content.split('\n').map((line, index) =>
+    '<div class="code-line"><span class="code-ln">' + (index + 1) + '</span>' +
+    '<span class="code-text">' + escapeHtml(line) + '</span></div>'
+  ).join('');
+}
+
+function renderDiffView(patch) {
+  let oldLine = 1;
+  let newLine = 1;
+  const rows = [];
+  for (const line of patch.split('\n')) {
+    const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      oldLine = Number.parseInt(hunk[1], 10);
+      newLine = Number.parseInt(hunk[2], 10);
+      continue;
+    }
+    if (line.startsWith('---') || line.startsWith('+++') || !line) continue;
+    if (line.startsWith('-')) {
+      rows.push('<div class="diff-line diff-del"><span class="diff-sign">−</span><span class="diff-ln">' +
+        oldLine++ + '</span><span class="diff-text">' + escapeHtml(line.slice(1)) + '</span></div>');
+    } else if (line.startsWith('+')) {
+      rows.push('<div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-ln">' +
+        newLine++ + '</span><span class="diff-text">' + escapeHtml(line.slice(1)) + '</span></div>');
+    }
+  }
+  return rows.join('');
+}
+
 // =============== Content Block Extraction ===============
 
 function extractText(content) {
@@ -553,25 +755,24 @@ function extractThinking(content) {
   return blocks.length > 0 ? blocks.map(b => b.thinking).join('\n') : null;
 }
 
-function activeStreamMessageIndex(messages, streaming) {
+function activeStreamMessageIndex(messages, visibleMessages, streaming) {
   if (!streaming) return -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const raw = messages[i];
-    if (raw.kind === 'standard' && raw.message && raw.message.role === 'assistant') return i;
-  }
-  return -1;
+  const latest = messages[messages.length - 1];
+  if (!latest || latest.kind !== 'standard' || !latest.message || latest.message.role !== 'assistant') return -1;
+  const content = latest.message.content || [];
+  const latestBlock = content[content.length - 1];
+  if (!latestBlock || (latestBlock.type !== 'text' && latestBlock.type !== 'thinking')) return -1;
+  return visibleMessages.lastIndexOf(latest);
 }
 
 function attachStreamCursor(messageEl) {
   if (messageEl.querySelector('.stream-cursor')) return;
   const markedTarget = messageEl.querySelector('[data-stream-cursor-target]');
-  const targets = messageEl.querySelectorAll('.msg-content.markdown-body, .thinking-content, .msg-content');
-  const target = markedTarget || targets[targets.length - 1];
-  if (!target) return;
+  if (!markedTarget) return;
   const cursor = document.createElement('span');
   cursor.className = 'stream-cursor';
   cursor.textContent = '▌';
-  appendCursorAfterLastText(target, cursor);
+  appendCursorAfterLastText(markedTarget, cursor);
 }
 
 function appendCursorAfterLastText(target, cursor) {
@@ -602,10 +803,25 @@ function lastVisibleTextNode(target) {
   return last;
 }
 
-function messageTimestampMs(msg) {
-  const ts = Number(msg.timestamp || 0);
-  if (!Number.isFinite(ts) || ts <= 0) return Date.now();
-  return ts < 100000000000 ? ts * 1000 : ts;
+function updateThinkingTimings(messages, visibleMessages, activeStreamIndex, sessionId) {
+  const durationsByIndex = new Map();
+  visibleMessages.forEach((raw, index) => {
+    const msg = raw && raw.message;
+    if (!msg || msg.role !== 'assistant' || !extractThinking(msg.content || [])) return;
+    const rawIndex = messages.indexOf(raw);
+    const key = String(sessionId || '') + ':' + rawIndex + ':' + String(msg.timestamp || 0);
+    const content = msg.content || [];
+    const latest = content.length ? content[content.length - 1].type : '';
+    const thinkingActive = index === activeStreamIndex && latest === 'thinking';
+    if (thinkingActive) {
+      if (thinkingStartTimes[key] === undefined) thinkingStartTimes[key] = Date.now();
+    } else if (thinkingStartTimes[key] !== undefined && thinkingDurations[key] === undefined) {
+      thinkingDurations[key] = Math.max(0, Date.now() - thinkingStartTimes[key]);
+      delete thinkingStartTimes[key];
+    }
+    if (thinkingDurations[key] !== undefined) durationsByIndex.set(index, thinkingDurations[key]);
+  });
+  return index => durationsByIndex.has(index) ? durationsByIndex.get(index) : null;
 }
 
 function formatThinkingDuration(ms) {
@@ -622,29 +838,81 @@ function handleToolEvent(ev) {
   if (ev.type === 'Start') trackTool(ev.name);
 }
 
-function renderTurnActivity(activity) {
-  const el = document.getElementById('turnActivity');
-  if (!el) return;
-  const files = activity && activity.changedFiles ? activity.changedFiles : [];
+function renderTurnActivityCard(activity) {
+  const changes = activity && Array.isArray(activity.fileChanges) ? activity.fileChanges : [];
+  const files = changes.length ? changes.map(change => change.path) : (activity && activity.changedFiles ? activity.changedFiles : []);
   const verification = activity && activity.verification;
-  if (!files.length && !verification) {
-    el.innerHTML = '';
-    el.hidden = true;
-    return;
-  }
-  const fileSummary = files.length
-    ? '<div><span class="turn-activity-label">Changed</span> ' + files.map(escapeHtml).join(', ') + '</div>'
-    : '';
+  const rows = files.map(path => {
+    const change = changes.find(item => item.path === path);
+    const status = change ? change.status : 'modified';
+    const icon = status === 'added' ? '+' : (status === 'deleted' ? '−' : '~');
+    const label = status === 'added' ? '新增' : (status === 'deleted' ? '删除' : '修改');
+    const payload = change ? escapeHtml(JSON.stringify(change)) : '';
+    return '<div class="change-entry"><div class="change-row"><span class="change-icon ' + (status === 'added' ? 'new' : 'mod') +
+      '" title="' + label + '">' + icon + '</span>' +
+      '<button class="change-name" aria-expanded="false" ' + (change ? 'data-turn-diff="' + payload + '" onclick="toggleTurnDiff(this)"' : '') + '>' +
+      escapeHtml(path) + '</button>' +
+      (change ? '<span class="change-add">+' + change.added + '</span><span class="change-del">-' + change.deleted + '</span>' : '') +
+      (change ? '<span class="change-toggle">›</span>' : '') + '</div>' +
+      (change ? '<div class="turn-diff-inline" hidden></div>' : '') + '</div>';
+  }).join('');
   const verificationSummary = verification
-    ? '<div><span class="turn-activity-label">Verify</span> <code>' + escapeHtml(verification.command) +
-      '</code> · ' + (verification.success ? 'passed' : 'failed') +
-      (verification.exitCode !== null && verification.exitCode !== undefined ? ' (exit ' + verification.exitCode + ')' : '') +
-      (verification.timedOut ? ' · timed out' : '') +
-      (verification.truncated ? ' · output truncated' : '') +
-      (verification.durationMs ? ' · ' + verification.durationMs + 'ms' : '') + '</div>'
+    ? '<div class="changes-footer"><span class="' + (verification.success ? 'change-add' : 'change-del') + '">' +
+      (verification.success ? '验证通过' : '验证失败') + '</span><span class="changes-runtime">' +
+      escapeHtml(verification.command) +
+      (verification.exitCode !== null && verification.exitCode !== undefined ? ' · exit ' + verification.exitCode : '') +
+      (verification.timedOut ? ' · 超时' : '') +
+      (verification.truncated ? ' · 已截断' : '') +
+      (verification.durationMs ? ' · ' + verification.durationMs + 'ms' : '') + '</span></div>'
     : '';
-  el.innerHTML = fileSummary + verificationSummary;
-  el.hidden = false;
+  const limitation = activity && activity.captureComplete === false
+    ? '<div class="changes-footer"><span class="change-del">Diff 不完整</span><span class="changes-runtime">' +
+      escapeHtml(activity.captureLimitation || 'workspace capture limit reached') + '</span></div>'
+    : '';
+  return '<div class="changes-card"><div class="changes-header"><span>本轮变更 ' + files.length + ' 个文件</span></div>' +
+    (rows ? '<div class="changes-list">' + rows + '</div>' : '') + verificationSummary + limitation + '</div>';
+}
+
+function toggleTurnDiff(button) {
+  const entry = button.closest('.change-entry');
+  const panel = entry && entry.querySelector('.turn-diff-inline');
+  if (!panel) return;
+  const change = JSON.parse(button.dataset.turnDiff || '{}');
+  const opening = panel.hidden;
+  panel.hidden = !opening;
+  button.setAttribute('aria-expanded', String(opening));
+  entry.classList.toggle('expanded', opening);
+  panel.innerHTML = opening
+    ? '<div class="diff-view">' + renderDiffView(change.patch || '') + '</div>'
+    : '';
+}
+
+function renderRunningMessages(queuedMessages, steeringConversation) {
+  const queue = document.getElementById('queuedMessages');
+  const steering = document.getElementById('steeringConversation');
+  const queued = Array.isArray(queuedMessages) ? queuedMessages : [];
+  const steeringMessages = Array.isArray(steeringConversation) ? steeringConversation : [];
+  const queueKey = JSON.stringify(queued);
+  const steeringKey = JSON.stringify(steeringMessages);
+
+  if (queue && queueKey !== renderedQueueKey) {
+    queue.hidden = queued.length === 0;
+    queue.innerHTML = queued.length
+      ? '<div class="running-messages-title">Queue <span>' + queued.length + '</span></div><ol>' +
+        queued.map(message => '<li>' + escapeHtml(message) + '</li>').join('') + '</ol>'
+      : '';
+    renderedQueueKey = queueKey;
+  }
+
+  if (steering && steeringKey !== renderedSteeringKey) {
+    steering.hidden = steeringMessages.length === 0;
+    steering.innerHTML = steeringMessages.length
+      ? '<div class="running-messages-title">Steering conversation</div><ol>' +
+        steeringMessages.map(message => '<li><span>' + escapeHtml(message.text || '') +
+          '</span><em>等待工具结果</em></li>').join('') + '</ol>'
+      : '';
+    renderedSteeringKey = steeringKey;
+  }
 }
 
 function trackTool(name) {
@@ -694,76 +962,164 @@ async function displayPermPanelIfNeeded() {
   if (permissionDisplayInFlight) return;
   permissionDisplayInFlight = true;
   try {
-  while (true) {
-  const currentSessionId = sessions[activeSessionIdx] ? sessions[activeSessionIdx].id : null;
-  const queue = currentSessionId ? pendingPermissions[currentSessionId] : null;
-  const ev = queue && queue[0];
-  if (!ev) {
-    hidePermPanel();
-    return;
-  }
-  let refreshed;
-  try {
-    refreshed = await invoke('prepare_permission', { sessionId: ev.session_id, id: ev.request_id });
-  } catch (e) {
-    console.error('prepare_permission:', e);
-    return;
-  }
-  if (!refreshed) {
-    pendingPermissions[ev.session_id] = queue.filter(item => item.request_id !== ev.request_id);
-    if (!pendingPermissions[ev.session_id].length) delete pendingPermissions[ev.session_id];
-    continue;
-  }
-  ev.trust_key = refreshed.trust_key;
-  ev.trust_levels = refreshed.trust_levels;
-  currentPermissionId = ev.request_id;
-  currentPermissionSessionId = ev.session_id;
-  const trustLevels = Array.isArray(ev.trust_levels)
-    ? ev.trust_levels
-    : (Array.isArray(ev.trustLevels) ? ev.trustLevels : []);
-  currentPermissionTrustKey = (trustLevels[0] && trustLevels[0].key) || ev.trust_key || ev.trustKey || null;
-  const panel = document.getElementById('permPanel');
-  if (!panel) return;
-  const risk = document.getElementById('permRisk');
-  const tool = document.getElementById('permTool');
-  const cmd = document.getElementById('permCmd');
-  const desc = document.getElementById('permDesc');
-  if (risk) risk.textContent = ev.risk || 'Shell';
-  if (tool) tool.textContent = ev.tool || '—';
-  if (cmd) cmd.textContent = ev.command || ev.summary || '—';
-  if (desc) desc.textContent = ev.description || ev.summary || '—';
-  renderPermissionTrustLevels(trustLevels);
-  panel.classList.add('visible');
-  document.getElementById('msgInput').style.display = 'none';
-  return;
-  }
+    while (true) {
+      const currentSessionId = activeSessionId || (sessions[activeSessionIdx] && sessions[activeSessionIdx].id);
+      const queue = currentSessionId ? pendingPermissions[currentSessionId] : null;
+      const ev = queue && queue[0];
+      if (!ev) {
+        hidePermPanel();
+        return;
+      }
+      if (ev.needsRecheck) {
+        let refreshed;
+        try {
+          refreshed = await invoke('prepare_permission', { sessionId: ev.session_id, id: ev.request_id });
+        } catch (e) {
+          console.error('prepare_permission:', e);
+          return;
+        }
+        if (!refreshed) {
+          pendingPermissions[ev.session_id] = queue.filter(item => item.request_id !== ev.request_id);
+          if (!pendingPermissions[ev.session_id].length) delete pendingPermissions[ev.session_id];
+          continue;
+        }
+        ev.trust_key = refreshed.trust_key;
+        ev.trust_levels = refreshed.trust_levels;
+        ev.needsRecheck = false;
+      }
+
+      currentPermissionId = ev.request_id;
+      currentPermissionSessionId = ev.session_id;
+      const trustLevels = Array.isArray(ev.trust_levels)
+        ? ev.trust_levels
+        : (Array.isArray(ev.trustLevels) ? ev.trustLevels : []);
+      currentPermissionTrustGroups = Array.isArray(ev.trust_groups)
+        ? ev.trust_groups
+        : (Array.isArray(ev.trustGroups) ? ev.trustGroups : []);
+      if (!currentPermissionTrustGroups.length && trustLevels.length) {
+        currentPermissionTrustGroups = [{ target: ev.command || ev.summary || ev.tool, levels: trustLevels }];
+      }
+      const savedPermission = permissionUiStateBySession[ev.session_id];
+      const canRestore = savedPermission && savedPermission.requestId === ev.request_id;
+      currentPermissionTrustIndex = canRestore ? savedPermission.trustIndex : -1;
+      currentPermissionTrustKeys = canRestore ? [...savedPermission.trustKeys] : [];
+      const panel = document.getElementById('permPanel');
+      if (!panel) return;
+      const risk = document.getElementById('permRisk');
+      const tool = document.getElementById('permTool');
+      const cmd = document.getElementById('permCmd');
+      const desc = document.getElementById('permDesc');
+      if (risk) risk.textContent = ev.risk || 'Shell';
+      if (tool) tool.textContent = ev.tool || '—';
+      if (cmd) cmd.textContent = ev.command || ev.summary || '—';
+      if (desc) desc.textContent = ev.description || ev.summary || '—';
+      if (currentPermissionTrustIndex >= 0) renderPermissionTrustPage();
+      else showPermissionMainPage();
+      panel.classList.add('visible');
+      document.getElementById('msgInput').style.display = 'none';
+      focusPermissionAction(canRestore ? savedPermission.focusIndex : 0);
+      capturePermissionUiState(ev.session_id);
+      return;
+    }
   } finally {
     permissionDisplayInFlight = false;
   }
 }
 
-function renderPermissionTrustLevels(levels) {
-  const scope = document.getElementById('permTrustScope');
-  const select = document.getElementById('permTrustLevel');
-  if (!scope || !select) return;
-  select.replaceChildren();
-  if (!levels.length) {
-    scope.hidden = true;
-    return;
-  }
-  for (const level of levels) {
-    if (!level || !level.key) continue;
-    const option = document.createElement('option');
-    option.value = level.key;
-    option.textContent = level.label || level.key;
-    select.appendChild(option);
-  }
-  scope.hidden = select.options.length === 0;
-  if (select.options.length) currentPermissionTrustKey = select.value;
+function showPermissionMainPage() {
+  document.getElementById('permPanelContext').hidden = false;
+  document.getElementById('permPanelMain').hidden = false;
+  document.getElementById('permPanelTrust').hidden = true;
+  if (currentPermissionSessionId) capturePermissionUiState(currentPermissionSessionId);
 }
 
-function selectPermissionTrustLevel(trustKey) {
-  currentPermissionTrustKey = trustKey || null;
+function enterPermissionTrust() {
+  if (!currentPermissionTrustGroups.length) {
+    void respondPermission('allow');
+    return;
+  }
+  currentPermissionTrustIndex = 0;
+  currentPermissionTrustKeys = [];
+  renderPermissionTrustPage();
+  capturePermissionUiState(currentPermissionSessionId);
+}
+
+function renderPermissionTrustPage() {
+  const group = currentPermissionTrustGroups[currentPermissionTrustIndex];
+  if (!group) {
+    void respondPermission('allow-session');
+    return;
+  }
+  document.getElementById('permPanelContext').hidden = true;
+  document.getElementById('permPanelMain').hidden = true;
+  document.getElementById('permPanelTrust').hidden = false;
+  const actions = document.getElementById('permTrustActions');
+  actions.replaceChildren();
+  const levels = Array.isArray(group.levels) ? group.levels : [];
+  levels.forEach((level, index) => {
+    const button = document.createElement('button');
+    button.className = 'perm-panel-opt';
+    button.innerHTML = `<span class="perm-panel-opt-key">${index + 1}</span>` +
+      `<span class="perm-panel-opt-label">Trust ${escapeHtml(level.label || level.key)}</span>`;
+    button.onclick = () => choosePermissionTrust(level.key);
+    actions.appendChild(button);
+  });
+  const skip = document.createElement('button');
+  skip.className = 'perm-panel-opt';
+  skip.innerHTML = `<span class="perm-panel-opt-key">${levels.length + 1}</span>` +
+    '<span class="perm-panel-opt-label">Skip Trust</span>';
+  skip.onclick = () => choosePermissionTrust(null);
+  actions.appendChild(skip);
+  focusPermissionAction(0);
+  capturePermissionUiState(currentPermissionSessionId);
+}
+
+function choosePermissionTrust(trustKey) {
+  if (trustKey) currentPermissionTrustKeys.push(trustKey);
+  currentPermissionTrustIndex += 1;
+  renderPermissionTrustPage();
+}
+
+function activePermissionActions() {
+  const id = currentPermissionTrustIndex >= 0 ? 'permTrustActions' : 'permPanelActions';
+  const container = document.getElementById(id);
+  return container ? Array.from(container.querySelectorAll('.perm-panel-opt')) : [];
+}
+
+function movePermissionSelection(delta) {
+  const actions = activePermissionActions();
+  if (!actions.length) return;
+  const current = actions.indexOf(document.activeElement);
+  const next = current < 0
+    ? (delta > 0 ? 0 : actions.length - 1)
+    : (current + delta + actions.length) % actions.length;
+  actions[next].focus();
+  capturePermissionUiState(currentPermissionSessionId);
+}
+
+function focusPermissionAction(index) {
+  const actions = activePermissionActions();
+  if (!actions.length) return;
+  actions[Math.max(0, Math.min(index || 0, actions.length - 1))].focus();
+}
+
+function capturePermissionUiState(sessionId) {
+  if (!sessionId || currentPermissionSessionId !== sessionId || !currentPermissionId) return;
+  const actions = activePermissionActions();
+  const focusIndex = Math.max(0, actions.indexOf(document.activeElement));
+  permissionUiStateBySession[sessionId] = {
+    requestId: currentPermissionId,
+    trustIndex: currentPermissionTrustIndex,
+    trustKeys: [...currentPermissionTrustKeys],
+    focusIndex,
+  };
+}
+
+function confirmPermissionSelection() {
+  const actions = activePermissionActions();
+  if (!actions.length) return;
+  const current = actions.includes(document.activeElement) ? document.activeElement : actions[0];
+  current.click();
 }
 
 async function respondPermission(choice) {
@@ -773,16 +1129,24 @@ async function respondPermission(choice) {
       sessionId: currentPermissionSessionId,
       id: currentPermissionId,
       choice: choice,
-      trustKey: choice === 'allow-session' ? currentPermissionTrustKey : null,
+      trustKey: null,
+      trustKeys: choice === 'allow-session' ? currentPermissionTrustKeys : null,
     });
-  } catch (e) { console.error('respond_permission:', e); }
+  } catch (e) {
+    console.error('respond_permission:', e);
+    showError('Permission response failed: ' + String(e));
+    return;
+  }
   // 清除该 session 的 pending permission
   if (currentPermissionSessionId) {
+    delete permissionUiStateBySession[currentPermissionSessionId];
     const queue = pendingPermissions[currentPermissionSessionId] || [];
     pendingPermissions[currentPermissionSessionId] = queue.filter(ev => ev.request_id !== currentPermissionId);
     if (!pendingPermissions[currentPermissionSessionId].length) {
       delete pendingPermissions[currentPermissionSessionId];
       sessionStreamingState[currentPermissionSessionId] = 'running';
+    } else {
+      pendingPermissions[currentPermissionSessionId][0].needsRecheck = true;
     }
   }
   hidePermPanel();
@@ -796,11 +1160,10 @@ function hidePermPanel() {
   if (input) { input.style.display = ''; input.focus(); }
   currentPermissionId = null;
   currentPermissionSessionId = null;
-  currentPermissionTrustKey = null;
-  const scope = document.getElementById('permTrustScope');
-  const select = document.getElementById('permTrustLevel');
-  if (scope) scope.hidden = true;
-  if (select) select.replaceChildren();
+  currentPermissionTrustGroups = [];
+  currentPermissionTrustIndex = -1;
+  currentPermissionTrustKeys = [];
+  showPermissionMainPage();
 }
 
 // =============== Send Message & Slash Command Dispatch ===============
@@ -865,6 +1228,39 @@ function setInputSelection(input, start, end = start) {
   sel.addRange(range);
 }
 
+function captureSessionDraft(sessionId) {
+  if (!sessionId) return;
+  const input = document.getElementById('msgInput');
+  const mode = document.getElementById('runningSendMode');
+  const selection = getInputSelection(input);
+  sessionDraftState[sessionId] = {
+    text: getInputText(input),
+    selectionStart: selection.start,
+    selectionEnd: selection.end,
+    runningSendMode: mode ? mode.value : 'queue',
+  };
+}
+
+function restoreSessionDraft(sessionId) {
+  const input = document.getElementById('msgInput');
+  if (!input) return;
+  const saved = sessionDraftState[sessionId] || {
+    text: '',
+    selectionStart: 0,
+    selectionEnd: 0,
+    runningSendMode: currentSettings?.running_send_mode || 'queue',
+  };
+  setInputText(input, saved.text || '');
+  const mode = document.getElementById('runningSendMode');
+  if (mode) mode.value = saved.runningSendMode || 'queue';
+  autoResize(input);
+  updateInputHighlight([]);
+  if (document.getElementById('permPanel')?.classList.contains('visible')) return;
+  input.focus();
+  setInputSelection(input, saved.selectionStart || 0, saved.selectionEnd || saved.selectionStart || 0);
+  updateAbortButton();
+}
+
 async function sendMessage() {
   const input = document.getElementById('msgInput');
   if (!input) return;
@@ -874,6 +1270,14 @@ async function sendMessage() {
   input.style.height = 'auto';
   updateInputHighlight([]);
   hideAutocomplete();
+
+  if (isStreaming) {
+    const mode = document.getElementById('runningSendMode');
+    try { await invoke('send_running_message', { mode: mode ? mode.value : 'queue', message: text }); }
+    catch (e) { showError(String(e)); }
+    updateAbortButton();
+    return;
+  }
 
   if (text.includes('/')) {
     const handled = await dispatchSlashCommand(text);
@@ -929,9 +1333,51 @@ async function handleSlashAction(action, value) {
       await copyText(value || '');
       showNotification('Copied last assistant message');
       return;
+    case 'forkPicker':
+      await showForkPicker();
+      return;
+    case 'subagentPanel':
+      await showSubagentPanel();
+      return;
     default:
       return;
   }
+}
+
+async function showForkPicker() {
+  const panel = document.getElementById('forkPicker');
+  if (!panel) return;
+  try {
+    const points = await invoke('get_fork_points');
+    panel.hidden = false;
+    panel.innerHTML = '<div class="running-messages-title">Fork conversation</div><ol>' +
+      (points.length ? points.map(point => '<li><button class="turn-activity-file" onclick="forkAtMessage(' + point.messageIndex + ')">' +
+        escapeHtml(point.label) + '</button></li>').join('') : '<li>No user messages available.</li>') + '</ol>';
+  } catch (error) { showError(String(error)); }
+}
+
+async function forkAtMessage(messageIndex) {
+  try {
+    await invoke('fork_session', { messageIndex });
+    sessions = await invoke('get_sessions');
+    renderSessionList();
+    document.getElementById('forkPicker').hidden = true;
+    showNotification('Created forked session');
+  } catch (error) { showError(String(error)); }
+}
+
+async function showSubagentPanel() {
+  const panel = document.getElementById('subagentPanel');
+  if (!panel) return;
+  try {
+    const subagents = await invoke('get_subagents');
+    panel.hidden = false;
+    panel.innerHTML = '<div class="running-messages-title">Subagents</div><ol>' +
+      (subagents.length ? subagents.map(agent => '<li><strong>' + escapeHtml(agent.name) +
+        '</strong> <em>' + escapeHtml(agent.status) + '</em><div class="subagent-meta">' +
+        escapeHtml(agent.model_id || agent.modelId || '') + ' · ' + agent.message_count + ' messages</div></li>').join('')
+        : '<li>No subagents.</li>') + '</ol>';
+  } catch (error) { showError(String(error)); }
 }
 
 async function copyText(text) {
@@ -960,6 +1406,9 @@ async function abortAgent() {
 function renderSessionList() {
   const el = document.getElementById('sessionList');
   if (!el) return;
+  const renderKey = JSON.stringify(sessions) + ':' + activeSessionIdx + ':' + JSON.stringify(sessionStreamingState);
+  if (renderKey === renderedSessionListKey) return;
+  renderedSessionListKey = renderKey;
   if (!sessions.length) {
     el.innerHTML = '<div style="padding:12px;font-size:11px;color:var(--muted)">No sessions</div>';
     return;
@@ -1001,6 +1450,12 @@ function formatSessionDate(dateStr) {
 async function doSwitchSession(idx) {
   const s = sessions[idx];
   if (!s) return;
+  const chat = document.getElementById('chatMessages');
+  if (chat && renderedMessageSessionId) {
+    persistSessionViewState(renderedMessageSessionId, chat);
+  }
+  if (activeSessionId) captureSessionDraft(activeSessionId);
+  if (activeSessionId) capturePermissionUiState(activeSessionId);
   activeSessionIdx = idx;
   document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
   const items = document.querySelectorAll('.session-item');
@@ -1194,6 +1649,16 @@ function renderGeneralSettings(settings) {
     followSel.onchange = () => saveSetting('follow_up_mode', followSel.value);
   }
 
+  const runningSendSel = document.getElementById('settingsRunningSendMode');
+  if (runningSendSel) {
+    if (settings.running_send_mode) runningSendSel.value = settings.running_send_mode;
+    runningSendSel.onchange = () => {
+      const mode = document.getElementById('runningSendMode');
+      if (mode) { mode.value = runningSendSel.value; mode.dataset.initialized = 'true'; }
+      saveSetting('running_send_mode', runningSendSel.value);
+    };
+  }
+
   // Block images
   const blockSel = document.getElementById('settingsBlockImages');
   if (blockSel) {
@@ -1230,15 +1695,32 @@ async function saveSetting(key, value) {
 
 // =============== Input Handling ===============
 
-function toggleAttachmentMenu() {
-  const menu = document.getElementById('attachmentMenu');
-  if (!menu) return;
-  menu.classList.toggle('visible');
+function usesCombinedAttachmentPicker() {
+  return /Macintosh|Mac OS X/.test(navigator.userAgent);
 }
 
-async function attachFileReference(mode = 'file') {
-  const menu = document.getElementById('attachmentMenu');
-  if (menu) menu.classList.remove('visible');
+function configureAttachmentPicker() {
+  const fileButton = document.getElementById('attachFileButton');
+  const directoryButton = document.getElementById('attachDirectoryButton');
+  const combined = usesCombinedAttachmentPicker();
+
+  if (fileButton) {
+    fileButton.title = combined ? '附加文件或文件夹' : '附加文件';
+    fileButton.setAttribute('aria-label', fileButton.title);
+  }
+  if (directoryButton) directoryButton.hidden = combined;
+}
+
+async function attachFileReference() {
+  const mode = usesCombinedAttachmentPicker() ? 'any' : 'file';
+  await attachReference(mode);
+}
+
+async function attachDirectoryReference() {
+  await attachReference('directory');
+}
+
+async function attachReference(mode) {
   try {
     const path = await invoke('pick_attachment', { mode });
     if (!path) return;
@@ -1440,10 +1922,43 @@ document.addEventListener('keydown', function(e) {
 
   // Permission panel shortcuts
   if (currentPermissionId) {
-    if (e.key === 'y' || e.key === 'Y') { e.preventDefault(); respondPermission('allow'); return; }
-    if (e.key === 't' || e.key === 'T') { e.preventDefault(); respondPermission('allow-session'); return; }
-    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); respondPermission('deny'); return; }
-    if (e.key === 'a' || e.key === 'A') { e.preventDefault(); respondPermission('deny'); return; }
+    if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      movePermissionSelection(1);
+      return;
+    }
+    if (e.key === 'k' || e.key === 'K' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      movePermissionSelection(-1);
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmPermissionSelection();
+      return;
+    }
+    if (currentPermissionTrustIndex >= 0) {
+      const group = currentPermissionTrustGroups[currentPermissionTrustIndex];
+      const levels = group && Array.isArray(group.levels) ? group.levels : [];
+      const number = Number.parseInt(e.key, 10);
+      if (number >= 1 && number <= levels.length + 1) {
+        e.preventDefault();
+        choosePermissionTrust(number <= levels.length ? levels[number - 1].key : null);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        currentPermissionTrustIndex = -1;
+        currentPermissionTrustKeys = [];
+        showPermissionMainPage();
+        return;
+      }
+      return;
+    }
+    if (e.key === 'a' || e.key === 'A') { e.preventDefault(); respondPermission('allow'); return; }
+    if (e.key === 't' || e.key === 'T') { e.preventDefault(); enterPermissionTrust(); return; }
+    if (e.key === 'd' || e.key === 'D') { e.preventDefault(); respondPermission('deny'); return; }
+    if (e.key === 'h' || e.key === 'H') { e.preventDefault(); respondPermission('deny-hint'); return; }
     if (e.key === 'Escape') { e.preventDefault(); respondPermission('deny'); return; }
   }
 
@@ -1538,13 +2053,6 @@ document.addEventListener('mouseout', function(e) {
   hideQuotaTooltip();
 });
 
-document.addEventListener('click', function(e) {
-  const menu = document.getElementById('attachmentMenu');
-  if (!menu || !menu.classList.contains('visible')) return;
-  if (e.target.closest('[data-attachment-control]')) return;
-  menu.classList.remove('visible');
-});
-
 document.addEventListener('scroll', hideQuotaTooltip, true);
 
 function showQuotaTooltip(target) {
@@ -1571,7 +2079,23 @@ function hideQuotaTooltip() {
 
 // =============== UI Helpers ===============
 
-function toggleToolCall(el) { el.classList.toggle('expanded'); }
+function isToolCallExpanded(toolCallId) {
+  if (!activeSessionId || !toolCallId) return false;
+  const expanded = expandedToolCallsBySession[activeSessionId];
+  return Array.isArray(expanded) && expanded.includes(toolCallId);
+}
+
+function toggleToolCall(el) {
+  const opening = !el.classList.contains('expanded');
+  el.classList.toggle('expanded', opening);
+  const sessionId = el.dataset.sessionId || activeSessionId;
+  const toolCallId = el.dataset.toolCallId;
+  if (!sessionId || !toolCallId) return;
+  const expanded = new Set(expandedToolCallsBySession[sessionId] || []);
+  if (opening) expanded.add(toolCallId);
+  else expanded.delete(toolCallId);
+  expandedToolCallsBySession[sessionId] = [...expanded];
+}
 
 function toggleThinking(header) {
   const block = header.closest('.thinking-block');

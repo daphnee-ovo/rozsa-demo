@@ -1,4 +1,4 @@
-use rozsa_app::permissions::TrustLevel;
+use rozsa_app::permissions::{TrustGroup, TrustLevel};
 use rozsa_gui::state::{
     ContextUsage, PermissionEvent, RuntimeState, SessionTab, ToolEvent, TurnActivity, UiSnapshot,
     find_tab_index_by_session, permission_pending_key,
@@ -32,6 +32,10 @@ fn all_gui_event_payloads_preserve_the_origin_session_id() {
             session_total_tokens: 0,
         },
         turn_activity: TurnActivity::default(),
+        turn_summaries: vec![],
+        queued_messages: vec![],
+        steering_conversation: vec![],
+        stream_update: false,
     };
     let tool = ToolEvent::Start {
         session_id: session_id.clone(),
@@ -51,6 +55,10 @@ fn all_gui_event_payloads_preserve_the_origin_session_id() {
         trust_levels: vec![TrustLevel {
             label: "write src/lib.rs".to_string(),
             key: "write:src/lib.rs".to_string(),
+        }],
+        trust_groups: vec![TrustGroup {
+            target: "src/lib.rs".to_string(),
+            levels: vec![],
         }],
     };
 

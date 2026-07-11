@@ -3,9 +3,13 @@
 // rozsa-gui 入口。多会话架构：每个 session tab 有独立的 agent backend（懒加载）。
 
 mod commands;
-mod events;
+pub mod events;
 pub mod file_refs;
+pub mod git_diff;
 pub mod state;
+pub mod turn_diff;
+
+pub use git_diff::read_workspace_diff;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -82,11 +86,17 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     let perm_rx = config.permission_request_rx;
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(gui_state)
         .invoke_handler(tauri::generate_handler![
             commands::send_message,
             commands::abort,
+            commands::send_running_message,
             commands::get_state,
+            commands::get_file_diff,
+            commands::get_fork_points,
+            commands::fork_session,
+            commands::get_subagents,
             commands::get_sessions,
             commands::switch_session,
             commands::new_session,

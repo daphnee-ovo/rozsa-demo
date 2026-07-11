@@ -188,6 +188,9 @@ impl serde::Serialize for Message {
                 map.serialize_entry("toolCallId", &msg.tool_call_id)?;
                 map.serialize_entry("toolName", &msg.tool_name)?;
                 map.serialize_entry("content", &msg.content)?;
+                if !msg.details.is_null() {
+                    map.serialize_entry("details", &msg.details)?;
+                }
                 map.serialize_entry("isError", &msg.is_error)?;
                 map.serialize_entry("timestamp", &msg.timestamp)?;
                 map.end()

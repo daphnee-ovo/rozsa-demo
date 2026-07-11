@@ -156,7 +156,10 @@ fn test_live_state_event_accumulation() {
         tool_name: "Bash".to_string(),
         args: serde_json::json!({"command": "ls"}),
     });
-    assert!(changed, "ToolExecutionStart should mark changed");
+    assert!(
+        !changed,
+        "ToolExecutionStart has a dedicated lightweight event"
+    );
 
     // ToolExecutionEnd
     let tool_result = make_tool_result_message("tc_001", "file1.txt\nfile2.txt", 3000);
@@ -169,7 +172,10 @@ fn test_live_state_event_accumulation() {
             tool_name: tr.tool_name.clone(),
             result: tr.clone(),
         });
-        assert!(changed);
+        assert!(
+            !changed,
+            "ToolExecutionEnd updates activity without a full snapshot"
+        );
     }
 
     // MessageStart - tool result message

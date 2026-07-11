@@ -2,7 +2,8 @@
 //
 // 事件转发：每个 Active session tab 有独立的事件监听任务。
 
-use tauri::{AppHandle, Emitter, Manager};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use rozsa_core::events::AgentEvent;
 
@@ -12,7 +13,11 @@ use crate::state::{
 };
 
 /// Start an event forwarder addressed to an immutable session id, not a tab index.
-pub fn spawn_event_forwarder_for_session(app: AppHandle, session_id: String, gui_state: GuiState) {
+pub fn spawn_event_forwarder_for_session<R: Runtime>(
+    app: AppHandle<R>,
+    session_id: String,
+    gui_state: GuiState,
+) {
     let tabs = gui_state.tabs.clone();
     let active_tab = gui_state.active_tab.clone();
     let shared = gui_state.shared.clone();
@@ -29,10 +34,18 @@ pub fn spawn_event_forwarder_for_session(app: AppHandle, session_id: String, gui
             }
         };
         let mut rx = rx;
+        let mut last_stream_emit = Instant::now() - Duration::from_millis(50);
 
         loop {
             match rx.recv().await {
                 Ok(event) => {
+                    let stream_update = matches!(
+                        event,
+                        AgentEvent::MessageStart { .. }
+                            | AgentEvent::MessageUpdate { .. }
+                            | AgentEvent::MessageEnd { .. }
+                    );
+                    let throttled_update = matches!(event, AgentEvent::MessageUpdate { .. });
                     let (changed, turn_id) = {
                         let mut tabs_guard = tabs.lock().await;
                         let Some(index) = find_tab_index_by_session(&tabs_guard, &session_id)
@@ -100,6 +113,14 @@ pub fn spawn_event_forwarder_for_session(app: AppHandle, session_id: String, gui
 
                     // Only emit a snapshot when this immutable session is active.
                     if changed {
+                        if throttled_update
+                            && last_stream_emit.elapsed() < Duration::from_millis(33)
+                        {
+                            continue;
+                        }
+                        if throttled_update {
+                            last_stream_emit = Instant::now();
+                        }
                         let current_active = *active_tab.lock().await;
                         let tabs_guard = tabs.lock().await;
                         if tabs_guard
@@ -107,7 +128,11 @@ pub fn spawn_event_forwarder_for_session(app: AppHandle, session_id: String, gui
                             .is_some_and(|tab| tab.session_id() == session_id)
                         {
                             if let Some(tab) = tabs_guard.get(current_active) {
-                                let snapshot = UiSnapshot::from_tab(tab, &shared);
+                                let snapshot = if stream_update {
+                                    UiSnapshot::from_stream_update(tab, &shared)
+                                } else {
+                                    UiSnapshot::from_tab(tab, &shared)
+                                };
                                 let _ = app.emit("ui-state", &snapshot);
                             }
                         }
@@ -150,6 +175,7 @@ pub fn spawn_permission_listener(
                 risk: format!("{:?}", request.info.risk),
                 trust_key: request.info.trust_key.clone(),
                 trust_levels: request.info.trust_levels.clone(),
+                trust_groups: request.info.trust_groups.clone(),
             };
             let _ = app.emit("permission-request", &event);
         }

@@ -228,17 +228,6 @@ body {
 .tool-status.s-error { background: var(--error); }
 .tool-status.s-running { background: var(--warning); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-.turn-activity {
-  margin: 0 20px 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--muted);
-  font: 11px/1.6 var(--font-mono);
-}
-.turn-activity-label { color: var(--fg); font-weight: 600; }
-.turn-activity code { color: var(--fg); font: inherit; }
 .tool-name { color: var(--fg); font-weight: 500; }
 
 /* 侧边栏底部 */
@@ -590,6 +579,8 @@ body {
 /* Thinking 块 */
 .thinking-block {
   margin: 0 0 10px;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid oklch(90% 0.008 355);
   border-radius: var(--radius);
   overflow: hidden;
@@ -628,17 +619,28 @@ body {
 .thinking-block.expanded .thinking-chevron { transform: rotate(90deg); }
 .thinking-content {
   display: none;
-  padding: 8px 12px;
   border-top: 1px solid oklch(90% 0.008 355);
+  min-width: 0;
+  max-height: min(46vh, 440px);
+  overflow: auto;
+  overscroll-behavior: contain;
   font-size: 12px;
   line-height: 1.6;
   color: oklch(48% 0.012 350);
-  font-style: italic;
 }
 .thinking-block.expanded .thinking-content,
 .thinking-expanded .thinking-content { display: block; }
-.thinking-content p { margin-bottom: 6px; }
-.thinking-content p:last-child { margin-bottom: 0; }
+.thinking-markdown {
+  min-width: 0;
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+}
+.thinking-markdown p { margin-bottom: 6px; }
+.thinking-markdown p:last-child { margin-bottom: 0; }
+.thinking-markdown h1, .thinking-markdown h2, .thinking-markdown h3 { margin: 8px 0 5px; }
+.thinking-markdown ul, .thinking-markdown ol { margin: 5px 0 8px; }
+.thinking-markdown pre, .thinking-markdown .md-table-wrap { max-width: 100%; overflow: auto; }
+.thinking-markdown pre { font-size: 11.5px; }
 /* Thinking 进行中动画 */
 .thinking-block.active .thinking-icon,
 .thinking-block.active .thinking-label {
@@ -806,6 +808,20 @@ body {
   opacity: 1;
   overflow-y: auto;
 }
+
+/* 运行时摘要卡片 */
+.changes-card { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: color-mix(in oklch, var(--surface) 92%, var(--code-bg)); padding: 10px 12px; }
+.changes-header { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; font-size: 11.5px; font-weight: 500; color: var(--fg); }
+.changes-list { display: flex; flex-direction: column; gap: 4px; }
+.change-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 11.5px; font-family: var(--font-mono); }
+.change-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.change-icon.mod { background: var(--warning-bg); color: #927114; }
+.change-name { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.change-name:hover { color: var(--accent); text-decoration: underline; }
+.change-add { color: var(--success); font-weight: 600; font-variant-numeric: tabular-nums; }
+.change-del { color: var(--error); font-weight: 600; font-variant-numeric: tabular-nums; }
+.changes-footer { display: flex; align-items: center; gap: 6px; padding: 8px 0 0; font-size: 10.5px; font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.changes-runtime { min-width: 0; margin-left: auto; overflow: hidden; color: var(--muted); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 /* 工具输出 — 命令行风格 */
 .tool-output {
   padding: 0 0 0 27px !important;
@@ -834,7 +850,10 @@ body {
 .change-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
 .change-icon.new { background: var(--success-bg); color: var(--success); }
 .change-icon.mod { background: var(--warning-bg); color: #927114; }
-.change-name { flex: 1; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.change-name { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.change-name:hover { color: var(--accent); }
+.change-toggle { width: 12px; color: var(--muted); font-size: 15px; line-height: 1; transition: transform 0.12s ease; }
+.change-entry.expanded .change-toggle { transform: rotate(90deg); }
 .change-add { color: var(--success); font-weight: 600; font-variant-numeric: tabular-nums; }
 .change-del { color: var(--error); font-weight: 600; font-variant-numeric: tabular-nums; }
 .changes-footer { display: flex; align-items: center; gap: 6px; padding: 8px 0 0; font-size: 10.5px; font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -961,6 +980,71 @@ body {
   flex-shrink: 0;
   position: relative;
 }
+.running-messages {
+  margin: 0 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  overflow: hidden;
+}
+.running-messages-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.running-messages-title span {
+  display: inline-grid;
+  min-width: 15px;
+  height: 15px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 9px;
+}
+.running-messages ol {
+  margin: 0;
+  padding: 4px 9px 5px 27px;
+}
+.running-messages li {
+  padding: 2px 0;
+  color: var(--fg-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.running-messages li::marker {
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+.running-messages em {
+  margin-left: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+}
+.subagent-meta { color: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+.turn-activity-file {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.turn-activity-file:hover { text-decoration: underline; }
+.turn-diff-inline {
+  margin: 2px 0 5px 22px;
+}
+.turn-diff-inline[hidden] { display: none; }
+.turn-diff-inline .diff-view { max-height: 260px; overflow: auto; padding: 2px 0 !important; }
 .input-wrapper {
   border: 1.5px solid transparent;
   border-radius: var(--radius-lg);
@@ -1066,32 +1150,6 @@ body {
   transition: all 0.12s;
 }
 .input-tool-btn:hover { background: var(--code-bg); color: var(--fg); transform: translateY(-1px); }
-.attachment-menu {
-  position: absolute;
-  bottom: 34px;
-  left: 8px;
-  display: none;
-  min-width: 116px;
-  padding: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 6px 20px oklch(0% 0 0 / 0.08);
-  z-index: 60;
-}
-.attachment-menu.visible { display: block; }
-.attachment-menu button {
-  width: 100%;
-  border: none;
-  background: none;
-  color: var(--fg);
-  font-size: 12px;
-  text-align: left;
-  padding: 6px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.attachment-menu button:hover { background: var(--code-bg); }
 .input-spacer { flex: 1; }
 .input-hint {
   font-size: 10.5px;
@@ -1172,22 +1230,9 @@ body {
   line-height: 1.5;
   margin: 0;
 }
-.perm-panel-trust {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.perm-panel-trust select {
-  width: 100%;
-  border: 1px solid var(--code-border);
-  border-radius: 6px;
-  background: var(--code-bg);
-  color: var(--fg);
-  padding: 6px 8px;
-  font: 12px var(--font-mono);
-}
+.perm-panel-context { display: flex; flex-direction: column; gap: 12px; }
+.perm-panel-context[hidden] { display: none; }
+.perm-panel-page[hidden] { display: none; }
 .perm-panel-actions {
   display: flex;
   flex-direction: column;
@@ -1212,6 +1257,13 @@ body {
 .perm-panel-opt:hover {
   background: color-mix(in oklch, var(--surface) 96%, var(--accent));
   border-color: oklch(80% 0.025 350);
+}
+.perm-panel-opt:focus,
+.perm-panel-opt:focus-visible {
+  outline: none;
+  background: color-mix(in oklch, var(--surface) 92%, var(--accent));
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent);
 }
 .perm-panel-opt:active {
   background: color-mix(in oklch, var(--surface) 92%, var(--accent));
@@ -1820,50 +1872,53 @@ button:focus-visible, .session-item:focus-visible,
         <div class="chat-empty-hint">向 Rózsa 描述你的编码任务<div class="chat-empty-kbd"><kbd>Enter</kbd> 发送 <kbd>⇧ Enter</kbd> 换行</div></div>
       </div>
     </div>
-    <div class="turn-activity" data-od-id="turn-activity" id="turnActivity" hidden></div>
 
     <!-- 输入框 -->
     <div data-od-id="chat-input">
       <div class="autocomplete-popup" id="autocomplete"></div>
+      <div class="running-messages" id="subagentPanel" hidden></div>
+      <div class="running-messages" id="forkPicker" hidden></div>
+      <div class="running-messages" id="queuedMessages" hidden></div>
+      <div class="running-messages" id="steeringConversation" hidden></div>
       <div class="input-wrapper">
         <div class="perm-panel" id="permPanel">
-          <div class="perm-panel-title">请求执行权限</div>
-          <div class="perm-panel-meta">
-            <span class="perm-panel-risk" id="permRisk">—</span>
-            <span class="perm-panel-tool" id="permTool">—</span>
+          <div class="perm-panel-context" id="permPanelContext">
+            <div class="perm-panel-title">请求执行权限</div>
+            <div class="perm-panel-meta">
+              <span class="perm-panel-risk" id="permRisk">—</span>
+              <span class="perm-panel-tool" id="permTool">—</span>
+            </div>
+            <div class="perm-panel-cmd" id="permCmd">—</div>
+            <p class="perm-panel-desc" id="permDesc">—</p>
           </div>
-          <div class="perm-panel-cmd" id="permCmd">—</div>
-          <p class="perm-panel-desc" id="permDesc">—</p>
-          <label class="perm-panel-trust" id="permTrustScope" hidden>
-            <span>本会话信任范围</span>
-            <select id="permTrustLevel" aria-label="本会话信任范围" onchange="selectPermissionTrustLevel(this.value)"></select>
-          </label>
-          <div class="perm-panel-actions" id="permPanelActions">
-            <button class="perm-panel-opt" onclick="respondPermission('allow')">
-              <span class="perm-panel-opt-key">Y</span>
-              <span class="perm-panel-opt-label">允许执行</span>
-            </button>
-            <button class="perm-panel-opt" onclick="respondPermission('allow-session')">
-              <span class="perm-panel-opt-key">T</span>
-              <span class="perm-panel-opt-label">按所选范围信任本会话</span>
-            </button>
-            <button class="perm-panel-opt" onclick="respondPermission('deny')">
-              <span class="perm-panel-opt-key">N</span>
-              <span class="perm-panel-opt-label">拒绝执行</span>
-            </button>
-            <button class="perm-panel-opt" onclick="respondPermission('deny')">
-              <span class="perm-panel-opt-key">A</span>
-              <span class="perm-panel-opt-label">拒绝并要求替换方案</span>
-            </button>
+          <div class="perm-panel-page" id="permPanelMain">
+            <div class="perm-panel-actions" id="permPanelActions">
+              <button class="perm-panel-opt" onclick="respondPermission('allow')">
+                <span class="perm-panel-opt-key">A</span>
+                <span class="perm-panel-opt-label">Allow once</span>
+              </button>
+              <button class="perm-panel-opt" onclick="enterPermissionTrust()">
+                <span class="perm-panel-opt-key">T</span>
+                <span class="perm-panel-opt-label">Trust</span>
+              </button>
+              <button class="perm-panel-opt" onclick="respondPermission('deny')">
+                <span class="perm-panel-opt-key">D</span>
+                <span class="perm-panel-opt-label">Deny</span>
+              </button>
+              <button class="perm-panel-opt" onclick="respondPermission('deny-hint')">
+                <span class="perm-panel-opt-key">H</span>
+                <span class="perm-panel-opt-label">Deny and hint</span>
+              </button>
+            </div>
+          </div>
+          <div class="perm-panel-page" id="permPanelTrust" hidden>
+            <div class="perm-panel-actions" id="permTrustActions"></div>
           </div>
         </div>
-        <div id="msgInput" class="rich-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="向 Rózsa 发送消息，支持 Markdown…" oninput="autoResize(this);updateAutocomplete()"></div>
+        <div id="msgInput" class="rich-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="向 Rózsa 发送消息，支持 Markdown…" oninput="autoResize(this);updateAutocomplete();updateAbortButton()"></div>
         <div class="input-toolbar">
-          <div class="attachment-menu" id="attachmentMenu" data-attachment-control>
-            <button onclick="attachFileReference('file')">文件</button>
-            <button onclick="attachFileReference('directory')">目录</button>
-          </div>
-          <button class="input-tool-btn" title="附加文件或目录" aria-label="附加文件或目录" data-attachment-control onclick="toggleAttachmentMenu()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
+          <button class="input-tool-btn" id="attachFileButton" title="附加文件或文件夹" aria-label="附加文件或文件夹" onclick="attachFileReference()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
+          <button class="input-tool-btn" id="attachDirectoryButton" title="附加文件夹" aria-label="附加文件夹" onclick="attachDirectoryReference()" hidden><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 4.5h4l1.4 1.5h7.1v6.75a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/></svg></button>
           <button class="input-tool-btn" title="斜杠命令" aria-label="斜杠命令" onclick="insertSlashCommandPrefix()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 2.5L6 13.5"/></svg></button>
           <div class="input-spacer"></div>
           <span class="input-hint">Markdown · ⏎ 发送 · ⇧⏎ 换行 · ⌃T 思考</span>
@@ -1872,6 +1927,7 @@ button:focus-visible, .session-item:focus-visible,
             <span class="context-tokens" id="contextTokens">0k</span>
           </div>
           <button class="model-selector" data-od-id="model-badge" title="切换模型" id="modelSelector" onclick="showModelPicker()">(未配置)</button>
+          <select class="model-selector" id="runningSendMode" title="运行中消息模式" onchange="updateAbortButton()" hidden><option value="queue">Queue</option><option value="steer">Steer</option></select>
           <button class="send-btn" data-od-id="send-btn" onclick="sendMessage()">发送</button>
         </div>
       </div>
@@ -1904,6 +1960,7 @@ button:focus-visible, .session-item:focus-visible,
           <div class="setting-item"><span class="setting-label">Auto Compact</span><select class="setting-select" id="settingsAutoCompact" aria-label="自动压缩"><option value="true">On</option><option value="false">Off</option></select></div>
           <div class="setting-item"><span class="setting-label">Steering Mode</span><select class="setting-select" id="settingsSteeringMode" aria-label="引导模式"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
           <div class="setting-item"><span class="setting-label">Follow-up Mode</span><select class="setting-select" id="settingsFollowUpMode" aria-label="跟进模式"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
+          <div class="setting-item"><span class="setting-label">运行中发送默认</span><select class="setting-select" id="settingsRunningSendMode" aria-label="运行中发送默认"><option value="queue">Queue</option><option value="steer">Steer</option></select></div>
           <div class="setting-item"><span class="setting-label">Block Images</span><select class="setting-select" id="settingsBlockImages" aria-label="屏蔽图片"><option value="false">Off</option><option value="true">On</option></select></div>
         </div>
         <div class="settings-group">

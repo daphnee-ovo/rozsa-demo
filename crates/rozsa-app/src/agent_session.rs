@@ -990,13 +990,24 @@ impl AgentSession {
                     messages.push(msg.clone());
 
                     if let Some(message) = msg.as_standard() {
-                        session_manager.append_message(message.clone())?;
+                        // prompt_with_prefix_blocks persists the user message
+                        // before the loop starts so an interrupted prompt is
+                        // still recoverable. AgentEnd contains that same user
+                        // message, so only persist the loop-produced messages
+                        // here.
+                        if should_persist_loop_message(message) {
+                            session_manager.append_message(message.clone())?;
+                        }
                     }
                 }
             }
         }
         Ok(())
     }
+}
+
+fn should_persist_loop_message(message: &Message) -> bool {
+    !matches!(message, Message::User(_))
 }
 
 fn skill_command_tokens(text: &str) -> Vec<(usize, usize, &str)> {
@@ -1178,7 +1189,7 @@ mod tests {
     use super::oauth_auth_provider_id;
     use super::oauth_request_headers;
     use super::skill_command_tokens;
-    use rozsa_model::types::Provider;
+    use rozsa_model::types::{Message, Provider, UserContent, UserMessage};
 
     #[test]
     fn auth_json_provider_gate_only_allows_oauth_providers() {
@@ -1217,9 +1228,16 @@ mod tests {
     #[test]
     fn finds_multiple_skill_command_tokens() {
         let tokens = skill_command_tokens("prefix /skill:ask and /skill:brainstorm suffix");
-        assert_eq!(
-            tokens,
-            vec![(7, 17, "ask"), (22, 39, "brainstorm")]
-        );
+        assert_eq!(tokens, vec![(7, 17, "ask"), (22, 39, "brainstorm")]);
+    }
+
+    #[test]
+    fn prompted_user_message_is_not_persisted_twice_at_agent_end() {
+        let message = Message::User(UserMessage {
+            content: UserContent::Text("hello".to_string()),
+            display_text: None,
+            timestamp: 0,
+        });
+        assert!(!super::should_persist_loop_message(&message));
     }
 }

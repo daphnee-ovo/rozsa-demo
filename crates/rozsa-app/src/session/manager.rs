@@ -498,7 +498,29 @@ impl SessionManager {
 
     /// Get all entries in the session (for compaction planning).
     pub fn entries(&self) -> Vec<SessionEntry> {
-        self.by_id.values().cloned().collect()
+        let mut entries = Vec::new();
+        let mut current = self.leaf_id.as_deref();
+        while let Some(id) = current {
+            let Some(entry) = self.by_id.get(id) else {
+                break;
+            };
+            entries.push(entry.clone());
+            current = entry.parent_id();
+        }
+        entries.reverse();
+        entries
+    }
+
+    /// Return the latest custom entry of `custom_type` by persisted timestamp.
+    pub fn latest_custom(&self, custom_type: &str) -> Option<CustomEntry> {
+        self.by_id
+            .values()
+            .filter_map(|entry| match entry {
+                SessionEntry::Custom(custom) if custom.custom_type == custom_type => Some(custom),
+                _ => None,
+            })
+            .max_by(|left, right| left.base.timestamp.cmp(&right.base.timestamp))
+            .cloned()
     }
 
     /// Append a session_info entry recording the user-facing display name.
