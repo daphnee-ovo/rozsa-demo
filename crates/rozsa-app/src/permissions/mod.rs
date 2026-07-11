@@ -131,25 +131,41 @@ impl PermissionController {
                 reason: "blocked by permission.deny rule".to_string(),
             };
         }
-        if rules_match_any(&config.ask, tool_name, args, &self.workspace_root) {
-            return PolicyVerdict::NeedApproval {
+        let matched_ask = rules_match_any(&config.ask, tool_name, args, &self.workspace_root);
+        let verdict = if matched_ask {
+            PolicyVerdict::NeedApproval {
                 info: approval_info(tool_name, args, Vec::new()),
-            };
-        }
-        if rules_cover_request(&config.allow, tool_name, args, &self.workspace_root) {
+            }
+        } else {
+            verdict
+        };
+        if !matched_ask && rules_cover_request(&config.allow, tool_name, args, &self.workspace_root) {
             return PolicyVerdict::Allow;
         }
 
-        let Some(keys) = self.session_approvals.get(session_id) else {
-            return verdict;
-        };
+        let keys = self
+            .session_approvals
+            .get(session_id)
+            .map(|entry| entry.clone())
+            .unwrap_or_default();
         if request_matches_session_approval(&keys, tool_name, args) {
             return PolicyVerdict::Allow;
         }
 
         match verdict {
             PolicyVerdict::NeedApproval { mut info } => {
-                info.trust_levels = untrusted_trust_levels(&keys, tool_name, args);
+                info.trust_groups = untrusted_trust_groups(
+                    &keys,
+                    &config.allow,
+                    tool_name,
+                    args,
+                    &self.workspace_root,
+                );
+                info.trust_levels = info
+                    .trust_groups
+                    .iter()
+                    .flat_map(|group| group.levels.clone())
+                    .collect();
                 info.trust_key = info
                     .trust_levels
                     .first()
@@ -266,6 +282,10 @@ pub struct ApprovalInfo {
     /// User-selectable session scopes. Compound shell commands contain only
     /// scopes for segments that are not already trusted.
     pub trust_levels: Vec<TrustLevel>,
+    /// Independent trust decisions. Compound shell commands have one group per
+    /// untrusted segment; file tools have one group constrained to the workspace.
+    #[serde(default)]
+    pub trust_groups: Vec<TrustGroup>,
 }
 
 /// A trust scope that can be selected in the approval UI.
@@ -273,6 +293,12 @@ pub struct ApprovalInfo {
 pub struct TrustLevel {
     pub label: String,
     pub key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustGroup {
+    pub target: String,
+    pub levels: Vec<TrustLevel>,
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +314,31 @@ pub enum PermissionResponse {
     AllowSession { trust_key: String },
     /// 拒绝执行。
     Deny,
+    /// 拒绝执行，并把更安全的替代建议返回给 agent。
+    DenyWithHint { hint: String },
+}
+
+pub fn safer_alternative_hint(tool_name: &str, args: &Value) -> String {
+    if matches!(tool_name, "Bash" | "bash") {
+        let command = args
+            .get("command")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if command.split_whitespace().any(|word| word == "rm") {
+            return "Do not delete files. Inspect them first or move them to a temporary directory."
+                .to_string();
+        }
+        if command.contains("git push") || command.contains("git reset") {
+            return "Use a safer git command that does not publish or discard changes.".to_string();
+        }
+        return "Use a safer command, or split the operation and start with a read-only check."
+            .to_string();
+    }
+    if matches!(tool_name, "Write" | "Edit" | "write" | "edit") {
+        return "Read the current file first, then propose a smaller and clearly scoped change."
+            .to_string();
+    }
+    "Choose a safer alternative that needs fewer permissions.".to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +472,10 @@ impl PermissionPolicy {
             .first()
             .map(|level| level.key.clone())
             .unwrap_or_else(|| request_trust_key(tool_name, args));
+        let trust_groups = vec![TrustGroup {
+            target: args_summary.clone(),
+            levels: trust_levels.clone(),
+        }];
 
         PolicyVerdict::NeedApproval {
             info: ApprovalInfo {
@@ -429,6 +484,7 @@ impl PermissionPolicy {
                 risk,
                 trust_key,
                 trust_levels,
+                trust_groups,
             },
         }
     }
@@ -912,6 +968,47 @@ pub fn generate_trust_level_options(tool_name: &str, args: &Value) -> Vec<TrustL
     }
 }
 
+fn file_trust_levels(tool_name: &str, path: &str, workspace_root: &Path) -> Vec<TrustLevel> {
+    let absolute = normalize_rule_path(path, workspace_root);
+    let workspace = normalize_rule_path(&workspace_root.to_string_lossy(), workspace_root)
+        .trim_end_matches('/')
+        .to_string();
+    if absolute != workspace && !absolute.starts_with(&format!("{workspace}/")) {
+        return vec![TrustLevel {
+            label: absolute.clone(),
+            key: format!("{tool_name}:{absolute}"),
+        }];
+    }
+
+    let mut levels = vec![TrustLevel {
+        label: absolute.clone(),
+        key: format!("{tool_name}:{absolute}"),
+    }];
+    let path = Path::new(&absolute);
+    if let Some(parent) = path.parent() {
+        if let Some(extension) = path.extension().and_then(|value| value.to_str()) {
+            let scope = format!("{}/*.{}", parent.display(), extension);
+            levels.push(TrustLevel {
+                label: scope.clone(),
+                key: format!("{tool_name}:{scope}"),
+            });
+        }
+        let scope = format!("{}/*", parent.display());
+        levels.push(TrustLevel {
+            label: scope.clone(),
+            key: format!("{tool_name}:{scope}"),
+        });
+    }
+    let project_scope = format!("{workspace}/*");
+    if !levels.iter().any(|level| level.label == project_scope) {
+        levels.push(TrustLevel {
+            label: project_scope.clone(),
+            key: format!("{tool_name}:{project_scope}"),
+        });
+    }
+    levels
+}
+
 fn command_trust_levels(tool_name: &str, command: &str) -> Vec<TrustLevel> {
     let command = command.trim();
     if command.is_empty() {
@@ -1055,6 +1152,41 @@ fn untrusted_trust_levels(
         })
 }
 
+fn untrusted_trust_groups(
+    approvals: &HashSet<String>,
+    project_allow: &[String],
+    tool_name: &str,
+    args: &Value,
+    workspace_root: &Path,
+) -> Vec<TrustGroup> {
+    if matches!(tool_name, "Bash" | "bash") {
+        let Some(command) = args.get("command").and_then(|value| value.as_str()) else {
+            return Vec::new();
+        };
+        return split_shell_segments(first_effective_line(command))
+            .into_iter()
+            .filter(|segment| {
+                !command_matches_session_approval(approvals, tool_name, segment)
+                    && !project_allow
+                        .iter()
+                        .any(|rule| rule_matches(rule, tool_name, segment, workspace_root))
+            })
+            .map(|segment| TrustGroup {
+                target: segment.to_string(),
+                levels: command_trust_levels(tool_name, segment),
+            })
+            .collect();
+    }
+
+    let Some(path) = args.get("file_path").and_then(|value| value.as_str()) else {
+        return Vec::new();
+    };
+    vec![TrustGroup {
+        target: normalize_rule_path(path, workspace_root),
+        levels: file_trust_levels(tool_name, path, workspace_root),
+    }]
+}
+
 fn approval_info(tool_name: &str, args: &Value, trust_levels: Vec<TrustLevel>) -> ApprovalInfo {
     let trust_levels = if trust_levels.is_empty() {
         generate_trust_level_options(tool_name, args)
@@ -1071,6 +1203,7 @@ fn approval_info(tool_name: &str, args: &Value, trust_levels: Vec<TrustLevel>) -
         risk: infer_risk_level(tool_name, args),
         trust_key,
         trust_levels,
+        trust_groups: Vec::new(),
     }
 }
 
@@ -1139,10 +1272,19 @@ fn rule_matches(rule: &str, tool_name: &str, target: &str, workspace_root: &Path
     }
 
     let target = normalize_rule_path(target, workspace_root);
-    let wildcard = pattern.trim_end().ends_with('*');
-    let pattern = pattern.trim_end().trim_end_matches('*').trim_end();
-    let pattern = normalize_rule_path(pattern, workspace_root);
-    target == pattern || ((wildcard || pattern.ends_with('/')) && target.starts_with(&pattern))
+    let pattern = pattern.trim();
+    if let Some(extension) = pattern.rsplit_once("/*.") {
+        let parent = normalize_rule_path(extension.0, workspace_root);
+        let target_path = Path::new(&target);
+        return target_path.parent().is_some_and(|value| {
+            normalize_rule_path(&value.to_string_lossy(), workspace_root) == parent
+        }) && target_path.extension().and_then(|value| value.to_str()) == Some(extension.1);
+    }
+    if let Some(parent) = pattern.strip_suffix("/*") {
+        let parent = normalize_rule_path(parent, workspace_root);
+        return target.starts_with(&format!("{}/", parent.trim_end_matches('/')));
+    }
+    target == normalize_rule_path(pattern, workspace_root)
 }
 
 fn normalize_rule_path(path: &str, workspace_root: &Path) -> String {
@@ -1176,12 +1318,12 @@ fn trust_key_to_project_rule(trust_key: &str) -> Result<String, String> {
     if target.is_empty() {
         return Err("Cannot persist an empty trust scope".to_string());
     }
-    let suffix = if matches!(tool, "Bash" | "bash") {
-        " *"
+    let target = if matches!(tool, "Bash" | "bash") {
+        format!("{target} *")
     } else {
-        "*"
+        target.to_string()
     };
-    Ok(format!("{tool}({target}{suffix})"))
+    Ok(format!("{tool}({target})"))
 }
 
 /// 生成参数摘要用于审批 UI 展示。

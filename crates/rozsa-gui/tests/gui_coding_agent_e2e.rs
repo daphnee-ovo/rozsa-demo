@@ -147,13 +147,15 @@ fn approval_factory(
                             risk: RiskLevel::Write,
                             trust_key: "edit:src/lib.rs".to_string(),
                             trust_levels: vec![],
+                            trust_groups: vec![],
                         },
                     });
                     match receiver.await {
                         Ok(PermissionResponse::Allow | PermissionResponse::AllowSession { .. }) => {
                             None
                         }
-                        Ok(PermissionResponse::Deny) | Err(_) => Some(PreToolUseResult {
+                        Ok(PermissionResponse::Deny | PermissionResponse::DenyWithHint { .. })
+                        | Err(_) => Some(PreToolUseResult {
                             block: true,
                             reason: Some("edit approval denied".to_string()),
                         }),

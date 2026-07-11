@@ -27,6 +27,9 @@ fn compound_command_requires_every_segment_to_be_trusted() {
     assert!(keys.contains(&"Bash:dow"));
     assert!(keys.contains(&"Bash:cargo test"));
     assert!(keys.contains(&"Bash:cargo"));
+    assert_eq!(initial.trust_groups.len(), 2);
+    assert_eq!(initial.trust_groups[0].target, "dow status set --phase dev");
+    assert_eq!(initial.trust_groups[1].target, "cargo test");
 
     controller.record_session_approval("session-a", "Bash:cargo test".to_string());
     let remaining = needs_approval(controller.evaluate("session-a", "Bash", &args));
@@ -41,12 +44,44 @@ fn compound_command_requires_every_segment_to_be_trusted() {
             .iter()
             .any(|key| key.starts_with("Bash:cargo"))
     );
+    assert_eq!(remaining.trust_groups.len(), 1);
+    assert_eq!(
+        remaining.trust_groups[0].target,
+        "dow status set --phase dev"
+    );
 
     controller.record_session_approval("session-a", "Bash:dow status set".to_string());
     assert!(matches!(
         controller.evaluate("session-a", "Bash", &args),
         PolicyVerdict::Allow
     ));
+}
+
+#[test]
+fn file_trust_stays_inside_workspace_and_offers_progressive_scopes() {
+    let workspace = std::env::current_dir().unwrap();
+    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let file = workspace.join("src/test.rs");
+    let approval =
+        needs_approval(controller.evaluate("session-a", "Edit", &json!({"file_path": file})));
+
+    assert_eq!(approval.trust_groups.len(), 1);
+    let labels = approval.trust_groups[0]
+        .levels
+        .iter()
+        .map(|level| level.label.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(labels[0], workspace.join("src/test.rs").to_string_lossy());
+    assert_eq!(labels[1], workspace.join("src/*.rs").to_string_lossy());
+    assert_eq!(labels[2], workspace.join("src/*").to_string_lossy());
+    assert_eq!(labels[3], workspace.join("*").to_string_lossy());
+
+    let outside = needs_approval(controller.evaluate(
+        "session-a",
+        "Edit",
+        &json!({"file_path": workspace.parent().unwrap().join("outside.rs")}),
+    ));
+    assert_eq!(outside.trust_groups[0].levels.len(), 1);
 }
 
 #[test]
