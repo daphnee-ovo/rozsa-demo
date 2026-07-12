@@ -1849,23 +1849,26 @@ html[data-preview-theme="dark"] {
 }
 
 /* Appearance review pass: keep the settings scene visually continuous with the app. */
-:root { --settings-sidebar-width: clamp(220px, 22vw, 320px); }
+:root {
+  --settings-sidebar-width: clamp(220px, 22vw, 320px);
+  --app-body-bg: var(--surface);
+}
 [data-od-id="titlebar"] {
-  background: var(--sidebar-bg);
+  background: var(--titlebar-bg);
   border-bottom: 0;
 }
 [data-od-id="sidebar"] {
   background: var(--sidebar-bg);
   border-right: 0;
 }
-[data-od-id="main-panel"] { background: var(--bg); }
-[data-od-id="panel-header"] { background: var(--bg); box-shadow: none; }
-#settingsPanel { background: var(--bg); }
-.settings-shell { background: var(--bg); }
+[data-od-id="main-panel"] { background: var(--app-body-bg); }
+[data-od-id="panel-header"] { background: var(--app-body-bg); box-shadow: none; }
+#settingsPanel { background: var(--app-body-bg); }
+.settings-shell { background: var(--app-body-bg); }
 .settings-chrome {
   min-height: 52px;
   padding: 0 22px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--sidebar-bg) 86%, transparent) 0 var(--settings-sidebar-width), var(--bg) var(--settings-sidebar-width) 100%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sidebar-bg) 86%, transparent) 0 var(--settings-sidebar-width), var(--app-body-bg) var(--settings-sidebar-width) 100%);
   border: 0;
   box-shadow: none;
 }
@@ -1902,7 +1905,7 @@ html[data-preview-theme="dark"] {
 }
 .settings-nav-item.active .settings-nav-icon { opacity: .86; }
 .settings-nav-heading { padding-inline: 12px; color: color-mix(in srgb, var(--muted) 76%, var(--sidebar-bg)); }
-.settings-main { background: var(--bg); }
+.settings-main { background: var(--app-body-bg); }
 .settings-main-inner { width: min(100%, 960px); padding-top: 38px; }
 .settings-page-title { margin-bottom: 22px; }
 .settings-page-lead { margin-top: -10px; margin-bottom: 28px; }
@@ -1989,17 +1992,17 @@ html[data-preview-theme="dark"] {
   border-radius: 11px;
   background: var(--chip-color);
   color: var(--chip-text, #fff);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 24%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 16%, transparent);
 }
-.theme-color-chip:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), inset 0 0 0 1px rgb(255 255 255 / 24%); }
+.theme-color-chip:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--fg) 16%, transparent); }
 .theme-color-swatch-button {
   width: 20px;
   height: 20px;
   flex: 0 0 20px;
   padding: 0;
-  border: 1px solid rgb(255 255 255 / 42%);
+  border: 1px solid color-mix(in srgb, var(--fg) 24%, transparent);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--chip-color) 65%, white);
+  background: var(--chip-color);
   cursor: pointer;
 }
 .theme-hex-inline {
@@ -2539,7 +2542,7 @@ html[data-preview-theme="dark"] {
             <div class="settings-card theme-card">
               <div class="theme-card-head"><span class="theme-card-title">Light theme</span><span class="settings-hint" data-tooltip="The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.">?</span><div class="theme-card-actions"><select class="theme-select" id="lightThemeSelect" onchange="selectThemeProfile('light', this.value)" aria-label="Light theme"><option value="rozsa">Rozsa</option><option value="rose-pine">Rose Pine (Custom)</option></select></div></div>
               <div class="settings-field"><span class="settings-field-label">Accent</span><div class="settings-field-control"><div class="theme-color-control"><div class="theme-color-chip" id="lightAccentChip" style="--chip-color:#D7827E"><button class="theme-color-swatch-button" type="button" onclick="toggleColorPicker('light','accent')" aria-label="Open Light Accent color picker"><span></span></button><input class="theme-hex-input theme-hex-inline" id="lightAccentHex" type="text" value="#D7827E" spellcheck="false" oninput="syncColorControl('light','accent','hex',this.value)" aria-label="Light Accent HEX"></div><div class="theme-picker-popover" id="lightAccentPopover" hidden><div class="theme-picker-surface" id="lightAccentSurface" onpointerdown="pickThemeColor(event,'light','accent')"><span class="theme-picker-cursor"></span></div><input class="theme-picker-hue" id="lightAccentHue" type="range" min="0" max="360" value="355" oninput="setColorPickerHue('light','accent',this.value)" aria-label="Light Accent hue"><div class="theme-picker-footer"><span class="theme-picker-current" id="lightAccentCurrent"></span><span class="theme-picker-hex-label">HEX <span id="lightAccentPickerValue">#D7827E</span></span></div></div></div></div></div>
-              <div class="settings-field"><span class="settings-field-label">Background</span><div class="settings-field-control"><div class="theme-color-control"><div class="theme-color-chip" id="lightBackgroundChip" style="--chip-color:#FAF4ED"><button class="theme-color-swatch-button" type="button" onclick="toggleColorPicker('light','background')" aria-label="Open Light Background color picker"><span></span></button><input class="theme-hex-input theme-hex-inline" id="lightBackgroundHex" type="text" value="#FAF4ED" spellcheck="false" oninput="syncColorControl('light','background','hex',this.value)" aria-label="Light Background HEX"></div><div class="theme-picker-popover" id="lightBackgroundPopover" hidden><div class="theme-picker-surface" id="lightBackgroundSurface" onpointerdown="pickThemeColor(event,'light','background')"><span class="theme-picker-cursor"></span></div><input class="theme-picker-hue" id="lightBackgroundHue" type="range" min="0" max="360" value="35" oninput="setColorPickerHue('light','background',this.value)" aria-label="Light Background hue"><div class="theme-picker-footer"><span class="theme-picker-current" id="lightBackgroundCurrent"></span><span class="theme-picker-hex-label">HEX <span id="lightBackgroundPickerValue">#FAF4ED</span></span></div></div></div></div></div>
+              <div class="settings-field"><span class="settings-field-label">Background</span><div class="settings-field-control"><div class="theme-color-control"><div class="theme-color-chip" id="lightBackgroundChip" style="--chip-color:#FFFFFF"><button class="theme-color-swatch-button" type="button" onclick="toggleColorPicker('light','background')" aria-label="Open Light Background color picker"><span></span></button><input class="theme-hex-input theme-hex-inline" id="lightBackgroundHex" type="text" value="#FFFFFF" spellcheck="false" oninput="syncColorControl('light','background','hex',this.value)" aria-label="Light Background HEX"></div><div class="theme-picker-popover" id="lightBackgroundPopover" hidden><div class="theme-picker-surface" id="lightBackgroundSurface" onpointerdown="pickThemeColor(event,'light','background')"><span class="theme-picker-cursor"></span></div><input class="theme-picker-hue" id="lightBackgroundHue" type="range" min="0" max="360" value="0" oninput="setColorPickerHue('light','background',this.value)" aria-label="Light Background hue"><div class="theme-picker-footer"><span class="theme-picker-current" id="lightBackgroundCurrent"></span><span class="theme-picker-hex-label">HEX <span id="lightBackgroundPickerValue">#FFFFFF</span></span></div></div></div></div></div>
               <div class="settings-field"><span class="settings-field-label">Foreground</span><div class="settings-field-control"><div class="theme-color-control"><div class="theme-color-chip" id="lightForegroundChip" style="--chip-color:#575279"><button class="theme-color-swatch-button" type="button" onclick="toggleColorPicker('light','foreground')" aria-label="Open Light Foreground color picker"><span></span></button><input class="theme-hex-input theme-hex-inline" id="lightForegroundHex" type="text" value="#575279" spellcheck="false" oninput="syncColorControl('light','foreground','hex',this.value)" aria-label="Light Foreground HEX"></div><div class="theme-picker-popover" id="lightForegroundPopover" hidden><div class="theme-picker-surface" id="lightForegroundSurface" onpointerdown="pickThemeColor(event,'light','foreground')"><span class="theme-picker-cursor"></span></div><input class="theme-picker-hue" id="lightForegroundHue" type="range" min="0" max="360" value="246" oninput="setColorPickerHue('light','foreground',this.value)" aria-label="Light Foreground hue"><div class="theme-picker-footer"><span class="theme-picker-current" id="lightForegroundCurrent"></span><span class="theme-picker-hex-label">HEX <span id="lightForegroundPickerValue">#575279</span></span></div></div></div></div></div>
               <div class="settings-field"><span class="settings-field-label">UI font <span class="settings-hint" data-tooltip="The font used by navigation, labels and message text.">?</span></span><div class="settings-field-control"><input class="theme-font-input" type="text" value="Geist, Inter, system-ui" aria-label="Light UI font"></div></div>
               <div class="settings-field"><span class="settings-field-label">Code font <span class="settings-hint" data-tooltip="The font used inside code blocks and tool output.">?</span></span><div class="settings-field-control"><input class="theme-font-input" type="text" value="Geist Mono, ui-monospace" aria-label="Light Code font"></div></div>
@@ -2853,7 +2856,7 @@ function updateAcSelection(popup) {
 
 // Settings scene prototype
 const prototypeThemes = {
-  light: { accent: '#D7827E', background: '#FAF4ED', foreground: '#575279' },
+  light: { accent: '#D7827E', background: '#FFFFFF', foreground: '#575279' },
   dark: { accent: '#D88991', background: '#1D1A1C', foreground: '#F1E9EB' }
 };
 
@@ -3047,6 +3050,7 @@ function applyPrototypeTheme(theme, mode) {
   const resolved = mode || document.documentElement.dataset.previewResolvedTheme || 'light';
   document.documentElement.style.setProperty('--accent', theme.accent);
   document.documentElement.style.setProperty('--bg', theme.background);
+  document.documentElement.style.setProperty('--app-body-bg', theme.background);
   document.documentElement.style.setProperty('--fg', theme.foreground);
   document.documentElement.dataset.previewResolvedTheme = resolved;
 }
