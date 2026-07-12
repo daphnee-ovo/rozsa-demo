@@ -25,6 +25,24 @@ fn only_workspace_readonly_bash_commands_auto_allow() {
         "grep main src/lib.rs",
         "sort src/lib.rs",
         "cat src/lib.rs | sort",
+        "pwd",
+        "ls src",
+        "basename src/lib.rs",
+        "dirname src/lib.rs",
+        "realpath src/lib.rs",
+        "readlink src/lib.rs",
+        "stat src/lib.rs",
+        "file src/lib.rs",
+        "wc -l src/lib.rs",
+        "diff src/lib.rs src/lib.rs",
+        "cmp src/lib.rs src/lib.rs",
+        "comm src/lib.rs src/lib.rs",
+        "cut -f 1 src/lib.rs",
+        "tr a-z A-Z",
+        "uniq src/lib.rs",
+        "strings src/lib.rs",
+        "od src/lib.rs",
+        "xxd src/lib.rs",
     ] {
         let args = serde_json::json!({"command": command});
         assert!(matches!(
@@ -49,6 +67,8 @@ fn potentially_side_effectful_or_outside_commands_still_need_approval() {
         "cat ../outside.txt",
         "cat /etc/hosts",
         "cat src/lib.rs | echo copied",
+        "diff --from-file=/etc/hosts src/lib.rs",
+        "realpath --relative-to=/tmp src/lib.rs",
     ] {
         let args = serde_json::json!({"command": command});
         assert!(matches!(

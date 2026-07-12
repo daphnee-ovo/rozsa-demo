@@ -354,7 +354,31 @@ pub type PendingApprovals = Arc<DashMap<String, oneshot::Sender<PermissionRespon
 // ---------------------------------------------------------------------------
 
 const WORKSPACE_READ_TOOLS: &[&str] = &["Grep", "Ls", "Find", "grep", "ls", "find"];
-const SAFE_SHELL_COMMANDS: &[&str] = &["head", "tail", "cat", "grep", "sort"];
+const SAFE_SHELL_COMMANDS: &[&str] = &[
+    "head",
+    "tail",
+    "cat",
+    "grep",
+    "sort",
+    "pwd",
+    "ls",
+    "basename",
+    "dirname",
+    "realpath",
+    "readlink",
+    "stat",
+    "file",
+    "wc",
+    "diff",
+    "cmp",
+    "comm",
+    "cut",
+    "tr",
+    "uniq",
+    "strings",
+    "od",
+    "xxd",
+];
 
 // ---------------------------------------------------------------------------
 // PermissionPolicy
@@ -606,6 +630,11 @@ impl PermissionPolicy {
                         return false;
                     }
                 }
+                if let Some(path) = Self::inline_readonly_path_option(executable, token) {
+                    if !Self::path_is_within_workspace(path, workspace_root) && path != "-" {
+                        return false;
+                    }
+                }
                 continue;
             }
             positional.push(*token);
@@ -638,6 +667,17 @@ impl PermissionPolicy {
             }
             _ => false,
         }
+    }
+
+    fn inline_readonly_path_option<'a>(executable: &str, token: &'a str) -> Option<&'a str> {
+        let (option, value) = token.split_once('=')?;
+        let is_path_option = match executable {
+            "diff" => matches!(option, "--from-file" | "--to-file"),
+            "realpath" => matches!(option, "--relative-to" | "--relative-base"),
+            "file" => matches!(option, "--file-list" | "--files-from"),
+            _ => false,
+        };
+        is_path_option.then_some(value)
     }
 
     fn path_is_within_workspace(path: &str, workspace_root: &Path) -> bool {
