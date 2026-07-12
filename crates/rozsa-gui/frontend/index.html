@@ -81,34 +81,6 @@ body {
   height: calc(100vh / var(--ui-scale));
 }
 
-/* ---- Tauri 标题栏 ---- */
-[data-od-id="titlebar"] {
-  height: 36px;
-  background: var(--titlebar-bg);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  gap: 12px;
-  flex-shrink: 0;
-  user-select: none;
-  -webkit-app-region: drag;
-}
-.traffic-lights { display: flex; gap: 7px; }
-.traffic-lights span {
-  width: 12px; height: 12px; border-radius: 50%;
-  display: block;
-}
-.tl-close { background: #fe5f57; }
-.tl-min { background: #febc2e; }
-.tl-max { background: #28c840; }
-.title-text {
-  flex: 1; text-align: center;
-  font-size: 12px; font-weight: 500;
-  color: var(--muted);
-  letter-spacing: 0.08em;
-}
-
 /* ---- 主布局 2:8 ---- */
 [data-od-id="app-body"] {
   flex: 1;
@@ -973,6 +945,8 @@ body {
   padding: 8px 20px 16px;
   flex-shrink: 0;
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 .running-messages {
   margin: 0 0 6px;
@@ -1046,6 +1020,8 @@ body {
   transition: border-color 0.15s, background 0.15s;
   overflow: hidden;
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 .input-wrapper:focus-within {
   border-color: var(--accent);
@@ -1136,6 +1112,8 @@ body {
   align-items: center;
   padding: 4px 8px 6px;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 .input-tool-btn {
   border: none; background: none; cursor: pointer;
@@ -1144,8 +1122,13 @@ body {
   transition: all 0.12s;
 }
 .input-tool-btn:hover { background: var(--code-bg); color: var(--fg); transform: translateY(-1px); }
-.input-spacer { flex: 1; }
+.input-spacer { flex: 1 1 12px; min-width: 8px; }
 .input-hint {
+  min-width: 0;
+  flex: 1 1 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10.5px;
   font-family: var(--font-mono);
   color: oklch(72% 0.008 350);
@@ -1159,10 +1142,21 @@ body {
   font-weight: 500;
   font-family: var(--font-ui);
   cursor: pointer;
+  flex: 0 0 auto;
   transition: background 0.15s, transform 0.1s;
 }
 .send-btn:hover { background: var(--accent-hover); transform: scale(1.04); }
 .send-btn:disabled { opacity: 0.5; cursor: default; }
+.input-toolbar .context-ring { flex: 0 1 auto; min-width: 0; }
+.input-toolbar .context-tokens { min-width: 0; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.input-toolbar .model-selector {
+  flex: 0 1 clamp(110px, 22vw, 220px);
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 
 /* 权限弹窗 */
@@ -1932,13 +1926,463 @@ button:focus-visible, .session-item:focus-visible,
 .tool-call.running .tool-name {
   color: var(--warning);
 }
+
+/* ================================================================
+   Synced Appearance scene: native titlebar continuation,
+   adaptive sidebars, and the full-window Settings surface.
+   ================================================================ */
+:root {
+  --main-sidebar-width: clamp(240px, 20vw, 320px);
+  --settings-sidebar-width: clamp(220px, 22vw, 320px);
+  --chrome-sidebar-boundary: var(--main-sidebar-width);
+  --settings-chrome-sidebar-boundary: var(--settings-sidebar-width);
+  --native-titlebar-offset: 42px;
+  --semantic-accent: var(--accent);
+}
+
+.sidebar-toggle-button {
+  width: 30px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.sidebar-toggle-button svg { width: 17px; height: 17px; }
+.sidebar-toggle-button:hover,
+.sidebar-toggle-button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--fg);
+  outline: none;
+}
+
+[data-od-id="app-body"] {
+  position: relative;
+  min-width: 0;
+  grid-template-columns: var(--main-sidebar-width) minmax(0, 1fr);
+}
+[data-od-id="sidebar"] {
+  min-width: 0;
+  border-right: 0;
+  transition: transform .18s ease, visibility .18s ease;
+}
+[data-od-id="main-panel"] {
+  min-width: 0;
+  background: var(--bg);
+}
+[data-od-id="panel-header"] {
+  background: var(--bg);
+  border-bottom: 0;
+  box-shadow: none;
+}
+[data-od-id="app-body"].sidebar-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+[data-od-id="app-body"].sidebar-collapsed > [data-od-id="sidebar"] {
+  position: absolute;
+  z-index: 20;
+  inset: var(--native-titlebar-offset) auto 0 0;
+  width: var(--main-sidebar-width);
+  transform: translateX(-105%);
+  visibility: hidden;
+  box-shadow: 8px 0 24px color-mix(in srgb, var(--fg) 10%, transparent);
+}
+[data-od-id="app-body"].sidebar-collapsed.sidebar-edge-visible > [data-od-id="sidebar"] {
+  transform: translateX(0);
+  visibility: visible;
+}
+[data-theme-translucent-sidebar="true"] [data-od-id="sidebar"] {
+  border-right: 0;
+}
+.msg-user .msg-avatar,
+.msg-user .msg-role,
+.thinking-icon,
+.thinking-label,
+.stream-cursor {
+  color: var(--semantic-accent);
+}
+
+/* Full-window settings scene. The native window decoration remains native. */
+.settings-panel,
+body {
+  background: linear-gradient(90deg, var(--sidebar-bg) 0 var(--chrome-sidebar-boundary), var(--bg) var(--chrome-sidebar-boundary) 100%);
+}
+.settings-panel {
+  background: linear-gradient(90deg, var(--sidebar-bg) 0 var(--settings-chrome-sidebar-boundary), var(--bg) var(--settings-chrome-sidebar-boundary) 100%);
+}
+body.native-fullscreen {
+  --native-titlebar-offset: 0px;
+}
+body.sidebar-collapsed,
+.settings-panel.settings-sidebar-collapsed {
+  background: var(--bg);
+}
+[data-od-id="app-body"] {
+  padding-top: 42px;
+  background: linear-gradient(90deg, var(--sidebar-bg) 0 var(--chrome-sidebar-boundary), var(--bg) var(--chrome-sidebar-boundary) 100%);
+}
+body.native-fullscreen [data-od-id="app-body"] {
+  padding-top: 0;
+}
+body.sidebar-collapsed [data-od-id="app-body"] {
+  background: var(--bg);
+}
+.settings-panel {
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--sidebar-bg) 0 var(--settings-chrome-sidebar-boundary), var(--bg) var(--settings-chrome-sidebar-boundary) 100%);
+  color: var(--fg);
+}
+.settings-dialog {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  padding-top: var(--native-titlebar-offset);
+}
+.settings-workspace {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--settings-sidebar-width) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.settings-tabs {
+  width: auto;
+  min-width: 0;
+  max-height: none;
+  overflow-y: auto;
+  padding: 18px 14px 30px;
+  border-right: 0;
+  background: var(--sidebar-bg);
+}
+.settings-back {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.settings-back:hover,
+.settings-back:focus-visible {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--fg);
+  outline: none;
+}
+.settings-tab {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
+}
+.settings-tab svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: currentColor;
+  opacity: .7;
+}
+.settings-tab:hover,
+.settings-tab.active {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--fg);
+}
+.settings-tab.active { font-weight: 600; }
+.settings-content {
+  min-width: 0;
+  max-height: none;
+  overflow-y: auto;
+  padding: clamp(34px, 6vw, 74px) clamp(26px, 7vw, 108px) 96px;
+  background: var(--bg);
+}
+.settings-pane-title {
+  margin-bottom: 24px;
+  font-size: clamp(26px, 3vw, 36px);
+  line-height: 1.15;
+}
+.settings-group-label {
+  color: var(--muted);
+}
+.settings-item,
+.setting-item { min-width: 0; }
+.appearance-theme-section {
+  padding: 16px 20px 12px;
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  box-shadow: none;
+}
+.appearance-theme-section .setting-item {
+  min-height: 48px;
+  padding: 7px 0;
+  border-top: 0;
+}
+.appearance-theme-section .setting-item:hover { background: transparent; }
+
+/* Theme mode cards stay in one row; the grid scrolls horizontally below its minimum width. */
+.theme-mode-setting {
+  display: block;
+  padding: 0 0 18px;
+}
+.theme-mode-setting > .setting-label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.theme-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(clamp(132px, calc((100% - 24px) / 3), 220px), 1fr));
+  gap: 12px;
+  overflow-x: auto;
+  padding: 2px;
+}
+.theme-mode-card {
+  min-width: 132px;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.theme-mode-card:hover,
+.theme-mode-card:focus-visible {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--fg);
+  outline: none;
+}
+.theme-mode-card.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--fg);
+}
+.theme-preview {
+  height: 112px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: 12px;
+  background: #fff;
+}
+.theme-preview-top {
+  height: 32%;
+  background: #e8e5e2;
+}
+.theme-preview-body,
+.theme-preview-system-body {
+  display: flex;
+  height: 68%;
+}
+.theme-preview-body.light,
+.theme-preview-half.light { background: #fff; }
+.theme-preview-body.dark,
+.theme-preview-half.dark { background: #2d2a2f; }
+.theme-preview-half { width: 50%; padding: 22px 12px; }
+.theme-preview-body > span,
+.theme-preview-half > span {
+  display: block;
+  width: 65%;
+  height: 7px;
+  margin: 14px auto 0;
+  border-radius: 99px;
+  background: #d7d2cf;
+}
+.theme-preview-body > span + span,
+.theme-preview-half > span + span { width: 42%; margin-top: 10px; }
+.theme-preview-body.dark > span,
+.theme-preview-half.dark > span { background: #8c838a; }
+.theme-preview-system .theme-preview-top { background: #aaa9ab; }
+.theme-preview-system-body { background: #303035; }
+.theme-preview-system-body .light { background: #fff; }
+.theme-preview-system-body .dark { background: #303035; }
+.theme-mode-card > span:last-child {
+  display: block;
+  padding: 8px 0 4px;
+}
+.settings-theme-mode-select {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.appearance-range {
+  width: min(420px, 44vw);
+  min-width: 150px;
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  accent-color: var(--accent);
+}
+.appearance-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+.appearance-range::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgb(30 20 25 / 16%);
+}
+.appearance-range::-moz-range-track {
+  height: 4px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+.appearance-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgb(30 20 25 / 16%);
+}
+.appearance-font-size-input { width: 68px; min-width: 68px; }
+
+/* Color controls are one chip: picker swatch and HEX text always share the same value. */
+.theme-color-control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: min(280px, 32vw);
+  min-width: 150px;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, var(--theme-color, var(--border)) 76%, var(--fg));
+  border-radius: 11px;
+  background: var(--theme-color, var(--surface));
+  color: var(--theme-color-text, var(--fg));
+}
+.theme-color-control:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.theme-color-picker {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--theme-color-text, var(--fg)) 32%, transparent);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--theme-color);
+  cursor: pointer;
+}
+.theme-color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+.theme-color-picker::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.theme-hex-input {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: 13px var(--font-mono);
+}
+.theme-hex-input:focus { box-shadow: none; }
+
+.settings-panel.settings-sidebar-collapsed .settings-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+.settings-panel.settings-sidebar-collapsed .settings-tabs {
+  position: absolute;
+  z-index: 20;
+  inset: 0 auto 0 0;
+  width: var(--settings-sidebar-width);
+  transform: translateX(-105%);
+  visibility: hidden;
+  box-shadow: 8px 0 24px color-mix(in srgb, var(--fg) 10%, transparent);
+  transition: transform .18s ease, visibility .18s ease;
+}
+body.native-fullscreen .settings-dialog {
+  padding-top: 0;
+}
+.settings-panel.settings-sidebar-collapsed.settings-edge-visible .settings-tabs {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+html[data-theme-mode="dark"] .settings-tabs,
+html[data-theme-mode="dark"] .settings-dialog,
+html[data-theme-mode="dark"] .settings-content {
+  color: var(--fg);
+}
+
+@media (max-width: 1100px) {
+  [data-od-id="app-body"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  [data-od-id="app-body"] > [data-od-id="sidebar"] {
+    position: absolute;
+    z-index: 20;
+    inset: var(--native-titlebar-offset) auto 0 0;
+    width: var(--main-sidebar-width);
+    transform: translateX(-105%);
+    visibility: hidden;
+    box-shadow: 8px 0 24px color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  [data-od-id="app-body"].sidebar-edge-visible > [data-od-id="sidebar"] {
+    transform: translateX(0);
+    visibility: visible;
+  }
+  .settings-content { padding-inline: clamp(22px, 5vw, 64px); }
+}
+@media (max-width: 700px) {
+  .theme-mode-grid { grid-template-columns: repeat(3, minmax(132px, 1fr)); }
+  .theme-preview { height: 88px; }
+  .appearance-range { width: min(300px, 38vw); min-width: 120px; }
+  .theme-color-control { width: min(240px, 38vw); }
+  [data-od-id="chat-input"] { padding-inline: 10px; }
+  .input-hint { flex-basis: 110px; max-width: 28%; }
+  .input-toolbar .model-selector { flex-basis: 120px; max-width: 120px; }
+}
+@media (max-width: 560px) {
+  .input-hint { display: none; }
+  .input-toolbar .model-selector { flex-basis: 104px; max-width: 104px; }
+}
 </style>
 </head>
 <body>
 
-<!-- 使用系统原生标题栏，不自绘 -->
-
-<!-- ============ 主体 2:8 ============ -->
+<!-- ============ 主体 2:8；窗口 chrome 由 Tauri 原生提供 ============ -->
 <div data-od-id="app-body">
 
   <!-- ======== 左侧边栏 ======== -->
@@ -2103,91 +2547,98 @@ button:focus-visible, .session-item:focus-visible,
 <!-- ============ 设置面板 ============ -->
 <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-label="应用设置" onclick="if(event.target===this)closeSettings()">
   <div class="settings-dialog" data-od-id="settings-dialog">
-    <nav class="settings-tabs">
-      <button class="settings-tab active" onclick="switchSettingsTab('appearance', this)">Appearance</button>
-      <button class="settings-tab" onclick="switchSettingsTab('general', this)">通用</button>
-      <button class="settings-tab" onclick="switchSettingsTab('models', this)">模型</button>
-      <button class="settings-tab" onclick="switchSettingsTab('permissions', this)">权限</button>
-      <button class="settings-tab" onclick="switchSettingsTab('tools', this)">工具</button>
+    <div class="settings-workspace">
+    <nav class="settings-tabs" aria-label="Settings navigation">
+      <button class="settings-back" type="button" onclick="closeSettings()"><span aria-hidden="true">←</span> Back to app</button>
+      <button class="settings-tab active" onclick="switchSettingsTab('appearance', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v1.4M8 13.1v1.4M1.5 8h1.4M13.1 8h1.4M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"/></svg>Appearance</button>
+      <button class="settings-tab" onclick="switchSettingsTab('general', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M12.4 3.6l-1 1M4.6 11.4l-1 1"/></svg>General</button>
+      <button class="settings-tab" onclick="switchSettingsTab('models', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/><path d="M8 1.4v1.3M8 13.3v1.3"/></svg>Models</button>
+      <button class="settings-tab" onclick="switchSettingsTab('permissions', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.7l4.8 1.8v3.6c0 3.4-2.1 5.8-4.8 7.2-2.7-1.4-4.8-3.8-4.8-7.2V3.5z"/><path d="M5.7 8l1.5 1.5 3-3"/></svg>Permissions</button>
+      <button class="settings-tab" onclick="switchSettingsTab('tools', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 2.3a3 3 0 00-3.6 3.6l-4 4a1.5 1.5 0 002.1 2.1l4-4a3 3 0 003.6-3.6l-1.8 1.8-1.9-.3-.3-1.9z"/></svg>Tools</button>
     </nav>
     <div class="settings-content">
       <div class="settings-pane active" id="pane-appearance">
         <div class="settings-pane-title">Appearance</div>
         <div class="settings-group">
           <div class="settings-group-label">Display</div>
-          <div class="setting-item"><span class="setting-label">Theme Mode</span><select class="setting-select" id="settingsThemeMode" aria-label="Theme Mode"><option value="system">system</option><option value="light">light</option><option value="dark">dark</option></select></div>
+          <div class="setting-item theme-mode-setting"><span class="setting-label">Theme Mode</span><div class="theme-mode-grid" role="group" aria-label="Theme mode">
+            <button class="theme-mode-card" type="button" data-theme-mode-card="system" onclick="selectThemeModeCard('system')" aria-pressed="false"><div class="theme-preview theme-preview-system"><div class="theme-preview-top"></div><div class="theme-preview-system-body"><div class="theme-preview-half light"><span></span><span></span></div><div class="theme-preview-half dark"><span></span><span></span></div></div></div><span>System</span></button>
+            <button class="theme-mode-card" type="button" data-theme-mode-card="light" onclick="selectThemeModeCard('light')" aria-pressed="false"><div class="theme-preview"><div class="theme-preview-top"></div><div class="theme-preview-body light"><span></span><span></span></div></div><span>Light</span></button>
+            <button class="theme-mode-card" type="button" data-theme-mode-card="dark" onclick="selectThemeModeCard('dark')" aria-pressed="false"><div class="theme-preview"><div class="theme-preview-top"></div><div class="theme-preview-body dark"><span></span><span></span></div></div><span>Dark</span></button>
+          </div><select class="setting-select settings-theme-mode-select" id="settingsThemeMode" aria-label="Theme Mode"><option value="system">system</option><option value="light">light</option><option value="dark">dark</option></select></div>
           <div class="setting-item"><span class="setting-label">Font Size</span><span style="display:flex;align-items:center;gap:10px"><input class="appearance-range" id="settingsFontSizeRange" type="range" min="5" max="50" step="1" aria-label="Font Size"><input class="setting-input appearance-font-size-input" id="settingsFontSizeInput" type="number" min="5" max="50" step="1" aria-label="Font Size in pixels"><span class="setting-value">px</span></span></div>
         </div>
         <div class="appearance-theme-section" id="appearanceLightSection">
           <div class="settings-group-label">Light Theme</div>
           <div class="setting-item"><span class="setting-label">Theme</span><select class="setting-select" id="settingsLightTheme" aria-label="Light Theme"></select></div>
-          <div class="setting-item"><span class="setting-label">Accent</span><input class="setting-input" id="lightThemeAccent" type="text" spellcheck="false" aria-label="Light Theme Accent"></div>
-          <div class="setting-item"><span class="setting-label">Background</span><input class="setting-input" id="lightThemeBackground" type="text" spellcheck="false" aria-label="Light Theme Background"></div>
-          <div class="setting-item"><span class="setting-label">Foreground</span><input class="setting-input" id="lightThemeForeground" type="text" spellcheck="false" aria-label="Light Theme Foreground"></div>
+          <div class="setting-item"><span class="setting-label">Accent</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeAccentPicker" type="color" value="#D7827E" aria-label="Light Theme Accent color picker"><input class="setting-input theme-hex-input" id="lightThemeAccent" type="text" spellcheck="false" aria-label="Light Theme Accent HEX"></span></div>
+          <div class="setting-item"><span class="setting-label">Background</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeBackgroundPicker" type="color" value="#FFFFFF" aria-label="Light Theme Background color picker"><input class="setting-input theme-hex-input" id="lightThemeBackground" type="text" spellcheck="false" aria-label="Light Theme Background HEX"></span></div>
+          <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeForegroundPicker" type="color" value="#575279" aria-label="Light Theme Foreground color picker"><input class="setting-input theme-hex-input" id="lightThemeForeground" type="text" spellcheck="false" aria-label="Light Theme Foreground HEX"></span></div>
           <div class="setting-item"><span class="setting-label">UI font</span><input class="setting-input" id="lightThemeUiFont" type="text" spellcheck="false" aria-label="Light Theme UI font"></div>
-          <div class="setting-item appearance-sidebar-option" id="lightThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><input id="lightThemeTranslucentSidebar" type="checkbox" aria-label="Light Theme Translucent sidebar"></div>
           <div class="setting-item"><span class="setting-label">Code font</span><input class="setting-input" id="lightThemeCodeFont" type="text" spellcheck="false" aria-label="Light Theme Code font"></div>
+          <div class="setting-item appearance-sidebar-option" id="lightThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><input id="lightThemeTranslucentSidebar" type="checkbox" aria-label="Light Theme Translucent sidebar"></div>
           <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('light')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
         </div>
         <div class="appearance-theme-section" id="appearanceDarkSection">
           <div class="settings-group-label">Dark Theme</div>
           <div class="setting-item"><span class="setting-label">Theme</span><select class="setting-select" id="settingsDarkTheme" aria-label="Dark Theme"></select></div>
-          <div class="setting-item"><span class="setting-label">Accent</span><input class="setting-input" id="darkThemeAccent" type="text" spellcheck="false" aria-label="Dark Theme Accent"></div>
-          <div class="setting-item"><span class="setting-label">Background</span><input class="setting-input" id="darkThemeBackground" type="text" spellcheck="false" aria-label="Dark Theme Background"></div>
-          <div class="setting-item"><span class="setting-label">Foreground</span><input class="setting-input" id="darkThemeForeground" type="text" spellcheck="false" aria-label="Dark Theme Foreground"></div>
+          <div class="setting-item"><span class="setting-label">Accent</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeAccentPicker" type="color" value="#D88991" aria-label="Dark Theme Accent color picker"><input class="setting-input theme-hex-input" id="darkThemeAccent" type="text" spellcheck="false" aria-label="Dark Theme Accent HEX"></span></div>
+          <div class="setting-item"><span class="setting-label">Background</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeBackgroundPicker" type="color" value="#1D1A1C" aria-label="Dark Theme Background color picker"><input class="setting-input theme-hex-input" id="darkThemeBackground" type="text" spellcheck="false" aria-label="Dark Theme Background HEX"></span></div>
+          <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeForegroundPicker" type="color" value="#F1E9EB" aria-label="Dark Theme Foreground color picker"><input class="setting-input theme-hex-input" id="darkThemeForeground" type="text" spellcheck="false" aria-label="Dark Theme Foreground HEX"></span></div>
           <div class="setting-item"><span class="setting-label">UI font</span><input class="setting-input" id="darkThemeUiFont" type="text" spellcheck="false" aria-label="Dark Theme UI font"></div>
-          <div class="setting-item appearance-sidebar-option" id="darkThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><input id="darkThemeTranslucentSidebar" type="checkbox" aria-label="Dark Theme Translucent sidebar"></div>
           <div class="setting-item"><span class="setting-label">Code font</span><input class="setting-input" id="darkThemeCodeFont" type="text" spellcheck="false" aria-label="Dark Theme Code font"></div>
+          <div class="setting-item appearance-sidebar-option" id="darkThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><input id="darkThemeTranslucentSidebar" type="checkbox" aria-label="Dark Theme Translucent sidebar"></div>
           <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('dark')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
         </div>
       </div>
       <div class="settings-pane" id="pane-general">
-        <div class="settings-pane-title">通用设置</div>
+        <div class="settings-pane-title">General</div>
         <div class="settings-group">
           <div class="settings-group-label">AI</div>
           <div class="setting-item"><span class="setting-label">Thinking Level</span><select class="setting-select" id="settingsThinking" aria-label="思考等级"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
           <div class="setting-item"><span class="setting-label">Auto Compact</span><select class="setting-select" id="settingsAutoCompact" aria-label="自动压缩"><option value="true">On</option><option value="false">Off</option></select></div>
           <div class="setting-item"><span class="setting-label">Steering Mode</span><select class="setting-select" id="settingsSteeringMode" aria-label="引导模式"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
           <div class="setting-item"><span class="setting-label">Follow-up Mode</span><select class="setting-select" id="settingsFollowUpMode" aria-label="跟进模式"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
-          <div class="setting-item"><span class="setting-label">运行中发送默认</span><select class="setting-select" id="settingsRunningSendMode" aria-label="运行中发送默认"><option value="queue">Queue</option><option value="steer">Steer</option></select></div>
-          <div class="setting-item"><span class="setting-label">Block Images</span><select class="setting-select" id="settingsBlockImages" aria-label="屏蔽图片"><option value="false">Off</option><option value="true">On</option></select></div>
+          <div class="setting-item"><span class="setting-label">Default send mode while running</span><select class="setting-select" id="settingsRunningSendMode" aria-label="Default send mode while running"><option value="queue">Queue</option><option value="steer">Steer</option></select></div>
+          <div class="setting-item"><span class="setting-label">Block images</span><select class="setting-select" id="settingsBlockImages" aria-label="Block images"><option value="false">Off</option><option value="true">On</option></select></div>
         </div>
         <div class="settings-group">
-          <div class="settings-group-label">网络</div>
+          <div class="settings-group-label">Network</div>
           <div class="setting-item"><span class="setting-label">Transport</span><select class="setting-select" id="settingsTransport" aria-label="传输协议"><option value="auto">Auto</option><option value="sse">SSE</option><option value="websocket">WebSocket</option><option value="websocket-cached">WebSocket (cached)</option></select></div>
         </div>
         <div class="settings-group">
-          <div class="settings-group-label">快捷键</div>
-          <div class="setting-item"><span class="setting-label">发送消息</span><span class="setting-value">Enter</span></div>
-          <div class="setting-item"><span class="setting-label">换行</span><span class="setting-value">⇧ Enter</span></div>
-          <div class="setting-item"><span class="setting-label">切换思考面板</span><span class="setting-value">⌃ T</span></div>
+          <div class="settings-group-label">Shortcuts</div>
+          <div class="setting-item"><span class="setting-label">Send message</span><span class="setting-value">Enter</span></div>
+          <div class="setting-item"><span class="setting-label">New line</span><span class="setting-value">⇧ Enter</span></div>
+          <div class="setting-item"><span class="setting-label">Toggle thinking panel</span><span class="setting-value">⌃ T</span></div>
         </div>
       </div>
       <div class="settings-pane" id="pane-models">
-        <div class="settings-pane-title">模型配置</div>
+        <div class="settings-pane-title">Models</div>
         <div class="settings-group">
-          <div class="settings-group-label">当前模型</div>
+          <div class="settings-group-label">Current model</div>
           <div class="setting-item"><span class="setting-label">模型</span><select class="setting-select" id="settingsModelSelect" aria-label="模型" onchange="onModelChange(this.value)"></select></div>
-          <div class="setting-item"><span class="setting-label">API 提供商</span><span class="setting-value" id="settingsProvider">—</span></div>
-          <div class="setting-item"><span class="setting-label">上下文窗口</span><span class="setting-value" id="settingsContextWindow">—</span></div>
+          <div class="setting-item"><span class="setting-label">Provider</span><span class="setting-value" id="settingsProvider">—</span></div>
+          <div class="setting-item"><span class="setting-label">Context window</span><span class="setting-value" id="settingsContextWindow">—</span></div>
         </div>
       </div>
       <div class="settings-pane" id="pane-permissions">
-        <div class="settings-pane-title">权限策略</div>
+        <div class="settings-pane-title">Permissions</div>
         <div class="settings-group">
-          <div class="settings-group-label">模式</div>
-          <div class="setting-item"><span class="setting-label">权限模式</span><select class="setting-select" id="settingsPermMode" aria-label="权限模式"><option>auto-approve</option><option>on-request</option><option>free-permission</option></select></div>
+          <div class="settings-group-label">Mode</div>
+          <div class="setting-item"><span class="setting-label">Permission mode</span><select class="setting-select" id="settingsPermMode" aria-label="Permission mode"><option>auto-approve</option><option>on-request</option><option>free-permission</option></select></div>
         </div>
         <div class="settings-group" id="settingsAutoApprove">
-          <div class="settings-group-label">自动批准规则</div>
+          <div class="settings-group-label">Auto-approve rules</div>
         </div>
       </div>
       <div class="settings-pane" id="pane-tools">
-        <div class="settings-pane-title">工具列表</div>
+        <div class="settings-pane-title">Tools</div>
         <div class="settings-group" id="settingsToolList">
-          <div class="settings-group-label">已注册工具</div>
+          <div class="settings-group-label">Registered tools</div>
         </div>
       </div>
+    </div>
     </div>
     <button class="settings-close" onclick="closeSettings()">✕</button>
   </div>

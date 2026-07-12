@@ -69,6 +69,8 @@ let sessionDraftState = {};
 let permissionUiStateBySession = {};
 let restoringSessionScroll = false;
 let scrollStateFrame = 0;
+let sidebarCollapsed = false;
+let sidebarAutoCollapsed = false;
 
 // =============== Slash Commands Registry ===============
 
@@ -127,6 +129,8 @@ const LOCAL_COMMANDS = new Set([
 
 window.addEventListener('DOMContentLoaded', async () => {
   setupChatScrollLock();
+  syncMainSidebarViewport();
+  syncChromeBackgroundGeometry();
 
   let retries = 0;
   while (!window.__TAURI__ && retries < 30) {
@@ -148,6 +152,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('permission-request', ev => showPermission(ev.payload));
   await listen('error', ev => showError(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
   await listen('notification', ev => showNotification(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
+  await listen('native-sidebar-toggle', () => toggleMainSidebar());
+  await listen('native-fullscreen', ev => {
+    console.debug('[rozsa-gui][fullscreen] native event', ev.payload);
+    setNativeFullscreen(Boolean(ev.payload));
+    scheduleNativeFullscreenSync('native-event');
+  });
+  scheduleNativeFullscreenSync('startup');
 
   try { const s = await invoke('get_state'); renderState(s); } catch (e) { showError('get_state failed: ' + String(e)); }
   try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { showSidebarError('sessionList', 'get_sessions failed: ' + String(e)); }
@@ -155,6 +166,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadSettings().catch(() => {});
   refreshRateLimits(false);
 });
+
+window.addEventListener('resize', syncMainSidebarViewport);
+window.addEventListener('resize', syncChromeBackgroundGeometry);
+window.addEventListener('resize', scheduleNativeFullscreenSync);
+window.addEventListener('pointermove', handleSidebarEdgeReveal);
 
 // =============== State Rendering ===============
 
@@ -1741,6 +1757,132 @@ function selectModel(idx) {
 
 // =============== Settings Panel ===============
 
+function isSidebarCollapsed() {
+  return sidebarCollapsed || sidebarAutoCollapsed;
+}
+
+function updateSidebarToggleButtons(collapsed) {
+  document.querySelectorAll('.sidebar-toggle-button').forEach(button => {
+    button.setAttribute('aria-pressed', String(!collapsed));
+    const label = collapsed ? 'Show sidebar' : 'Hide sidebar';
+    button.setAttribute('aria-label', label);
+    button.title = label;
+  });
+}
+
+function updateSidebarLayout(collapsed) {
+  const appBody = document.querySelector('[data-od-id="app-body"]');
+  const settingsPanel = document.getElementById('settingsPanel');
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  appBody?.classList.toggle('sidebar-collapsed', collapsed);
+  settingsPanel?.classList.toggle('settings-sidebar-collapsed', collapsed);
+  if (!collapsed) {
+    appBody?.classList.remove('sidebar-edge-visible');
+    settingsPanel?.classList.remove('settings-edge-visible');
+  }
+  updateSidebarToggleButtons(collapsed);
+  syncChromeBackgroundGeometry();
+  window.requestAnimationFrame(syncChromeBackgroundGeometry);
+}
+
+function setMainSidebarCollapsed(collapsed, fromUser = true) {
+  sidebarCollapsed = collapsed;
+  if (fromUser && !collapsed) sidebarAutoCollapsed = false;
+  updateSidebarLayout(isSidebarCollapsed());
+}
+
+function toggleMainSidebar() {
+  setMainSidebarCollapsed(!isSidebarCollapsed());
+}
+
+function syncMainSidebarViewport() {
+  const shouldAutoCollapse = window.innerWidth <= 1100;
+  if (shouldAutoCollapse !== sidebarAutoCollapsed) {
+    sidebarAutoCollapsed = shouldAutoCollapse;
+    updateSidebarLayout(isSidebarCollapsed());
+  } else {
+    updateSidebarToggleButtons(isSidebarCollapsed());
+    syncChromeBackgroundGeometry();
+  }
+}
+
+function sidebarChromeBoundary(element, collapsed) {
+  if (!element || collapsed) return 0;
+  // getBoundingClientRect() is in the post-zoom viewport coordinate space,
+  // while gradients and CSS variables are resolved in layout CSS pixels.
+  // offsetLeft/offsetWidth stay in that layout space and follow the actual
+  // sidebar width after the responsive grid has resolved.
+  return Math.max(0, element.offsetLeft + element.offsetWidth);
+}
+
+function syncChromeBackgroundGeometry() {
+  const root = document.documentElement;
+  const collapsed = isSidebarCollapsed();
+  root.style.setProperty(
+    '--chrome-sidebar-boundary',
+    `${sidebarChromeBoundary(document.querySelector('[data-od-id="sidebar"]'), collapsed)}px`
+  );
+  root.style.setProperty(
+    '--settings-chrome-sidebar-boundary',
+    `${sidebarChromeBoundary(document.querySelector('.settings-tabs'), collapsed)}px`
+  );
+}
+
+function handleSidebarEdgeReveal(event) {
+  const collapsed = isSidebarCollapsed();
+  const settingsPanel = document.getElementById('settingsPanel');
+  const settingsVisible = settingsPanel?.classList.contains('visible');
+  const edgeVisible = event.clientX <= 18;
+  if (settingsVisible) {
+    settingsPanel.classList.toggle('settings-edge-visible', collapsed && edgeVisible);
+    return;
+  }
+  const appBody = document.querySelector('[data-od-id="app-body"]');
+  appBody?.classList.toggle('sidebar-edge-visible', collapsed && edgeVisible);
+}
+
+function currentTauriWindow() {
+  return window.__TAURI__?.window?.getCurrentWindow?.();
+}
+
+async function syncNativeFullscreen(source) {
+  const nativeWindow = currentTauriWindow();
+  if (!nativeWindow?.isFullscreen) {
+    console.error('[rozsa-gui][fullscreen] isFullscreen unavailable', source);
+    return;
+  }
+  const fullscreen = await nativeWindow.isFullscreen();
+  console.debug('[rozsa-gui][fullscreen] calibrated', source, fullscreen);
+  setNativeFullscreen(fullscreen);
+}
+
+function scheduleNativeFullscreenSync(source = 'scheduled') {
+  [0, 80, 240].forEach(delay => {
+    window.setTimeout(() => {
+      syncNativeFullscreen(`${source}:${delay}`).catch(error => {
+        console.error('[rozsa-gui][fullscreen] calibration failed', source, error);
+      });
+    }, delay);
+  });
+}
+
+function setNativeFullscreen(fullscreen) {
+  document.body.classList.toggle('native-fullscreen', fullscreen);
+  const appBodyRect = document.querySelector('[data-od-id="app-body"]')?.getBoundingClientRect();
+  const settingsDialogRect = document.querySelector('.settings-dialog')?.getBoundingClientRect();
+  console.debug(
+    '[rozsa-gui][fullscreen] class applied',
+    document.body.classList.contains('native-fullscreen'),
+    {
+      body: document.body.getBoundingClientRect().toJSON(),
+      appBody: appBodyRect?.toJSON(),
+      settingsDialog: settingsDialogRect?.toJSON(),
+    },
+  );
+  syncChromeBackgroundGeometry();
+  window.requestAnimationFrame(syncChromeBackgroundGeometry);
+}
+
 function toggleSettings() {
   const panel = document.getElementById('settingsPanel');
   if (!panel) return;
@@ -1748,6 +1890,8 @@ function toggleSettings() {
     closeSettings();
   } else {
     panel.classList.add('visible');
+    panel.classList.toggle('settings-sidebar-collapsed', isSidebarCollapsed());
+    syncChromeBackgroundGeometry();
     loadSettings().catch(() => {});
   }
 }
@@ -1755,6 +1899,7 @@ function toggleSettings() {
 function closeSettings() {
   const panel = document.getElementById('settingsPanel');
   if (panel) panel.classList.remove('visible');
+  syncChromeBackgroundGeometry();
 }
 
 function switchSettingsTab(tabId, btn) {
@@ -1833,7 +1978,8 @@ function renderAppearanceSettings(appearance) {
 
   const modeSelect = document.getElementById('settingsThemeMode');
   if (modeSelect) {
-    modeSelect.value = appearance.themeMode;
+    modeSelect.value = appearance.themeMode || 'system';
+    renderThemeModeCards(modeSelect.value);
     modeSelect.onchange = () => saveSetting('appearance_theme_mode', modeSelect.value);
   }
 
@@ -1867,6 +2013,22 @@ function renderAppearanceSettings(appearance) {
   installSystemThemeListener();
 }
 
+function selectThemeModeCard(mode) {
+  const modeSelect = document.getElementById('settingsThemeMode');
+  if (!modeSelect || !['system', 'light', 'dark'].includes(mode)) return;
+  modeSelect.value = mode;
+  renderThemeModeCards(mode);
+  saveSetting('appearance_theme_mode', mode);
+}
+
+function renderThemeModeCards(mode) {
+  document.querySelectorAll('[data-theme-mode-card]').forEach(card => {
+    const active = card.dataset.themeModeCard === mode;
+    card.classList.toggle('active', active);
+    card.setAttribute('aria-pressed', String(active));
+  });
+}
+
 function renderThemeSelect(mode, selectedId) {
   const select = document.getElementById(mode === 'light' ? 'settingsLightTheme' : 'settingsDarkTheme');
   if (!select) return;
@@ -1888,9 +2050,9 @@ function renderThemeSelect(mode, selectedId) {
 function renderThemeControls(mode, theme, isMacos) {
   if (!theme) return;
   const prefix = mode === 'light' ? 'light' : 'dark';
-  setThemeControlValue(prefix + 'ThemeAccent', theme.accent);
-  setThemeControlValue(prefix + 'ThemeBackground', theme.background);
-  setThemeControlValue(prefix + 'ThemeForeground', theme.foreground);
+  setThemeColorControlValue(prefix + 'ThemeAccent', theme.accent);
+  setThemeColorControlValue(prefix + 'ThemeBackground', theme.background);
+  setThemeColorControlValue(prefix + 'ThemeForeground', theme.foreground);
   setThemeControlValue(prefix + 'ThemeUiFont', theme.uiFont);
   setThemeControlValue(prefix + 'ThemeCodeFont', theme.codeFont);
   const sidebar = document.getElementById(prefix + 'ThemeTranslucentSidebar');
@@ -1898,16 +2060,32 @@ function renderThemeControls(mode, theme, isMacos) {
   if (sidebar) sidebar.checked = !!theme.translucentSidebar;
   if (sidebarOption) sidebarOption.hidden = !isMacos;
 
-  const ids = [
-    prefix + 'ThemeAccent',
-    prefix + 'ThemeBackground',
-    prefix + 'ThemeForeground',
+  const textIds = [
     prefix + 'ThemeUiFont',
     prefix + 'ThemeCodeFont',
   ];
-  ids.forEach(id => {
+  textIds.forEach(id => {
     const control = document.getElementById(id);
     if (control) control.oninput = () => previewTheme(mode);
+  });
+  ['Accent', 'Background', 'Foreground'].forEach(field => {
+    const id = prefix + 'Theme' + field;
+    const text = document.getElementById(id);
+    const picker = document.getElementById(id + 'Picker');
+    if (picker) {
+      picker.oninput = () => {
+        const value = picker.value.toUpperCase();
+        if (text) text.value = value;
+        updateThemeColorVisual(id, value);
+        previewTheme(mode);
+      };
+    }
+    if (text) {
+      text.oninput = () => {
+        updateThemeColorVisual(id, text.value);
+        if (isHexColor(text.value)) previewTheme(mode);
+      };
+    }
   });
   if (sidebar) sidebar.onchange = () => previewTheme(mode);
 }
@@ -1915,6 +2093,42 @@ function renderThemeControls(mode, theme, isMacos) {
 function setThemeControlValue(id, value) {
   const control = document.getElementById(id);
   if (control) control.value = value || '';
+}
+
+function isHexColor(value) {
+  return /^#[0-9A-Fa-f]{6}$/.test(String(value || '').trim());
+}
+
+function normalizeHexColor(value, fallback = '#000000') {
+  const normalized = String(value || '').trim().toUpperCase();
+  return isHexColor(normalized) ? normalized : fallback;
+}
+
+function themeColorTextColor(hex) {
+  const value = normalizeHexColor(hex);
+  const channels = [1, 3, 5].map(offset => Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
+  const linear = channels.map(channel => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  return luminance > 0.46 ? '#211E20' : '#FFFFFF';
+}
+
+function updateThemeColorVisual(id, value) {
+  if (!isHexColor(value)) return;
+  const hex = normalizeHexColor(value);
+  const control = document.getElementById(id);
+  const picker = document.getElementById(id + 'Picker');
+  const wrapper = control?.closest('.theme-color-control');
+  if (picker) picker.value = hex;
+  if (wrapper) {
+    wrapper.style.setProperty('--theme-color', hex);
+    wrapper.style.setProperty('--theme-color-text', themeColorTextColor(hex));
+  }
+}
+
+function setThemeColorControlValue(id, value) {
+  const hex = normalizeHexColor(value);
+  setThemeControlValue(id, hex);
+  updateThemeColorVisual(id, hex);
 }
 
 function getThemeControlValue(id) {
@@ -1940,6 +2154,10 @@ function readThemeEditor(mode) {
 async function saveThemeAsCustom(mode) {
   const theme = readThemeEditor(mode);
   if (!theme) return;
+  if (!['accent', 'background', 'foreground'].every(field => isHexColor(theme[field]))) {
+    showError('Accent, background, and foreground must be six-digit HEX colors.');
+    return;
+  }
   const name = window.prompt('Custom theme name', theme.name || 'My Theme');
   if (name === null) return;
   const trimmedName = name.trim();
@@ -1961,6 +2179,7 @@ async function saveThemeAsCustom(mode) {
 function previewTheme(mode) {
   const theme = readThemeEditor(mode);
   if (!theme || !currentSettings?.appearance) return;
+  if (!['accent', 'background', 'foreground'].every(field => isHexColor(theme[field]))) return;
   const activeMode = effectiveThemeMode(currentSettings.appearance.themeMode);
   if (activeMode === mode) applyThemeDefinition(theme, currentSettings.appearance.themeMode);
 }
@@ -2006,6 +2225,7 @@ function applyThemeDefinition(theme, themeMode) {
   root.setAttribute('data-theme-translucent-sidebar', theme.translucentSidebar && currentSettings?.appearance?.isMacos ? 'true' : 'false');
   Object.entries(theme.variables || {}).forEach(([key, value]) => root.style.setProperty(key, value));
   root.style.setProperty('--accent', theme.accent);
+  root.style.setProperty('--semantic-accent', theme.accent);
   root.style.setProperty('--bg', theme.background);
   root.style.setProperty('--fg', theme.foreground);
   root.style.setProperty('--font-ui', theme.uiFont);

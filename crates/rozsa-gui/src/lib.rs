@@ -6,6 +6,8 @@ mod commands;
 pub mod events;
 pub mod file_refs;
 pub mod git_diff;
+#[cfg(target_os = "macos")]
+mod native_titlebar;
 pub mod state;
 pub mod turn_diff;
 
@@ -18,7 +20,7 @@ use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::PendingApprovals;
 use rozsa_app::settings::SettingsManager;
 use rozsa_model::types::{Model, ThinkingLevel};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use state::{
     GuiState, PermissionRequest, PreToolUseHookFactory, SessionTab, SharedResources,
@@ -123,6 +125,30 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
                 window.open_devtools();
+
+                #[cfg(target_os = "macos")]
+                {
+                    let sidebar_event_handle = app.handle().clone();
+                    let fullscreen_event_handle = app.handle().clone();
+                    native_titlebar::install(
+                        &window,
+                        move || {
+                            let _ = sidebar_event_handle.emit("native-sidebar-toggle", ());
+                        },
+                        move |fullscreen| {
+                            match fullscreen_event_handle.emit("native-fullscreen", fullscreen) {
+                                Ok(()) => eprintln!(
+                                    "[rozsa-gui][native-titlebar] emitted native-fullscreen={fullscreen}"
+                                ),
+                                Err(error) => eprintln!(
+                                    "[rozsa-gui][native-titlebar] failed to emit native-fullscreen={fullscreen}: {error}"
+                                ),
+                            }
+                        },
+                    )
+                    .map_err(std::io::Error::other)?;
+                }
+
                 let pending_approvals = app.state::<GuiState>().pending_approvals.clone();
                 window.on_window_event(move |event| {
                     if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
