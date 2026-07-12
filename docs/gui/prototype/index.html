@@ -945,6 +945,7 @@ body {
   background: var(--code-bg);
   transition: border-color 0.15s, background 0.15s;
   overflow: hidden;
+  position: relative;
 }
 .input-wrapper:focus-within {
   border-color: var(--accent);
@@ -1007,6 +1008,38 @@ body {
   max-height: 120px;
 }
 .input-wrapper textarea::placeholder { color: oklch(70% 0.008 350); }
+.rich-input {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  padding: 10px 14px 6px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--fg);
+  caret-color: var(--fg);
+  background: transparent;
+  line-height: 1.5;
+  min-height: 38px;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rich-input:focus-visible { outline: none; }
+.rich-input:empty::before {
+  content: attr(data-placeholder);
+  color: oklch(70% 0.008 350);
+  pointer-events: none;
+}
+.valid-token-text {
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 11%, white);
+  border-radius: 4px;
+  padding: 1px 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
 .input-toolbar {
   display: flex;
   align-items: center;
@@ -1852,6 +1885,7 @@ html[data-preview-theme="dark"] {
 :root {
   --settings-sidebar-width: clamp(220px, 22vw, 320px);
   --app-body-bg: var(--surface);
+  --semantic-accent: #D7827E;
 }
 [data-od-id="titlebar"] {
   background: var(--titlebar-bg);
@@ -1863,6 +1897,11 @@ html[data-preview-theme="dark"] {
 }
 [data-od-id="main-panel"] { background: var(--app-body-bg); }
 [data-od-id="panel-header"] { background: var(--app-body-bg); box-shadow: none; }
+[data-od-id="main-panel"] .msg-user .msg-avatar,
+[data-od-id="main-panel"] .msg-user .msg-role,
+[data-od-id="main-panel"] .thinking-icon,
+[data-od-id="main-panel"] .thinking-label,
+[data-od-id="main-panel"] .stream-cursor { color: var(--semantic-accent); }
 #settingsPanel { background: var(--app-body-bg); }
 .settings-shell { background: var(--app-body-bg); }
 .settings-chrome {
@@ -2055,6 +2094,107 @@ html[data-preview-theme="dark"] {
 .theme-picker-hex-label { margin-left: auto; font-family: var(--font-mono); }
 .settings-hint { border-color: color-mix(in srgb, var(--muted) 48%, transparent); color: color-mix(in srgb, var(--muted) 62%, transparent); opacity: .72; }
 .settings-hint::after { color: var(--fg); background: color-mix(in srgb, var(--surface) 94%, transparent); }
+
+/* Theme mode choices remain a horizontal group at every usable width. */
+.theme-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(clamp(132px, calc((100% - 24px) / 3), 220px), 1fr));
+  gap: 12px;
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  scrollbar-width: thin;
+}
+.theme-mode-card {
+  min-width: 0;
+}
+@media (max-width: 650px) {
+  .theme-mode-grid { grid-template-columns: repeat(3, minmax(132px, 1fr)); }
+}
+
+/* Main scene shell: the titlebar continues the sidebar/body surfaces. */
+:root { --main-sidebar-width: clamp(240px, 20vw, 320px); }
+[data-od-id="titlebar"] {
+  background: linear-gradient(90deg, var(--sidebar-bg) 0 var(--main-sidebar-width), var(--app-body-bg) var(--main-sidebar-width) 100%);
+  border-bottom: 0;
+}
+[data-od-id="titlebar"].sidebar-collapsed { background: var(--app-body-bg); }
+[data-od-id="app-body"] {
+  position: relative;
+  min-width: 0;
+  grid-template-columns: var(--main-sidebar-width) minmax(0, 1fr);
+}
+[data-od-id="sidebar"] {
+  min-width: 0;
+  transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease;
+}
+.sidebar-toggle-button {
+  width: 26px;
+  height: 24px;
+  flex: 0 0 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -3px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background .12s ease, color .12s ease;
+}
+.sidebar-toggle-button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg); }
+.sidebar-toggle-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent); outline-offset: 1px; }
+.sidebar-toggle-button svg { width: 16px; height: 16px; }
+.settings-sidebar-toggle-button { margin-left: -3px; }
+[data-od-id="app-body"].sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+[data-od-id="app-body"].sidebar-collapsed > [data-od-id="sidebar"] {
+  position: absolute;
+  z-index: 20;
+  inset: 0 auto 0 0;
+  width: var(--main-sidebar-width);
+  transform: translateX(-105%);
+  visibility: hidden;
+  box-shadow: 8px 0 26px rgb(30 20 25 / 0%);
+}
+[data-od-id="app-body"].sidebar-collapsed.sidebar-edge-visible > [data-od-id="sidebar"] {
+  transform: translateX(0);
+  visibility: visible;
+  box-shadow: 8px 0 26px rgb(30 20 25 / 12%);
+}
+[data-od-id="app-body"].sidebar-collapsed::before {
+  content: '';
+  position: absolute;
+  z-index: 19;
+  inset: 0 auto 0 0;
+  width: 9px;
+}
+#settingsPanel .settings-workspace { position: relative; }
+#settingsPanel.settings-sidebar-collapsed .settings-workspace { grid-template-columns: minmax(0, 1fr); }
+#settingsPanel.settings-sidebar-collapsed .settings-chrome { background: var(--app-body-bg); }
+#settingsPanel.settings-sidebar-collapsed .settings-sidebar {
+  position: absolute;
+  z-index: 20;
+  inset: 0 auto 0 0;
+  width: var(--settings-sidebar-width);
+  transform: translateX(-105%);
+  visibility: hidden;
+  box-shadow: 8px 0 26px rgb(30 20 25 / 0%);
+}
+#settingsPanel.settings-sidebar-collapsed.settings-edge-visible .settings-sidebar {
+  transform: translateX(0);
+  visibility: visible;
+  box-shadow: 8px 0 26px rgb(30 20 25 / 12%);
+}
+#settingsPanel.settings-sidebar-collapsed::before {
+  content: '';
+  position: absolute;
+  z-index: 19;
+  inset: 52px auto 0 0;
+  width: 9px;
+}
 @media (max-width: 650px) {
   .settings-chrome { background: var(--sidebar-bg); }
   .settings-workspace { display: block; overflow-y: auto; }
@@ -2062,6 +2202,34 @@ html[data-preview-theme="dark"] {
   .settings-main { overflow: visible; }
   .theme-color-chip, .theme-hex-input, .theme-font-input { width: 100%; }
 }
+@media (max-width: 900px) {
+  [data-od-id="app-body"] { grid-template-columns: minmax(0, 1fr); }
+  [data-od-id="app-body"] > [data-od-id="sidebar"] {
+    position: absolute;
+    z-index: 20;
+    inset: 0 auto 0 0;
+    width: var(--main-sidebar-width);
+    transform: translateX(-105%);
+    visibility: hidden;
+  }
+  [data-od-id="app-body"]:not(.sidebar-collapsed) > [data-od-id="sidebar"] { transform: translateX(0); visibility: visible; }
+  [data-od-id="app-body"].sidebar-edge-visible > [data-od-id="sidebar"] { transform: translateX(0); visibility: visible; }
+}
+@media (max-width: 650px) {
+  .settings-workspace {
+    display: grid;
+    grid-template-columns: minmax(176px, 30vw) minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .settings-sidebar { max-height: none; overflow-y: auto; }
+  .settings-main { overflow-y: auto; }
+  .settings-main-inner { padding-inline: 24px; }
+}
+/* Keep the settings chrome aligned with the actual sidebar state. */
+.settings-chrome {
+  background: linear-gradient(90deg, var(--sidebar-bg) 0 var(--settings-sidebar-width), var(--app-body-bg) var(--settings-sidebar-width) 100%);
+}
+#settingsPanel.settings-sidebar-collapsed .settings-chrome { background: var(--app-body-bg); }
 </style>
 </head>
 <body>
@@ -2073,6 +2241,9 @@ html[data-preview-theme="dark"] {
     <span class="tl-min"></span>
     <span class="tl-max"></span>
   </div>
+  <button class="sidebar-toggle-button" id="sidebarToggleButton" type="button" aria-label="Hide sidebar" aria-pressed="true" title="Hide sidebar" onclick="toggleMainSidebar()">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.25" y="3" width="11.5" height="10" rx="2"/><path d="M6 3v10"/></svg>
+  </button>
   <div class="title-text">RÓZSA</div>
   <div style="width:52px"></div>
 </header>
@@ -2463,7 +2634,7 @@ html[data-preview-theme="dark"] {
             </button>
           </div>
         </div>
-          <textarea id="msgInput" placeholder="Message Rózsa, with Markdown support…" rows="1" oninput="autoResize(this);updateAutocomplete()"></textarea>
+          <div id="msgInput" class="rich-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Message Rózsa, with Markdown support…" oninput="handlePrototypeInput(this)" oncompositionstart="handlePrototypeCompositionStart(event)" oncompositionupdate="handlePrototypeCompositionUpdate(this)" oncompositionend="handlePrototypeCompositionEnd(this)"></div>
         <div class="input-toolbar">
           <button class="input-tool-btn" title="附加文件" aria-label="附加文件"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
           <button class="input-tool-btn" title="插入代码" aria-label="插入代码"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5,3 1.5,8 5,13"/><polyline points="11,3 14.5,8 11,13"/></svg></button>
@@ -2488,6 +2659,9 @@ html[data-preview-theme="dark"] {
   <div class="settings-shell">
     <header class="settings-chrome">
       <div class="settings-traffic-lights" aria-hidden="true"><span class="close"></span><span class="min"></span><span class="max"></span></div>
+      <button class="sidebar-toggle-button settings-sidebar-toggle-button" id="settingsSidebarToggleButton" type="button" aria-label="Hide sidebar" aria-pressed="true" title="Hide sidebar" onclick="toggleMainSidebar()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.25" y="3" width="11.5" height="10" rx="2"/><path d="M6 3v10"/></svg>
+      </button>
       <span class="settings-chrome-title">Rózsa</span>
       <span class="settings-chrome-spacer"></span>
     </header>
@@ -2624,10 +2798,40 @@ function toggleToolCall(el) {
   el.classList.toggle('expanded');
 }
 
+let prototypeInputComposing = false;
+
+function getPrototypeInputText(input) {
+  return (input?.innerText || '').replace(/\u00a0/g, '');
+}
+
+function setPrototypeInputText(input, text) {
+  if (!input) return;
+  input.textContent = text;
+}
+
+function handlePrototypeInput(input) {
+  autoResize(input);
+  if (!prototypeInputComposing) updateAutocomplete();
+}
+
+function handlePrototypeCompositionStart() {
+  prototypeInputComposing = true;
+}
+
+function handlePrototypeCompositionUpdate(input) {
+  autoResize(input);
+}
+
+function handlePrototypeCompositionEnd(input) {
+  prototypeInputComposing = false;
+  autoResize(input);
+  updateAutocomplete();
+}
+
 // 发送消息
 function sendMessage() {
   const input = document.getElementById('msgInput');
-  const text = input.value.trim();
+  const text = getPrototypeInputText(input).trim();
   if (!text) return;
 
   const messages = document.getElementById('chatMessages');
@@ -2641,7 +2845,7 @@ function sendMessage() {
   messages.insertBefore(msgDiv, typing);
 
   // 清空输入框
-  input.value = '';
+  setPrototypeInputText(input, '');
   input.style.height = 'auto';
   hideAutocomplete(document.getElementById('autocomplete'));
 
@@ -2779,6 +2983,7 @@ function autoResize(el) {
 // 键盘快捷键
 document.addEventListener('keydown', function(e) {
   const input = document.getElementById('msgInput');
+  if (prototypeInputComposing || e.isComposing || e.keyCode === 229) return;
   // 自动补全导航
   if (acVisible && document.activeElement === input) {
     const popup = document.getElementById('autocomplete');
@@ -3049,6 +3254,7 @@ function syncColorControl(theme, field, source, value) {
 function applyPrototypeTheme(theme, mode) {
   const resolved = mode || document.documentElement.dataset.previewResolvedTheme || 'light';
   document.documentElement.style.setProperty('--accent', theme.accent);
+  document.documentElement.style.setProperty('--semantic-accent', theme.accent);
   document.documentElement.style.setProperty('--bg', theme.background);
   document.documentElement.style.setProperty('--app-body-bg', theme.background);
   document.documentElement.style.setProperty('--fg', theme.foreground);
@@ -3106,7 +3312,7 @@ let acItems = [];
 function updateAutocomplete() {
   const input = document.getElementById('msgInput');
   const popup = document.getElementById('autocomplete');
-  const val = input.value;
+  const val = getPrototypeInputText(input);
 
   // / 在开头触发
   if (/^\/\w*$/.test(val)) {
@@ -3152,14 +3358,14 @@ function selectAcItem(idx) {
   const item = acItems[idx];
   if (!item) return;
   const input = document.getElementById('msgInput');
-  const val = input.value;
+  const val = getPrototypeInputText(input);
   const replacement = item.cmd || item.name;
   // 替换触发部分
   if (val.startsWith('/')) {
-    input.value = replacement + ' ';
+    setPrototypeInputText(input, replacement + ' ');
   } else {
     const atIdx = val.lastIndexOf('@');
-    input.value = val.slice(0, atIdx) + replacement + ' ';
+    setPrototypeInputText(input, val.slice(0, atIdx) + replacement + ' ');
   }
   hideAutocomplete(document.getElementById('autocomplete'));
   input.focus();
@@ -3395,6 +3601,67 @@ function escapeHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+let sidebarCollapsedByUser = false;
+
+function updateSidebarToggleButton(collapsed) {
+  ['sidebarToggleButton', 'settingsSidebarToggleButton'].forEach(id => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    button.setAttribute('aria-pressed', String(!collapsed));
+    button.setAttribute('aria-label', collapsed ? 'Show sidebar' : 'Hide sidebar');
+    button.title = collapsed ? 'Show sidebar' : 'Hide sidebar';
+  });
+}
+
+function setMainSidebarCollapsed(collapsed) {
+  const layout = document.querySelector('[data-od-id="app-body"]');
+  if (!layout) return;
+  layout.classList.toggle('sidebar-collapsed', collapsed);
+  if (!collapsed) layout.classList.remove('sidebar-edge-visible');
+  const titlebar = document.querySelector('[data-od-id="titlebar"]');
+  if (titlebar) titlebar.classList.toggle('sidebar-collapsed', collapsed);
+  const settingsPanel = document.getElementById('settingsPanel');
+  if (settingsPanel) {
+    settingsPanel.classList.toggle('settings-sidebar-collapsed', collapsed);
+    if (!collapsed) settingsPanel.classList.remove('settings-edge-visible');
+  }
+  updateSidebarToggleButton(collapsed);
+}
+
+function toggleMainSidebar() {
+  const layout = document.querySelector('[data-od-id="app-body"]');
+  if (!layout) return;
+  const collapsed = !layout.classList.contains('sidebar-collapsed');
+  sidebarCollapsedByUser = collapsed;
+  setMainSidebarCollapsed(collapsed);
+}
+
+function syncMainSidebarViewport() {
+  const layout = document.querySelector('[data-od-id="app-body"]');
+  if (!layout) return;
+  const shouldCollapse = window.innerWidth <= 900;
+  if (shouldCollapse) setMainSidebarCollapsed(true);
+  else if (!sidebarCollapsedByUser) setMainSidebarCollapsed(false);
+}
+
+window.addEventListener('resize', syncMainSidebarViewport);
+document.addEventListener('pointermove', event => {
+  const targets = [
+    { panel: document.querySelector('[data-od-id="app-body"]'), sidebar: document.querySelector('[data-od-id="sidebar"]'), collapsed: 'sidebar-collapsed', edge: 'sidebar-edge-visible', selector: '[data-od-id="sidebar"]' },
+    { panel: document.getElementById('settingsPanel'), sidebar: document.querySelector('#settingsPanel .settings-sidebar'), collapsed: 'settings-sidebar-collapsed', edge: 'settings-edge-visible', selector: '#settingsPanel .settings-sidebar' },
+  ];
+  targets.forEach(target => {
+    if (!target.panel || !target.sidebar || !target.panel.classList.contains(target.collapsed)) return;
+    const sidebarWidth = target.sidebar.getBoundingClientRect().width || 260;
+    if (event.clientX <= 14 || (target.panel.classList.contains(target.edge) && event.clientX <= sidebarWidth + 12)) {
+      target.panel.classList.add(target.edge);
+    } else if (!event.target.closest(target.selector)) {
+      target.panel.classList.remove(target.edge);
+    }
+  });
+});
+syncMainSidebarViewport();
 </script>
 </body>
 </html>
