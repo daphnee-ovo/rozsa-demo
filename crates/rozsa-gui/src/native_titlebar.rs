@@ -17,6 +17,8 @@ use objc2_app_kit::{
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, ns_string};
 use tauri::WebviewWindow;
 
+const TITLEBAR_ACCESSORY_HEIGHT: f64 = 32.0;
+
 struct TitlebarActionIvars {
     on_toggle: Box<dyn Fn() + Send + Sync + 'static>,
 }
@@ -84,15 +86,16 @@ fn log_window_geometry(label: &str, window: &NSWindow, webview_parent: Option<&N
     let layout = window.contentLayoutRect();
     let content_frame = window.contentView().map(|view| view.frame());
     let webview_parent_frame = webview_parent.map(NSView::frame);
-    let webview_child_frames = webview_parent.map(|parent| {
+    let webview_parent_safe_area = webview_parent.map(NSView::safeAreaInsets);
+    let webview_child_geometry = webview_parent.map(|parent| {
         parent
             .subviews()
             .iter()
-            .map(|view| view.frame())
+            .map(|view| (view.frame(), view.safeAreaInsets(), view.additionalSafeAreaInsets()))
             .collect::<Vec<_>>()
     });
     eprintln!(
-        "[rozsa-gui][native-titlebar] {label} window={frame:?} content_layout={layout:?} content_view={content_frame:?} webview_parent={webview_parent_frame:?} webview_children={webview_child_frames:?}"
+        "[rozsa-gui][native-titlebar] {label} window={frame:?} content_layout={layout:?} content_view={content_frame:?} webview_parent={webview_parent_frame:?} parent_safe_area={webview_parent_safe_area:?} webview_children={webview_child_geometry:?}"
     );
 }
 
@@ -105,6 +108,11 @@ define_class!(
     impl FullscreenObserver {
         #[unsafe(method(rozsaWindowDidEnterFullScreen:))]
         fn did_enter_fullscreen(&self, _notification: &NSNotification) {
+            self.ivars().drag_view.setHidden(true);
+            let current_frame = self.ivars().drag_view.frame();
+            self.ivars()
+                .drag_view
+                .setFrameSize(NSSize::new(current_frame.size.width, 0.0));
             if let Some(window) = self.ivars().window.load() {
                 let webview_parent = self.ivars().webview_parent.load();
                 log_window_geometry("did-enter-fullscreen", &window, webview_parent.as_deref());
@@ -114,6 +122,12 @@ define_class!(
 
         #[unsafe(method(rozsaWindowDidExitFullScreen:))]
         fn did_exit_fullscreen(&self, _notification: &NSNotification) {
+            let current_frame = self.ivars().drag_view.frame();
+            self.ivars().drag_view.setFrameSize(NSSize::new(
+                current_frame.size.width,
+                TITLEBAR_ACCESSORY_HEIGHT,
+            ));
+            self.ivars().drag_view.setHidden(false);
             if let Some(window) = self.ivars().window.load() {
                 let webview_parent = self.ivars().webview_parent.load();
                 log_window_geometry("did-exit-fullscreen", &window, webview_parent.as_deref());
@@ -218,7 +232,7 @@ pub fn install(
     let titlebar_width = ns_window.frame().size.width.max(640.0);
     drag_view.setFrame(NSRect::new(
         NSPoint::new(0.0, 0.0),
-        NSSize::new(titlebar_width, 32.0),
+        NSSize::new(titlebar_width, TITLEBAR_ACCESSORY_HEIGHT),
     ));
     drag_view.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,

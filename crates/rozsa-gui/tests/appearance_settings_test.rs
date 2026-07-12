@@ -29,6 +29,9 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(native.contains("NSWindowDidEnterFullScreenNotification"));
     assert!(native.contains("NSWindowDidExitFullScreenNotification"));
     assert!(native.contains("NSWindowDidResizeNotification"));
+    assert!(native.contains("drag_view.setHidden(true)"));
+    assert!(native.contains("drag_view.setHidden(false)"));
+    assert!(native.contains("TITLEBAR_ACCESSORY_HEIGHT"));
     assert!(!native.contains("RÓZSA"));
     assert!(html.contains("id=\"settingsThemeMode\""));
     assert!(html.contains("value=\"system\""));
