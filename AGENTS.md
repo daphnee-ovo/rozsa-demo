@@ -151,3 +151,8 @@ If the user's instructions conflict with any rule in this document, ask for expl
 
 # Other
 - GUI 新元素的增加不应该破坏原有风格
+- GUI 原型和说明在 `docs/gui/` 下面，尽量以原型为准，但也有可能存在原型
+  本身有缺陷，这个时候应当以user的要求为准，必要的时候可以修改原型，
+  以保持原型和产品的一致性(要有user同意才能修改).
+- 可以参考将原型拆解为多个场景，以提升原型对产品展现的表现力。
+  (为提高复用性，可以拆除公用的 *.js,*.css)

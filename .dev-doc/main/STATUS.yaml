@@ -1,5 +1,6 @@
-name: project
-phase: DEV
+name: rozsa
+phase: TEST
 mode: fast
-updated: 2026-06-26 15:37
+goals_minor: rozsa 基本功能进入可用状态
+updated: 2026-07-12 03:41
 started: 2026-06-05 19:57
