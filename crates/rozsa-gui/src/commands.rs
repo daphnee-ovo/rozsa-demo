@@ -7,13 +7,14 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::permissions::PermissionResponse;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::skills::SkillRegistry;
+use rozsa_app::themes::{self, ThemeDefinition, ThemeMode, ThemeStore, ThemeSummary};
 use rozsa_core::messages::AgentMessage;
 use rozsa_model::types::{
     AssistantMessage, ContentBlock, Message, StopReason, ThinkingLevel, Usage,
@@ -1002,7 +1003,34 @@ pub async fn get_settings(state: State<'_, GuiState>) -> Result<SettingsSnapshot
         steering_mode: rt.steering_mode.clone(),
         follow_up_mode: rt.follow_up_mode.clone(),
         running_send_mode: rt.running_send_mode.clone(),
+        appearance: AppearanceSnapshot {
+            theme_mode: rt.appearance.theme_mode.clone(),
+            font_size: rt.appearance.font_size,
+            light_theme: rt.appearance.light_theme.clone(),
+            dark_theme: rt.appearance.dark_theme.clone(),
+            is_macos: cfg!(target_os = "macos"),
+        },
     })
+}
+
+#[tauri::command]
+pub fn list_themes() -> Result<Vec<ThemeSummary>, String> {
+    theme_store()?.list().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_theme(id: String, mode: String) -> Result<ThemeDefinition, String> {
+    let mode = parse_theme_mode(&mode)?;
+    theme_store()?
+        .load(&id, mode)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn save_theme(theme: ThemeDefinition) -> Result<(), String> {
+    theme_store()?
+        .save(&theme)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1097,8 +1125,63 @@ pub async fn update_setting(
             persist_settings(&state).await;
             Ok(())
         }
+        "appearance_theme_mode" => {
+            if !matches!(value.as_str(), "system" | "light" | "dark") {
+                return Err(format!("Invalid theme mode: {value}"));
+            }
+            let mut s = state.runtime_settings.lock().await;
+            s.appearance.theme_mode = value;
+            drop(s);
+            persist_settings(&state).await;
+            Ok(())
+        }
+        "appearance_font_size" => {
+            let font_size = value
+                .parse::<u8>()
+                .map_err(|_| format!("Invalid font size: {value}"))?;
+            if !(5..=50).contains(&font_size) {
+                return Err(format!("Font size must be between 5 and 50: {font_size}"));
+            }
+            let mut s = state.runtime_settings.lock().await;
+            s.appearance.font_size = font_size;
+            drop(s);
+            persist_settings(&state).await;
+            Ok(())
+        }
+        "appearance_light_theme" => {
+            theme_store()?
+                .load(&value, ThemeMode::Light)
+                .map_err(|error| error.to_string())?;
+            let mut s = state.runtime_settings.lock().await;
+            s.appearance.light_theme = value;
+            drop(s);
+            persist_settings(&state).await;
+            Ok(())
+        }
+        "appearance_dark_theme" => {
+            theme_store()?
+                .load(&value, ThemeMode::Dark)
+                .map_err(|error| error.to_string())?;
+            let mut s = state.runtime_settings.lock().await;
+            s.appearance.dark_theme = value;
+            drop(s);
+            persist_settings(&state).await;
+            Ok(())
+        }
         _ => Err(format!("Unknown setting: {key}")),
     }
+}
+
+fn parse_theme_mode(value: &str) -> Result<ThemeMode, String> {
+    match value {
+        "light" => Ok(ThemeMode::Light),
+        "dark" => Ok(ThemeMode::Dark),
+        _ => Err(format!("Invalid theme mode: {value}")),
+    }
+}
+
+fn theme_store() -> Result<ThemeStore, String> {
+    themes::user_theme_store().map_err(|error| error.to_string())
 }
 
 // --- 模型 ---
@@ -2379,4 +2462,15 @@ pub struct SettingsSnapshot {
     pub steering_mode: String,
     pub follow_up_mode: String,
     pub running_send_mode: String,
+    pub appearance: AppearanceSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppearanceSnapshot {
+    pub theme_mode: String,
+    pub font_size: u8,
+    pub light_theme: String,
+    pub dark_theme: String,
+    pub is_macos: bool,
 }

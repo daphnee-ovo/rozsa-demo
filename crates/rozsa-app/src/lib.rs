@@ -12,4 +12,5 @@ pub mod settings;
 pub mod skills;
 pub mod slash_commands;
 pub mod subagent;
+pub mod themes;
 pub mod tools;

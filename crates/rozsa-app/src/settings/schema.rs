@@ -91,6 +91,8 @@ pub struct Settings {
     pub permissions: PermissionSettings,
     pub context_window_preferences: HashMap<String, u64>,
     pub lsp_mode: String,
+    #[serde(default)]
+    pub appearance: AppearanceSettings,
 }
 
 impl Default for Settings {
@@ -110,7 +112,58 @@ impl Default for Settings {
             permissions: PermissionSettings::default(),
             context_window_preferences: HashMap::new(),
             lsp_mode: "disabled".to_string(),
+            appearance: AppearanceSettings::default(),
         }
+    }
+}
+
+/// Persistent GUI appearance preferences. Theme palette values live in the
+/// user theme files under `~/.rozsa/themes/`; this struct stores only the
+/// active mode, font size, and selected theme ids.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppearanceSettings {
+    pub theme_mode: String,
+    pub font_size: u8,
+    pub light_theme: String,
+    pub dark_theme: String,
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            theme_mode: "light".to_string(),
+            font_size: 13,
+            light_theme: "rozsa".to_string(),
+            dark_theme: "rozsa-dark".to_string(),
+        }
+    }
+}
+
+impl AppearanceSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if !matches!(self.theme_mode.as_str(), "system" | "light" | "dark") {
+            return Err(format!("invalid theme mode: {}", self.theme_mode));
+        }
+        if !(5..=50).contains(&self.font_size) {
+            return Err(format!(
+                "font size must be between 5 and 50: {}",
+                self.font_size
+            ));
+        }
+        for (label, id) in [
+            ("light theme", &self.light_theme),
+            ("dark theme", &self.dark_theme),
+        ] {
+            if id.is_empty()
+                || !id
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+            {
+                return Err(format!("invalid {label} id: {id}"));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -147,6 +200,21 @@ pub struct PartialSettings {
     pub context_window_preferences: Option<HashMap<String, u64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lsp_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<PartialAppearanceSettings>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialAppearanceSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light_theme: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dark_theme: Option<String>,
 }
 
 /// Partial compaction settings

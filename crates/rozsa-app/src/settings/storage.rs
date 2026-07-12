@@ -16,6 +16,8 @@ pub enum SettingsError {
         path: PathBuf,
         source: serde_json::Error,
     },
+    #[error("Invalid settings: {message}")]
+    Invalid { message: String },
 }
 
 /// Settings manager: loads, merges, and provides access to settings
@@ -58,6 +60,11 @@ impl SettingsManager {
             }
         }
 
+        resolved
+            .appearance
+            .validate()
+            .map_err(|message| SettingsError::Invalid { message })?;
+
         Ok(Self {
             global_path,
             project_path,
@@ -90,6 +97,10 @@ impl SettingsManager {
         }
 
         self.resolved = resolved;
+        self.resolved
+            .appearance
+            .validate()
+            .map_err(|message| SettingsError::Invalid { message })?;
         Ok(())
     }
 

@@ -34,6 +34,9 @@ let permissionDisplayInFlight = false;
 let pendingPermissions = {};
 let toolCounts = {};
 let currentSettings = null;
+let availableThemes = [];
+let themeDefinitions = { light: null, dark: null };
+let systemThemeMediaQuery = null;
 let isStreaming = false;
 let acSelectedIndex = -1;
 let acRequestSeq = 0;
@@ -149,6 +152,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   try { const s = await invoke('get_state'); renderState(s); } catch (e) { showError('get_state failed: ' + String(e)); }
   try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { showSidebarError('sessionList', 'get_sessions failed: ' + String(e)); }
   try { models = await invoke('list_models'); renderModelSelector(); } catch (e) { showError('list_models failed: ' + String(e)); }
+  loadSettings().catch(() => {});
   refreshRateLimits(false);
 });
 
@@ -1744,7 +1748,7 @@ function toggleSettings() {
     closeSettings();
   } else {
     panel.classList.add('visible');
-    loadSettings();
+    loadSettings().catch(() => {});
   }
 }
 
@@ -1764,11 +1768,16 @@ function switchSettingsTab(tabId, btn) {
 async function loadSettings() {
   try {
     currentSettings = await invoke('get_settings');
+    availableThemes = await invoke('list_themes');
+    renderSettingsPane(currentSettings);
+    await applySelectedTheme();
   } catch (e) {
-    console.warn('get_settings:', e);
+    console.warn('appearance settings:', e);
     currentSettings = {};
+    availableThemes = [];
+    showError('Failed to load appearance settings: ' + String(e));
+    throw e;
   }
-  renderSettingsPane(currentSettings);
 }
 
 function renderSettingsPane(settings) {
@@ -1815,7 +1824,200 @@ function renderSettingsPane(settings) {
   }
 
   // Render general pane settings with live controls
+  renderAppearanceSettings(settings.appearance);
   renderGeneralSettings(settings);
+}
+
+function renderAppearanceSettings(appearance) {
+  if (!appearance) return;
+
+  const modeSelect = document.getElementById('settingsThemeMode');
+  if (modeSelect) {
+    modeSelect.value = appearance.themeMode;
+    modeSelect.onchange = () => saveSetting('appearance_theme_mode', modeSelect.value);
+  }
+
+  const range = document.getElementById('settingsFontSizeRange');
+  const input = document.getElementById('settingsFontSizeInput');
+  if (range && input) {
+    range.value = String(appearance.fontSize);
+    input.value = String(appearance.fontSize);
+    range.oninput = () => {
+      input.value = range.value;
+      applyFontSize(range.value);
+    };
+    range.onchange = () => saveSetting('appearance_font_size', range.value);
+    input.oninput = () => {
+      const value = clampFontSize(input.value);
+      range.value = String(value);
+      applyFontSize(value);
+    };
+    input.onchange = () => {
+      const value = clampFontSize(input.value);
+      input.value = String(value);
+      range.value = String(value);
+      saveSetting('appearance_font_size', String(value));
+    };
+  }
+
+  renderThemeSelect('light', appearance.lightTheme);
+  renderThemeSelect('dark', appearance.darkTheme);
+  renderThemeControls('light', themeDefinitions.light, appearance.isMacos);
+  renderThemeControls('dark', themeDefinitions.dark, appearance.isMacos);
+  installSystemThemeListener();
+}
+
+function renderThemeSelect(mode, selectedId) {
+  const select = document.getElementById(mode === 'light' ? 'settingsLightTheme' : 'settingsDarkTheme');
+  if (!select) return;
+  select.innerHTML = '';
+  availableThemes
+    .filter(theme => theme.mode === mode)
+    .forEach(theme => {
+      const option = document.createElement('option');
+      option.value = theme.id;
+      option.textContent = theme.name;
+      select.appendChild(option);
+    });
+  select.value = selectedId;
+  select.onchange = async () => {
+    await saveSetting('appearance_' + mode + '_theme', select.value);
+  };
+}
+
+function renderThemeControls(mode, theme, isMacos) {
+  if (!theme) return;
+  const prefix = mode === 'light' ? 'light' : 'dark';
+  setThemeControlValue(prefix + 'ThemeAccent', theme.accent);
+  setThemeControlValue(prefix + 'ThemeBackground', theme.background);
+  setThemeControlValue(prefix + 'ThemeForeground', theme.foreground);
+  setThemeControlValue(prefix + 'ThemeUiFont', theme.uiFont);
+  setThemeControlValue(prefix + 'ThemeCodeFont', theme.codeFont);
+  const sidebar = document.getElementById(prefix + 'ThemeTranslucentSidebar');
+  const sidebarOption = document.getElementById(prefix + 'ThemeSidebarOption');
+  if (sidebar) sidebar.checked = !!theme.translucentSidebar;
+  if (sidebarOption) sidebarOption.hidden = !isMacos;
+
+  const ids = [
+    prefix + 'ThemeAccent',
+    prefix + 'ThemeBackground',
+    prefix + 'ThemeForeground',
+    prefix + 'ThemeUiFont',
+    prefix + 'ThemeCodeFont',
+  ];
+  ids.forEach(id => {
+    const control = document.getElementById(id);
+    if (control) control.oninput = () => previewTheme(mode);
+  });
+  if (sidebar) sidebar.onchange = () => previewTheme(mode);
+}
+
+function setThemeControlValue(id, value) {
+  const control = document.getElementById(id);
+  if (control) control.value = value || '';
+}
+
+function getThemeControlValue(id) {
+  const control = document.getElementById(id);
+  return control ? control.value.trim() : '';
+}
+
+function readThemeEditor(mode) {
+  const prefix = mode === 'light' ? 'light' : 'dark';
+  const base = themeDefinitions[mode];
+  if (!base) return null;
+  return {
+    ...base,
+    accent: getThemeControlValue(prefix + 'ThemeAccent'),
+    background: getThemeControlValue(prefix + 'ThemeBackground'),
+    foreground: getThemeControlValue(prefix + 'ThemeForeground'),
+    uiFont: getThemeControlValue(prefix + 'ThemeUiFont'),
+    translucentSidebar: !!document.getElementById(prefix + 'ThemeTranslucentSidebar')?.checked,
+    codeFont: getThemeControlValue(prefix + 'ThemeCodeFont'),
+  };
+}
+
+async function saveThemeAsCustom(mode) {
+  const theme = readThemeEditor(mode);
+  if (!theme) return;
+  const name = window.prompt('Custom theme name', theme.name || 'My Theme');
+  if (name === null) return;
+  const trimmedName = name.trim();
+  const id = trimmedName.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!id) {
+    showError('Theme name must contain letters, numbers, - or _.');
+    return;
+  }
+  theme.id = id;
+  theme.name = trimmedName;
+  try {
+    await invoke('save_theme', { theme: theme });
+    await saveSetting('appearance_' + mode + '_theme', id);
+  } catch (e) {
+    showError('Failed to save custom theme: ' + String(e));
+  }
+}
+
+function previewTheme(mode) {
+  const theme = readThemeEditor(mode);
+  if (!theme || !currentSettings?.appearance) return;
+  const activeMode = effectiveThemeMode(currentSettings.appearance.themeMode);
+  if (activeMode === mode) applyThemeDefinition(theme, currentSettings.appearance.themeMode);
+}
+
+async function applySelectedTheme() {
+  const appearance = currentSettings?.appearance;
+  if (!appearance) return;
+  const mode = effectiveThemeMode(appearance.themeMode);
+  const [lightTheme, darkTheme] = await Promise.all([
+    invoke('get_theme', { id: appearance.lightTheme, mode: 'light' }),
+    invoke('get_theme', { id: appearance.darkTheme, mode: 'dark' }),
+  ]);
+  themeDefinitions.light = lightTheme;
+  themeDefinitions.dark = darkTheme;
+  const theme = mode === 'light' ? lightTheme : darkTheme;
+  applyThemeDefinition(theme, appearance.themeMode);
+  applyFontSize(appearance.fontSize);
+  renderThemeControls('light', lightTheme, appearance.isMacos);
+  renderThemeControls('dark', darkTheme, appearance.isMacos);
+}
+
+function effectiveThemeMode(themeMode) {
+  if (themeMode !== 'system') return themeMode;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function installSystemThemeListener() {
+  if (!window.matchMedia || systemThemeMediaQuery) return;
+  systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const handleChange = () => {
+    if (currentSettings?.appearance?.themeMode === 'system') {
+      applySelectedTheme().catch(error => showError('Failed to apply system theme: ' + String(error)));
+    }
+  };
+  if (systemThemeMediaQuery.addEventListener) systemThemeMediaQuery.addEventListener('change', handleChange);
+  else systemThemeMediaQuery.addListener(handleChange);
+}
+
+function applyThemeDefinition(theme, themeMode) {
+  const root = document.documentElement;
+  root.setAttribute('data-theme-mode', themeMode === 'system' ? effectiveThemeMode(themeMode) : themeMode);
+  root.setAttribute('data-theme-id', theme.id);
+  root.setAttribute('data-theme-translucent-sidebar', theme.translucentSidebar && currentSettings?.appearance?.isMacos ? 'true' : 'false');
+  Object.entries(theme.variables || {}).forEach(([key, value]) => root.style.setProperty(key, value));
+  root.style.setProperty('--accent', theme.accent);
+  root.style.setProperty('--bg', theme.background);
+  root.style.setProperty('--fg', theme.foreground);
+  root.style.setProperty('--font-ui', theme.uiFont);
+  root.style.setProperty('--font-mono', theme.codeFont);
+  root.style.setProperty('--sidebar-bg', theme.variables?.['--sidebar-bg'] || theme.background);
+  root.style.setProperty('--titlebar-bg', theme.variables?.['--titlebar-bg'] || theme.background);
+}
+
+function clampFontSize(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 13;
+  return Math.min(50, Math.max(5, parsed));
 }
 
 function renderGeneralSettings(settings) {
@@ -1882,9 +2084,7 @@ function renderGeneralSettings(settings) {
 async function saveSetting(key, value) {
   try {
     await invoke('update_setting', { key: key, value: value });
-    // Refresh settings state
-    currentSettings = await invoke('get_settings');
-    renderSettingsPane(currentSettings);
+    await loadSettings();
   } catch (e) {
     console.warn('update_setting failed:', e);
     showError('Failed to save setting: ' + key);
@@ -2738,30 +2938,9 @@ function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// =============== GUI-only Settings (localStorage) ===============
-
-function applyTheme(value) {
-  localStorage.setItem('rozsa-theme', value);
-  document.documentElement.setAttribute('data-theme', value);
-}
-
 function applyFontSize(value) {
-  localStorage.setItem('rozsa-font-size', value);
-  document.documentElement.style.fontSize = value + 'px';
+  const fontSize = clampFontSize(value);
+  const root = document.documentElement;
+  root.style.setProperty('--ui-font-size', fontSize + 'px');
+  root.style.setProperty('--ui-scale', String(fontSize / 13));
 }
-
-// 启动时恢复 GUI-only 设置
-(function restoreLocalSettings() {
-  const theme = localStorage.getItem('rozsa-theme');
-  if (theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    const sel = document.getElementById('settingsTheme');
-    if (sel) sel.value = theme;
-  }
-  const fontSize = localStorage.getItem('rozsa-font-size');
-  if (fontSize) {
-    document.documentElement.style.fontSize = fontSize + 'px';
-    const sel = document.getElementById('settingsFontSize');
-    if (sel) sel.value = fontSize;
-  }
-})();

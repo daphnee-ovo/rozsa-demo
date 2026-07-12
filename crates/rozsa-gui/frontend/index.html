@@ -56,6 +56,8 @@
   --code-border: oklch(90% 0.005 260);
   --sidebar-bg: oklch(97.5% 0.004 350);
   --titlebar-bg: oklch(98.5% 0.003 350);
+  --ui-font-size: 13px;
+  --ui-scale: 1;
   --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Menlo, monospace;
   --radius: 10px;
@@ -66,7 +68,7 @@
 
 body {
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   color: var(--fg);
   background: var(--bg);
   height: 100vh;
@@ -74,6 +76,9 @@ body {
   flex-direction: column;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  zoom: var(--ui-scale);
+  width: calc(100% / var(--ui-scale));
+  height: calc(100vh / var(--ui-scale));
 }
 
 /* ---- Tauri 标题栏 ---- */
@@ -1468,6 +1473,91 @@ body {
   border-color: color-mix(in oklch, var(--accent) 36%, var(--border));
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 10%, transparent);
 }
+.setting-input {
+  min-width: 156px;
+  max-width: 280px;
+  border: 1px solid color-mix(in oklch, var(--border) 78%, var(--surface));
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--surface) 96%, var(--code-bg));
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 4px 8px;
+  outline: none;
+}
+.setting-input:focus {
+  border-color: color-mix(in oklch, var(--accent) 36%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 10%, transparent);
+}
+.appearance-range {
+  width: 180px;
+  accent-color: var(--accent);
+}
+.appearance-font-size-input { min-width: 70px; max-width: 70px; }
+.appearance-theme-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  background: color-mix(in oklch, var(--surface) 94%, var(--bg));
+}
+.appearance-theme-section .settings-group-label {
+  color: var(--fg);
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.appearance-theme-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+}
+.appearance-theme-actions button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--fg);
+  padding: 5px 9px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+.appearance-theme-actions button:hover { border-color: var(--accent); }
+.appearance-theme-note { color: var(--muted); font-size: 11px; }
+.appearance-sidebar-option[hidden] { display: none; }
+
+html[data-theme-mode="dark"] {
+  color-scheme: dark;
+}
+html[data-theme-mode="dark"] .settings-tabs,
+html[data-theme-mode="dark"] .settings-dialog,
+html[data-theme-mode="dark"] .appearance-theme-section,
+html[data-theme-mode="dark"] .setting-select,
+html[data-theme-mode="dark"] .setting-input {
+  background: var(--surface);
+  color: var(--fg);
+}
+html[data-theme-mode="dark"] .settings-tabs,
+html[data-theme-mode="dark"] .settings-tab:hover,
+html[data-theme-mode="dark"] .settings-tab.active,
+html[data-theme-mode="dark"] .setting-item:hover {
+  background: var(--sidebar-bg);
+}
+html[data-theme-mode="dark"] .msg-assistant .msg-avatar {
+  background: var(--accent-bg);
+  color: var(--accent-hover);
+}
+html[data-theme-mode="dark"] .thinking-header,
+html[data-theme-mode="dark"] .tool-log-item:hover,
+html[data-theme-mode="dark"] .session-item:hover,
+html[data-theme-mode="dark"] .sidebar-btn:hover {
+  background: var(--accent-bg);
+}
+[data-theme-translucent-sidebar="true"] [data-od-id="sidebar"] {
+  background: color-mix(in srgb, var(--sidebar-bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  backdrop-filter: blur(20px) saturate(130%);
+}
 .setting-toggle {
   width: 36px; height: 20px;
   border-radius: 10px;
@@ -2014,20 +2104,45 @@ button:focus-visible, .session-item:focus-visible,
 <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-label="应用设置" onclick="if(event.target===this)closeSettings()">
   <div class="settings-dialog" data-od-id="settings-dialog">
     <nav class="settings-tabs">
-      <button class="settings-tab active" onclick="switchSettingsTab('general', this)">通用</button>
+      <button class="settings-tab active" onclick="switchSettingsTab('appearance', this)">Appearance</button>
+      <button class="settings-tab" onclick="switchSettingsTab('general', this)">通用</button>
       <button class="settings-tab" onclick="switchSettingsTab('models', this)">模型</button>
       <button class="settings-tab" onclick="switchSettingsTab('permissions', this)">权限</button>
       <button class="settings-tab" onclick="switchSettingsTab('tools', this)">工具</button>
     </nav>
     <div class="settings-content">
-      <div class="settings-pane active" id="pane-general">
-        <div class="settings-pane-title">通用设置</div>
+      <div class="settings-pane active" id="pane-appearance">
+        <div class="settings-pane-title">Appearance</div>
         <div class="settings-group">
-          <div class="settings-group-label">外观</div>
-          <div class="setting-item"><span class="setting-label">主题</span><select class="setting-select" id="settingsTheme" aria-label="主题" onchange="applyTheme(this.value)"><option value="light">浅色</option><option value="system">跟随系统</option><option value="dark">深色</option></select></div>
-          <div class="setting-item"><span class="setting-label">主题色</span><span class="setting-value" style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:var(--accent)"></span>低饱和玫红</span></div>
-          <div class="setting-item"><span class="setting-label">字体大小</span><select class="setting-select" id="settingsFontSize" aria-label="字体大小" onchange="applyFontSize(this.value)"><option value="13">13px</option><option value="14">14px</option><option value="15">15px</option></select></div>
+          <div class="settings-group-label">Display</div>
+          <div class="setting-item"><span class="setting-label">Theme Mode</span><select class="setting-select" id="settingsThemeMode" aria-label="Theme Mode"><option value="system">system</option><option value="light">light</option><option value="dark">dark</option></select></div>
+          <div class="setting-item"><span class="setting-label">Font Size</span><span style="display:flex;align-items:center;gap:10px"><input class="appearance-range" id="settingsFontSizeRange" type="range" min="5" max="50" step="1" aria-label="Font Size"><input class="setting-input appearance-font-size-input" id="settingsFontSizeInput" type="number" min="5" max="50" step="1" aria-label="Font Size in pixels"><span class="setting-value">px</span></span></div>
         </div>
+        <div class="appearance-theme-section" id="appearanceLightSection">
+          <div class="settings-group-label">Light Theme</div>
+          <div class="setting-item"><span class="setting-label">Theme</span><select class="setting-select" id="settingsLightTheme" aria-label="Light Theme"></select></div>
+          <div class="setting-item"><span class="setting-label">Accent</span><input class="setting-input" id="lightThemeAccent" type="text" spellcheck="false" aria-label="Light Theme Accent"></div>
+          <div class="setting-item"><span class="setting-label">Background</span><input class="setting-input" id="lightThemeBackground" type="text" spellcheck="false" aria-label="Light Theme Background"></div>
+          <div class="setting-item"><span class="setting-label">Foreground</span><input class="setting-input" id="lightThemeForeground" type="text" spellcheck="false" aria-label="Light Theme Foreground"></div>
+          <div class="setting-item"><span class="setting-label">UI font</span><input class="setting-input" id="lightThemeUiFont" type="text" spellcheck="false" aria-label="Light Theme UI font"></div>
+          <div class="setting-item appearance-sidebar-option" id="lightThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><input id="lightThemeTranslucentSidebar" type="checkbox" aria-label="Light Theme Translucent sidebar"></div>
+          <div class="setting-item"><span class="setting-label">Code font</span><input class="setting-input" id="lightThemeCodeFont" type="text" spellcheck="false" aria-label="Light Theme Code font"></div>
+          <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('light')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
+        </div>
+        <div class="appearance-theme-section" id="appearanceDarkSection">
+          <div class="settings-group-label">Dark Theme</div>
+          <div class="setting-item"><span class="setting-label">Theme</span><select class="setting-select" id="settingsDarkTheme" aria-label="Dark Theme"></select></div>
+          <div class="setting-item"><span class="setting-label">Accent</span><input class="setting-input" id="darkThemeAccent" type="text" spellcheck="false" aria-label="Dark Theme Accent"></div>
+          <div class="setting-item"><span class="setting-label">Background</span><input class="setting-input" id="darkThemeBackground" type="text" spellcheck="false" aria-label="Dark Theme Background"></div>
+          <div class="setting-item"><span class="setting-label">Foreground</span><input class="setting-input" id="darkThemeForeground" type="text" spellcheck="false" aria-label="Dark Theme Foreground"></div>
+          <div class="setting-item"><span class="setting-label">UI font</span><input class="setting-input" id="darkThemeUiFont" type="text" spellcheck="false" aria-label="Dark Theme UI font"></div>
+          <div class="setting-item appearance-sidebar-option" id="darkThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><input id="darkThemeTranslucentSidebar" type="checkbox" aria-label="Dark Theme Translucent sidebar"></div>
+          <div class="setting-item"><span class="setting-label">Code font</span><input class="setting-input" id="darkThemeCodeFont" type="text" spellcheck="false" aria-label="Dark Theme Code font"></div>
+          <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('dark')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
+        </div>
+      </div>
+      <div class="settings-pane" id="pane-general">
+        <div class="settings-pane-title">通用设置</div>
         <div class="settings-group">
           <div class="settings-group-label">AI</div>
           <div class="setting-item"><span class="setting-label">Thinking Level</span><select class="setting-select" id="settingsThinking" aria-label="思考等级"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>

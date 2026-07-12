@@ -1,6 +1,7 @@
 use super::schema::{
-    CompactionSettings, PartialCompactionSettings, PartialPermissionSettings, PartialRetrySettings,
-    PartialSettings, PermissionSettings, RetrySettings, Settings,
+    AppearanceSettings, CompactionSettings, PartialAppearanceSettings, PartialCompactionSettings,
+    PartialPermissionSettings, PartialRetrySettings, PartialSettings, PermissionSettings,
+    RetrySettings, Settings,
 };
 
 /// Merge settings: base + overlay → resolved
@@ -48,6 +49,31 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
             .lsp_mode
             .clone()
             .unwrap_or_else(|| base.lsp_mode.clone()),
+        appearance: merge_appearance(&base.appearance, overlay.appearance.as_ref()),
+    }
+}
+
+fn merge_appearance(
+    base: &AppearanceSettings,
+    overlay: Option<&PartialAppearanceSettings>,
+) -> AppearanceSettings {
+    match overlay {
+        None => base.clone(),
+        Some(overlay) => AppearanceSettings {
+            theme_mode: overlay
+                .theme_mode
+                .clone()
+                .unwrap_or_else(|| base.theme_mode.clone()),
+            font_size: overlay.font_size.unwrap_or(base.font_size),
+            light_theme: overlay
+                .light_theme
+                .clone()
+                .unwrap_or_else(|| base.light_theme.clone()),
+            dark_theme: overlay
+                .dark_theme
+                .clone()
+                .unwrap_or_else(|| base.dark_theme.clone()),
+        },
     }
 }
 

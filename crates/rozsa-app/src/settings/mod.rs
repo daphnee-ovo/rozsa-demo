@@ -3,6 +3,7 @@ pub mod schema;
 pub mod storage;
 
 pub use schema::{
-    CompactionSettings, PartialSettings, PermissionSettings, RetrySettings, Settings,
+    AppearanceSettings, CompactionSettings, PartialSettings, PermissionSettings, RetrySettings,
+    Settings,
 };
 pub use storage::SettingsManager;
