@@ -1067,12 +1067,10 @@ async function displayPermPanelIfNeeded() {
       currentPermissionTrustKeys = canRestore ? [...savedPermission.trustKeys] : [];
       const panel = document.getElementById('permPanel');
       if (!panel) return;
-      const risk = document.getElementById('permRisk');
       const tool = document.getElementById('permTool');
       const cmd = document.getElementById('permCmd');
       const cmdToggle = document.getElementById('permCmdToggle');
       const desc = document.getElementById('permDesc');
-      if (risk) risk.textContent = ev.risk || 'Shell';
       if (tool) tool.textContent = ev.tool || '—';
       const command = ev.command || ev.summary || '—';
       if (cmd) {
@@ -1085,7 +1083,7 @@ async function displayPermPanelIfNeeded() {
         cmdToggle.setAttribute('aria-expanded', 'false');
         cmdToggle.textContent = '展开全部命令';
       }
-      if (desc) desc.textContent = ev.description || '—';
+      if (desc) desc.textContent = ev.description || '';
       if (cmd && cmdToggle) {
         requestAnimationFrame(() => {
           const overflowing = cmd.scrollHeight > cmd.clientHeight + 1;
@@ -1117,8 +1115,10 @@ function togglePermissionCommand() {
 
 function renderPermissionCommand(command, toolName) {
   if (!command) return '—';
-  if (toolName.toLowerCase() !== 'bash') return escapeHtml(command);
-  return command
+  const isBash = toolName.toLowerCase() === 'bash';
+  const prompt = isBash ? '<span class="perm-syn-prompt">$ </span>' : '';
+  if (!isBash) return escapeHtml(command);
+  return prompt + command
     .split(/([;\n|&]+)/)
     .map(part => {
       if (/^[;\n|&]+$/.test(part)) return escapeHtml(part);
@@ -2097,9 +2097,9 @@ document.addEventListener('keydown', function(e) {
       }
       return;
     }
-    if (e.key === 'a' || e.key === 'A') { e.preventDefault(); respondPermission('allow'); return; }
+    if (e.key === 'y' || e.key === 'Y') { e.preventDefault(); respondPermission('allow'); return; }
     if (e.key === 't' || e.key === 'T') { e.preventDefault(); enterPermissionTrust(); return; }
-    if (e.key === 'd' || e.key === 'D') { e.preventDefault(); respondPermission('deny'); return; }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); respondPermission('deny'); return; }
     if (e.key === 'h' || e.key === 'H') { e.preventDefault(); respondPermission('deny-hint'); return; }
     if (e.key === 'Escape') { e.preventDefault(); respondPermission('deny'); return; }
   }
@@ -2328,7 +2328,7 @@ function showHotkeys() {
     '| Ctrl+T | Toggle thinking |\n' +
     '| Ctrl+N | New session |\n' +
     '| Ctrl+, | Settings |\n' +
-    '| Y/T/N/A | Permission response |\n' +
+    '| Y/T/N/H | Permission response |\n' +
     '| Tab | Confirm autocomplete |\n' +
     '| Up/Down | Navigate autocomplete |\n';
 

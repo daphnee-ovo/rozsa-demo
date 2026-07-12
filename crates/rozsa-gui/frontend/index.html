@@ -1165,8 +1165,8 @@ body {
 .perm-panel {
   display: none;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
+  gap: 14px;
+  padding: 18px 16px 16px;
   background: var(--surface);
   border: 1px solid oklch(90% 0.015 90);
   border-radius: var(--radius);
@@ -1180,41 +1180,44 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .perm-panel-title {
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--fg);
 }
-.perm-panel-meta {
+.perm-panel-tool-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-.perm-panel-risk {
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 3px;
-  background: oklch(90% 0.04 85);
-  color: #8a6b0a;
+  gap: 10px;
+  min-width: 0;
 }
 .perm-panel-tool {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1px solid oklch(86% 0.07 85);
+  border-radius: 7px;
+  background: oklch(93% 0.06 85);
+  color: #8a6b0a;
+  font-size: 14px;
+  font-weight: 650;
+}
+.perm-panel-tool-row .perm-panel-desc {
+  min-width: 0;
 }
 .perm-panel-cmd {
   background: var(--code-bg);
   border: 1px solid var(--code-border);
   border-radius: var(--radius);
-  padding: 10px 14px;
+  padding: 12px 14px;
   font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--fg);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow: auto;
-  max-height: 132px;
+  max-height: 112px;
 }
 .perm-panel-cmd.collapsed {
   overflow: hidden;
@@ -1226,6 +1229,10 @@ body {
   color: oklch(48% 0.13 35);
   font-weight: 650;
 }
+.perm-panel-cmd .perm-syn-prompt {
+  color: var(--muted);
+  user-select: none;
+}
 .perm-panel-cmd .perm-syn-flag {
   color: oklch(48% 0.11 250);
 }
@@ -1235,24 +1242,17 @@ body {
   padding: 0;
   background: transparent;
   color: var(--accent);
-  font-size: 11px;
+  font-size: 11.5px;
   cursor: pointer;
 }
 .perm-panel-cmd-toggle:hover { text-decoration: underline; }
 .perm-panel-cmd-toggle[hidden] { display: none; }
-.perm-panel-description-label {
-  margin: 0;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
 .perm-panel-desc {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.5;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .perm-panel-context { display: flex; flex-direction: column; gap: 12px; }
 .perm-panel-context[hidden] { display: none; }
@@ -1260,19 +1260,20 @@ body {
 .perm-panel-actions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 .perm-panel-opt {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: var(--radius);
+  gap: 12px;
+  min-height: 46px;
+  padding: 10px 14px;
+  border-radius: 10px;
   cursor: pointer;
   border: 1px solid var(--border);
   background: var(--surface);
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 15px;
   color: var(--fg);
   transition: background 0.1s, border-color 0.1s;
   text-align: left;
@@ -1297,11 +1298,11 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  height: 20px;
-  padding: 0 5px;
-  border-radius: 4px;
-  font-size: 11px;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 14px;
   font-weight: 600;
   font-family: var(--font-mono);
   background: var(--code-bg);
@@ -1908,32 +1909,30 @@ button:focus-visible, .session-item:focus-visible,
         <div class="perm-panel" id="permPanel">
           <div class="perm-panel-context" id="permPanelContext">
             <div class="perm-panel-title">请求执行权限</div>
-            <div class="perm-panel-meta">
-              <span class="perm-panel-risk" id="permRisk">—</span>
+            <div class="perm-panel-tool-row">
               <span class="perm-panel-tool" id="permTool">—</span>
+              <span class="perm-panel-desc" id="permDesc"></span>
             </div>
             <div class="perm-panel-cmd collapsed" id="permCmd">—</div>
             <button class="perm-panel-cmd-toggle" id="permCmdToggle" type="button" aria-expanded="false" onclick="togglePermissionCommand()" hidden>展开全部命令</button>
-            <p class="perm-panel-description-label">Description</p>
-            <p class="perm-panel-desc" id="permDesc">—</p>
           </div>
           <div class="perm-panel-page" id="permPanelMain">
             <div class="perm-panel-actions" id="permPanelActions">
               <button class="perm-panel-opt" onclick="respondPermission('allow')">
-                <span class="perm-panel-opt-key">A</span>
-                <span class="perm-panel-opt-label">Allow once</span>
+                <span class="perm-panel-opt-key">Y</span>
+                <span class="perm-panel-opt-label">Allow Once</span>
               </button>
               <button class="perm-panel-opt" onclick="enterPermissionTrust()">
                 <span class="perm-panel-opt-key">T</span>
-                <span class="perm-panel-opt-label">Trust</span>
+                <span class="perm-panel-opt-label">Trust in session</span>
               </button>
               <button class="perm-panel-opt" onclick="respondPermission('deny')">
-                <span class="perm-panel-opt-key">D</span>
-                <span class="perm-panel-opt-label">Deny</span>
+                <span class="perm-panel-opt-key">N</span>
+                <span class="perm-panel-opt-label">Deny Execute</span>
               </button>
               <button class="perm-panel-opt" onclick="respondPermission('deny-hint')">
                 <span class="perm-panel-opt-key">H</span>
-                <span class="perm-panel-opt-label">Deny and hint</span>
+                <span class="perm-panel-opt-label">Deny and hints</span>
               </button>
             </div>
           </div>
