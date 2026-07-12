@@ -1999,6 +1999,23 @@ button:focus-visible, .session-item:focus-visible,
 }
 [data-theme-translucent-sidebar="true"] [data-od-id="sidebar"] {
   border-right: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html[data-theme-translucent-sidebar="true"] body,
+html[data-theme-translucent-sidebar="true"] [data-od-id="app-body"] {
+  background: linear-gradient(90deg, transparent 0 var(--chrome-sidebar-boundary), var(--bg) var(--chrome-sidebar-boundary) 100%);
+}
+html[data-theme-translucent-sidebar="true"] .settings-panel,
+html[data-theme-translucent-sidebar="true"] .settings-dialog {
+  background: linear-gradient(90deg, transparent 0 var(--settings-chrome-sidebar-boundary), var(--bg) var(--settings-chrome-sidebar-boundary) 100%);
+}
+html[data-theme-translucent-sidebar="true"] .settings-tabs {
+  background: transparent;
+}
+body.settings-visible [data-od-id="app-body"] {
+  visibility: hidden;
 }
 .msg-user .msg-avatar,
 .msg-user .msg-role,

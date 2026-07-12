@@ -1889,6 +1889,7 @@ function toggleSettings() {
   if (panel.classList.contains('visible')) {
     closeSettings();
   } else {
+    document.body.classList.add('settings-visible');
     panel.classList.add('visible');
     panel.classList.toggle('settings-sidebar-collapsed', isSidebarCollapsed());
     syncChromeBackgroundGeometry();
@@ -1898,6 +1899,7 @@ function toggleSettings() {
 
 function closeSettings() {
   const panel = document.getElementById('settingsPanel');
+  document.body.classList.remove('settings-visible');
   if (panel) panel.classList.remove('visible');
   syncChromeBackgroundGeometry();
 }

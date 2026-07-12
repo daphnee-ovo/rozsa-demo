@@ -7,6 +7,7 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Rózsa",
@@ -16,7 +17,8 @@
         "minHeight": 600,
         "decorations": true,
         "hiddenTitle": true,
-        "titleBarStyle": "Overlay"
+        "titleBarStyle": "Overlay",
+        "transparent": true
       }
     ],
     "security": {

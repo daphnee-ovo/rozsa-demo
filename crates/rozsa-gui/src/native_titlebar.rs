@@ -6,50 +6,43 @@
 
 #![cfg(target_os = "macos")]
 
+use std::cell::RefCell;
+
 use objc2::runtime::{AnyObject, NSObject};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSButton, NSEvent, NSImage, NSImageScaling, NSLayoutAttribute,
-    NSTitlebarAccessoryViewController, NSView, NSWindow, NSWindowDidEnterFullScreenNotification,
-    NSWindowDidExitFullScreenNotification, NSWindowDidResizeNotification, NSWindowStyleMask,
+    NSAutoresizingMaskOptions, NSButton, NSColor, NSEvent, NSImage, NSImageScaling, NSMenu, NSView,
+    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
+    NSWindow, NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification,
+    NSWindowDidResizeNotification, NSWindowOrderingMode, NSWindowStyleMask,
     NSWindowTitleVisibility,
 };
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, ns_string};
 use tauri::WebviewWindow;
 
 const TITLEBAR_ACCESSORY_HEIGHT: f64 = 32.0;
+const TITLEBAR_LEADING_INSET: f64 = 76.0;
 
-struct TitlebarActionIvars {
+fn install_sidebar_material(mtm: MainThreadMarker, webview_parent: &NSView) {
+    let material: objc2::rc::Retained<NSVisualEffectView> = unsafe {
+        msg_send![
+            NSVisualEffectView::alloc(mtm),
+            initWithFrame: webview_parent.bounds()
+        ]
+    };
+    material.setMaterial(NSVisualEffectMaterial::Sidebar);
+    material.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+    material.setState(NSVisualEffectState::FollowsWindowActiveState);
+    material.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
+    webview_parent.addSubview_positioned_relativeTo(&material, NSWindowOrderingMode::Below, None);
+}
+
+struct TitlebarDragViewIvars {
     on_toggle: Box<dyn Fn() + Send + Sync + 'static>,
+    fullscreen_observer: RefCell<Option<objc2::rc::Retained<FullscreenObserver>>>,
 }
-
-define_class!(
-    #[unsafe(super(NSObject))]
-    #[thread_kind = MainThreadOnly]
-    #[ivars = TitlebarActionIvars]
-    struct TitlebarActionTarget;
-
-    impl TitlebarActionTarget {
-        #[unsafe(method(toggleSidebar:))]
-        fn toggle_sidebar(&self, _sender: Option<&AnyObject>) {
-            (self.ivars().on_toggle)();
-        }
-    }
-);
-
-impl TitlebarActionTarget {
-    fn new(
-        mtm: MainThreadMarker,
-        on_toggle: impl Fn() + Send + Sync + 'static,
-    ) -> objc2::rc::Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(TitlebarActionIvars {
-            on_toggle: Box::new(on_toggle),
-        });
-        unsafe { msg_send![super(this), init] }
-    }
-}
-
-struct TitlebarDragViewIvars;
 
 define_class!(
     #[unsafe(super(NSView))]
@@ -58,6 +51,10 @@ define_class!(
     struct TitlebarDragView;
 
     impl TitlebarDragView {
+        #[unsafe(method(toggleSidebar:))]
+        fn toggle_sidebar(&self, _sender: Option<&AnyObject>) {
+            (self.ivars().on_toggle)();
+        }
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             if let Some(window) = self.window() {
@@ -68,16 +65,26 @@ define_class!(
 );
 
 impl TitlebarDragView {
-    fn new(mtm: MainThreadMarker) -> objc2::rc::Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(TitlebarDragViewIvars);
+    fn new(
+        mtm: MainThreadMarker,
+        on_toggle: impl Fn() + Send + Sync + 'static,
+    ) -> objc2::rc::Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(TitlebarDragViewIvars {
+            on_toggle: Box::new(on_toggle),
+            fullscreen_observer: RefCell::new(None),
+        });
         unsafe { msg_send![super(this), init] }
+    }
+
+    fn retain_fullscreen_observer(&self, observer: objc2::rc::Retained<FullscreenObserver>) {
+        self.ivars().fullscreen_observer.replace(Some(observer));
     }
 }
 
 struct FullscreenObserverIvars {
     window: objc2::rc::Weak<NSWindow>,
     webview_parent: objc2::rc::Weak<NSView>,
-    drag_view: objc2::rc::Retained<TitlebarDragView>,
+    drag_view: objc2::rc::Weak<TitlebarDragView>,
     on_fullscreen: Box<dyn Fn(bool) + Send + Sync + 'static>,
 }
 
@@ -91,7 +98,13 @@ fn log_window_geometry(label: &str, window: &NSWindow, webview_parent: Option<&N
         parent
             .subviews()
             .iter()
-            .map(|view| (view.frame(), view.safeAreaInsets(), view.additionalSafeAreaInsets()))
+            .map(|view| {
+                (
+                    view.frame(),
+                    view.safeAreaInsets(),
+                    view.additionalSafeAreaInsets(),
+                )
+            })
             .collect::<Vec<_>>()
     });
     eprintln!(
@@ -108,11 +121,12 @@ define_class!(
     impl FullscreenObserver {
         #[unsafe(method(rozsaWindowDidEnterFullScreen:))]
         fn did_enter_fullscreen(&self, _notification: &NSNotification) {
-            self.ivars().drag_view.setHidden(true);
-            let current_frame = self.ivars().drag_view.frame();
-            self.ivars()
-                .drag_view
-                .setFrameSize(NSSize::new(current_frame.size.width, 0.0));
+            if let Some(mtm) = MainThreadMarker::new() {
+                NSMenu::setMenuBarVisible(false, mtm);
+            }
+            if let Some(drag_view) = self.ivars().drag_view.load() {
+                drag_view.setHidden(true);
+            }
             if let Some(window) = self.ivars().window.load() {
                 let webview_parent = self.ivars().webview_parent.load();
                 log_window_geometry("did-enter-fullscreen", &window, webview_parent.as_deref());
@@ -122,12 +136,12 @@ define_class!(
 
         #[unsafe(method(rozsaWindowDidExitFullScreen:))]
         fn did_exit_fullscreen(&self, _notification: &NSNotification) {
-            let current_frame = self.ivars().drag_view.frame();
-            self.ivars().drag_view.setFrameSize(NSSize::new(
-                current_frame.size.width,
-                TITLEBAR_ACCESSORY_HEIGHT,
-            ));
-            self.ivars().drag_view.setHidden(false);
+            if let Some(mtm) = MainThreadMarker::new() {
+                NSMenu::setMenuBarVisible(true, mtm);
+            }
+            if let Some(drag_view) = self.ivars().drag_view.load() {
+                drag_view.setHidden(false);
+            }
             if let Some(window) = self.ivars().window.load() {
                 let webview_parent = self.ivars().webview_parent.load();
                 log_window_geometry("did-exit-fullscreen", &window, webview_parent.as_deref());
@@ -137,14 +151,7 @@ define_class!(
 
         #[unsafe(method(rozsaWindowDidResize:))]
         fn did_resize(&self, _notification: &NSNotification) {
-            let current_frame = self.ivars().drag_view.frame();
             if let Some(window) = self.ivars().window.load() {
-                let width = window.frame().size.width.max(640.0);
-                if (current_frame.size.width - width).abs() > 0.5 {
-                    self.ivars()
-                        .drag_view
-                        .setFrameSize(NSSize::new(width, current_frame.size.height));
-                }
                 let webview_parent = self.ivars().webview_parent.load();
                 log_window_geometry("did-resize", &window, webview_parent.as_deref());
             }
@@ -157,7 +164,7 @@ impl FullscreenObserver {
         mtm: MainThreadMarker,
         window: objc2::rc::Weak<NSWindow>,
         webview_parent: objc2::rc::Weak<NSView>,
-        drag_view: objc2::rc::Retained<TitlebarDragView>,
+        drag_view: objc2::rc::Weak<TitlebarDragView>,
         on_fullscreen: impl Fn(bool) + Send + Sync + 'static,
     ) -> objc2::rc::Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(FullscreenObserverIvars {
@@ -165,36 +172,6 @@ impl FullscreenObserver {
             webview_parent,
             drag_view,
             on_fullscreen: Box::new(on_fullscreen),
-        });
-        unsafe { msg_send![super(this), init] }
-    }
-}
-
-struct TitlebarAccessoryIvars {
-    // Retain the target because NSControl's target property is weak.
-    #[allow(dead_code)]
-    target: objc2::rc::Retained<TitlebarActionTarget>,
-    // NSNotificationCenter does not retain selector observers.
-    #[allow(dead_code)]
-    fullscreen_observer: objc2::rc::Retained<FullscreenObserver>,
-}
-
-define_class!(
-    #[unsafe(super(NSTitlebarAccessoryViewController))]
-    #[thread_kind = MainThreadOnly]
-    #[ivars = TitlebarAccessoryIvars]
-    struct TitlebarAccessoryController;
-);
-
-impl TitlebarAccessoryController {
-    fn new(
-        mtm: MainThreadMarker,
-        target: objc2::rc::Retained<TitlebarActionTarget>,
-        fullscreen_observer: objc2::rc::Retained<FullscreenObserver>,
-    ) -> objc2::rc::Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(TitlebarAccessoryIvars {
-            target,
-            fullscreen_observer,
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -226,16 +203,20 @@ pub fn install(
             .ok_or_else(|| {
                 "native WebView parent was released during titlebar setup".to_string()
             })?;
+    install_sidebar_material(mtm, webview_parent);
 
-    let target = TitlebarActionTarget::new(mtm, on_toggle);
-    let drag_view = TitlebarDragView::new(mtm);
-    let titlebar_width = ns_window.frame().size.width.max(640.0);
+    let drag_view = TitlebarDragView::new(mtm, on_toggle);
+    let webview_bounds = webview_parent.bounds();
+    let titlebar_width = (webview_bounds.size.width - TITLEBAR_LEADING_INSET).max(1.0);
     drag_view.setFrame(NSRect::new(
-        NSPoint::new(0.0, 0.0),
+        NSPoint::new(
+            TITLEBAR_LEADING_INSET,
+            (webview_bounds.size.height - TITLEBAR_ACCESSORY_HEIGHT).max(0.0),
+        ),
         NSSize::new(titlebar_width, TITLEBAR_ACCESSORY_HEIGHT),
     ));
     drag_view.setAutoresizingMask(
-        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewMinYMargin,
     );
 
     let sidebar_button = NSButton::new(mtm);
@@ -251,10 +232,11 @@ pub fn install(
         sidebar_button.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
     }
     unsafe {
-        sidebar_button.setTarget(Some(target.as_ref() as &AnyObject));
+        sidebar_button.setTarget(Some(drag_view.as_ref() as &AnyObject));
         sidebar_button.setAction(Some(sel!(toggleSidebar:)));
     }
     drag_view.addSubview(&sidebar_button);
+    webview_parent.addSubview_positioned_relativeTo(&drag_view, NSWindowOrderingMode::Above, None);
 
     let window_weak = objc2::rc::Weak::from_retained(&retained_window);
     let webview_parent_weak = objc2::rc::Weak::from_retained(&retained_webview_parent);
@@ -262,9 +244,10 @@ pub fn install(
         mtm,
         window_weak,
         webview_parent_weak,
-        drag_view.retain(),
+        objc2::rc::Weak::from_retained(&drag_view),
         on_fullscreen,
     );
+    drag_view.retain_fullscreen_observer(fullscreen_observer.clone());
     let notification_center = NSNotificationCenter::defaultCenter();
     unsafe {
         let observer = fullscreen_observer.as_ref() as &AnyObject;
@@ -289,18 +272,14 @@ pub fn install(
         );
     }
 
-    let controller = TitlebarAccessoryController::new(mtm, target, fullscreen_observer);
-    controller.setView(&drag_view);
-    controller.setLayoutAttribute(NSLayoutAttribute::Leading);
-    controller.setAutomaticallyAdjustsSize(false);
-    ns_window.addTitlebarAccessoryViewController(&controller);
-
     let mut style_mask = ns_window.styleMask();
     style_mask.insert(NSWindowStyleMask::FullSizeContentView);
     ns_window.setStyleMask(style_mask);
     ns_window.setTitlebarAppearsTransparent(true);
     ns_window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
     ns_window.setTitlebarSeparatorStyle(objc2_app_kit::NSTitlebarSeparatorStyle::None);
+    ns_window.setOpaque(false);
+    ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
     log_window_geometry("installed", ns_window, Some(webview_parent));
 
     Ok(())

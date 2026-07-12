@@ -18,8 +18,10 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(tauri.contains("\"decorations\": true"));
     assert!(tauri.contains("\"hiddenTitle\": true"));
     assert!(tauri.contains("\"titleBarStyle\": \"Overlay\""));
+    assert!(tauri.contains("\"transparent\": true"));
+    assert!(tauri.contains("\"macOSPrivateApi\": true"));
     let native = include_str!("../src/native_titlebar.rs");
-    assert!(native.contains("NSTitlebarAccessoryViewController"));
+    assert!(!native.contains("NSTitlebarAccessoryViewController"));
     assert!(native.contains("FullSizeContentView"));
     assert!(native.contains("setTitleVisibility(NSWindowTitleVisibility::Hidden)"));
     assert!(native.contains("toggleSidebar:"));
@@ -32,6 +34,12 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(native.contains("drag_view.setHidden(true)"));
     assert!(native.contains("drag_view.setHidden(false)"));
     assert!(native.contains("TITLEBAR_ACCESSORY_HEIGHT"));
+    assert!(native.contains("NSWindowOrderingMode::Above"));
+    assert!(native.contains("NSMenu::setMenuBarVisible(false"));
+    assert!(native.contains("NSVisualEffectMaterial::Sidebar"));
+    assert!(native.contains("NSVisualEffectBlendingMode::BehindWindow"));
+    assert!(native.contains("NSVisualEffectState::FollowsWindowActiveState"));
+    assert!(native.contains("setOpaque(false)"));
     assert!(!native.contains("RÓZSA"));
     assert!(html.contains("id=\"settingsThemeMode\""));
     assert!(html.contains("value=\"system\""));
@@ -103,6 +111,8 @@ fn appearance_is_backend_persisted_and_theme_files_are_loaded() {
     assert!(js.contains("scheduleNativeFullscreenSync"));
     assert!(js.contains("offsetLeft + element.offsetWidth"));
     assert!(js.contains("document.body.classList.toggle('sidebar-collapsed'"));
+    assert!(js.contains("document.body.classList.add('settings-visible')"));
+    assert!(js.contains("document.body.classList.remove('settings-visible')"));
     assert!(js.contains("getCurrentWindow"));
     assert!(!js.contains("startDragging"));
     assert!(!js.contains("toggleMaximizeWindow"));
