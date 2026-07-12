@@ -876,6 +876,7 @@ pub async fn respond_permission(
     choice: String,
     trust_key: Option<String>,
     trust_keys: Option<Vec<String>>,
+    hint: Option<String>,
 ) -> Result<(), String> {
     let approvals = state
         .pending_approvals
@@ -911,7 +912,14 @@ pub async fn respond_permission(
             PermissionResponse::Allow
         }
         "deny-hint" => PermissionResponse::DenyWithHint {
-            hint: rozsa_app::permissions::safer_alternative_hint(&context.tool_name, &context.args),
+            hint: hint
+                .filter(|hint| !hint.trim().is_empty())
+                .unwrap_or_else(|| {
+                    rozsa_app::permissions::safer_alternative_hint(
+                        &context.tool_name,
+                        &context.args,
+                    )
+                }),
         },
         _ => PermissionResponse::Deny,
     };

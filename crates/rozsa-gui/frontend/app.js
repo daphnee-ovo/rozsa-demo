@@ -1135,7 +1135,65 @@ function showPermissionMainPage() {
   document.getElementById('permPanelContext').hidden = false;
   document.getElementById('permPanelMain').hidden = false;
   document.getElementById('permPanelTrust').hidden = true;
+  document.getElementById('permPanelHint').hidden = true;
   if (currentPermissionSessionId) capturePermissionUiState(currentPermissionSessionId);
+}
+
+const PERMISSION_HINT_PREFIX = 'Deny, ';
+
+function enterPermissionHint() {
+  document.getElementById('permPanelContext').hidden = false;
+  document.getElementById('permPanelMain').hidden = true;
+  document.getElementById('permPanelTrust').hidden = true;
+  document.getElementById('permPanelHint').hidden = false;
+  const input = document.getElementById('permHintInput');
+  if (!input) return;
+  input.value = PERMISSION_HINT_PREFIX;
+  input.focus();
+  input.setSelectionRange(PERMISSION_HINT_PREFIX.length, PERMISSION_HINT_PREFIX.length);
+}
+
+function normalizePermissionHint(input) {
+  if (!input) return;
+  const raw = input.value || '';
+  const prefixMatch = /^Deny,\s*/i.exec(raw);
+  const suffix = prefixMatch ? raw.slice(prefixMatch[0].length) : raw;
+  input.value = PERMISSION_HINT_PREFIX + suffix;
+  const start = input.selectionStart || 0;
+  const end = input.selectionEnd || 0;
+  if (start < PERMISSION_HINT_PREFIX.length || end < PERMISSION_HINT_PREFIX.length) {
+    const cursor = Math.max(PERMISSION_HINT_PREFIX.length, end);
+    input.setSelectionRange(cursor, cursor);
+  }
+}
+
+function handlePermissionHintKeydown(event) {
+  const input = event.currentTarget || document.getElementById('permHintInput');
+  if (!input) return;
+  const start = input.selectionStart || 0;
+  const end = input.selectionEnd || 0;
+  if ((event.key === 'Backspace' || event.key === 'Delete') && start <= PERMISSION_HINT_PREFIX.length && end <= PERMISSION_HINT_PREFIX.length) {
+    event.preventDefault();
+    input.setSelectionRange(PERMISSION_HINT_PREFIX.length, PERMISSION_HINT_PREFIX.length);
+    return;
+  }
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    submitPermissionHint();
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    showPermissionMainPage();
+  }
+}
+
+function submitPermissionHint() {
+  const input = document.getElementById('permHintInput');
+  if (!input) return;
+  normalizePermissionHint(input);
+  const hint = input.value.slice(PERMISSION_HINT_PREFIX.length).trim();
+  void respondPermission('deny-hint', hint);
 }
 
 function enterPermissionTrust() {
@@ -1158,6 +1216,7 @@ function renderPermissionTrustPage() {
   document.getElementById('permPanelContext').hidden = true;
   document.getElementById('permPanelMain').hidden = true;
   document.getElementById('permPanelTrust').hidden = false;
+  document.getElementById('permPanelHint').hidden = true;
   const actions = document.getElementById('permTrustActions');
   actions.replaceChildren();
   const levels = Array.isArray(group.levels) ? group.levels : [];
@@ -1227,7 +1286,7 @@ function confirmPermissionSelection() {
   current.click();
 }
 
-async function respondPermission(choice) {
+async function respondPermission(choice, hint = null) {
   if (!currentPermissionId) return;
   try {
     await invoke('respond_permission', {
@@ -1236,6 +1295,7 @@ async function respondPermission(choice) {
       choice: choice,
       trustKey: null,
       trustKeys: choice === 'allow-session' ? currentPermissionTrustKeys : null,
+      hint: choice === 'deny-hint' ? hint || null : null,
     });
   } catch (e) {
     console.error('respond_permission:', e);
@@ -2064,6 +2124,8 @@ document.addEventListener('keydown', function(e) {
 
   // Permission panel shortcuts
   if (currentPermissionId) {
+    const hintPage = document.getElementById('permPanelHint');
+    if (hintPage && !hintPage.hidden) return;
     if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown') {
       e.preventDefault();
       movePermissionSelection(1);
@@ -2078,6 +2140,15 @@ document.addEventListener('keydown', function(e) {
       e.preventDefault();
       confirmPermissionSelection();
       return;
+    }
+    if (e.key === 'Tab') {
+      const selected = activePermissionActions().find(action => action === document.activeElement);
+      const selectedKey = selected?.querySelector('.perm-panel-opt-key')?.textContent;
+      if (selectedKey === 'H') {
+        e.preventDefault();
+        enterPermissionHint();
+        return;
+      }
     }
     if (currentPermissionTrustIndex >= 0) {
       const group = currentPermissionTrustGroups[currentPermissionTrustIndex];
@@ -2100,7 +2171,7 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'y' || e.key === 'Y') { e.preventDefault(); respondPermission('allow'); return; }
     if (e.key === 't' || e.key === 'T') { e.preventDefault(); enterPermissionTrust(); return; }
     if (e.key === 'n' || e.key === 'N') { e.preventDefault(); respondPermission('deny'); return; }
-    if (e.key === 'h' || e.key === 'H') { e.preventDefault(); respondPermission('deny-hint'); return; }
+    if (e.key === 'h' || e.key === 'H') { e.preventDefault(); enterPermissionHint(); return; }
     if (e.key === 'Escape') { e.preventDefault(); respondPermission('deny'); return; }
   }
 

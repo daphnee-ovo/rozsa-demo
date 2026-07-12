@@ -1254,6 +1254,48 @@ body {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.perm-panel-hint-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.perm-panel-hint-page[hidden] { display: none; }
+.perm-panel-hint-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: 14px var(--font-ui);
+  outline: none;
+}
+.perm-panel-hint-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 20%, transparent);
+}
+.perm-panel-hint-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.perm-panel-hint-submit,
+.perm-panel-hint-cancel {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  font: 12px var(--font-ui);
+}
+.perm-panel-hint-submit {
+  border-color: var(--accent);
+  background: var(--accent-btn);
+  color: white;
+}
 .perm-panel-context { display: flex; flex-direction: column; gap: 12px; }
 .perm-panel-context[hidden] { display: none; }
 .perm-panel-page[hidden] { display: none; }
@@ -1930,10 +1972,17 @@ button:focus-visible, .session-item:focus-visible,
                 <span class="perm-panel-opt-key">N</span>
                 <span class="perm-panel-opt-label">Deny Execute</span>
               </button>
-              <button class="perm-panel-opt" onclick="respondPermission('deny-hint')">
+              <button class="perm-panel-opt" onclick="enterPermissionHint()">
                 <span class="perm-panel-opt-key">H</span>
                 <span class="perm-panel-opt-label">Deny and hints</span>
               </button>
+            </div>
+          </div>
+          <div class="perm-panel-page perm-panel-hint-page" id="permPanelHint" hidden>
+            <input id="permHintInput" class="perm-panel-hint-input" type="text" value="Deny, " autocomplete="off" spellcheck="false" aria-label="Deny reason" oninput="normalizePermissionHint(this)" onkeydown="handlePermissionHintKeydown(event)">
+            <div class="perm-panel-hint-actions">
+              <button class="perm-panel-hint-cancel" type="button" onclick="showPermissionMainPage()">Cancel</button>
+              <button class="perm-panel-hint-submit" type="button" onclick="submitPermissionHint()">Deny</button>
             </div>
           </div>
           <div class="perm-panel-page" id="permPanelTrust" hidden>
