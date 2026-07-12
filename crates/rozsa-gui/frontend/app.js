@@ -1277,9 +1277,9 @@ function getInputText(input) {
   return input ? (input.textContent || '') : '';
 }
 
-function handleInput(input) {
+function handleInput(input, event) {
   autoResize(input);
-  if (isInputComposing) {
+  if (isInputComposing || event?.isComposing || event?.inputType === 'insertCompositionText') {
     updateAbortButton();
     return;
   }
@@ -1289,6 +1289,9 @@ function handleInput(input) {
 
 function handleCompositionStart() {
   isInputComposing = true;
+  // Invalidate an autocomplete request that started before the IME event.
+  acRequestSeq++;
+  hideAutocomplete(false);
 }
 
 function handleCompositionUpdate(input) {
@@ -1299,8 +1302,12 @@ function handleCompositionUpdate(input) {
 function handleCompositionEnd(input) {
   isInputComposing = false;
   autoResize(input);
-  updateAutocomplete();
   updateAbortButton();
+  // Let the browser commit the final composition text before highlight DOM
+  // replacement. A new composition invalidates this deferred refresh.
+  setTimeout(() => {
+    if (!isInputComposing) updateAutocomplete();
+  }, 0);
 }
 
 function setInputText(input, text) {
@@ -1909,7 +1916,7 @@ async function updateAutocomplete() {
     hideAutocomplete();
     return;
   }
-  if (seq !== acRequestSeq) return;
+  if (isInputComposing || seq !== acRequestSeq) return;
   const highlightRanges = result.highlightRanges || [];
   setInputMatchState(!!result.validMatch || highlightRanges.length > 0);
   updateInputHighlight(highlightRanges);
@@ -2008,7 +2015,7 @@ function setInputMatchState(valid) {
 function updateInputHighlight(ranges) {
   inputHighlightRanges = Array.isArray(ranges) ? ranges : [];
   const input = document.getElementById('msgInput');
-  if (!input) return;
+  if (!input || isInputComposing) return;
   const text = getInputText(input);
   const selection = getInputSelection(input);
   if (inputHighlightRanges.length === 0) {
