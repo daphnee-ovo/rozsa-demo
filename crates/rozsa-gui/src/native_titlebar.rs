@@ -11,11 +11,12 @@ use std::cell::RefCell;
 use objc2::runtime::{AnyObject, NSObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSButton, NSColor, NSEvent, NSImage, NSImageScaling, NSMenu, NSView,
+    NSAutoresizingMaskOptions, NSButton, NSColor, NSEvent, NSImage, NSImageScaling, NSView,
     NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
     NSWindow, NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification,
     NSWindowDidResizeNotification, NSWindowOrderingMode, NSWindowStyleMask,
-    NSWindowTitleVisibility,
+    NSWindowTitleVisibility, NSWindowWillEnterFullScreenNotification,
+    NSWindowWillExitFullScreenNotification,
 };
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, ns_string};
 use tauri::WebviewWindow;
@@ -85,7 +86,7 @@ struct FullscreenObserverIvars {
     window: objc2::rc::Weak<NSWindow>,
     webview_parent: objc2::rc::Weak<NSView>,
     drag_view: objc2::rc::Weak<TitlebarDragView>,
-    on_fullscreen: Box<dyn Fn(bool) + Send + Sync + 'static>,
+    on_fullscreen: Box<dyn Fn(bool, bool) + Send + Sync + 'static>,
 }
 
 fn log_window_geometry(label: &str, window: &NSWindow, webview_parent: Option<&NSView>) {
@@ -119,26 +120,30 @@ define_class!(
     struct FullscreenObserver;
 
     impl FullscreenObserver {
-        #[unsafe(method(rozsaWindowDidEnterFullScreen:))]
-        fn did_enter_fullscreen(&self, _notification: &NSNotification) {
-            if let Some(mtm) = MainThreadMarker::new() {
-                NSMenu::setMenuBarVisible(false, mtm);
-            }
+        #[unsafe(method(rozsaWindowWillEnterFullScreen:))]
+        fn will_enter_fullscreen(&self, _notification: &NSNotification) {
             if let Some(drag_view) = self.ivars().drag_view.load() {
                 drag_view.setHidden(true);
             }
+            (self.ivars().on_fullscreen)(true, true);
+        }
+
+        #[unsafe(method(rozsaWindowDidEnterFullScreen:))]
+        fn did_enter_fullscreen(&self, _notification: &NSNotification) {
             if let Some(window) = self.ivars().window.load() {
                 let webview_parent = self.ivars().webview_parent.load();
                 log_window_geometry("did-enter-fullscreen", &window, webview_parent.as_deref());
             }
-            (self.ivars().on_fullscreen)(true);
+            (self.ivars().on_fullscreen)(true, false);
+        }
+
+        #[unsafe(method(rozsaWindowWillExitFullScreen:))]
+        fn will_exit_fullscreen(&self, _notification: &NSNotification) {
+            (self.ivars().on_fullscreen)(false, true);
         }
 
         #[unsafe(method(rozsaWindowDidExitFullScreen:))]
         fn did_exit_fullscreen(&self, _notification: &NSNotification) {
-            if let Some(mtm) = MainThreadMarker::new() {
-                NSMenu::setMenuBarVisible(true, mtm);
-            }
             if let Some(drag_view) = self.ivars().drag_view.load() {
                 drag_view.setHidden(false);
             }
@@ -146,7 +151,7 @@ define_class!(
                 let webview_parent = self.ivars().webview_parent.load();
                 log_window_geometry("did-exit-fullscreen", &window, webview_parent.as_deref());
             }
-            (self.ivars().on_fullscreen)(false);
+            (self.ivars().on_fullscreen)(false, false);
         }
 
         #[unsafe(method(rozsaWindowDidResize:))]
@@ -165,7 +170,7 @@ impl FullscreenObserver {
         window: objc2::rc::Weak<NSWindow>,
         webview_parent: objc2::rc::Weak<NSView>,
         drag_view: objc2::rc::Weak<TitlebarDragView>,
-        on_fullscreen: impl Fn(bool) + Send + Sync + 'static,
+        on_fullscreen: impl Fn(bool, bool) + Send + Sync + 'static,
     ) -> objc2::rc::Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(FullscreenObserverIvars {
             window,
@@ -182,7 +187,7 @@ impl FullscreenObserver {
 pub fn install(
     window: &WebviewWindow,
     on_toggle: impl Fn() + Send + Sync + 'static,
-    on_fullscreen: impl Fn(bool) + Send + Sync + 'static,
+    on_fullscreen: impl Fn(bool, bool) + Send + Sync + 'static,
 ) -> Result<(), String> {
     let raw_window = window
         .ns_window()
@@ -254,8 +259,20 @@ pub fn install(
         let window_object = ns_window as &AnyObject;
         notification_center.addObserver_selector_name_object(
             observer,
+            sel!(rozsaWindowWillEnterFullScreen:),
+            Some(NSWindowWillEnterFullScreenNotification),
+            Some(window_object),
+        );
+        notification_center.addObserver_selector_name_object(
+            observer,
             sel!(rozsaWindowDidEnterFullScreen:),
             Some(NSWindowDidEnterFullScreenNotification),
+            Some(window_object),
+        );
+        notification_center.addObserver_selector_name_object(
+            observer,
+            sel!(rozsaWindowWillExitFullScreen:),
+            Some(NSWindowWillExitFullScreenNotification),
             Some(window_object),
         );
         notification_center.addObserver_selector_name_object(

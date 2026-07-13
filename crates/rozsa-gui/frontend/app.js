@@ -39,6 +39,7 @@ let availableThemes = [];
 let themeDefinitions = { light: null, dark: null };
 let themeSaveQueues = { light: Promise.resolve(), dark: Promise.resolve() };
 let systemThemeMediaQuery = null;
+let nativeFullscreenTransitioning = false;
 let isStreaming = false;
 let acSelectedIndex = -1;
 let acRequestSeq = 0;
@@ -157,8 +158,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('native-sidebar-toggle', () => toggleMainSidebar());
   await listen('native-fullscreen', ev => {
     console.debug('[rozsa-gui][fullscreen] native event', ev.payload);
-    setNativeFullscreen(Boolean(ev.payload));
-    scheduleNativeFullscreenSync('native-event');
+    const payload = ev.payload;
+    const fullscreen = typeof payload === 'object' ? Boolean(payload?.fullscreen) : Boolean(payload);
+    nativeFullscreenTransitioning = Boolean(payload?.transitioning);
+    setNativeFullscreen(fullscreen);
+    if (!nativeFullscreenTransitioning) scheduleNativeFullscreenSync('native-event');
   });
   scheduleNativeFullscreenSync('startup');
 
@@ -1848,6 +1852,10 @@ function currentTauriWindow() {
 }
 
 async function syncNativeFullscreen(source) {
+  if (nativeFullscreenTransitioning) {
+    console.debug('[rozsa-gui][fullscreen] calibration suppressed during transition', source);
+    return;
+  }
   const nativeWindow = currentTauriWindow();
   if (!nativeWindow?.isFullscreen) {
     console.error('[rozsa-gui][fullscreen] isFullscreen unavailable', source);

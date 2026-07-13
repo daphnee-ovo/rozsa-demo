@@ -135,13 +135,17 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
                         move || {
                             let _ = sidebar_event_handle.emit("native-sidebar-toggle", ());
                         },
-                        move |fullscreen| {
-                            match fullscreen_event_handle.emit("native-fullscreen", fullscreen) {
+                        move |fullscreen, transitioning| {
+                            let payload = serde_json::json!({
+                                "fullscreen": fullscreen,
+                                "transitioning": transitioning,
+                            });
+                            match fullscreen_event_handle.emit("native-fullscreen", payload) {
                                 Ok(()) => eprintln!(
-                                    "[rozsa-gui][native-titlebar] emitted native-fullscreen={fullscreen}"
+                                    "[rozsa-gui][native-titlebar] emitted native-fullscreen={fullscreen} transitioning={transitioning}"
                                 ),
                                 Err(error) => eprintln!(
-                                    "[rozsa-gui][native-titlebar] failed to emit native-fullscreen={fullscreen}: {error}"
+                                    "[rozsa-gui][native-titlebar] failed to emit native-fullscreen={fullscreen} transitioning={transitioning}: {error}"
                                 ),
                             }
                         },

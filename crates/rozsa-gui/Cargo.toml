@@ -26,7 +26,7 @@ dirs = "6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6.0", default-features = false, features = ["std"] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSButton", "NSButtonCell", "NSColor", "NSGraphics", "NSImage", "NSLayoutConstraint", "NSMenu", "NSOpenPanel", "NSPanel", "NSResponder", "NSEvent", "NSView", "NSVisualEffectView", "NSSavePanel", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSButton", "NSButtonCell", "NSColor", "NSGraphics", "NSImage", "NSLayoutConstraint", "NSOpenPanel", "NSPanel", "NSResponder", "NSEvent", "NSView", "NSVisualEffectView", "NSSavePanel", "NSWindow"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSGeometry", "NSNotification", "NSString", "NSURL"] }
 
 [dev-dependencies]

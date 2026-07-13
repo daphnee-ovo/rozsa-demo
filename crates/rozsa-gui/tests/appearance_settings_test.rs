@@ -30,12 +30,14 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(native.contains("performWindowDragWithEvent"));
     assert!(native.contains("NSWindowDidEnterFullScreenNotification"));
     assert!(native.contains("NSWindowDidExitFullScreenNotification"));
+    assert!(native.contains("NSWindowWillEnterFullScreenNotification"));
+    assert!(native.contains("NSWindowWillExitFullScreenNotification"));
     assert!(native.contains("NSWindowDidResizeNotification"));
     assert!(native.contains("drag_view.setHidden(true)"));
     assert!(native.contains("drag_view.setHidden(false)"));
     assert!(native.contains("TITLEBAR_ACCESSORY_HEIGHT"));
     assert!(native.contains("NSWindowOrderingMode::Above"));
-    assert!(native.contains("NSMenu::setMenuBarVisible(false"));
+    assert!(!native.contains("NSMenu::setMenuBarVisible"));
     assert!(native.contains("NSVisualEffectMaterial::Sidebar"));
     assert!(native.contains("NSVisualEffectBlendingMode::BehindWindow"));
     assert!(native.contains("NSVisualEffectState::FollowsWindowActiveState"));
@@ -131,6 +133,9 @@ fn appearance_is_backend_persisted_and_theme_files_are_loaded() {
     assert!(js.contains("syncChromeBackgroundGeometry"));
     assert!(!js.contains("startNativeWindowDrag"));
     assert!(js.contains("scheduleNativeFullscreenSync"));
+    assert!(js.contains("nativeFullscreenTransitioning"));
+    assert!(js.contains("calibration suppressed during transition"));
+    assert!(lib.contains("\"transitioning\": transitioning"));
     assert!(js.contains("offsetLeft + element.offsetWidth"));
     assert!(js.contains("document.body.classList.toggle('sidebar-collapsed'"));
     assert!(js.contains("document.body.classList.add('settings-visible')"));
