@@ -10,7 +10,9 @@ fn stale_autocomplete_cannot_replace_dom_during_composition() {
 
     assert!(autocomplete.contains("if (isInputComposing || seq !== acRequestSeq) return;"));
 
-    let highlight_start = source.find("function updateInputHighlight(ranges)").unwrap();
+    let highlight_start = source
+        .find("function updateInputHighlight(ranges)")
+        .unwrap();
     let highlight_end = source[highlight_start..]
         .find("function syncInputHighlightScroll")
         .map(|offset| highlight_start + offset)

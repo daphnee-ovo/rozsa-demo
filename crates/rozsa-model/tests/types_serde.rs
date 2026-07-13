@@ -159,15 +159,15 @@ fn message_tool_result_roundtrip() {
     let json = serde_json::to_value(&msg).unwrap();
     assert_eq!(json["role"], "toolResult");
     assert_eq!(json["toolCallId"], "tc_1");
-    assert_eq!(json["details"]["file_deltas"][0]["after"], "written content");
+    assert_eq!(
+        json["details"]["file_deltas"][0]["after"],
+        "written content"
+    );
     let back: Message = serde_json::from_value(json).unwrap();
     match back {
         Message::ToolResult(tr) => {
             assert_eq!(tr.tool_call_id, "tc_1");
-            assert_eq!(
-                tr.details["file_deltas"][0]["after"],
-                "written content"
-            );
+            assert_eq!(tr.details["file_deltas"][0]["after"], "written content");
         }
         _ => panic!("expected ToolResult"),
     }

@@ -25,7 +25,9 @@ fn composition_guards_input_refresh_and_keyboard_shortcuts() {
 
     let keydown_start = source.find("document.addEventListener('keydown'").unwrap();
     let keydown = &source[keydown_start..];
-    assert!(keydown.contains("if (isInputComposing || e.isComposing || e.keyCode === 229) return;"));
+    assert!(
+        keydown.contains("if (isInputComposing || e.isComposing || e.keyCode === 229) return;")
+    );
 }
 
 #[test]

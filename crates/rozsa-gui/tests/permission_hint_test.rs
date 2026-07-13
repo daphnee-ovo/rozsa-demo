@@ -17,7 +17,9 @@ fn deny_and_hints_opens_a_prefixed_editable_input() {
 fn deny_and_hints_supports_h_and_tab_confirmation() {
     let source = include_str!("../frontend/app.js");
 
-    assert!(source.contains("if (e.key === 'h' || e.key === 'H') { e.preventDefault(); enterPermissionHint(); return; }"));
+    assert!(source.contains(
+        "if (e.key === 'h' || e.key === 'H') { e.preventDefault(); enterPermissionHint(); return; }"
+    ));
     assert!(source.contains("if (e.key === 'Tab')"));
     assert!(source.contains("if (selectedKey === 'H')"));
     assert!(source.contains("function submitPermissionHint()"));

@@ -6,12 +6,14 @@ use rozsa_gui::git_diff::{read_workspace_diff, workspace_diff_stat};
 #[test]
 fn unborn_repository_renders_untracked_file_against_dev_null() {
     let workspace = tempfile::tempdir().unwrap();
-    assert!(Command::new("git")
-        .args(["init", "--quiet"])
-        .current_dir(workspace.path())
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(workspace.path())
+            .status()
+            .unwrap()
+            .success()
+    );
     fs::write(workspace.path().join("poem.md"), "first\nsecond\n").unwrap();
 
     let diff = read_workspace_diff(workspace.path(), "poem.md").unwrap();

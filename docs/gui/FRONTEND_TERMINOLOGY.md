@@ -1,0 +1,570 @@
+# Rózsa 前端页面术语表
+
+这份文档约定 WebView 前端中的页面区域、组件、控件、动态内容和交互状态怎么称呼。截图只是场景示例，不是术语范围；未出现在截图中的条件渲染面板、消息内容和 Settings 控件也必须按当前实现命名。当前前端实现以 [`index.html`](../../crates/rozsa-gui/frontend/index.html) 和 [`app.js`](../../crates/rozsa-gui/frontend/app.js) 为准。session ownership、permission runtime、AgentSession 等运行时概念见 [`TERMINOLOGY.md`](./TERMINOLOGY.md)。
+
+截图对应当前主界面：左侧是 `sidebar`，右侧是 `main panel`，底部整块是 `composer`。其中最底部的一排控件才叫 `input toolbar`；`tool call` 是 agent 执行工具的概念，不能和 `toolbar` 混用。动态内容出现在哪个场景，不改变它的术语。
+
+## 1. 页面总览
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│ macOS window chrome: traffic lights + native sidebar toggle          │
+├──────────────────────┬───────────────────────────────────────────────┤
+│ SIDEBAR              │ MAIN PANEL                                    │
+│                      │                                               │
+│ sidebar header       │ panel header                                  │
+│   Sessions   [+]     │   current session title  +  permission badge  │
+│                      │                                               │
+│ session list         │ chat region                                   │
+│   session item       │   └─ empty state / message stream              │
+│   session item       │                                               │
+│                      │                                               │
+│ status section       │                                               │
+│   git status row     │                                               │
+│   quota meter        │                                               │
+│   tool chips         │                                               │
+│                      │                                               │
+│ sidebar footer       │ composer host                                 │
+│   Settings           │ ┌───────────────────────────────────────────┐ │
+│                      │ │ composer surface                          │ │
+│                      │ │ message editor                            │ │
+│                      │ │ input toolbar                              │ │
+│                      │ │ [attach] [slash]   hint  context  model Send│ │
+│                      │ └───────────────────────────────────────────┘ │
+└──────────────────────┴───────────────────────────────────────────────┘
+```
+
+页面层级：
+
+```text
+window
+└─ page shell / app body                         [data-od-id="app-body"]
+   ├─ sidebar                                    [data-od-id="sidebar"]
+   │  ├─ session section
+   │  │  ├─ sidebar header
+   │  │  └─ session list                         #sessionList
+   │  │     └─ session item                      .session-item
+   │  ├─ status section                          [data-od-id="sidebar-status"]
+   │  │  └─ status panel
+   │  │     ├─ git status row
+   │  │     ├─ quota meters
+   │  │     └─ tool chips
+   │  └─ sidebar footer                           .sidebar-bottom
+   │     └─ settings action                       [data-od-id="btn-settings"]
+   └─ main panel                                 [data-od-id="main-panel"]
+      ├─ panel header                            [data-od-id="panel-header"]
+      │  ├─ session title                        #currentSessionName
+      │  └─ permission badge                     [data-od-id="perm-badge"]
+      ├─ chat region                             #chatMessages
+      │  └─ empty state / message stream
+      └─ composer host                           [data-od-id="chat-input"]
+         └─ composer surface                     .input-wrapper
+            ├─ permission panel / autocomplete popup / running panels
+            ├─ message editor                    #msgInput.rich-input
+            └─ input toolbar                     .input-toolbar
+               ├─ input action group             .input-tool-btn
+               ├─ shortcut hint                  .input-hint
+               ├─ context meter                  .context-ring
+               ├─ model selector                 #modelSelector.model-selector
+               └─ submit control                 .send-btn
+```
+
+## 2. 区域、组件、控件的边界
+
+| 层级 | 英文约定 | 中文约定 | 判断标准 |
+| --- | --- | --- | --- |
+| 页面区域 | `page region` | 页面区域 | 承担布局职责，例如 `sidebar`、`main panel`、`chat region` |
+| 结构外壳 | `shell` / `page shell` | 页面外壳 | 组织多个区域，例如 `app body` |
+| 组件 | `component` | 组件 | 有独立职责和状态，例如 `session item`、`empty state`、`permission panel` |
+| 控件 | `control` | 控件 | 用户直接操作的 button、select、input 或 contenteditable |
+| 表面容器 | `surface` | 表面容器 | 视觉上的背景、边界和圆角，不一定有独立业务状态 |
+| 面板 | `panel` | 面板 | 承载一组内容或操作，通常有自己的显示/隐藏或展开状态 |
+| 卡片 | `card` | 卡片 | 相对独立的信息单元；不要把整个 composer 或 main panel 叫 card |
+| 工具栏 | `toolbar` | 工具栏 | 一排按功能分组的操作或辅助控件；英文写一个词，不写 `tool bar` |
+| 操作组 | `action group` | 操作组 | toolbar 内职责相近的一组按钮，例如附件和 slash action |
+
+### `toolbar`、`tool call`、`composer` 的区别
+
+```text
+composer = 用户组织并提交消息的整个底部区域
+├─ message editor
+└─ input toolbar = composer 内的一排辅助控件
+   ├─ input action group: attach / slash
+   ├─ shortcut hint
+   ├─ context meter
+   ├─ model selector
+   └─ submit control: Send
+
+tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
+```
+
+推荐说法：
+
+- “composer 的高度和底部间距不对。”
+- “input toolbar 左侧的 input action group 溢出了。”
+- “model selector 和 send button 在窄窗口下需要收缩。”
+- “这个是 tool call 展示问题，不是 toolbar 问题。”
+
+## 3. Window chrome 与页面顶部
+
+| 术语 | 含义 | 当前实现/截图对应物 |
+| --- | --- | --- |
+| `window chrome` | 系统窗口装饰和窗口级行为 | traffic lights、原生标题栏、全屏和窗口缩放 |
+| `traffic lights` | macOS 左上角关闭、最小化、缩放按钮 | 原生窗口提供，不属于 WebView 页面 |
+| `native titlebar` | AppKit 提供的标题栏语义 | 当前由 `native_titlebar.rs` 接入 |
+| `native sidebar toggle` | 原生标题栏里的 sidebar 显示/隐藏按钮 | 截图左上角 traffic lights 右侧的 split icon |
+| `drag region` | 可拖动窗口的空白区域 | `TitlebarDragView` 的空白区域 |
+| `titlebar offset` | 页面为原生 titlebar 预留的顶部空间 | fullscreen 进出时同步 |
+| `page header` / `panel header` | WebView 页面内部的内容标题区 | 当前主区的 `panel-header`，不是 native titlebar |
+
+不要说“顶部 toolbar”来指截图左上角的原生标题栏。要说 `native titlebar`；如果指主内容里的 Rózsa 和权限模式，则说 `panel header`。
+
+## 4. Sidebar 术语
+
+| 术语 | 中文 | 当前锚点/说明 |
+| --- | --- | --- |
+| `sidebar` | 侧栏 | `[data-od-id="sidebar"]`，承载导航和摘要 |
+| `sidebar header` | 侧栏标题区 | `Sessions` 与 `New session` action |
+| `session section` | 会话区 | sidebar 中展示 session list 的上半区 |
+| `session list` | 会话列表 | `#sessionList`，动态渲染多个 session item |
+| `session item` | 会话项 | `.session-item`，包含状态点、名称和时间 |
+| `session status indicator` | 会话状态指示点 | idle、running、approval 等状态的视觉入口 |
+| `session name` | 会话名称 | `.session-name` |
+| `session meta` | 会话元信息 | `.session-meta`，例如最近时间 |
+| `new session action` | 新建会话操作 | sidebar header 右侧的 `+` button |
+| `status section` | 状态区 | `[data-od-id="sidebar-status"]` |
+| `status panel` | 状态面板 | `.status-panel`，包住 Git、限额和工具摘要 |
+| `status group` | 状态分组 | `.status-group`，例如 quota 或 tool count |
+| `git status row` | Git 状态行 | 当前分支、增删行数、文件数 |
+| `quota meter` | 限额计量器 | `5 hours` / `This week` 标签和进度条 |
+| `tool chips` | 工具计数标签 | Bash、Read、Edit 等工具名与调用次数 |
+| `sidebar footer` | 侧栏底部操作区 | `.sidebar-bottom` |
+| `settings action` | 设置入口 | `[data-od-id="btn-settings"]`，不要叫 settings toolbar |
+| `collapsed sidebar` | 折叠侧栏 | sidebar 隐藏，窄窗口时可由左边缘浮出 |
+
+`sidebar` 是一个页面区域；`session list` 是其中的内容组件；`session item` 是列表项；`New session` 和 `Settings` 是控件/操作，不是新的 sidebar。
+
+## 5. Main panel 术语
+
+| 术语 | 中文 | 当前锚点/说明 |
+| --- | --- | --- |
+| `main panel` | 主面板 | `[data-od-id="main-panel"]`，承载当前 session 的主要工作区 |
+| `panel header` | 主面板头部 | `[data-od-id="panel-header"]` |
+| `session title` | 当前会话标题 | `#currentSessionName`，截图中的 `Rózsa` |
+| `status badge` | 状态徽标 | 具有短文本的 pill/badge；例如 permission mode |
+| `permission badge` | 权限模式徽标 | `[data-od-id="perm-badge"]`，截图中的 `medium`/模式文字 |
+| `header spacer` | 头部弹性占位 | `.header-spacer`，用于把可选控件推到右侧 |
+| `chat region` | 聊天内容区 | `#chatMessages`，可滚动显示 empty state、消息和 tool call |
+| `message stream` | 消息流 | chat region 中按事件增量更新的消息内容 |
+| `empty state` | 空状态 | `#emptyState`，没有消息时的图标、标题、提示和快捷键 |
+| `empty-state hint` | 空状态提示 | “Describe your coding task…” 及快捷键说明 |
+| `keyboard hint` | 键盘提示 | `<kbd>` 视觉元素和对应文字，不等同于 input toolbar |
+
+`status badge` 是视觉组件的泛称；具体说明权限时用 `permission badge`，不要把它和 sidebar 的 `session status indicator` 混为一谈。
+
+## 6. Composer 与 Input toolbar 术语
+
+### 6.1 三层命名
+
+| 层级 | 推荐英文名 | 中文 | 当前锚点 |
+| --- | --- | --- | --- |
+| 区域 | `composer host` / `input area` | 消息输入区 | `[data-od-id="chat-input"]` |
+| 可见容器 | `composer surface` | 输入表面/输入容器 | `.input-wrapper` |
+| 编辑器 | `message editor` / `rich input` | 消息编辑器 | `#msgInput.rich-input`，`contenteditable` |
+| 子区域 | `input toolbar` | 输入工具栏 | `.input-toolbar` |
+| 操作组 | `input action group` | 输入操作组 | `.input-tool-btn` 的左侧按钮组 |
+| 控件 | `attachment action` | 附件操作 | `#attachFileButton`、可选目录按钮 |
+| 控件 | `slash action` | Slash 命令操作 | title 为 `Slash commands` 的按钮 |
+| 辅助文本 | `shortcut hint` | 快捷键提示 | `.input-hint` |
+| 指示器 | `context meter` | 上下文用量指示器 | `.context-ring` + `#contextTokens` |
+| 控件 | `model selector` | 模型选择器 | `#modelSelector.model-selector` |
+| 控件 | `submit control` / `send button` | 提交控件/发送按钮 | `.send-btn`，文字为 `Send` |
+
+### 6.2 Composer 结构图
+
+```text
+composer host [data-od-id="chat-input"]
+├─ autocomplete popup                    #autocomplete
+├─ running panels                        #subagentPanel / #forkPicker / queue
+└─ composer surface                      .input-wrapper
+   ├─ permission panel                   #permPanel（出现时可替代编辑器）
+   ├─ message editor                     #msgInput
+   └─ input toolbar                      .input-toolbar
+      ├─ input action group
+      │  ├─ attachment action            #attachFileButton
+      │  ├─ directory action             #attachDirectoryButton（可选）
+      │  └─ slash action
+      ├─ flex spacer                     .input-spacer
+      ├─ shortcut hint                   .input-hint
+      ├─ context meter                   .context-ring
+      ├─ model selector                  #modelSelector
+      └─ submit control                  .send-btn
+```
+
+当前 `input toolbar` 是 `.input-toolbar` 这一行，不包括 `#msgInput` 本身。讨论尺寸、换行和 IME 时说 `message editor`；讨论附件、Slash、上下文、模型和发送按钮横向排列时说 `input toolbar`。
+
+### 6.3 不推荐的叫法
+
+| 不推荐 | 问题 | 推荐 |
+| --- | --- | --- |
+| `tool bar` | `tool` 容易被理解成 agent tool | `toolbar` 或 `input toolbar` |
+| “底部 toolbar” | 不清楚是整块输入区还是底部控件行 | `composer` / `input toolbar` |
+| “输入框按钮” | 没有区分附件、Slash、模型和发送 | `attachment action`、`slash action`、`model selector`、`send button` |
+| “右边那个圆圈” | 无法区分上下文用量和状态指示 | `context meter` / `context ring` |
+| “模型按钮” | 可能被误解为操作按钮而非选择器 | `model selector` |
+| “消息卡片” | 可能指 empty state、message 或 composer | `message editor`、`empty state` 或 `composer surface` |
+
+## 7. Settings 页面术语
+
+设置不是 sidebar 中的一个普通弹窗；当前是覆盖主界面的 settings scene。
+
+```text
+settings scene                         #settingsPanel.settings-panel
+└─ settings dialog                     .settings-dialog
+   └─ settings workspace               .settings-workspace
+      ├─ settings navigation           .settings-tabs
+      │  ├─ back action
+      │  └─ settings tab               .settings-tab
+      └─ settings content              .settings-content
+         └─ settings pane              .settings-pane
+            ├─ pane title
+            ├─ settings group          .settings-group
+            └─ setting item            .setting-item
+```
+
+| 术语 | 中文 | 不要混称为 |
+| --- | --- | --- |
+| `settings scene` | 设置场景 | modal toolbar |
+| `settings navigation` | 设置导航 | settings sidebar button group |
+| `settings tab` | 设置页签 | toolbar item |
+| `settings pane` | 当前设置页 | main panel |
+| `settings group` | 设置分组 | card，除非视觉上确实是独立卡片 |
+| `setting item` | 单行设置项 | generic row |
+| `setting control` | select、input、switch 等具体控件 | setting item 本身 |
+
+## 8. 沟通例句
+
+- “这是 `sidebar` 与 `main panel` 的 boundary 问题，不是 window chrome 问题。”
+- “`session item` 的 active state 不应改变 `session list` 的行高。”
+- “`composer surface` 要保持 bottom-anchored；内部 `message editor` 可以自动增高。”
+- “`input toolbar` 左侧的 `input action group` 在窄窗口下收缩，`shortcut hint` 可以隐藏。”
+- “`context meter` 和 `model selector` 属于 toolbar 的 utility controls，不属于 attachment actions。”
+- “permission panel 出现时覆盖 composer surface 的输入态；这是 composer state，不是新的 main panel。”
+- “settings scene 的 `settings navigation` 和主界面的 `sidebar` 是两个不同的页面区域。”
+
+## 9. 当前实现索引
+
+| 页面部分 | 代码入口 |
+| --- | --- |
+| app body、sidebar、main panel | [`index.html:2410`](../../crates/rozsa-gui/frontend/index.html:2410) |
+| session list、status section、settings action | [`index.html:2413`](../../crates/rozsa-gui/frontend/index.html:2413) |
+| panel header、chat region、empty state | [`index.html:2483`](../../crates/rozsa-gui/frontend/index.html:2483) |
+| composer、message editor、input toolbar | [`index.html:2502`](../../crates/rozsa-gui/frontend/index.html:2502) |
+| settings scene | [`index.html:2572`](../../crates/rozsa-gui/frontend/index.html:2572) |
+| session list rendering | [`app.js`](../../crates/rozsa-gui/frontend/app.js) 的 `renderSessionList()` |
+| composer input、autocomplete、IME | [`app.js`](../../crates/rozsa-gui/frontend/app.js) 的 `handleInput()`、`updateAutocomplete()`、`handleComposition*()` |
+| sidebar/settings/fullscreen layout sync | [`app.js`](../../crates/rozsa-gui/frontend/app.js) 的 `syncChromeBackgroundGeometry()`、`setNativeFullscreen()` |
+
+## 10. 消息流与内容渲染
+
+消息区不能只按“用户气泡”和“助手气泡”理解。一个 assistant message 可能同时包含 thinking、tool call、Markdown 正文和 turn summary；这些是不同的前端组件。
+
+```text
+chat region                                      #chatMessages
+└─ message stream
+   ├─ user message                               .msg.msg-user
+   │  ├─ avatar                                  .msg-avatar
+   │  ├─ role label                              .msg-role
+   │  └─ message body                            .msg-body
+   │     └─ Markdown body                        .markdown-body
+   └─ assistant message                          .msg.msg-assistant
+      ├─ avatar + role label                     .msg-avatar + .msg-role
+      ├─ thinking block                          .thinking-block
+      │  ├─ thinking header                      .thinking-header
+      │  └─ thinking content                     .thinking-content
+      ├─ tool call                               .tool-call
+      │  ├─ tool header                          .tool-header
+      │  └─ tool call body                       .tool-call-body
+      │     ├─ tool output                       .tool-output
+      │     ├─ code view                         .code-view
+      │     └─ diff view                         .diff-view
+      ├─ assistant message body                  .msg-content
+      │  └─ Markdown / code / table / image
+      └─ turn summary                            .changes-card
+         ├─ changed file row                     .change-entry
+         └─ verification result                  .changes-footer
+```
+
+| 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
+| --- | --- | --- | --- |
+| `message stream` | 消息流 | 按时间顺序承载当前 session 的消息项 | `#chatMessages`；`renderMessages()` |
+| `user message` | 用户消息 | role 为 `user` 的消息项 | `.msg.msg-user`；`renderMessage()` |
+| `assistant message` | 助手消息 | role 为 `assistant` 的消息项，可包含多个内容块 | `.msg.msg-assistant`；`renderMessage()` |
+| `tool result message` | 工具结果消息 | 工具执行返回的结果展示；通常以内嵌 tool call 形式出现 | `role === 'toolResult'`；`renderMessage()` |
+| `avatar` | 头像/角色标识 | 标识消息发送方；当前是字母方块，不要叫 status icon | `.msg-avatar` |
+| `role label` | 角色标签 | 显示 `You`、`Rozsa` 等角色名 | `.msg-role` |
+| `message body` | 消息主体容器 | 包住角色信息和消息内容，不等于正文文本 | `.msg-body` |
+| `message content` | 消息内容 | 一条消息的可见正文或错误正文 | `.msg-content`；`extractText()` |
+| `Markdown body` | Markdown 正文 | Markdown 渲染后的正文容器 | `.markdown-body`；`renderMarkdown()` |
+| `inline code` | 行内代码 | Markdown 正文中的短代码片段 | `.msg-content p code` 等选择器；`inlineMd()` |
+| `code block` | 代码块 | Markdown 三反引号代码的展示单元 | `.md-code-block`、`.md-code-head`、`.md-code-lang`；`codeBlock()` |
+| `copy action` | 复制操作 | 将代码块或消息文本复制到剪贴板 | `.md-copy`；`copyCode()`、`copyText()` |
+| `table` | 表格 | Markdown 表格渲染结果 | `.md-table-wrap`、`.md-table`；`renderTable()` |
+| `task list item` | 任务列表项 | Markdown checkbox 风格的列表项 | `.task-list-item`；`renderMarkdown()` |
+| `thinking block` | 思考块 | 展示 assistant 的 thinking 内容及其时长 | `.thinking-block`；`toggleThinking()` |
+| `thinking header` | 思考块头部 | 展示 `THINKING`/`THINKED`、时长和折叠入口 | `.thinking-header`、`.thinking-label`、`.thinking-duration` |
+| `thinking content` | 思考块正文 | thinking 的 Markdown 内容 | `.thinking-content`、`.thinking-markdown` |
+| `stream cursor` | 流式光标 | 标记正在增量更新的文本尾部 | `.stream-cursor`、`[data-stream-cursor-target]`；`attachStreamCursor()` |
+| `tool call` | 工具调用项 | 展示 agent 请求执行某个工具的完整项 | `.tool-call`；`renderMessage()` |
+| `tool call row` | 工具调用行 | tool call 在消息流中的一行摘要入口 | `.tool-call`、`.tool-header`；`renderMessage()` |
+| `tool header` | 工具调用头部 | 展示工具名、参数摘要、状态和展开入口 | `.tool-header`、`.tool-name`、`.tool-call-args`、`.tool-call-toggle` |
+| `tool status` | 工具状态 | 表示工具正在运行、成功或失败 | `.tool-call-status.s-success` / `.s-error`；`renderMessage()` |
+| `tool call body` | 工具调用正文 | 展开后展示参数、输出、代码或 diff | `.tool-call-body` |
+| `tool output` | 工具输出 | 工具执行返回的文本或步骤摘要 | `.tool-output`、`.tool-output-steps`、`.tool-step` |
+| `code view` | 代码视图 | 工具写入内容的带行号源码视图 | `.code-view`、`.code-line`、`.code-ln`、`.code-text`；`renderCodeView()` |
+| `diff view` | 差异视图 | 展示新增、删除及行号的 patch 视图 | `.diff-view`、`.diff-line`、`.diff-add`、`.diff-del`；`renderDiffView()` |
+| `file delta` | 文件变更数据 | 描述某个文件修改前后的结构化数据，不是 UI 本身 | `result.details.file_deltas`；`renderMessage()` |
+| `turn summary` | 回合摘要 | 一轮 agent 工作后的文件变化和验证摘要 | `.changes-card`；`renderTurnActivityCard()` |
+| `changed file row` | 变更文件行 | 摘要中展示单个文件及增删统计的行 | `.change-entry`、`.change-row`、`.change-name` |
+| `inline turn diff` | 回合内联 diff | 在变更文件行下展开的 patch | `.turn-diff-inline`；`toggleTurnDiff()` |
+| `verification result` | 验证结果 | 展示验证成功、失败、退出码和耗时 | `.changes-footer`、`Verified`、`Verification failed` |
+| `verification runtime` | 验证运行信息 | 展示命令、exit code、timeout、truncated 和耗时 | `.changes-runtime` |
+| `error message` | 错误消息 | 消息本身的错误正文，不要泛称为 toast | `.msg-error`；`renderMessage()` |
+
+这些术语的边界：`tool call` 是消息内容中的执行项，`tool output` 是它的结果，`code view`/`diff view` 是结果的展示方式，`turn summary` 是一轮工作的汇总。不要把它们都叫“工具卡片”。
+
+## 11. 截图之外的动态面板
+
+下列组件在空会话截图中通常不可见，但它们是当前页面的真实组成部分。它们仍然属于 `composer host` 附近的前端交互，不是新的 main panel。
+
+```text
+composer host                                     [data-od-id="chat-input"]
+├─ autocomplete popup                             #autocomplete
+├─ running panels
+│  ├─ subagent panel                              #subagentPanel
+│  ├─ fork picker                                 #forkPicker
+│  ├─ queue panel                                 #queuedMessages
+│  └─ steering panel                              #steeringConversation
+└─ composer surface                               .input-wrapper
+   ├─ permission panel                            #permPanel
+   │  ├─ permission context                       #permPanelContext
+   │  ├─ permission actions                       #permPanelActions
+   │  ├─ hint page                                #permPanelHint
+   │  └─ trust page                               #permPanelTrust
+   ├─ message editor                              #msgInput
+   └─ input toolbar                               .input-toolbar
+```
+
+### 11.1 Permission panel
+
+| 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
+| --- | --- | --- | --- |
+| `permission panel` | 权限审批面板 | 在工具需要用户决定时替代 message editor 展示审批流程 | `#permPanel.perm-panel`；`displayPermPanelIfNeeded()` |
+| `permission context` | 权限上下文 | 展示工具名、命令、描述和当前请求背景 | `#permPanelContext`、`#permTool`、`#permCmd`、`#permDesc` |
+| `permission command` | 权限命令 | 用户需要批准或拒绝的命令/操作文本 | `#permCmd`；`renderPermissionCommand()` |
+| `command disclosure` | 命令展开控件 | 展开或收起过长命令 | `#permCmdToggle`；`togglePermissionCommand()` |
+| `permission actions` | 权限操作组 | 承载批准、拒绝、提示和信任等决策入口 | `#permPanelActions`、`.perm-panel-opt` |
+| `permission action` | 权限操作 | 单个审批选项，不要叫 toolbar button | `.perm-panel-opt`、`.perm-panel-opt-key`、`.perm-panel-opt-label` |
+| `permission hint page` | 权限补充说明页 | 用户选择拒绝并提供说明时的输入页面 | `#permPanelHint`、`#permHintInput`；`enterPermissionHint()` |
+| `permission trust page` | 权限信任页 | 选择信任范围或 trust level 的页面 | `#permPanelTrust`；`renderPermissionTrustPage()` |
+| `trust level` | 信任级别 | 决定此次或后续相似操作的授权范围 | `currentPermissionTrustGroups`；`choosePermissionTrust()` |
+| `permission approval state` | 待审批状态 | 请求已经到达、尚未做出决定的状态 | `sessionStreamingState[id] = 'approval'`；`showPermission()` |
+
+权限面板出现时应说“permission panel 替代了 composer 的 message editor”，不要说“弹出了一个新的聊天窗口”。`permission panel` 是页面组件，`permission runtime` 是运行时授权逻辑，两者需要区分。
+
+### 11.2 Autocomplete、fork 和运行中面板
+
+| 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
+| --- | --- | --- | --- |
+| `autocomplete popup` | 自动补全弹层 | 根据当前 token 展示可选命令或模型 | `#autocomplete.autocomplete-popup`；`updateAutocomplete()` |
+| `autocomplete item` | 自动补全项 | 单个可选命令、描述和快捷提示 | `.ac-item`、`.ac-cmd`、`.ac-desc`、`.ac-hint` |
+| `selected autocomplete item` | 已选自动补全项 | 键盘导航当前指向的 item | `.ac-item.selected`；`navigateAutocomplete()` |
+| `file reference` | 文件引用 | 输入中识别出的文件路径或文件 token | `formatFileReference()`；`updateInputHighlight()` |
+| `valid token highlight` | 有效 token 高亮 | 对可解析的 slash/file token 做视觉标记 | `.valid-token-text`、`.input-wrapper.valid-token` |
+| `running panel` | 运行中面板 | agent 运行期间展示排队、steering、fork 或 subagent 信息的面板类别 | `.running-messages` |
+| `queue panel` | 排队消息面板 | 展示等待当前运行结束后发送的消息 | `#queuedMessages`；`renderRunningMessages()` |
+| `queued message` | 排队消息 | 已提交但等待执行的消息 | `#queuedMessages li` |
+| `steering panel` | Steering 对话面板 | 展示运行中发送、等待工具结果的 steering 消息 | `#steeringConversation`；`renderRunningMessages()` |
+| `steering message` | Steering 消息 | 介入当前运行流程的消息 | `#steeringConversation li` |
+| `running send mode` | 运行中发送模式 | 决定发送时进入 queue 还是 steer | `#runningSendMode`；`sendMessage()` |
+| `fork picker` | Fork 选择器 | 选择历史消息作为新 session 起点 | `#forkPicker`；`showForkPicker()` |
+| `fork point` | Fork 起点 | 可用于创建分叉会话的历史消息位置 | `get_fork_points` 返回项；`forkAtMessage()` |
+| `subagent panel` | 子代理面板 | 展示 subagent 名称、状态、模型和消息数 | `#subagentPanel`；`showSubagentPanel()` |
+| `subagent row` | 子代理行 | 单个 subagent 的信息行 | `#subagentPanel li`、`.subagent-meta` |
+
+## 12. 前端交互状态
+
+状态词描述的是同一个组件在某个时刻的 UI 状态，不是新的组件名称。沟通时应同时说组件和状态，例如“autocomplete item 进入 selected state”。
+
+### 12.1 通用状态词
+
+| 推荐英文状态 | 中文约定 | 适用含义 | 当前实现信号 |
+| --- | --- | --- | --- |
+| `idle` | 空闲 | 没有执行、等待用户操作 | `.session-status.idle`；`sessionStreamingState` |
+| `hover` | 悬停 | 指针位于可交互元素上 | `:hover` 选择器 |
+| `focus` | 聚焦 | 元素拥有键盘焦点 | `:focus`、`focus()` |
+| `focus-visible` | 键盘聚焦 | 需要显式显示键盘焦点环 | `:focus-visible` |
+| `active` | 当前/活动 | 当前 session、当前 settings tab 或正在进行的流 | `.active`；`renderSessionList()`、`renderThemeModeCards()` |
+| `selected` | 已选中 | 列表、补全项或选项中的当前选择 | `.selected`；`acHighlight()` |
+| `disabled` | 禁用 | 控件暂时不可操作 | `:disabled`；`.send-btn:disabled` |
+| `visible` | 可见 | 组件正在显示 | `.visible`；`#permPanel`、`#autocomplete` |
+| `hidden` | 隐藏 | 组件不参与当前可见布局 | `hidden` 属性；running panels、settings panes |
+| `expanded` | 展开 | 正文或详情已经显示 | `.expanded`；tool call、thinking、permission command、turn diff |
+| `collapsed` | 收起 | 正文或详情被折叠 | `.collapsed`；`#permCmd`、tool body |
+| `running` | 执行中 | agent、session 或 tool 尚未结束 | `s-running`、streaming state；`renderMessage()` |
+| `streaming` | 流式更新中 | assistant 内容正在增量到达 | `isStreaming`、`data-stream-cursor-target` |
+| `partial output` | 部分输出 | 当前已渲染但尚未完成的 assistant 文本或 thinking | `.stream-cursor`；`patchStreamingThinking()` |
+| `approval` | 待审批 | 等待用户处理权限请求 | `sessionStreamingState[id] = 'approval'` |
+| `success` | 成功 | 操作或工具正常完成 | `.s-success`、`.change-add`、`Verified` |
+| `error` | 失败/错误 | 操作或工具执行失败 | `.s-error`、`.msg-error`、`Verification failed` |
+| `on` / `off` | 开启/关闭 | switch 或二值设置的值 | `.setting-toggle.on`、`aria-checked` |
+
+`active` 和 `selected` 不要混用：`active` 更适合当前页面、当前 session 或当前运行；`selected` 更适合列表项或候选项。`visible/hidden` 描述显示状态；`expanded/collapsed` 描述组件内部详情是否展开。
+
+### 12.2 Message editor 的输入状态
+
+```text
+message editor                                  #msgInput.rich-input
+├─ plain input text
+├─ caret / selection
+├─ IME composition (preedit)
+├─ slash token / file reference
+│  ├─ valid token highlight                    .valid-token-text
+│  └─ autocomplete popup                       #autocomplete
+└─ focus state
+   ├─ focus-within                              .input-wrapper:focus-within
+   └─ valid-token                               .input-wrapper.valid-token
+```
+
+| 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
+| --- | --- | --- | --- |
+| `message editor` | 消息编辑器 | 用户编辑待发送文本的 contenteditable | `#msgInput.rich-input`；`handleInput()` |
+| `caret` | 插入光标 | 文本插入位置 | `getInputCursor()`、`setInputSelection()` |
+| `selection` | 文本选区 | 当前选中的输入文本范围 | `getInputSelection()`、`setInputSelection()` |
+| `IME composition` / `preedit` | 输入法组合态/预编辑文本 | 中文、日文等输入法尚未提交的中间文本 | `handleCompositionStart/Update/End()` |
+| `slash token` | Slash token | 以 `/` 开始、可触发命令或动作的输入 token | `dispatchSlashCommand()`、`updateAutocomplete()` |
+| `file reference` | 文件引用 | 输入中可识别的文件路径引用 | `formatFileReference()`、`updateInputHighlight()` |
+| `input highlight` | 输入高亮 | 不改变实际文本的 token 视觉标记 | `.valid-token-text`；`updateInputHighlight()` |
+
+处理输入问题时，说明是 `caret/selection`、`IME composition`、`autocomplete popup` 还是 `input highlight`，不要只说“输入框坏了”。
+
+## 13. Settings 控件全量术语
+
+Settings 的截图只展示了 Appearance 页面的一部分。当前页面还有 General、Models、Permissions、Tools 四个 pane，以及大量条件状态和真实表单控件。
+
+```text
+settings scene                                    #settingsPanel
+├─ settings dialog                                .settings-dialog
+│  └─ settings workspace                          .settings-workspace
+│     ├─ settings navigation                      .settings-tabs
+│     │  ├─ back action                           .settings-back
+│     │  └─ settings tab                          .settings-tab
+│     └─ settings content                         .settings-content
+│        └─ settings pane                         .settings-pane
+│           ├─ pane title                         .settings-pane-title
+│           ├─ settings group                     .settings-group
+│           │  ├─ group label                     .settings-group-label
+│           │  └─ setting item                    .setting-item
+│           │     ├─ setting label                .setting-label
+│           │     ├─ setting control              select / input / switch
+│           │     └─ setting value                .setting-value
+│           └─ theme action row                   .appearance-theme-actions
+└─ close action                                   .settings-close
+```
+
+### 13.1 Settings 结构层级
+
+| 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
+| --- | --- | --- | --- |
+| `settings scene` | 设置场景 | 覆盖 app body 的完整设置页面 | `#settingsPanel.settings-panel`；`toggleSettings()` |
+| `settings dialog` | 设置对话框 | 承载 Settings 的窗口级内容和无障碍 dialog 语义 | `.settings-dialog`；`role="dialog"` |
+| `settings backdrop` | 设置背景层 | Settings 外围的遮罩和点击关闭区域 | `#settingsPanel`；`onclick="...closeSettings()"` |
+| `settings workspace` | 设置工作区 | 组织导航和内容的布局容器 | `.settings-workspace` |
+| `settings navigation` | 设置导航 | 左侧返回入口和 pane 切换入口 | `.settings-tabs` |
+| `back action` | 返回应用操作 | 关闭 Settings 并回到主界面 | `.settings-back`；`closeSettings()` |
+| `settings tab` | 设置页签 | 切换 Appearance、General、Models、Permissions、Tools | `.settings-tab`；`switchSettingsTab()` |
+| `settings content` | 设置内容区 | 承载当前 pane 的滚动内容 | `.settings-content` |
+| `settings pane` | 设置页面 | 一个完整的 Settings 分类页面 | `.settings-pane`、`#pane-*`；`renderSettingsPane()` |
+| `pane title` | 页面标题 | 当前 pane 的标题 | `.settings-pane-title` |
+| `settings group` | 设置分组 | 按 AI、Display、Network 等主题分组 | `.settings-group` |
+| `group label` | 分组标签 | 标识一个 settings group 的主题 | `.settings-group-label` |
+| `setting item` | 设置项 | 一行 label 与 value/control 的组合 | `.setting-item` |
+| `setting label` | 设置项标签 | 解释具体 setting 的名称 | `.setting-label` |
+| `setting control` | 设置控件 | select、input、range、color picker 或 switch | `.setting-select`、`.setting-input`、`.setting-toggle` |
+| `setting value` | 设置值 | 只读的 provider、context 或 shortcut 值 | `.setting-value` |
+| `close action` | 关闭操作 | 关闭 Settings 场景 | `.settings-close`；`closeSettings()` |
+
+### 13.2 Appearance pane
+
+| 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
+| --- | --- | --- | --- |
+| `appearance pane` | 外观页面 | 调整主题、字号和字体 | `#pane-appearance`；`renderAppearanceSettings()` |
+| `display group` | 显示分组 | 承载 Theme Mode 与 Font Size | `.settings-group` 下的 `Display` |
+| `theme mode` | 主题模式 | `System`、`Light`、`Dark` 三种模式 | `#settingsThemeMode`；`selectThemeModeCard()` |
+| `theme mode card` | 主题模式卡片 | 用预览图选择主题模式的控件 | `.theme-mode-card`、`data-theme-mode-card` |
+| `theme preview` | 主题预览 | 卡片中的视觉预览缩略图 | `.theme-preview`、`.theme-preview-body` |
+| `font size` | 字体大小 | 页面 UI 字号设置 | `#settingsFontSizeRange`、`#settingsFontSizeInput` |
+| `range slider` | 范围滑块 | 连续调整 font size 的 range 控件 | `.appearance-range`；`renderAppearanceSettings()` |
+| `numeric input` | 数值输入框 | 直接输入字号数值的 number 控件 | `.appearance-font-size-input`、`#settingsFontSizeInput` |
+| `theme section` | 主题配置区 | 承载 Light Theme 或 Dark Theme 的完整配置 | `.appearance-theme-section`、`#appearanceLightSection` / `#appearanceDarkSection` |
+| `theme selector` | 主题选择器 | 从可用主题列表选择具体 theme definition | `#settingsLightTheme`、`#settingsDarkTheme`；`renderThemeSelect()` |
+| `color picker` | 颜色选择器 | 通过原生 color input 选择颜色 | `.theme-color-picker`；`renderThemeControls()` |
+| `HEX input` | HEX 颜色输入框 | 直接编辑 `#RRGGBB` 颜色值 | `.theme-hex-input`；`isHexColor()` |
+| `color control` | 颜色控件组 | 把 color picker 和 HEX input 绑定成一个 setting control | `.theme-color-control`、`updateThemeColorVisual()` |
+| `UI font input` | UI 字体输入框 | 配置界面字体 | `#lightThemeUiFont`、`#darkThemeUiFont` |
+| `code font input` | 代码字体输入框 | 配置代码和等宽内容字体 | `#lightThemeCodeFont`、`#darkThemeCodeFont` |
+| `translucent sidebar switch` | 半透明侧栏开关 | 配置当前主题是否使用半透明 sidebar | `#lightThemeTranslucentSidebar`、`#darkThemeTranslucentSidebar`；`role="switch"` |
+| `theme action row` | 主题操作行 | 承载保存自定义主题的操作和说明 | `.appearance-theme-actions` |
+| `save custom theme action` | 保存自定义主题操作 | 将当前主题保存为 custom theme | `.appearance-theme-actions button`；`saveThemeAsCustom()` |
+| `theme note` | 主题说明 | 补充 custom theme 的存储位置说明 | `.appearance-theme-note` |
+
+### 13.3 General、Models、Permissions、Tools panes
+
+| 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
+| --- | --- | --- | --- |
+| `AI settings group` | AI 设置分组 | Thinking、compact、steering 和 follow-up 设置 | `#pane-general .settings-group`；`renderGeneralSettings()` |
+| `thinking level selector` | 思考级别选择器 | 选择 Off/Low/Medium/High | `#settingsThinking` |
+| `auto compact switch` | 自动压缩开关 | 控制上下文自动 compact | `#settingsAutoCompact`；`wireSettingSwitch()` |
+| `steering mode selector` | Steering 模式选择器 | 选择一次处理一条或全部 steering 消息 | `#settingsSteeringMode` |
+| `follow-up mode selector` | Follow-up 模式选择器 | 选择 follow-up 消息的处理方式 | `#settingsFollowUpMode` |
+| `default running send mode selector` | 运行中默认发送模式选择器 | 选择 Queue 或 Steer | `#settingsRunningSendMode` |
+| `block images switch` | 阻止图片开关 | 控制 Markdown 图片是否被阻止 | `#settingsBlockImages` |
+| `network settings group` | 网络设置分组 | 承载传输方式配置 | `#pane-general` 的 `Network` group |
+| `transport selector` | 传输方式选择器 | 选择 Auto、SSE 或 WebSocket | `#settingsTransport` |
+| `shortcut row` | 快捷键行 | 展示 Send、New line、Toggle thinking panel 等快捷键 | `#pane-general` 的 `Shortcuts` group |
+| `models pane` | 模型页面 | 查看和切换当前模型、provider、context window | `#pane-models` |
+| `model setting selector` | 模型设置选择器 | 在 Settings 中切换模型 | `#settingsModelSelect`；`onModelChange()` |
+| `provider value` | Provider 值 | 展示当前模型提供方 | `#settingsProvider` |
+| `context window value` | 上下文窗口值 | 展示当前模型的 context window | `#settingsContextWindow` |
+| `permissions pane` | 权限页面 | 配置 permission mode 和自动批准规则 | `#pane-permissions` |
+| `permission mode selector` | 权限模式选择器 | 选择 auto-approve、on-request 或 yolo | `#settingsPermMode` |
+| `auto-approve rules group` | 自动批准规则分组 | 展示已配置的自动批准模式 | `#settingsAutoApprove`；`renderSettingsPane()` |
+| `auto-approve pattern row` | 自动批准规则行 | 展示单条 pattern | `#settingsAutoApprove .setting-item` |
+| `tools pane` | 工具页面 | 展示已注册工具 | `#pane-tools` |
+| `registered tools group` | 已注册工具分组 | 承载工具列表标题和动态内容 | `#settingsToolList` |
+| `tool list item` | 工具列表项 | 展示单个 registered tool 的状态或说明 | `#settingsToolList` 动态子项 |
+
+## 14. 术语表的范围与使用规则
+
+```text
+截图场景
+   └─ 说明视觉位置和一个具体 state
+
+当前 frontend source of truth
+   ├─ index.html: 静态结构、CSS class、ARIA role、hidden/visible 状态
+   └─ app.js: 动态渲染、事件处理、状态切换和控件绑定
+
+术语表
+   └─ 为两者提供稳定的 English / 中文 / 职责 / 锚点映射
+```
+
+沟通时遵循四条规则：
+
+- 先说页面区域或组件，再说状态，例如“permission panel 的 expanded state”。
+- `toolbar` 始终写成一个词；`input toolbar` 只指 composer 内的控件行。
+- `panel` 表示承载一组内容或流程的组件；`card` 只用于相对独立的信息单元；`action` 是动作入口，`control` 是可操作的 UI 控件。
+- 讨论实现时优先给出 `data-od-id`、`id`、CSS class 或 JS function，避免只说“左边那个”“下面那块”。
+
+如果截图中没有显示某个组件，仍然可以直接使用本表术语。例如：`#queuedMessages` 是 `queue panel`，`#permPanelTrust` 是 `permission trust page`，`#pane-tools` 是 `tools pane`；它们不需要先出现在截图里才算页面术语。
+
+相关文档：[`GUI 运行时术语表`](./TERMINOLOGY.md)、[`GUI 使用规范`](./UI_USAGE_GUIDELINES.md)。

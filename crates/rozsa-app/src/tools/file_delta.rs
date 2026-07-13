@@ -103,7 +103,10 @@ pub fn snapshot_workspace(root: &Path) -> WorkspaceSnapshot {
     snapshot
 }
 
-pub fn diff_snapshots(before: WorkspaceSnapshot, after: WorkspaceSnapshot) -> (Vec<FileDelta>, bool, Option<String>) {
+pub fn diff_snapshots(
+    before: WorkspaceSnapshot,
+    after: WorkspaceSnapshot,
+) -> (Vec<FileDelta>, bool, Option<String>) {
     let paths = before
         .files
         .keys()
@@ -148,7 +151,10 @@ fn collect_paths(root: &Path) -> Vec<String> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.file_name().is_some_and(|name| name == ".git" || name == "target") {
+            if path
+                .file_name()
+                .is_some_and(|name| name == ".git" || name == "target")
+            {
                 continue;
             }
             if path.is_dir() {
@@ -166,15 +172,25 @@ fn collect_paths(root: &Path) -> Vec<String> {
 fn secret_like(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
     lower.split('/').any(|part| {
-        matches!(part, ".env" | "id_rsa" | "auth.json" | "credentials" | "credentials.json")
-            || part.contains("secret")
+        matches!(
+            part,
+            ".env" | "id_rsa" | "auth.json" | "credentials" | "credentials.json"
+        ) || part.contains("secret")
             || part.contains("token")
     })
 }
 
 fn render_patch(path: &str, before: Option<&str>, after: Option<&str>) -> (String, u64, u64) {
-    let left = if before.is_some() { format!("a/{path}") } else { "/dev/null".to_string() };
-    let right = if after.is_some() { format!("b/{path}") } else { "/dev/null".to_string() };
+    let left = if before.is_some() {
+        format!("a/{path}")
+    } else {
+        "/dev/null".to_string()
+    };
+    let right = if after.is_some() {
+        format!("b/{path}")
+    } else {
+        "/dev/null".to_string()
+    };
     let mut patch = format!("--- {left}\n+++ {right}\n");
     let before_lines = before.unwrap_or("").lines().collect::<Vec<_>>();
     let after_lines = after.unwrap_or("").lines().collect::<Vec<_>>();

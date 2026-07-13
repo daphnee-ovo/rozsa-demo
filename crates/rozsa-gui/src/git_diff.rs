@@ -26,10 +26,12 @@ pub fn read_workspace_diff(cwd: &Path, path: &str) -> Result<FileDiff, String> {
         .status
         .success();
     let bytes = if tracked {
-        checked_diff(cwd, &["diff", "--no-textconv", "--no-ext-diff", "--", path])?
-            .stdout
+        checked_diff(cwd, &["diff", "--no-textconv", "--no-ext-diff", "--", path])?.stdout
     } else {
-        let untracked = run_git(cwd, &["ls-files", "--others", "--exclude-standard", "--", path])?;
+        let untracked = run_git(
+            cwd,
+            &["ls-files", "--others", "--exclude-standard", "--", path],
+        )?;
         if !untracked.status.success() || untracked.stdout.is_empty() {
             Vec::new()
         } else {

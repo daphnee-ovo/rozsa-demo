@@ -544,10 +544,13 @@ pub fn context_usage_from_messages(
     messages: &[AgentMessage],
     context_window: usize,
 ) -> ContextUsage {
-    let usage = messages.iter().rev().find_map(|message| match message.as_standard()? {
-        rozsa_model::types::Message::Assistant(assistant) => Some(&assistant.usage),
-        _ => None,
-    });
+    let usage = messages
+        .iter()
+        .rev()
+        .find_map(|message| match message.as_standard()? {
+            rozsa_model::types::Message::Assistant(assistant) => Some(&assistant.usage),
+            _ => None,
+        });
     let (input_tokens, uncached_input_tokens, cached_input_tokens, output_tokens) = usage
         .map(|usage| {
             (

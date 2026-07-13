@@ -283,14 +283,14 @@ impl Tool for BashTool {
         .await
         .map_err(|error| ToolError::Execution(format!("Failed to snapshot workspace: {error}")))?;
 
-        let result =
-            Self::execute_command(&params.command, &working_dir, timeout_ms, signal).await;
+        let result = Self::execute_command(&params.command, &working_dir, timeout_ms, signal).await;
         let duration_ms = started_at.elapsed().as_millis() as u64;
-        let after = tokio::task::spawn_blocking(move || {
-            super::file_delta::snapshot_workspace(&workspace)
-        })
-        .await
-        .map_err(|error| ToolError::Execution(format!("Failed to snapshot workspace: {error}")))?;
+        let after =
+            tokio::task::spawn_blocking(move || super::file_delta::snapshot_workspace(&workspace))
+                .await
+                .map_err(|error| {
+                    ToolError::Execution(format!("Failed to snapshot workspace: {error}"))
+                })?;
         let (file_deltas, capture_complete, capture_limitation) =
             super::file_delta::diff_snapshots(before, after);
 

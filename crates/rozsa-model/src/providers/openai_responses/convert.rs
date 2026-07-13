@@ -729,7 +729,11 @@ mod tests {
             call_id: None,
             delta: "{\"command\"".to_string(),
         });
-        assert!(events.iter().any(|event| matches!(event, StreamEvent::ToolCallStart { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::ToolCallStart { .. }))
+        );
 
         let events = normalizer.push_event(ResponseEvent::OutputItemDone {
             item: ResponseItem::FunctionCall {

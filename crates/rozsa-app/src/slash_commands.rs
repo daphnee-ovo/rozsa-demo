@@ -296,7 +296,11 @@ impl AutocompleteEngine {
 
         items.sort_by(|a, b| {
             slash_score(&a.value, a.description.as_deref(), &prefix_lower)
-                .cmp(&slash_score(&b.value, b.description.as_deref(), &prefix_lower))
+                .cmp(&slash_score(
+                    &b.value,
+                    b.description.as_deref(),
+                    &prefix_lower,
+                ))
                 .then_with(|| a.value.cmp(&b.value))
         });
         Some(items)

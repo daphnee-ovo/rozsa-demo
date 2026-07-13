@@ -164,20 +164,20 @@ impl Tool for WriteTool {
                     Some(params.content.clone()),
                 );
                 Ok(ToolResult {
-                content: vec![ContentBlock::Text {
-                    text: message,
-                    signature: None,
-                }],
-                details: json!({
-                    "file_path": params.file_path,
-                    "changed_files": [params.file_path],
-                    "success": true,
-                    "bytes_written": params.content.len(),
-                    "line_count": params.content.lines().count(),
-                    "file_deltas": delta.into_iter().collect::<Vec<_>>(),
-                    "capture_complete": true,
-                }),
-                terminate: false,
+                    content: vec![ContentBlock::Text {
+                        text: message,
+                        signature: None,
+                    }],
+                    details: json!({
+                        "file_path": params.file_path,
+                        "changed_files": [params.file_path],
+                        "success": true,
+                        "bytes_written": params.content.len(),
+                        "line_count": params.content.lines().count(),
+                        "file_deltas": delta.into_iter().collect::<Vec<_>>(),
+                        "capture_complete": true,
+                    }),
+                    terminate: false,
                 })
             }
             Err(error_msg) => Err(ToolError::Execution(error_msg)),

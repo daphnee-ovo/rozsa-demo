@@ -6,8 +6,8 @@ use rozsa_app::permissions::{PendingApprovals, PermissionResponse};
 use rozsa_app::settings::SettingsManager;
 use rozsa_core::config::PreToolUseResult;
 use rozsa_gui::state::{
-    deny_pending_approvals, permission_pending_key, PreToolUseHook, PreToolUseHookFactory,
-    SharedResources,
+    PreToolUseHook, PreToolUseHookFactory, SharedResources, deny_pending_approvals,
+    permission_pending_key,
 };
 use rozsa_model::types::{Api, Model, ModelCost, Provider, ThinkingLevel};
 use tokio::sync::Mutex;

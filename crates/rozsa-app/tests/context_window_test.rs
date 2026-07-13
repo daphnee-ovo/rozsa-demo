@@ -8,7 +8,7 @@ use rozsa_app::settings::SettingsManager;
 use rozsa_model::event_stream::create_event_stream;
 use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Message, Model, ModelCost, Provider, StopReason,
-    ThinkingLevel, StreamEvent, Usage, UserContent, UserMessage,
+    StreamEvent, ThinkingLevel, Usage, UserContent, UserMessage,
 };
 
 fn user_entry(id: usize, text: &str) -> SessionEntry {

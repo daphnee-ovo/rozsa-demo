@@ -1282,9 +1282,11 @@ async fn cancel_during_model_stream_stops_waiting_for_next_event() {
         })
         .expect("cancelled stream should emit a turn end");
     assert_eq!(turn_end.stop_reason, StopReason::Aborted);
-    assert!(turn_end.content.iter().any(
-        |block| matches!(block, ContentBlock::Text { text, .. } if text == "partial text")
-    ));
+    assert!(
+        turn_end.content.iter().any(
+            |block| matches!(block, ContentBlock::Text { text, .. } if text == "partial text")
+        )
+    );
 
     let persisted = events
         .iter()
@@ -1303,9 +1305,11 @@ async fn cancel_during_model_stream_stops_waiting_for_next_event() {
         })
         .expect("cancelled partial assistant message should be included in AgentEnd");
     assert_eq!(persisted.stop_reason, StopReason::Aborted);
-    assert!(persisted.content.iter().any(
-        |block| matches!(block, ContentBlock::Text { text, .. } if text == "partial text")
-    ));
+    assert!(
+        persisted.content.iter().any(
+            |block| matches!(block, ContentBlock::Text { text, .. } if text == "partial text")
+        )
+    );
     assert!(
         events
             .iter()

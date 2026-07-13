@@ -1,8 +1,6 @@
 use std::fs;
 
-use rozsa_gui::file_refs::{
-    complete_file_reference, expand_file_references, find_file_mentions,
-};
+use rozsa_gui::file_refs::{complete_file_reference, expand_file_references, find_file_mentions};
 use rozsa_model::types::ContentBlock;
 
 #[test]
@@ -16,7 +14,11 @@ fn parses_plain_and_quoted_file_mentions() {
 #[test]
 fn expands_text_file_with_line_numbers_and_display_text() {
     let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("main.rs"), "fn main() {}\nprintln!(\"x\");\n").unwrap();
+    fs::write(
+        dir.path().join("main.rs"),
+        "fn main() {}\nprintln!(\"x\");\n",
+    )
+    .unwrap();
 
     let expansion = expand_file_references("check @main.rs", dir.path());
 
@@ -53,21 +55,22 @@ fn blocks_external_and_secret_mentions_without_blocking_workspace_files() {
     fs::write(&external_path, "fn outside() {}\n").unwrap();
 
     let expansion = expand_file_references(
-        &format!(
-            "use @source.rs @.env @{}",
-            external_path.to_string_lossy()
-        ),
+        &format!("use @source.rs @.env @{}", external_path.to_string_lossy()),
         workspace.path(),
     );
 
     assert_eq!(expansion.blocks.len(), 1);
     assert_eq!(expansion.notices.len(), 2);
-    assert!(expansion
-        .notices
-        .iter()
-        .any(|notice| notice.reason.contains("secret-like")));
-    assert!(expansion
-        .notices
-        .iter()
-        .any(|notice| notice.reason.contains("workspace")));
+    assert!(
+        expansion
+            .notices
+            .iter()
+            .any(|notice| notice.reason.contains("secret-like"))
+    );
+    assert!(
+        expansion
+            .notices
+            .iter()
+            .any(|notice| notice.reason.contains("workspace"))
+    );
 }

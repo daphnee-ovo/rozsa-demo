@@ -28,10 +28,13 @@ fn readonly_commands_allow_normal_and_stdin_cases() {
         "sort",
         "grep pattern",
     ] {
-        assert!(matches!(
-            policy.evaluate("Bash", &serde_json::json!({"command": command})),
-            PolicyVerdict::Allow
-        ), "expected readonly command to be allowed: {command}");
+        assert!(
+            matches!(
+                policy.evaluate("Bash", &serde_json::json!({"command": command})),
+                PolicyVerdict::Allow
+            ),
+            "expected readonly command to be allowed: {command}"
+        );
     }
 }
 
@@ -51,10 +54,13 @@ fn shell_side_effect_and_control_syntax_never_auto_allows() {
         "sort --output=output.txt input.txt",
         "tail --follow input.txt",
     ] {
-        assert!(matches!(
-            policy.evaluate("Bash", &serde_json::json!({"command": command})),
-            PolicyVerdict::NeedApproval { .. } | PolicyVerdict::Block { .. }
-        ), "expected non-readonly command not to auto-allow: {command}");
+        assert!(
+            matches!(
+                policy.evaluate("Bash", &serde_json::json!({"command": command})),
+                PolicyVerdict::NeedApproval { .. } | PolicyVerdict::Block { .. }
+            ),
+            "expected non-readonly command not to auto-allow: {command}"
+        );
     }
 }
 

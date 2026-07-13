@@ -45,10 +45,10 @@ fn only_workspace_readonly_bash_commands_auto_allow() {
         "xxd src/lib.rs",
     ] {
         let args = serde_json::json!({"command": command});
-        assert!(matches!(
-            policy.evaluate("Bash", &args),
-            PolicyVerdict::Allow
-        ), "expected auto-allow for {command}");
+        assert!(
+            matches!(policy.evaluate("Bash", &args), PolicyVerdict::Allow),
+            "expected auto-allow for {command}"
+        );
     }
 }
 
@@ -71,10 +71,13 @@ fn potentially_side_effectful_or_outside_commands_still_need_approval() {
         "realpath --relative-to=/tmp src/lib.rs",
     ] {
         let args = serde_json::json!({"command": command});
-        assert!(matches!(
-            policy.evaluate("Bash", &args),
-            PolicyVerdict::NeedApproval { .. }
-        ), "expected approval for {command}");
+        assert!(
+            matches!(
+                policy.evaluate("Bash", &args),
+                PolicyVerdict::NeedApproval { .. }
+            ),
+            "expected approval for {command}"
+        );
     }
 }
 
