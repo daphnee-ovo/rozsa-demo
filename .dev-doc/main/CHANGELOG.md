@@ -17,3 +17,4 @@
 - 00:28 docs: docs change, move gui prototype to docs/gui/prototype; Agents.md add description about gui rules
 - 00:45 fix: 恢复原生 macOS 窗口 chrome 并校准 GUI 对齐
 - 03:51 feat: add native macOS sidebar material
+- 08:56 fix(gui): persist appearance settings and move theme docs
