@@ -59,7 +59,11 @@ define_class!(
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             if let Some(window) = self.window() {
-                window.performWindowDragWithEvent(event);
+                if event.clickCount() == 2 {
+                    window.performZoom(Some(self as &AnyObject));
+                } else {
+                    window.performWindowDragWithEvent(event);
+                }
             }
         }
     }

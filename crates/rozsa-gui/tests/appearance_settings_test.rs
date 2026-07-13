@@ -27,6 +27,8 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(native.contains("toggleSidebar:"));
     assert!(native.contains("rectangle.split.2x1"));
     assert!(native.contains("mouseDown:"));
+    assert!(native.contains("event.clickCount() == 2"));
+    assert!(native.contains("performZoom"));
     assert!(native.contains("performWindowDragWithEvent"));
     assert!(native.contains("NSWindowDidEnterFullScreenNotification"));
     assert!(native.contains("NSWindowDidExitFullScreenNotification"));
