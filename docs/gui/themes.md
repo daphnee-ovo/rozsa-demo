@@ -8,6 +8,8 @@ Appearance 设置位于 GUI 设置面板的 `Appearance` tab。界面只暴露�
 
 主题模式、字体大小和当前选中的主题会持久化到 `~/.rozsa/agent/settings.json` 的 `appearance` 字段。`system` 模式通过系统 `prefers-color-scheme` 选择 Light 或 Dark，并监听系统主题变化。
 
+Accent、Background、Foreground、UI font、Code font 和 Translucent sidebar 在修改后自动写入当前主题文件。首次修改内置主题时，GUI 会创建稳定的 `rozsa-custom.json` 或 `rozsa-dark-custom.json`，并把对应主题选择写入 `appearance`；之后重新打开设置或重启 GUI 都会恢复这些值。`Save as custom theme` 仍可用于创建带自定义名称的主题副本。
+
 ## 自定义主题
 
 自定义主题放在：

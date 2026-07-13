@@ -1553,25 +1553,32 @@ html[data-theme-mode="dark"] .sidebar-btn:hover {
   backdrop-filter: blur(20px) saturate(130%);
 }
 .setting-toggle {
-  width: 36px; height: 20px;
-  border-radius: 10px;
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border: 0;
+  border-radius: 99px;
   background: var(--border);
-  position: relative;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.16s;
+  -webkit-app-region: no-drag;
 }
 .setting-toggle::after {
   content: '';
-  width: 16px; height: 16px;
+  display: block;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: white;
-  position: absolute;
-  top: 2px; left: 2px;
-  transition: transform 0.15s;
-  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.1);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(20 10 15 / 18%);
+  transition: transform 0.16s;
 }
 .setting-toggle.on { background: var(--accent); }
 .setting-toggle.on::after { transform: translateX(16px); }
+.setting-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
 .settings-close {
   position: absolute;
   top: 12px; right: 12px;
@@ -2593,7 +2600,7 @@ html[data-theme-mode="dark"] .settings-content {
           <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeForegroundPicker" type="color" value="#575279" aria-label="Light Theme Foreground color picker"><input class="setting-input theme-hex-input" id="lightThemeForeground" type="text" spellcheck="false" aria-label="Light Theme Foreground HEX"></span></div>
           <div class="setting-item"><span class="setting-label">UI font</span><input class="setting-input" id="lightThemeUiFont" type="text" spellcheck="false" aria-label="Light Theme UI font"></div>
           <div class="setting-item"><span class="setting-label">Code font</span><input class="setting-input" id="lightThemeCodeFont" type="text" spellcheck="false" aria-label="Light Theme Code font"></div>
-          <div class="setting-item appearance-sidebar-option" id="lightThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><input id="lightThemeTranslucentSidebar" type="checkbox" aria-label="Light Theme Translucent sidebar"></div>
+          <div class="setting-item appearance-sidebar-option" id="lightThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><button class="setting-toggle" id="lightThemeTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Light Theme Translucent sidebar"></button></div>
           <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('light')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
         </div>
         <div class="appearance-theme-section" id="appearanceDarkSection">
@@ -2604,7 +2611,7 @@ html[data-theme-mode="dark"] .settings-content {
           <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeForegroundPicker" type="color" value="#F1E9EB" aria-label="Dark Theme Foreground color picker"><input class="setting-input theme-hex-input" id="darkThemeForeground" type="text" spellcheck="false" aria-label="Dark Theme Foreground HEX"></span></div>
           <div class="setting-item"><span class="setting-label">UI font</span><input class="setting-input" id="darkThemeUiFont" type="text" spellcheck="false" aria-label="Dark Theme UI font"></div>
           <div class="setting-item"><span class="setting-label">Code font</span><input class="setting-input" id="darkThemeCodeFont" type="text" spellcheck="false" aria-label="Dark Theme Code font"></div>
-          <div class="setting-item appearance-sidebar-option" id="darkThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><input id="darkThemeTranslucentSidebar" type="checkbox" aria-label="Dark Theme Translucent sidebar"></div>
+          <div class="setting-item appearance-sidebar-option" id="darkThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><button class="setting-toggle" id="darkThemeTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Dark Theme Translucent sidebar"></button></div>
           <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('dark')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
         </div>
       </div>
@@ -2613,11 +2620,11 @@ html[data-theme-mode="dark"] .settings-content {
         <div class="settings-group">
           <div class="settings-group-label">AI</div>
           <div class="setting-item"><span class="setting-label">Thinking Level</span><select class="setting-select" id="settingsThinking" aria-label="思考等级"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
-          <div class="setting-item"><span class="setting-label">Auto Compact</span><select class="setting-select" id="settingsAutoCompact" aria-label="自动压缩"><option value="true">On</option><option value="false">Off</option></select></div>
+          <div class="setting-item"><span class="setting-label">Auto Compact</span><button class="setting-toggle" id="settingsAutoCompact" type="button" role="switch" aria-checked="false" aria-label="自动压缩"></button></div>
           <div class="setting-item"><span class="setting-label">Steering Mode</span><select class="setting-select" id="settingsSteeringMode" aria-label="引导模式"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
           <div class="setting-item"><span class="setting-label">Follow-up Mode</span><select class="setting-select" id="settingsFollowUpMode" aria-label="跟进模式"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
           <div class="setting-item"><span class="setting-label">Default send mode while running</span><select class="setting-select" id="settingsRunningSendMode" aria-label="Default send mode while running"><option value="queue">Queue</option><option value="steer">Steer</option></select></div>
-          <div class="setting-item"><span class="setting-label">Block images</span><select class="setting-select" id="settingsBlockImages" aria-label="Block images"><option value="false">Off</option><option value="true">On</option></select></div>
+          <div class="setting-item"><span class="setting-label">Block images</span><button class="setting-toggle" id="settingsBlockImages" type="button" role="switch" aria-checked="false" aria-label="Block images"></button></div>
         </div>
         <div class="settings-group">
           <div class="settings-group-label">Network</div>

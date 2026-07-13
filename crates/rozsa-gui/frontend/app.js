@@ -15,6 +15,7 @@
 // +-- Sessions (renderSessionList, doSwitchSession, newSession)
 // +-- Models (renderModelSelector, onModelChange)
 // +-- Settings (toggleSettings, closeSettings, switchSettingsTab, loadSettings, saveSetting)
+// |   +-- Appearance switches and theme persistence
 // +-- Slash Command Autocomplete (updateAutocomplete, selectSlashCmd, navigateAutocomplete)
 // +-- Input Composition (IME lifecycle and input refresh)
 // +-- Keyboard Shortcuts (global keydown handler)
@@ -36,6 +37,7 @@ let toolCounts = {};
 let currentSettings = null;
 let availableThemes = [];
 let themeDefinitions = { light: null, dark: null };
+let themeSaveQueues = { light: Promise.resolve(), dark: Promise.resolve() };
 let systemThemeMediaQuery = null;
 let isStreaming = false;
 let acSelectedIndex = -1;
@@ -1912,6 +1914,27 @@ function switchSettingsTab(tabId, btn) {
   if (pane) pane.classList.add('active');
 }
 
+function isSettingSwitchOn(control) {
+  return control?.getAttribute('aria-checked') === 'true';
+}
+
+function setSettingSwitch(control, checked) {
+  if (!control) return;
+  const enabled = Boolean(checked);
+  control.classList.toggle('on', enabled);
+  control.setAttribute('aria-checked', String(enabled));
+}
+
+function wireSettingSwitch(id, onChange) {
+  const control = document.getElementById(id);
+  if (!control) return;
+  control.onclick = () => {
+    const enabled = !isSettingSwitchOn(control);
+    setSettingSwitch(control, enabled);
+    onChange(enabled);
+  };
+}
+
 async function loadSettings() {
   try {
     currentSettings = await invoke('get_settings');
@@ -2059,7 +2082,7 @@ function renderThemeControls(mode, theme, isMacos) {
   setThemeControlValue(prefix + 'ThemeCodeFont', theme.codeFont);
   const sidebar = document.getElementById(prefix + 'ThemeTranslucentSidebar');
   const sidebarOption = document.getElementById(prefix + 'ThemeSidebarOption');
-  if (sidebar) sidebar.checked = !!theme.translucentSidebar;
+  setSettingSwitch(sidebar, theme.translucentSidebar);
   if (sidebarOption) sidebarOption.hidden = !isMacos;
 
   const textIds = [
@@ -2068,7 +2091,10 @@ function renderThemeControls(mode, theme, isMacos) {
   ];
   textIds.forEach(id => {
     const control = document.getElementById(id);
-    if (control) control.oninput = () => previewTheme(mode);
+    if (control) {
+      control.oninput = () => previewTheme(mode);
+      control.onchange = () => scheduleThemeSave(mode);
+    }
   });
   ['Accent', 'Background', 'Foreground'].forEach(field => {
     const id = prefix + 'Theme' + field;
@@ -2081,15 +2107,23 @@ function renderThemeControls(mode, theme, isMacos) {
         updateThemeColorVisual(id, value);
         previewTheme(mode);
       };
+      picker.onchange = () => scheduleThemeSave(mode);
     }
     if (text) {
       text.oninput = () => {
         updateThemeColorVisual(id, text.value);
         if (isHexColor(text.value)) previewTheme(mode);
       };
+      text.onchange = () => scheduleThemeSave(mode);
     }
   });
-  if (sidebar) sidebar.onchange = () => previewTheme(mode);
+  if (sidebar) {
+    sidebar.onclick = () => {
+      setSettingSwitch(sidebar, !isSettingSwitchOn(sidebar));
+      previewTheme(mode);
+      scheduleThemeSave(mode);
+    };
+  }
 }
 
 function setThemeControlValue(id, value) {
@@ -2148,9 +2182,48 @@ function readThemeEditor(mode) {
     background: getThemeControlValue(prefix + 'ThemeBackground'),
     foreground: getThemeControlValue(prefix + 'ThemeForeground'),
     uiFont: getThemeControlValue(prefix + 'ThemeUiFont'),
-    translucentSidebar: !!document.getElementById(prefix + 'ThemeTranslucentSidebar')?.checked,
+    translucentSidebar: isSettingSwitchOn(document.getElementById(prefix + 'ThemeTranslucentSidebar')),
     codeFont: getThemeControlValue(prefix + 'ThemeCodeFont'),
   };
+}
+
+function prepareThemeForPersistence(mode, theme) {
+  const persisted = { ...theme };
+  const builtinId = mode === 'light' ? 'rozsa' : 'rozsa-dark';
+  if (persisted.id === builtinId) {
+    persisted.id = mode === 'light' ? 'rozsa-custom' : 'rozsa-dark-custom';
+    persisted.name = mode === 'light' ? 'Rozsa Custom' : 'Rozsa Dark Custom';
+  }
+  return persisted;
+}
+
+async function persistTheme(mode, theme) {
+  await invoke('save_theme', { theme: theme });
+  themeDefinitions[mode] = theme;
+  await saveSetting('appearance_' + mode + '_theme', theme.id);
+}
+
+function enqueueThemeSave(mode, theme, errorPrefix) {
+  themeSaveQueues[mode] = themeSaveQueues[mode]
+    .catch(() => {})
+    .then(() => persistTheme(mode, theme))
+    .catch(error => {
+      showError(errorPrefix + String(error));
+    });
+  return themeSaveQueues[mode];
+}
+
+function scheduleThemeSave(mode) {
+  const draft = readThemeEditor(mode);
+  if (!draft) return Promise.resolve();
+  if (!['accent', 'background', 'foreground'].every(field => isHexColor(draft[field]))) {
+    return Promise.resolve();
+  }
+  return enqueueThemeSave(
+    mode,
+    prepareThemeForPersistence(mode, draft),
+    'Failed to persist theme settings: '
+  );
 }
 
 async function saveThemeAsCustom(mode) {
@@ -2170,12 +2243,7 @@ async function saveThemeAsCustom(mode) {
   }
   theme.id = id;
   theme.name = trimmedName;
-  try {
-    await invoke('save_theme', { theme: theme });
-    await saveSetting('appearance_' + mode + '_theme', id);
-  } catch (e) {
-    showError('Failed to save custom theme: ' + String(e));
-  }
+  await enqueueThemeSave(mode, theme, 'Failed to save custom theme: ');
 }
 
 function previewTheme(mode) {
@@ -2251,10 +2319,10 @@ function renderGeneralSettings(settings) {
   }
 
   // Auto compact
-  const compactSel = document.getElementById('settingsAutoCompact');
-  if (compactSel) {
-    if (settings.auto_compact !== undefined) compactSel.value = String(settings.auto_compact);
-    compactSel.onchange = () => saveSetting('auto_compact', compactSel.value);
+  const compactSwitch = document.getElementById('settingsAutoCompact');
+  if (compactSwitch) {
+    setSettingSwitch(compactSwitch, settings.auto_compact);
+    wireSettingSwitch('settingsAutoCompact', enabled => saveSetting('auto_compact', String(enabled)));
   }
 
   // Steering mode
@@ -2282,10 +2350,10 @@ function renderGeneralSettings(settings) {
   }
 
   // Block images
-  const blockSel = document.getElementById('settingsBlockImages');
-  if (blockSel) {
-    if (settings.block_images !== undefined) blockSel.value = String(settings.block_images);
-    blockSel.onchange = () => saveSetting('block_images', blockSel.value);
+  const blockSwitch = document.getElementById('settingsBlockImages');
+  if (blockSwitch) {
+    setSettingSwitch(blockSwitch, settings.block_images);
+    wireSettingSwitch('settingsBlockImages', enabled => saveSetting('block_images', String(enabled)));
   }
 
   // Transport

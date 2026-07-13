@@ -65,6 +65,22 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     ] {
         assert!(html.contains(label), "missing appearance field: {label}");
     }
+    for switch in [
+        "settingsAutoCompact",
+        "settingsBlockImages",
+        "lightThemeTranslucentSidebar",
+        "darkThemeTranslucentSidebar",
+    ] {
+        assert!(
+            html.contains(&format!("id=\"{switch}\" type=\"button\" role=\"switch\"")),
+            "missing switch control: {switch}"
+        );
+    }
+    assert!(!html.contains("id=\"lightThemeTranslucentSidebar\" type=\"checkbox\""));
+    assert!(!html.contains("id=\"darkThemeTranslucentSidebar\" type=\"checkbox\""));
+    assert!(!html.contains("id=\"settingsAutoCompact\" aria-label=\"自动压缩\"><option"));
+    assert!(!html.contains("id=\"settingsBlockImages\" aria-label=\"Block images\"><option"));
+    assert!(html.contains(".setting-toggle.on::after { transform: translateX(16px); }"));
     for picker in [
         "lightThemeAccentPicker",
         "lightThemeBackgroundPicker",
@@ -103,6 +119,12 @@ fn appearance_is_backend_persisted_and_theme_files_are_loaded() {
     assert!(js.contains("applyThemeDefinition"));
     assert!(js.contains("selectThemeModeCard"));
     assert!(js.contains("setThemeColorControlValue"));
+    assert!(js.contains("function scheduleThemeSave"));
+    assert!(js.contains("function prepareThemeForPersistence"));
+    assert!(js.contains("rozsa-custom"));
+    assert!(js.contains("isSettingSwitchOn"));
+    assert!(js.contains("setSettingSwitch"));
+    assert!(js.contains("translucentSidebar: isSettingSwitchOn"));
     assert!(js.contains("toggleMainSidebar"));
     assert!(js.contains("native-sidebar-toggle"));
     assert!(js.contains("native-fullscreen"));
