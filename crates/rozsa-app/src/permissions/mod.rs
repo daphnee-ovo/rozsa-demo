@@ -2,7 +2,7 @@
 //
 // Internal Framework:
 // permissions/mod.rs
-// ├── PermissionMode           # on-request / auto-approve / free-permission
+// ├── PermissionMode           # on-request / auto-approve / yolo
 // ├── RiskLevel                # read / write / shell / destructive
 // ├── PolicyVerdict            # allow / block / need-approval
 // ├── ApprovalInfo             # data for UI prompt
@@ -215,7 +215,7 @@ pub enum PermissionMode {
     /// 匹配 auto-approve 模式的工具调用自动通过，其余需要审批。
     AutoApprove,
     /// 所有调用直接通过，不做任何检查（仅限受信环境）。
-    FreePermission,
+    Yolo,
 }
 
 impl PermissionMode {
@@ -224,7 +224,7 @@ impl PermissionMode {
         match s {
             "on-request" => Some(Self::OnRequest),
             "auto-permission" => Some(Self::AutoApprove),
-            "free-permission" => Some(Self::FreePermission),
+            "yolo" | "free-permission" => Some(Self::Yolo),
             _ => None,
         }
     }
@@ -480,8 +480,8 @@ impl PermissionPolicy {
             };
         }
 
-        // FreePermission 与 allowed_tools 不得绕过硬编码或用户配置的拦截。
-        if self.mode == PermissionMode::FreePermission
+        // Yolo 与 allowed_tools 不得绕过硬编码或用户配置的拦截。
+        if self.mode == PermissionMode::Yolo
             || self.allowed_tools.iter().any(|name| name == tool_name)
         {
             return PolicyVerdict::Allow;

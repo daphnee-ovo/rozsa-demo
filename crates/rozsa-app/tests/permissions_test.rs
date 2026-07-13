@@ -14,15 +14,15 @@ fn parse_permission_mode() {
         Some(PermissionMode::AutoApprove)
     );
     assert_eq!(
-        PermissionMode::parse("free-permission"),
-        Some(PermissionMode::FreePermission)
+        PermissionMode::parse("yolo"),
+        Some(PermissionMode::Yolo)
     );
     assert_eq!(PermissionMode::parse("invalid"), None);
 }
 
 #[test]
-fn free_permission_allows_non_blocked_commands_only() {
-    let policy = PermissionPolicy::new(PermissionMode::FreePermission, vec![], vec![], vec![]);
+fn yolo_allows_non_blocked_commands_only() {
+    let policy = PermissionPolicy::new(PermissionMode::Yolo, vec![], vec![], vec![]);
     let args = serde_json::json!({"command": "git status"});
     assert!(matches!(
         policy.evaluate("Bash", &args),

@@ -78,48 +78,48 @@ let sidebarAutoCollapsed = false;
 
 const slashCommands = [
   // Session Management
-  { cmd: '/new', desc: '新建会话', category: 'session' },
-  { cmd: '/clear', desc: '清空当前会话', category: 'session' },
-  { cmd: '/name', desc: '设置会话名称', category: 'session' },
-  { cmd: '/session', desc: '显示会话信息', category: 'session' },
-  { cmd: '/resume', desc: '恢复会话（会话列表）', category: 'session' },
-  { cmd: '/clone', desc: '克隆当前会话', category: 'session' },
-  { cmd: '/fork', desc: '从某消息分叉会话', category: 'session' },
-  { cmd: '/tree', desc: '查看会话条目树', category: 'session' },
-  { cmd: '/graph', desc: '可视化会话时间线', category: 'session' },
-  { cmd: '/gc', desc: '清理过期会话文件', category: 'session' },
+  { cmd: '/new', desc: 'New session', category: 'session' },
+  { cmd: '/clear', desc: 'Clear current session', category: 'session' },
+  { cmd: '/name', desc: 'Set session name', category: 'session' },
+  { cmd: '/session', desc: 'Show session info', category: 'session' },
+  { cmd: '/resume', desc: 'Resume session (session list)', category: 'session' },
+  { cmd: '/clone', desc: 'Clone current session', category: 'session' },
+  { cmd: '/fork', desc: 'Fork session from a message', category: 'session' },
+  { cmd: '/tree', desc: 'View session entry tree', category: 'session' },
+  { cmd: '/graph', desc: 'Visualize session timeline', category: 'session' },
+  { cmd: '/gc', desc: 'Clean up expired session files', category: 'session' },
 
   // Model & Settings
-  { cmd: '/model', desc: '切换模型（打开选择器）', category: 'model' },
-  { cmd: '/scoped-models', desc: '列出所有可用模型', category: 'model' },
-  { cmd: '/thinking', desc: '设置思考等级 (off/low/medium/high)', category: 'model' },
-  { cmd: '/settings', desc: '打开设置面板', category: 'settings' },
-  { cmd: '/lsp', desc: '配置 LSP 诊断模式', category: 'settings' },
+  { cmd: '/model', desc: 'Switch model (open picker)', category: 'model' },
+  { cmd: '/scoped-models', desc: 'List all available models', category: 'model' },
+  { cmd: '/thinking', desc: 'Set thinking level (off/low/medium/high)', category: 'model' },
+  { cmd: '/settings', desc: 'Open settings', category: 'settings' },
+  { cmd: '/lsp', desc: 'Configure LSP diagnostics mode', category: 'settings' },
 
   // Context Management
-  { cmd: '/compact', desc: '压缩会话上下文', category: 'context' },
-  { cmd: '/permissions', desc: '显示权限模式和决策统计', category: 'context' },
-  { cmd: '/subagents', desc: '列出子代理', category: 'context' },
-  { cmd: '/main', desc: '切换回主代理视图', category: 'context' },
+  { cmd: '/compact', desc: 'Compact session context', category: 'context' },
+  { cmd: '/permissions', desc: 'Show permission mode and stats', category: 'context' },
+  { cmd: '/subagents', desc: 'List subagents', category: 'context' },
+  { cmd: '/main', desc: 'Switch to main agent view', category: 'context' },
 
   // Data Operations
-  { cmd: '/export', desc: '导出会话 (html/md/jsonl)', category: 'data' },
-  { cmd: '/import', desc: '导入 JSONL 会话文件', category: 'data' },
-  { cmd: '/share', desc: '分享会话 (gh gist)', category: 'data' },
-  { cmd: '/copy', desc: '复制最后一条助手消息', category: 'data' },
-  { cmd: '/search', desc: '搜索会话内容', category: 'data' },
+  { cmd: '/export', desc: 'Export session (html/md/jsonl)', category: 'data' },
+  { cmd: '/import', desc: 'Import JSONL session file', category: 'data' },
+  { cmd: '/share', desc: 'Share session (gh gist)', category: 'data' },
+  { cmd: '/copy', desc: 'Copy last assistant message', category: 'data' },
+  { cmd: '/search', desc: 'Search session content', category: 'data' },
 
   // Authentication
-  { cmd: '/login', desc: 'OAuth 登录', category: 'auth' },
-  { cmd: '/logout', desc: '退出登录', category: 'auth' },
-  { cmd: '/usage', desc: '查询速率限制', category: 'auth' },
+  { cmd: '/login', desc: 'OAuth login', category: 'auth' },
+  { cmd: '/logout', desc: 'Log out', category: 'auth' },
+  { cmd: '/usage', desc: 'Query rate limits', category: 'auth' },
 
   // Help & Utilities
-  { cmd: '/help', desc: '显示帮助信息', category: 'help' },
-  { cmd: '/hotkeys', desc: '显示快捷键', category: 'help' },
-  { cmd: '/changelog', desc: '显示变更日志', category: 'help' },
-  { cmd: '/reload', desc: '重新加载配置', category: 'help' },
-  { cmd: '/quit', desc: '退出应用', category: 'help' },
+  { cmd: '/help', desc: 'Show help', category: 'help' },
+  { cmd: '/hotkeys', desc: 'Show keyboard shortcuts', category: 'help' },
+  { cmd: '/changelog', desc: 'Show changelog', category: 'help' },
+  { cmd: '/reload', desc: 'Reload configuration', category: 'help' },
+  { cmd: '/quit', desc: 'Quit application', category: 'help' },
 ];
 
 // Commands intercepted locally (not sent to backend as chat)
@@ -229,8 +229,8 @@ function updateQuotaBars(snapshot) {
   const hourVal = document.getElementById('quotaHour');
   const weekBar = document.getElementById('quotaWeekBar');
   const weekVal = document.getElementById('quotaWeek');
-  updateQuotaWindow(hourBar, hourVal, snapshot && snapshot.primary, '5 小时');
-  updateQuotaWindow(weekBar, weekVal, snapshot && snapshot.secondary, '本周');
+  updateQuotaWindow(hourBar, hourVal, snapshot && snapshot.primary, '5 hours');
+  updateQuotaWindow(weekBar, weekVal, snapshot && snapshot.secondary, 'This week');
 }
 
 function updateQuotaWindow(bar, valueEl, window, label) {
@@ -262,7 +262,7 @@ function setQuotaTooltip(row, bar, valueEl, text) {
 async function refreshRateLimits(showResult) {
   if (!quotaEligible) {
     updateQuotaBars(null);
-    if (showResult) showNotification('当前模型没有订阅限额');
+    if (showResult) showNotification('Current model has no subscription quota');
     return;
   }
   if (quotaLoading) return;
@@ -368,15 +368,15 @@ function updateAbortButton() {
         mode.dataset.initialized = 'true';
       }
       const selected = mode ? mode.value : 'queue';
-      sendBtn.textContent = selected === 'steer' ? '引导' : '排队';
+      sendBtn.textContent = selected === 'steer' ? 'Steer' : 'Queue';
       sendBtn.onclick = sendMessage;
     } else {
-      sendBtn.textContent = '停止';
+      sendBtn.textContent = 'Stop';
       sendBtn.onclick = abortAgent;
     }
   } else {
     if (mode) mode.hidden = true;
-    sendBtn.textContent = '发送';
+    sendBtn.textContent = 'Send';
     sendBtn.onclick = sendMessage;
   }
 }
@@ -398,9 +398,9 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
 
   if (!messages || messages.length === 0) {
     container.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">R</div>' +
-      '<div class="chat-empty-title">开始新对话</div>' +
-      '<div class="chat-empty-hint">向 Rozsa 描述你的编码任务' +
-      '<div class="chat-empty-kbd"><kbd>Enter</kbd> 发送 <kbd>Shift+Enter</kbd> 换行</div></div></div>';
+      '<div class="chat-empty-title">Start a new conversation</div>' +
+      '<div class="chat-empty-hint">Describe your coding task to Rózsa' +
+      '<div class="chat-empty-kbd"><kbd>Enter</kbd> Send <kbd>Shift+Enter</kbd> New line</div></div></div>';
     renderedMessageSessionId = sessionId;
     renderedMessageKeys = [];
     renderedRawMessageCount = 0;
@@ -617,7 +617,7 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
     div.className = 'msg msg-user';
     const text = extractText(content);
     div.innerHTML = '<div class="msg-avatar">U</div><div class="msg-body">' +
-      '<div class="msg-role">你</div>' +
+      '<div class="msg-role">You</div>' +
       '<div class="msg-content markdown-body">' + renderMarkdown(text) + '</div></div>';
 
   } else if (role === 'assistant') {
@@ -930,7 +930,7 @@ function renderTurnActivityCard(activity) {
     const change = changes.find(item => item.path === path);
     const status = change ? change.status : 'modified';
     const icon = status === 'added' ? '+' : (status === 'deleted' ? '−' : '~');
-    const label = status === 'added' ? '新增' : (status === 'deleted' ? '删除' : '修改');
+    const label = status === 'added' ? 'added' : (status === 'deleted' ? 'deleted' : 'modified');
     const payload = change ? escapeHtml(JSON.stringify(change)) : '';
     return '<div class="change-entry"><div class="change-row"><span class="change-icon ' + (status === 'added' ? 'new' : 'mod') +
       '" title="' + label + '">' + icon + '</span>' +
@@ -942,18 +942,18 @@ function renderTurnActivityCard(activity) {
   }).join('');
   const verificationSummary = verification
     ? '<div class="changes-footer"><span class="' + (verification.success ? 'change-add' : 'change-del') + '">' +
-      (verification.success ? '验证通过' : '验证失败') + '</span><span class="changes-runtime">' +
+      (verification.success ? 'Verified' : 'Verification failed') + '</span><span class="changes-runtime">' +
       escapeHtml(verification.command) +
       (verification.exitCode !== null && verification.exitCode !== undefined ? ' · exit ' + verification.exitCode : '') +
-      (verification.timedOut ? ' · 超时' : '') +
-      (verification.truncated ? ' · 已截断' : '') +
+      (verification.timedOut ? ' · timed out' : '') +
+      (verification.truncated ? ' · truncated' : '') +
       (verification.durationMs ? ' · ' + verification.durationMs + 'ms' : '') + '</span></div>'
     : '';
   const limitation = activity && activity.captureComplete === false
-    ? '<div class="changes-footer"><span class="change-del">Diff 不完整</span><span class="changes-runtime">' +
+    ? '<div class="changes-footer"><span class="change-del">Diff incomplete</span><span class="changes-runtime">' +
       escapeHtml(activity.captureLimitation || 'workspace capture limit reached') + '</span></div>'
     : '';
-  return '<div class="changes-card"><div class="changes-header"><span>本轮变更 ' + files.length + ' 个文件</span></div>' +
+  return '<div class="changes-card"><div class="changes-header"><span>Changes: ' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</span></div>' +
     (rows ? '<div class="changes-list">' + rows + '</div>' : '') + verificationSummary + limitation + '</div>';
 }
 
@@ -993,7 +993,7 @@ function renderRunningMessages(queuedMessages, steeringConversation) {
     steering.innerHTML = steeringMessages.length
       ? '<div class="running-messages-title">Steering conversation</div><ol>' +
         steeringMessages.map(message => '<li><span>' + escapeHtml(message.text || '') +
-          '</span><em>等待工具结果</em></li>').join('') + '</ol>'
+          '</span><em>Awaiting tool result</em></li>').join('') + '</ol>'
       : '';
     renderedSteeringKey = steeringKey;
   }
@@ -1103,7 +1103,7 @@ async function displayPermPanelIfNeeded() {
       if (cmdToggle) {
         cmdToggle.hidden = true;
         cmdToggle.setAttribute('aria-expanded', 'false');
-        cmdToggle.textContent = '展开全部命令';
+        cmdToggle.textContent = 'Show full command';
       }
       if (desc) desc.textContent = ev.description || '';
       if (cmd && cmdToggle) {
@@ -1132,7 +1132,7 @@ function togglePermissionCommand() {
   const expanded = cmd.classList.toggle('expanded');
   cmd.classList.toggle('collapsed', !expanded);
   toggle.setAttribute('aria-expanded', String(expanded));
-  toggle.textContent = expanded ? '收起命令' : '展开全部命令';
+  toggle.textContent = expanded ? 'Collapse' : 'Show full command';
 }
 
 function renderPermissionCommand(command, toolName) {
@@ -2393,7 +2393,7 @@ function configureAttachmentPicker() {
   const combined = usesCombinedAttachmentPicker();
 
   if (fileButton) {
-    fileButton.title = combined ? '附加文件或文件夹' : '附加文件';
+    fileButton.title = combined ? 'Attach file or folder' : 'Attach file';
     fileButton.setAttribute('aria-label', fileButton.title);
   }
   if (directoryButton) directoryButton.hidden = combined;
@@ -2940,7 +2940,7 @@ function formatFullTokens(value) {
 
 function formatResetTitle(label, window) {
   const resetText = formatResetAt(window.resetAt, window.resetAfterSecs);
-  return resetText ? label + ' ' + resetText + ' 重置' : label + ' 重置时间未知';
+  return resetText ? label + ' resets ' + resetText : label + ' reset time unknown';
 }
 
 function formatResetAt(resetAt, resetAfterSecs) {

@@ -11,7 +11,7 @@ fn allow_session_trust_isolated_by_session_id_and_runtime_mode_updates() {
     assert!(matches!(controller.evaluate("a", "write", &args), PolicyVerdict::Allow));
     assert!(matches!(controller.evaluate("b", "write", &args), PolicyVerdict::NeedApproval { .. }));
 
-    controller.update(PermissionMode::FreePermission, vec![], vec![], vec![]);
+    controller.update(PermissionMode::Yolo, vec![], vec![], vec![]);
     assert!(matches!(controller.evaluate("b", "write", &args), PolicyVerdict::Allow));
 
     let destructive = serde_json::json!({"command":"rm -rf /"});
