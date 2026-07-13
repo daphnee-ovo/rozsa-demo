@@ -1,4 +1,4 @@
-use rozsa_app::settings::SettingsManager;
+use rozsa_app::settings::{AppearanceSettings, SettingsManager};
 use rozsa_app::themes::{ThemeDefinition, ThemeMode, ThemeStore};
 use std::collections::BTreeMap;
 
@@ -11,11 +11,20 @@ fn built_in_themes_are_available_without_theme_files() {
     assert_eq!(themes.len(), 2);
     assert_eq!(themes[0].id, "rozsa");
     assert_eq!(themes[1].id, "rozsa-dark");
-    assert_eq!(store.load("rozsa", ThemeMode::Light).unwrap().name, "Rozsa");
+    let light = store.load("rozsa", ThemeMode::Light).unwrap();
+    assert_eq!(light.name, "Rozsa");
+    assert_eq!(light.accent, "#D7827E");
+    assert_eq!(light.background, "#FFFFFF");
+    assert_eq!(light.foreground, "#575279");
     assert_eq!(
         store.load("rozsa-dark", ThemeMode::Dark).unwrap().name,
         "Rozsa Dark"
     );
+}
+
+#[test]
+fn appearance_defaults_to_following_the_system_theme() {
+    assert_eq!(AppearanceSettings::default().theme_mode, "system");
 }
 
 #[test]

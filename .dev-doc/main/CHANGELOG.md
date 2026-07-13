@@ -12,3 +12,8 @@
 - 22:40 fix: 主界面标题栏融合与 sidebar 自适应折叠
 - 23:52 fix: refine prototype layout and input behavior
 - 23:58 refactor: split prototype scenes and shared assets
+
+## 2026-07-13
+- 00:28 docs: docs change, move gui prototype to docs/gui/prototype; Agents.md add description about gui rules
+- 00:45 fix: 恢复原生 macOS 窗口 chrome 并校准 GUI 对齐
+- 03:51 feat: add native macOS sidebar material

@@ -132,7 +132,7 @@ pub struct AppearanceSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
-            theme_mode: "light".to_string(),
+            theme_mode: "system".to_string(),
             font_size: 13,
             light_theme: "rozsa".to_string(),
             dark_theme: "rozsa-dark".to_string(),

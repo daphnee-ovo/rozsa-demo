@@ -263,9 +263,9 @@ impl ThemeStore {
             ThemeMode::Light => (
                 BUILTIN_LIGHT_THEME_ID,
                 "Rozsa",
-                "oklch(60% 0.07 355)",
-                "oklch(97% 0.004 350)",
-                "oklch(20% 0.012 350)",
+                "#D7827E",
+                "#FFFFFF",
+                "#575279",
                 BTreeMap::from([
                     ("--surface".to_string(), "oklch(100% 0 0)".to_string()),
                     ("--muted".to_string(), "oklch(55% 0.01 350)".to_string()),
