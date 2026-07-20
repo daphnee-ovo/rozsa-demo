@@ -6,6 +6,7 @@ persistent `NSSplitViewController` containing two real Tauri WKWebViews.
 Current implementation: `crates/rozsa-gui/src/native_split_view.rs`,
 `crates/rozsa-gui/src/native_titlebar.rs`, and
 `crates/rozsa-gui/src/scene_router.rs`.
+Inspector launch: `crates/rozsa-gui/src/inspector.rs`.
 Foreground harness: `temp/native-split-validation/`.
 Related design: `.dev-doc/main/SPEC.md`.
 
@@ -45,7 +46,7 @@ Run the normal validation app, then complete every row. Identity values and
 | File drag and drop reaches the main WebView | PASS | After granting only `core:event:allow-listen` and `allow-unlisten`, the main WebView reported `native_file_drop: PASS` for Finder `drag-sample.txt` |
 | Native window drag | PASS | Split-root titlebar drag view moved the window in the foreground without covering traffic lights or page controls |
 | Native titlebar double-click zoom | PASS | User foreground observation confirmed double-clicking the same drag view performs window zoom |
-| Main and sidebar devtools open | PASS | Web Inspector showed `main.html` docked and `sidebar.html` detached |
+| Main and sidebar devtools open | UNVERIFIED | TASK-T011 verified the product main Inspector independently; the combined harness row still needs a fresh run for the sidebar Inspector |
 | Normal close releases the native host | PASS | Process exited `0` after AppKit hierarchy cleanup log |
 
 ## Product app acceptance (2026-07-14)
@@ -69,7 +70,7 @@ foreground product result.
 | Focus transfer | UNVERIFIED | Foreground harness PASS; no separate product-app focus trace was captured |
 | Chinese IME | UNVERIFIED | Foreground harness accepted composition interruption with committed state retained; not repeated in the product app |
 | Finder file drag-and-drop | UNVERIFIED | Foreground harness PASS; not repeated in the product app |
-| Main Web Inspector | PASS | Web Inspector opened docked against the main WebView and showed `body.native-split-main` |
+| Main Web Inspector | PASS | TASK-T011 foreground run emitted `frontend loaded and detached`; Accessibility reported separate `Rózsa` 1280×820 and `Web Inspector — localhost` 1000×650 standard windows, with unchanged geometry and no intervening native resize logs |
 | Sidebar Web Inspector | UNVERIFIED | Foreground harness PASS; not repeated in the product app |
 | Traffic lights and sidebar control | PASS | Standard close/fullscreen/minimize buttons and the native Sidebar button remained visible and operable |
 | Native window drag | UNVERIFIED | Foreground harness and user observation PASS; not repeated after product migration |
@@ -110,7 +111,7 @@ controller completely, then deliberately runs rollback. The expected log is:
 
 **GO with explicit observation gaps**. The architecture, native installation,
 scene reuse, targeted routing, divider persistence, ordinary/narrow layout,
-fullscreen entry, theme backing, main devtools, and normal close have product
-or automated PASS evidence. Rows marked `UNVERIFIED` are not represented as
+fullscreen entry, theme backing, main Inspector separation, and normal close
+have product or automated PASS evidence. Rows marked `UNVERIFIED` are not represented as
 product-app passes; they retain only the separately recorded harness or test
 coverage where stated.

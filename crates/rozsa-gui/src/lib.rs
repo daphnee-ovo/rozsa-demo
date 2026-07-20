@@ -6,6 +6,7 @@ mod commands;
 pub mod events;
 pub mod file_refs;
 pub mod git_diff;
+mod inspector;
 #[cfg(target_os = "macos")]
 mod native_split_view;
 #[cfg(target_os = "macos")]
@@ -131,15 +132,13 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
-                window.open_devtools();
-
                 #[cfg(target_os = "macos")]
                 {
                     let sidebar_url =
                         tauri::WebviewUrl::App(std::path::PathBuf::from("sidebar.html"));
                     let titlebar_window = window.clone();
                     let fullscreen_event_handle = app.handle().clone();
-                    native_split_view::install(&window, sidebar_url, move || {
+                    native_split_view::install(&window, sidebar_url, move |main_webview_raw| {
                         native_titlebar::install(
                             &titlebar_window,
                             move || {
@@ -163,14 +162,22 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
                                     ),
                                 }
                             },
-                        )
+                        )?;
+                        inspector::open_from_webview_raw(main_webview_raw)
                     })
                     .map_err(std::io::Error::other)?;
                 }
 
+                #[cfg(not(target_os = "macos"))]
+                inspector::open_in_separate_window(&window);
+
                 let pending_approvals = app.state::<GuiState>().pending_approvals.clone();
                 window.on_window_event(move |event| {
                     if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                        #[cfg(target_os = "macos")]
+                        if let Err(error) = inspector::teardown() {
+                            eprintln!("[rozsa-gui][inspector] teardown failed: {error}");
+                        }
                         #[cfg(target_os = "macos")]
                         if let Err(error) = native_titlebar::teardown() {
                             eprintln!("[rozsa-gui][native-titlebar] teardown failed: {error}");

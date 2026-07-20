@@ -52,7 +52,7 @@ struct PendingInstall {
     sidebar_view: Option<usize>,
     window: Option<usize>,
     started: bool,
-    on_installed: Option<Box<dyn FnOnce() -> Result<(), String> + Send>>,
+    on_installed: Option<Box<dyn FnOnce(usize) -> Result<(), String> + Send>>,
 }
 
 struct NativeSplitHost {
@@ -310,7 +310,7 @@ fn record_webview(
                 return;
             }
             if let Some(on_installed) = on_installed
-                && let Err(error) = on_installed()
+                && let Err(error) = on_installed(main)
             {
                 eprintln!("[rozsa-gui][native-split] post-install setup failed: {error}");
                 let sidebar = HOST.with(|slot| {
@@ -336,7 +336,7 @@ fn record_webview(
 pub fn install(
     main: &WebviewWindow,
     sidebar_url: WebviewUrl,
-    on_installed: impl FnOnce() -> Result<(), String> + Send + 'static,
+    on_installed: impl FnOnce(usize) -> Result<(), String> + Send + 'static,
 ) -> Result<(), String> {
     MainThreadMarker::new()
         .ok_or_else(|| "native split setup must start on the main thread".to_string())?;
