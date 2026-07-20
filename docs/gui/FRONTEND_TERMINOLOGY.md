@@ -1,6 +1,6 @@
 # Rózsa 前端页面术语表
 
-这份文档约定 WebView 前端中的页面区域、组件、控件、动态内容和交互状态怎么称呼。截图只是场景示例，不是术语范围；未出现在截图中的条件渲染面板、消息内容和 Settings 控件也必须按当前实现命名。当前前端实现以 [`index.html`](../../crates/rozsa-gui/frontend/index.html) 和 [`app.js`](../../crates/rozsa-gui/frontend/app.js) 为准。session ownership、permission runtime、AgentSession 等运行时概念见 [`TERMINOLOGY.md`](./TERMINOLOGY.md)。
+这份文档约定 WebView 前端中的页面区域、组件、控件、动态内容和交互状态怎么称呼。截图只是场景示例，不是术语范围；未出现在截图中的条件渲染面板、消息内容和 Settings 控件也必须按当前实现命名。main 前端以 [`index.html`](../../crates/rozsa-gui/frontend/index.html) 和 [`app.js`](../../crates/rozsa-gui/frontend/app.js) 为准；sidebar 前端以 [`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html) 和 [`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js) 为准；共享 revision 规则在 [`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js)。session ownership、permission runtime、AgentSession 等运行时概念见 [`TERMINOLOGY.md`](./TERMINOLOGY.md)。
 
 截图对应当前主界面：左侧是 `sidebar`，右侧是 `main panel`，底部整块是 `composer`。其中最底部的一排控件才叫 `input toolbar`；`tool call` 是 agent 执行工具的概念，不能和 `toolbar` 混用。动态内容出现在哪个场景，不改变它的术语。
 
@@ -34,40 +34,27 @@
 └──────────────────────┴───────────────────────────────────────────────┘
 ```
 
-页面层级：
+macOS 页面层级。sidebar 与 main 是两个持久 WebView，scene 切换只改变预创建 root 的 visibility：
 
 ```text
-window
-└─ page shell / app body                         [data-od-id="app-body"]
-   ├─ sidebar                                    [data-od-id="sidebar"]
-   │  ├─ session section
-   │  │  ├─ sidebar header
-   │  │  └─ session list                         #sessionList
-   │  │     └─ session item                      .session-item
-   │  ├─ status section                          [data-od-id="sidebar-status"]
-   │  │  └─ status panel
-   │  │     ├─ git status row
-   │  │     ├─ quota meters
-   │  │     └─ tool chips
-   │  └─ sidebar footer                           .sidebar-bottom
-   │     └─ settings action                       [data-od-id="btn-settings"]
-   └─ main panel                                 [data-od-id="main-panel"]
-      ├─ panel header                            [data-od-id="panel-header"]
-      │  ├─ session title                        #currentSessionName
-      │  └─ permission badge                     [data-od-id="perm-badge"]
-      ├─ chat region                             #chatMessages
-      │  └─ empty state / message stream
-      └─ composer host                           [data-od-id="chat-input"]
-         └─ composer surface                     .input-wrapper
-            ├─ permission panel / autocomplete popup / running panels
-            ├─ message editor                    #msgInput.rich-input
-            └─ input toolbar                     .input-toolbar
-               ├─ input action group             .input-tool-btn
-               ├─ shortcut hint                  .input-hint
-               ├─ context meter                  .context-ring
-               ├─ model selector                 #modelSelector.model-selector
-               └─ submit control                 .send-btn
+NativeSplitHost
+├─ sidebar WebView                               sidebar.html + sidebar.js
+│  ├─ MainSidebar                                #mainSidebarScene
+│  │  ├─ session list                            #sidebarSessionList
+│  │  ├─ status panel
+│  │  └─ settings action
+│  └─ SettingsSidebar                            #settingsSidebarScene
+│     └─ settings navigation                     [data-settings-pane]
+└─ main WebView                                  index.html + app.js
+   ├─ MainContent                                #mainContentScene
+   │  ├─ panel header                            [data-od-id="panel-header"]
+   │  ├─ chat region                             #chatMessages
+   │  └─ composer host                           [data-od-id="chat-input"]
+   └─ SettingsContent                            #settingsPanel
+      └─ current settings pane                   #pane-*
 ```
+
+非 macOS fallback 仍由 `index.html` 中的 templates materialize sidebar 和 settings navigation，并使用 CSS grid；这不是 macOS 的 pane owner。
 
 ## 2. 区域、组件、控件的边界
 
@@ -114,7 +101,7 @@ tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
 | `native titlebar` | AppKit 提供的标题栏语义 | 当前由 `native_titlebar.rs` 接入 |
 | `native sidebar toggle` | 原生标题栏里的 sidebar 显示/隐藏按钮 | 截图左上角 traffic lights 右侧的 split icon |
 | `drag region` | 可拖动窗口的空白区域 | `TitlebarDragView` 的空白区域 |
-| `titlebar offset` | 页面为原生 titlebar 预留的顶部空间 | fullscreen 进出时同步 |
+| `native pane` | AppKit `NSSplitViewItem` 管理的 sidebar/main 区域 | divider、collapse、width 不由 CSS 管理 |
 | `page header` / `panel header` | WebView 页面内部的内容标题区 | 当前主区的 `panel-header`，不是 native titlebar |
 
 不要说“顶部 toolbar”来指截图左上角的原生标题栏。要说 `native titlebar`；如果指主内容里的 Rózsa 和权限模式，则说 `panel header`。
@@ -123,24 +110,24 @@ tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
 
 | 术语 | 中文 | 当前锚点/说明 |
 | --- | --- | --- |
-| `sidebar` | 侧栏 | `[data-od-id="sidebar"]`，承载导航和摘要 |
+| `sidebar` | 侧栏 | 原生 sidebar pane 内的 persistent sidebar WebView |
 | `sidebar header` | 侧栏标题区 | `Sessions` 与 `New session` action |
 | `session section` | 会话区 | sidebar 中展示 session list 的上半区 |
-| `session list` | 会话列表 | `#sessionList`，动态渲染多个 session item |
+| `session list` | 会话列表 | `#sidebarSessionList`，动态渲染多个 session item |
 | `session item` | 会话项 | `.session-item`，包含状态点、名称和时间 |
 | `session status indicator` | 会话状态指示点 | idle、running、approval 等状态的视觉入口 |
 | `session name` | 会话名称 | `.session-name` |
 | `session meta` | 会话元信息 | `.session-meta`，例如最近时间 |
 | `new session action` | 新建会话操作 | sidebar header 右侧的 `+` button |
-| `status section` | 状态区 | `[data-od-id="sidebar-status"]` |
+| `status section` | 状态区 | `#mainSidebarScene` 内的 Status section |
 | `status panel` | 状态面板 | `.status-panel`，包住 Git、限额和工具摘要 |
 | `status group` | 状态分组 | `.status-group`，例如 quota 或 tool count |
 | `git status row` | Git 状态行 | 当前分支、增删行数、文件数 |
 | `quota meter` | 限额计量器 | `5 hours` / `This week` 标签和进度条 |
 | `tool chips` | 工具计数标签 | Bash、Read、Edit 等工具名与调用次数 |
 | `sidebar footer` | 侧栏底部操作区 | `.sidebar-bottom` |
-| `settings action` | 设置入口 | `[data-od-id="btn-settings"]`，不要叫 settings toolbar |
-| `collapsed sidebar` | 折叠侧栏 | sidebar 隐藏，窄窗口时可由左边缘浮出 |
+| `settings action` | 设置入口 | `openSidebarSettings()`，不要叫 settings toolbar |
+| `collapsed sidebar` | 折叠侧栏 | AppKit 折叠 sidebar item，WebView identity 不变 |
 
 `sidebar` 是一个页面区域；`session list` 是其中的内容组件；`session item` 是列表项；`New session` 和 `Settings` 是控件/操作，不是新的 sidebar。
 
@@ -216,20 +203,19 @@ composer host [data-od-id="chat-input"]
 
 ## 7. Settings 页面术语
 
-设置不是 sidebar 中的一个普通弹窗；当前是覆盖主界面的 settings scene。
+设置不是另一个 sidebar 容器。Settings scene 复用同一 native split：sidebar WebView 显示 `SettingsSidebar`，main WebView 显示 `SettingsContent`。
 
 ```text
-settings scene                         #settingsPanel.settings-panel
-└─ settings dialog                     .settings-dialog
-   └─ settings workspace               .settings-workspace
-      ├─ settings navigation           .settings-tabs
-      │  ├─ back action
-      │  └─ settings tab               .settings-tab
-      └─ settings content              .settings-content
-         └─ settings pane              .settings-pane
-            ├─ pane title
-            ├─ settings group          .settings-group
-            └─ setting item            .setting-item
+settings scene
+├─ sidebar WebView: SettingsSidebar    #settingsSidebarScene
+│  ├─ back action
+│  └─ settings navigation              [data-settings-pane]
+└─ main WebView: SettingsContent       #settingsPanel
+   └─ settings content                 .settings-content
+      └─ settings pane                 .settings-pane
+         ├─ pane title
+         ├─ settings group             .settings-group
+         └─ setting item               .setting-item
 ```
 
 | 术语 | 中文 | 不要混称为 |
@@ -250,20 +236,21 @@ settings scene                         #settingsPanel.settings-panel
 - “`input toolbar` 左侧的 `input action group` 在窄窗口下收缩，`shortcut hint` 可以隐藏。”
 - “`context meter` 和 `model selector` 属于 toolbar 的 utility controls，不属于 attachment actions。”
 - “permission panel 出现时覆盖 composer surface 的输入态；这是 composer state，不是新的 main panel。”
-- “settings scene 的 `settings navigation` 和主界面的 `sidebar` 是两个不同的页面区域。”
+- “settings scene 与 main scene 复用同一 sidebar WebView，只切换 `SettingsSidebar` / `MainSidebar` root。”
 
 ## 9. 当前实现索引
 
 | 页面部分 | 代码入口 |
 | --- | --- |
-| app body、sidebar、main panel | [`index.html:2410`](../../crates/rozsa-gui/frontend/index.html:2410) |
-| session list、status section、settings action | [`index.html:2413`](../../crates/rozsa-gui/frontend/index.html:2413) |
+| sidebar WebView scene roots | [`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html)、[`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js) |
+| session list、status section、settings action | [`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html) |
+| main WebView scene roots | [`index.html`](../../crates/rozsa-gui/frontend/index.html)、`renderNativeMainScene()` |
 | panel header、chat region、empty state | [`index.html:2483`](../../crates/rozsa-gui/frontend/index.html:2483) |
 | composer、message editor、input toolbar | [`index.html:2502`](../../crates/rozsa-gui/frontend/index.html:2502) |
-| settings scene | [`index.html:2572`](../../crates/rozsa-gui/frontend/index.html:2572) |
-| session list rendering | [`app.js`](../../crates/rozsa-gui/frontend/app.js) 的 `renderSessionList()` |
+| settings content scene | [`index.html`](../../crates/rozsa-gui/frontend/index.html) 的 `#settingsPanel` |
+| session list rendering | [`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js) 的 `renderSidebarSessions()` |
 | composer input、autocomplete、IME | [`app.js`](../../crates/rozsa-gui/frontend/app.js) 的 `handleInput()`、`updateAutocomplete()`、`handleComposition*()` |
-| sidebar/settings/fullscreen layout sync | [`app.js`](../../crates/rozsa-gui/frontend/app.js) 的 `syncChromeBackgroundGeometry()`、`setNativeFullscreen()` |
+| scene/theme revision | [`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js) 的 `applySceneSnapshot()`、`applyThemeSnapshot()` |
 
 ## 10. 消息流与内容渲染
 
@@ -453,36 +440,34 @@ message editor                                  #msgInput.rich-input
 Settings 的截图只展示了 Appearance 页面的一部分。当前页面还有 General、Models、Permissions、Tools 四个 pane，以及大量条件状态和真实表单控件。
 
 ```text
-settings scene                                    #settingsPanel
-├─ settings dialog                                .settings-dialog
-│  └─ settings workspace                          .settings-workspace
-│     ├─ settings navigation                      .settings-tabs
-│     │  ├─ back action                           .settings-back
-│     │  └─ settings tab                          .settings-tab
-│     └─ settings content                         .settings-content
-│        └─ settings pane                         .settings-pane
-│           ├─ pane title                         .settings-pane-title
-│           ├─ settings group                     .settings-group
-│           │  ├─ group label                     .settings-group-label
-│           │  └─ setting item                    .setting-item
-│           │     ├─ setting label                .setting-label
-│           │     ├─ setting control              select / input / switch
-│           │     └─ setting value                .setting-value
-│           └─ theme action row                   .appearance-theme-actions
-└─ close action                                   .settings-close
+settings scene
+├─ sidebar WebView                                #settingsSidebarScene
+│  ├─ back action                                 .settings-back
+│  └─ settings navigation                         [data-settings-pane]
+└─ main WebView                                   #settingsPanel
+   └─ settings content                            .settings-content
+      └─ settings pane                            .settings-pane
+         ├─ pane title                            .settings-pane-title
+         ├─ settings group                        .settings-group
+         │  ├─ group label                        .settings-group-label
+         │  └─ setting item                       .setting-item
+         │     ├─ setting label                   .setting-label
+         │     ├─ setting control                 select / input / switch
+         │     └─ setting value                   .setting-value
+         └─ theme action row                      .appearance-theme-actions
 ```
 
 ### 13.1 Settings 结构层级
 
 | 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
 | --- | --- | --- | --- |
-| `settings scene` | 设置场景 | 覆盖 app body 的完整设置页面 | `#settingsPanel.settings-panel`；`toggleSettings()` |
-| `settings dialog` | 设置对话框 | 承载 Settings 的窗口级内容和无障碍 dialog 语义 | `.settings-dialog`；`role="dialog"` |
-| `settings backdrop` | 设置背景层 | Settings 外围的遮罩和点击关闭区域 | `#settingsPanel`；`onclick="...closeSettings()"` |
-| `settings workspace` | 设置工作区 | 组织导航和内容的布局容器 | `.settings-workspace` |
-| `settings navigation` | 设置导航 | 左侧返回入口和 pane 切换入口 | `.settings-tabs` |
-| `back action` | 返回应用操作 | 关闭 Settings 并回到主界面 | `.settings-back`；`closeSettings()` |
-| `settings tab` | 设置页签 | 切换 Appearance、General、Models、Permissions、Tools | `.settings-tab`；`switchSettingsTab()` |
+| `settings scene` | 设置场景 | 两个 WebView 同步显示 SettingsSidebar/SettingsContent | `gui-scene-snapshot`；`requestGuiScene()` |
+| `settings dialog` | 设置对话框 | main WebView 内 SettingsContent 的无障碍 dialog | `.settings-dialog`；`role="dialog"` |
+| `settings backdrop` | 设置背景层 | main WebView 的 SettingsContent 外围 | `#settingsPanel` |
+| `settings workspace` | 设置工作区 | main WebView 内组织 settings content | `.settings-workspace` |
+| `settings navigation` | 设置导航 | sidebar WebView 中的 pane 切换入口 | `#settingsSidebarScene [data-settings-pane]` |
+| `back action` | 返回应用操作 | 请求切回 Main scene | `.settings-back`；`closeSidebarSettings()` |
+| `settings tab` | 设置页签 | 切换 Appearance、General、Models、Permissions、Tools | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
 | `settings content` | 设置内容区 | 承载当前 pane 的滚动内容 | `.settings-content` |
 | `settings pane` | 设置页面 | 一个完整的 Settings 分类页面 | `.settings-pane`、`#pane-*`；`renderSettingsPane()` |
 | `pane title` | 页面标题 | 当前 pane 的标题 | `.settings-pane-title` |
@@ -492,7 +477,7 @@ settings scene                                    #settingsPanel
 | `setting label` | 设置项标签 | 解释具体 setting 的名称 | `.setting-label` |
 | `setting control` | 设置控件 | select、input、range、color picker 或 switch | `.setting-select`、`.setting-input`、`.setting-toggle` |
 | `setting value` | 设置值 | 只读的 provider、context 或 shortcut 值 | `.setting-value` |
-| `close action` | 关闭操作 | 关闭 Settings 场景 | `.settings-close`；`closeSettings()` |
+| `close action` | 关闭操作 | 请求切回 Main scene | `.settings-close`；`closeSettings()` |
 
 ### 13.2 Appearance pane
 

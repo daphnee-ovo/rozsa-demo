@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::permissions::PermissionResponse;
@@ -25,6 +25,61 @@ use crate::state::{
     permission_pending_key, session_id_from_path,
 };
 use crate::turn_diff::{INTERACTION_STARTED, INTERACTION_SUMMARY};
+
+#[tauri::command]
+pub async fn set_gui_scene(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+    invoking_webview: tauri::Webview,
+    scene: crate::scene_router::GuiScene,
+    selected_pane: Option<crate::scene_router::SettingsPane>,
+    expected_revision: u64,
+) -> Result<crate::scene_router::GuiSceneSnapshot, String> {
+    let requester = crate::scene_router::GuiWebview::from_label(invoking_webview.label())?;
+    let update =
+        state
+            .scene_router
+            .lock()
+            .await
+            .set_scene(scene, selected_pane, expected_revision)?;
+    let targets = if update.stale {
+        vec![requester]
+    } else {
+        update.ready_webviews
+    };
+    crate::events::emit_gui_scene_snapshot(&app, &targets, &update.snapshot)?;
+    Ok(update.snapshot)
+}
+
+#[tauri::command]
+pub async fn gui_webview_ready(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+    invoking_webview: tauri::Webview,
+    webview: crate::scene_router::GuiWebview,
+    last_revision: u64,
+) -> Result<crate::scene_router::GuiSceneSnapshot, String> {
+    let requester = crate::scene_router::GuiWebview::from_label(invoking_webview.label())?;
+    if requester != webview {
+        return Err(format!(
+            "GUI WebView payload mismatch: caller is {}, payload is {}",
+            requester.label(),
+            webview.label()
+        ));
+    }
+    let update = state
+        .scene_router
+        .lock()
+        .await
+        .webview_ready(webview, last_revision);
+    if update.should_emit {
+        crate::events::emit_gui_scene_snapshot(&app, &[webview], &update.snapshot)?;
+    }
+    if webview == crate::scene_router::GuiWebview::Sidebar {
+        crate::events::emit_sidebar_state(&app, state.inner()).await?;
+    }
+    Ok(update.snapshot)
+}
 
 // --- 对话 ---
 
@@ -89,7 +144,8 @@ pub async fn send_message(
 
     let expansion = crate::file_refs::expand_file_references(&message, &state.shared.cwd);
     for notice in &expansion.notices {
-        let _ = app.emit(
+        let _ = crate::events::emit_main(
+            &app,
             "notification",
             format!("Skipped @{}: {}.", notice.path, notice.reason),
         );
@@ -131,7 +187,7 @@ pub async fn send_message(
             let tabs = tabs_ref.lock().await;
             if let Some(tab) = tabs.get(idx) {
                 let snapshot = UiSnapshot::from_tab(tab, &shared);
-                let _ = app.emit("ui-state", &snapshot);
+                let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
             }
         }
     });
@@ -169,7 +225,7 @@ pub async fn autocomplete_input(
     text: String,
     cursor: usize,
 ) -> Result<AutocompleteResponse, String> {
-    let cursor = cursor.min(text.len());
+    let cursor = utf16_offset_to_byte_index(&text, cursor);
     let head = &text[..cursor];
     let active_agent = active_agent(&state).await.ok();
     let skill_commands = collect_skill_slash_commands(active_agent.as_deref(), &state.shared.cwd);
@@ -367,7 +423,7 @@ pub async fn dispatch_slash_command(
             return slash_action("refreshModels");
         }
         "usage" => {
-            let snapshot = get_rate_limits().await?;
+            let snapshot = refresh_rate_limits(&state, &app).await?;
             emit_info(
                 &app,
                 &rozsa_app::rate_limit::format_rate_limit_display(&snapshot),
@@ -588,7 +644,7 @@ pub async fn send_running_message(
         _ => return Err(format!("Unknown running send mode: {mode}")),
     }
     let snapshot = UiSnapshot::from_tab(&tabs[idx], &state.shared);
-    let _ = app.emit("ui-state", &snapshot);
+    let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
     Ok(())
 }
 
@@ -652,7 +708,8 @@ async fn finish_interaction(gui_state: &GuiState, app: &AppHandle, session_id: &
         let summary = crate::turn_diff::persisted_interaction_activity(&manager);
         let payload = serde_json::to_value(&summary).ok();
         if let Err(error) = manager.append_custom(INTERACTION_SUMMARY.to_string(), payload) {
-            let _ = app.emit(
+            let _ = crate::events::emit_main(
+                app,
                 "notification",
                 format!("Failed to persist task summary: {error}"),
             );
@@ -675,7 +732,7 @@ async fn finish_interaction(gui_state: &GuiState, app: &AppHandle, session_id: &
         return;
     };
     let snapshot = UiSnapshot::from_tab(&tabs[index], &gui_state.shared);
-    let _ = app.emit("ui-state", &snapshot);
+    let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
 }
 
 // --- 状态查询 ---
@@ -822,7 +879,9 @@ pub async fn fork_session(
     );
     let tabs = state.tabs.lock().await;
     let snapshot = UiSnapshot::from_tab(&tabs[new_index], &state.shared);
-    let _ = app.emit("ui-state", &snapshot);
+    let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
+    drop(tabs);
+    crate::events::emit_sidebar_state(&app, state.inner()).await?;
     Ok(session_id)
 }
 
@@ -856,8 +915,10 @@ pub async fn switch_session(
     let tabs = state.tabs.lock().await;
     if let Some(tab) = tabs.get(target_idx) {
         let snapshot = UiSnapshot::from_tab(tab, &state.shared);
-        let _ = app.emit("ui-state", &snapshot);
+        let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
     }
+    drop(tabs);
+    crate::events::emit_sidebar_state(&app, state.inner()).await?;
 
     Ok(())
 }
@@ -872,6 +933,7 @@ pub async fn new_session(state: State<'_, GuiState>, app: AppHandle) -> Result<S
 #[tauri::command]
 pub async fn respond_permission(
     state: State<'_, GuiState>,
+    app: AppHandle,
     session_id: String,
     id: String,
     choice: String,
@@ -932,7 +994,8 @@ pub async fn respond_permission(
 
     sender
         .send(response)
-        .map_err(|_| "Failed to send permission response".to_string())
+        .map_err(|_| "Failed to send permission response".to_string())?;
+    crate::events::emit_sidebar_state(&app, state.inner()).await
 }
 
 /// Re-evaluate a queued request immediately before showing it. A trust granted
@@ -983,12 +1046,15 @@ pub async fn prepare_permission(
 // --- 设置 ---
 
 #[tauri::command]
-pub async fn get_settings(state: State<'_, GuiState>) -> Result<SettingsSnapshot, String> {
+pub async fn get_settings(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+) -> Result<SettingsSnapshot, String> {
     let rt = state.runtime_settings.lock().await;
     let model = state.shared.model.lock().await;
     let thinking = state.shared.thinking_level.lock().await;
 
-    Ok(SettingsSnapshot {
+    let snapshot = SettingsSnapshot {
         permission_mode: rt.permissions.mode.clone(),
         thinking_level: format!("{:?}", *thinking).to_lowercase(),
         model_id: model.id.clone(),
@@ -1010,7 +1076,9 @@ pub async fn get_settings(state: State<'_, GuiState>) -> Result<SettingsSnapshot
             dark_theme: rt.appearance.dark_theme.clone(),
             is_macos: cfg!(target_os = "macos"),
         },
-    })
+    };
+    publish_theme_state(&app, &snapshot.appearance)?;
+    Ok(snapshot)
 }
 
 #[tauri::command]
@@ -1036,6 +1104,7 @@ pub fn save_theme(theme: ThemeDefinition) -> Result<(), String> {
 #[tauri::command]
 pub async fn update_setting(
     state: State<'_, GuiState>,
+    app: AppHandle,
     key: String,
     value: String,
 ) -> Result<(), String> {
@@ -1133,6 +1202,7 @@ pub async fn update_setting(
             s.appearance.theme_mode = value;
             drop(s);
             persist_settings(&state).await;
+            emit_theme_state(&state, &app).await?;
             Ok(())
         }
         "appearance_font_size" => {
@@ -1146,6 +1216,7 @@ pub async fn update_setting(
             s.appearance.font_size = font_size;
             drop(s);
             persist_settings(&state).await;
+            emit_theme_state(&state, &app).await?;
             Ok(())
         }
         "appearance_light_theme" => {
@@ -1156,6 +1227,7 @@ pub async fn update_setting(
             s.appearance.light_theme = value;
             drop(s);
             persist_settings(&state).await;
+            emit_theme_state(&state, &app).await?;
             Ok(())
         }
         "appearance_dark_theme" => {
@@ -1166,6 +1238,7 @@ pub async fn update_setting(
             s.appearance.dark_theme = value;
             drop(s);
             persist_settings(&state).await;
+            emit_theme_state(&state, &app).await?;
             Ok(())
         }
         _ => Err(format!("Unknown setting: {key}")),
@@ -1182,6 +1255,31 @@ fn parse_theme_mode(value: &str) -> Result<ThemeMode, String> {
 
 fn theme_store() -> Result<ThemeStore, String> {
     themes::user_theme_store().map_err(|error| error.to_string())
+}
+
+fn publish_theme_state(app: &AppHandle, appearance: &AppearanceSnapshot) -> Result<(), String> {
+    let store = theme_store()?;
+    let light_theme = store
+        .load(&appearance.light_theme, ThemeMode::Light)
+        .map_err(|error| error.to_string())?;
+    let dark_theme = store
+        .load(&appearance.dark_theme, ThemeMode::Dark)
+        .map_err(|error| error.to_string())?;
+    crate::events::emit_theme_state(app, appearance, light_theme, dark_theme)?;
+    Ok(())
+}
+
+async fn emit_theme_state(state: &State<'_, GuiState>, app: &AppHandle) -> Result<(), String> {
+    let settings = state.runtime_settings.lock().await;
+    let appearance = AppearanceSnapshot {
+        theme_mode: settings.appearance.theme_mode.clone(),
+        font_size: settings.appearance.font_size,
+        light_theme: settings.appearance.light_theme.clone(),
+        dark_theme: settings.appearance.dark_theme.clone(),
+        is_macos: cfg!(target_os = "macos"),
+    };
+    drop(settings);
+    publish_theme_state(app, &appearance)
 }
 
 // --- 模型 ---
@@ -1268,10 +1366,10 @@ pub async fn auth_login(app: AppHandle) -> Result<String, String> {
                 } else {
                     format!("Open this URL to continue codex-oauth login:\n{url}")
                 };
-                let _ = app.emit("notification", message);
+                let _ = crate::events::emit_main(&app, "notification", message);
             }
             OAuthFlowEvent::Progress { message } => {
-                let _ = app.emit("notification", message);
+                let _ = crate::events::emit_main(&app, "notification", message);
             }
             _ => {}
         }
@@ -1311,10 +1409,23 @@ pub async fn auth_logout() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn get_rate_limits() -> Result<rozsa_model::rate_limit::RateLimitSnapshot, String> {
-    rozsa_app::rate_limit::get_rate_limits()
+pub async fn get_rate_limits(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+) -> Result<rozsa_model::rate_limit::RateLimitSnapshot, String> {
+    refresh_rate_limits(&state, &app).await
+}
+
+async fn refresh_rate_limits(
+    state: &State<'_, GuiState>,
+    app: &AppHandle,
+) -> Result<rozsa_model::rate_limit::RateLimitSnapshot, String> {
+    let snapshot = rozsa_app::rate_limit::get_rate_limits()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    *state.quota_summary.lock().await = Some(snapshot.clone());
+    crate::events::emit_sidebar_state(app, state.inner()).await?;
+    Ok(snapshot)
 }
 
 // --- 其他操作 ---
@@ -1331,16 +1442,22 @@ pub async fn compact(state: State<'_, GuiState>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn rename_session(
-    _state: State<'_, GuiState>,
+    state: State<'_, GuiState>,
+    app: AppHandle,
     path: String,
     name: String,
 ) -> Result<(), String> {
     SessionManager::rename(&path, if name.is_empty() { None } else { Some(name) })
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    crate::events::emit_sidebar_state(&app, state.inner()).await
 }
 
 #[tauri::command]
-pub async fn delete_session(state: State<'_, GuiState>, path: String) -> Result<(), String> {
+pub async fn delete_session(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+    path: String,
+) -> Result<(), String> {
     let session_id = session_id_from_path(&path);
     if let Some(approvals) = &state.pending_approvals {
         deny_pending_approvals(approvals, Some(&session_id));
@@ -1349,7 +1466,8 @@ pub async fn delete_session(state: State<'_, GuiState>, path: String) -> Result<
     let mut tabs = state.tabs.lock().await;
     tabs.retain(|t| t.path() != path);
     drop(tabs);
-    SessionManager::delete(&path).map_err(|e| e.to_string())
+    SessionManager::delete(&path).map_err(|e| e.to_string())?;
+    crate::events::emit_sidebar_state(&app, state.inner()).await
 }
 
 #[tauri::command]
@@ -1370,7 +1488,7 @@ pub async fn run_bash(
     tokio::spawn(async move {
         let bang_cmd = format!("!{}", command);
         if let Err(e) = agent.prompt(&bang_cmd).await {
-            let _ = app.emit("error", e.to_string());
+            let _ = crate::events::emit_main(&app, "error", e.to_string());
         }
     });
     Ok(())
@@ -1395,7 +1513,7 @@ fn slash_action_arg(action: &str, value: String) -> Result<SlashCommandResult, S
 }
 
 fn emit_info(app: &AppHandle, message: &str) {
-    let _ = app.emit("notification", message.to_string());
+    let _ = crate::events::emit_main(app, "notification", message.to_string());
 }
 
 fn parse_slash_completion_prefix(head: &str) -> Option<String> {
@@ -1409,6 +1527,21 @@ fn parse_slash_completion_prefix(head: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn utf16_offset_to_byte_index(text: &str, offset: usize) -> usize {
+    let mut utf16_offset = 0;
+    for (byte_idx, ch) in text.char_indices() {
+        if offset <= utf16_offset {
+            return byte_idx;
+        }
+        let next_utf16_offset = utf16_offset + ch.len_utf16();
+        if offset < next_utf16_offset {
+            return byte_idx;
+        }
+        utf16_offset = next_utf16_offset;
+    }
+    text.len()
 }
 
 fn parse_at_completion_prefix(head: &str) -> Option<String> {
@@ -1731,6 +1864,33 @@ mod token_tests {
 
         assert_eq!(file_reference_ranges(text, cwd), vec![(7, 23)]);
     }
+
+    #[test]
+    fn quoted_file_reference_tokens_with_spaces_highlight() {
+        let temp_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../temp");
+        let temp_dir = tempfile::Builder::new()
+            .prefix("file-drag-highlight-")
+            .tempdir_in(temp_root)
+            .unwrap();
+        let file = temp_dir.path().join("source file.rs");
+        std::fs::write(&file, "fn main() {}\n").unwrap();
+        let text = format!(r#"@"{}""#, file.display());
+
+        assert_eq!(
+            file_reference_ranges(&text, temp_dir.path()),
+            vec![(0, text.len())]
+        );
+    }
+
+    #[test]
+    fn utf16_cursor_offsets_never_split_multibyte_characters() {
+        let text = r#"@"/Users/xinyue/Downloads/希音 ai数据分析一面.txt" "#;
+        let cursor = text.encode_utf16().count();
+
+        assert_eq!(utf16_offset_to_byte_index(text, cursor), text.len());
+        assert_eq!(utf16_offset_to_byte_index("😀/path", 1), 0);
+        assert_eq!(utf16_offset_to_byte_index("😀/path", 2), 4);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1821,8 +1981,10 @@ async fn create_new_session(
     let tabs = state.tabs.lock().await;
     if let Some(tab) = tabs.get(new_idx) {
         let snapshot = UiSnapshot::from_tab(tab, &state.shared);
-        let _ = app.emit("ui-state", &snapshot);
+        let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
     }
+    drop(tabs);
+    crate::events::emit_sidebar_state(app, state.inner()).await?;
 
     Ok(created.id)
 }
@@ -2311,7 +2473,7 @@ async fn append_prompt_error(
         }
 
         let snapshot = UiSnapshot::from_tab(&tabs[tab_idx], shared);
-        let _ = app.emit("ui-state", &snapshot);
+        let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
     }
 }
 

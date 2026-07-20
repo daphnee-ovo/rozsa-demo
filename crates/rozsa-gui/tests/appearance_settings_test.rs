@@ -40,9 +40,10 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(native.contains("TITLEBAR_ACCESSORY_HEIGHT"));
     assert!(native.contains("NSWindowOrderingMode::Above"));
     assert!(!native.contains("NSMenu::setMenuBarVisible"));
-    assert!(native.contains("NSVisualEffectMaterial::Sidebar"));
-    assert!(native.contains("NSVisualEffectBlendingMode::BehindWindow"));
-    assert!(native.contains("NSVisualEffectState::FollowsWindowActiveState"));
+    let split = include_str!("../src/native_split_view.rs");
+    assert!(split.contains("NSVisualEffectMaterial::Sidebar"));
+    assert!(split.contains("NSVisualEffectBlendingMode::BehindWindow"));
+    assert!(split.contains("NSVisualEffectState::FollowsWindowActiveState"));
     assert!(native.contains("setOpaque(false)"));
     assert!(!native.contains("RÓZSA"));
     assert!(html.contains("id=\"settingsThemeMode\""));

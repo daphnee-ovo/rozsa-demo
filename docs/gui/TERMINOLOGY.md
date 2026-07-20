@@ -5,10 +5,11 @@
 判断问题落在哪一层时，先用这组边界：
 
 ```text
-DOM / 输入行为 / 视觉布局       -> frontend/app.js + index.html
+main DOM / 输入 / Settings form -> frontend/app.js + index.html
+sidebar scene / session 导航    -> frontend/sidebar.js + sidebar.html
 Tauri command / event / tab 状态 -> crates/rozsa-gui/src/
 Agent loop / tool / session 文件 -> crates/rozsa-app/ + crates/rozsa-core/
-macOS 窗口行为                  -> native_titlebar.rs + NSWindow
+macOS pane / 窗口行为           -> native_split_view.rs + native_titlebar.rs
 ```
 
 ## 1. 总体分层
@@ -19,11 +20,12 @@ macOS 窗口行为                  -> native_titlebar.rs + NSWindow
 │  native chrome / traffic lights / fullscreen / window zoom    │
 │  └─ TitlebarDragView + sidebar accessory                     │
 │                                                             │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │ Tauri WebView                                            │  │
-│  │  frontend/index.html + frontend/app.js                   │  │
-│  │  sidebar / session list / chat / permission panel / UI    │  │
-│  └───────────────┬─────────────────────────────────────────┘  │
+│  NativeSplitHost / NSSplitViewController                     │
+│  ├─ sidebar pane -> persistent sidebar WebView               │
+│  │  MainSidebar | SettingsSidebar                            │
+│  └─ main pane -> persistent main WebView                     │
+│     MainContent | SettingsContent                            │
+│                  │ invoke / targeted event                   │
 │                  │ invoke(command) / listen(event)             │
 │  ┌───────────────▼─────────────────────────────────────────┐  │
 │  │ rozsa-gui Rust runtime                                   │  │
@@ -47,7 +49,7 @@ macOS 窗口行为                  -> native_titlebar.rs + NSWindow
 | 术语 | 当前含义 | 不要混称为 |
 | --- | --- | --- |
 | GUI | 整个 Tauri 桌面应用，包含 WebView、Rust runtime 和原生窗口层 | 只有前端页面 |
-| frontend | WebView 内的 `index.html` 与 `app.js`，负责 DOM、输入和显示状态 | GUI runtime |
+| frontend | 两个 WebView 内的 `index.html`/`app.js` 与 `sidebar.html`/`sidebar.js`，负责 DOM、输入和显示状态 | GUI runtime |
 | GUI runtime | `rozsa-gui` Rust 层，负责 tabs、commands、events 和后端 session 的拥有关系 | 浏览器状态 |
 | IPC | frontend 与 Rust 之间的命令/事件通道；前端 `invoke`，后端 `emit` | Agent event stream 本身 |
 | backend | 需要按上下文说明：通常指 `rozsa-gui` Rust runtime；若指 agent loop，应说 `AgentSession` 或 `rozsa-app` | 一个没有边界的“后端” |
@@ -302,11 +304,12 @@ NSWindow（系统拥有窗口语义）
 ├─ native titlebar
 │  ├─ TitlebarDragView：空白区域拖动窗口
 │  ├─ double click：performZoom，触发 macOS 标题栏缩放语义
-│  └─ sidebar accessory：调用 GUI 的 sidebar toggle
-└─ WebView content
-   ├─ app body：sidebar + chat
-   ├─ settings scene：settings sidebar + settings content
-   └─ native-fullscreen：同步 titlebar offset、背景边界和悬浮 sidebar
+│  └─ sidebar accessory：调用 NSSplitViewController.toggleSidebar
+└─ NativeSplitHost
+   ├─ sidebar NSSplitViewItem：AppKit 管理 divider/collapse/overlay
+   │  └─ sidebar WebView：MainSidebar | SettingsSidebar
+   └─ main NSSplitViewItem
+      └─ main WebView：MainContent | SettingsContent
 ```
 
 | 术语 | 当前含义 | 讨论重点 |
@@ -315,24 +318,26 @@ NSWindow（系统拥有窗口语义）
 | native titlebar | AppKit `NSWindow` 的原生标题栏语义，加上必要的 accessory/drag view | 不是 WebView 里画的一条 header |
 | `TitlebarDragView` | 原生拖动视图；同时处理 sidebar action 和双击 zoom | 事件命中范围必须避开 traffic lights 和可交互控件 |
 | traffic lights | macOS 左上角系统按钮 | 不承担品牌或导航 |
-| titlebar offset | WebView 为 native titlebar 预留的顶部空间 | fullscreen 进出时动态变化 |
-| chrome background boundary | frontend 根据 sidebar/settings sidebar 的实际几何边界同步的背景分界 | 不应使用固定宽度猜测最终位置 |
-| sidebar collapse | 隐藏主 sidebar，窄窗口时可从左边缘浮出 | 不等同于删除 session list |
-| translucent sidebar | 原生 `NSVisualEffectView` 的 sidebar material 与主题设置 | 视觉材料，不是权限或 session 状态 |
-| native fullscreen | macOS 全屏状态；frontend 通过 `native-fullscreen` 同步布局 | 进出过程要区分 `transitioning` 与稳定态 |
+| native pane | `NSSplitViewItem` 管理的 sidebar 或 main 区域 | pane frame 不由 CSS/Tauri bounds API 管理 |
+| sidebar scene | 同一 sidebar WebView 内的 `MainSidebar` 或 `SettingsSidebar` | scene 变化不创建第二个 sidebar 容器 |
+| main content scene | 同一 main WebView 内的 `MainContent` 或 `SettingsContent` | stateful Main roots 不重建 |
+| sidebar collapse | AppKit 隐藏 sidebar item；恢复后仍是同一 WebView | 不等同于删除 session list |
+| translucent sidebar | `NativeSplitHost` 的 `NSVisualEffectView` sidebar material 与主题设置 | sidebar WebView 自身保持透明 |
+| opaque sidebar backing | `translucentSidebar=false` 时由原生 host 提供的主题色背景 | 更新发生在同 revision WebView theme event 之前 |
+| native fullscreen | macOS 全屏状态；AppKit 管理 pane 与 overlay，frontend 只处理内容可见性 | 不用 JS 重算 pane frame |
 | double-click zoom | 双击标题栏空白区域触发 `NSWindow.performZoom` | 是窗口语义，不是浏览器缩放 |
 
 ### 窗口问题的定位顺序
 
 ```text
 按钮/文字/布局错       -> app.js / index.html / CSS
-标题栏背景边界错       -> getBoundingClientRect + chrome sync
+divider / collapse 错   -> native_split_view.rs / NSSplitViewController
 拖动或双击缩放错       -> native_titlebar.rs / NSWindow event routing
-全屏进出错             -> native-fullscreen event + native offset/layout sync
-sidebar material 错     -> NSVisualEffectView + theme translucentSidebar
+全屏进出错             -> NativeSplitHost + native titlebar observer
+sidebar material 错     -> native_split_view.rs + revisioned theme-state
 ```
 
-代码锚点：[`native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs)、[`lib.rs` native setup](../../crates/rozsa-gui/src/lib.rs)、[`app.js` chrome sync](../../crates/rozsa-gui/frontend/app.js)、[`themes.md`](./themes.md)。
+代码锚点：[`native_split_view.rs`](../../crates/rozsa-gui/src/native_split_view.rs)、[`native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs)、[`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js)、[`themes.md`](./themes.md)。
 
 ## 8. Appearance、Theme 与 Visual State
 
@@ -360,7 +365,7 @@ sidebar material 错     -> NSVisualEffectView + theme translucentSidebar
 | “project trust / session trust” | 写入 project allow 规则 / 当前 session memory | “记住权限” |
 | “turn activity” | 当前用户 turn 的 file delta 和 verification 聚合 | “workspace diff” |
 | “native titlebar event routing” | AppKit drag、double-click、traffic lights 的命中与转发 | “顶部栏点击有问题” |
-| “chrome boundary calibration” | 按真实 sidebar 几何位置同步背景边界 | “标题栏颜色不对” |
+| “native split divider position” | AppKit 保存和恢复 sidebar divider | “左边宽度不对” |
 
 ## 10. 代码索引
 
@@ -370,12 +375,15 @@ sidebar material 错     -> NSVisualEffectView + theme translucentSidebar
 | IPC commands | [`crates/rozsa-gui/src/commands.rs`](../../crates/rozsa-gui/src/commands.rs) |
 | session event forwarding | [`crates/rozsa-gui/src/events.rs`](../../crates/rozsa-gui/src/events.rs) |
 | frontend state/input/rendering | [`crates/rozsa-gui/frontend/app.js`](../../crates/rozsa-gui/frontend/app.js)、[`index.html`](../../crates/rozsa-gui/frontend/index.html) |
+| sidebar scene/rendering | [`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js)、[`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html) |
+| scene revision / shared frontend | [`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js) |
 | live agent loop and abort | [`crates/rozsa-app/src/agent_session.rs`](../../crates/rozsa-app/src/agent_session.rs) |
 | permission runtime | [`crates/rozsa-app/src/permissions/mod.rs`](../../crates/rozsa-app/src/permissions/mod.rs) |
 | tool file delta | [`crates/rozsa-app/src/tools/file_delta.rs`](../../crates/rozsa-app/src/tools/file_delta.rs) |
 | turn summary / verification | [`crates/rozsa-gui/src/turn_diff.rs`](../../crates/rozsa-gui/src/turn_diff.rs) |
 | workspace Git diff | [`crates/rozsa-gui/src/git_diff.rs`](../../crates/rozsa-gui/src/git_diff.rs) |
 | macOS titlebar | [`crates/rozsa-gui/src/native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs) |
+| macOS split/sidebar backing | [`crates/rozsa-gui/src/native_split_view.rs`](../../crates/rozsa-gui/src/native_split_view.rs) |
 | Appearance / theme behavior | [`docs/gui/themes.md`](./themes.md) |
 
 相关规范：[`GUI 架构`](./ARCHITECTURE.md)、[`GUI 使用规范`](./UI_USAGE_GUIDELINES.md)。

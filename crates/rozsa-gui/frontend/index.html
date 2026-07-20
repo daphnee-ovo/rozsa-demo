@@ -9,7 +9,8 @@
 <style>
 /* ================================================================
    Rózsa GUI — 浅色主题 · 低饱和玫红
-   框架：单 HTML 文件 · CSS Grid 三栏布局 · Tauri 桌面端风格
+   框架：macOS 原生 split main content · 非 macOS CSS Grid fallback
+   Design: ../../../.dev-doc/main/SPEC.md#6-frontend-迁移边界
    —————————————————————————————
    /index.html
    ├── :root CSS 变量（色板 / 间距 / 字体）
@@ -1029,6 +1030,10 @@ body {
 }
 .input-wrapper.valid-token {
   border-color: color-mix(in oklch, var(--success) 48%, var(--accent));
+}
+.input-wrapper.file-drop-active {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface));
 }
 
 /* 自动补全弹出 */
@@ -2402,6 +2407,21 @@ html[data-theme-mode="dark"] .settings-content {
   .input-hint { display: none; }
   .input-toolbar .model-selector { flex-basis: 104px; max-width: 104px; }
 }
+
+/* macOS native split: AppKit owns pane width; this WebView owns content only. */
+[data-native-scene-root][hidden] { display: none !important; }
+body.native-split-main [data-od-id="app-body"] {
+  display: block;
+  padding-top: var(--native-titlebar-offset);
+  background: var(--bg);
+}
+body.native-split-main.native-fullscreen [data-od-id="app-body"] { padding-top: 0; }
+body.native-split-main [data-od-id="main-panel"] { width: 100%; height: 100%; }
+body.native-split-main .settings-workspace { display: block; height: 100%; }
+body.native-split-main .settings-content { height: 100%; max-height: none; }
+body.native-split-main .settings-dialog { background: var(--bg); }
+#fallbackSidebarMount,
+#fallbackSettingsNavigationMount { display: none; }
 </style>
 </head>
 <body>
@@ -2410,6 +2430,7 @@ html[data-theme-mode="dark"] .settings-content {
 <div data-od-id="app-body">
 
   <!-- ======== 左侧边栏 ======== -->
+  <template id="fallbackSidebarTemplate">
   <aside data-od-id="sidebar">
     <!-- 会话列表 -->
     <div class="sidebar-section">
@@ -2478,9 +2499,11 @@ html[data-theme-mode="dark"] .settings-content {
       </button>
     </div>
   </aside>
+  </template>
+  <div id="fallbackSidebarMount" hidden></div>
 
   <!-- ======== 右侧主面板 ======== -->
-  <main data-od-id="main-panel">
+  <main data-od-id="main-panel" id="mainContentScene" data-native-scene-root="main-content">
     <!-- 面板头部 -->
     <div data-od-id="panel-header">
       <span class="current-session-name" id="currentSessionName">Rózsa</span>
@@ -2569,17 +2592,20 @@ html[data-theme-mode="dark"] .settings-content {
 
 
 <!-- ============ 设置面板 ============ -->
-<div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-label="Settings" onclick="if(event.target===this)closeSettings()">
+<div class="settings-panel" id="settingsPanel" data-native-scene-root="settings-content" role="dialog" aria-modal="true" aria-label="Settings" onclick="if(event.target===this)closeSettings()">
   <div class="settings-dialog" data-od-id="settings-dialog">
     <div class="settings-workspace">
+    <template id="fallbackSettingsNavigationTemplate">
     <nav class="settings-tabs" aria-label="Settings navigation">
       <button class="settings-back" type="button" onclick="closeSettings()"><span aria-hidden="true">←</span> Back to app</button>
-      <button class="settings-tab active" onclick="switchSettingsTab('appearance', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v1.4M8 13.1v1.4M1.5 8h1.4M13.1 8h1.4M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"/></svg>Appearance</button>
-      <button class="settings-tab" onclick="switchSettingsTab('general', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M12.4 3.6l-1 1M4.6 11.4l-1 1"/></svg>General</button>
-      <button class="settings-tab" onclick="switchSettingsTab('models', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/><path d="M8 1.4v1.3M8 13.3v1.3"/></svg>Models</button>
-      <button class="settings-tab" onclick="switchSettingsTab('permissions', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.7l4.8 1.8v3.6c0 3.4-2.1 5.8-4.8 7.2-2.7-1.4-4.8-3.8-4.8-7.2V3.5z"/><path d="M5.7 8l1.5 1.5 3-3"/></svg>Permissions</button>
-      <button class="settings-tab" onclick="switchSettingsTab('tools', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 2.3a3 3 0 00-3.6 3.6l-4 4a1.5 1.5 0 002.1 2.1l4-4a3 3 0 003.6-3.6l-1.8 1.8-1.9-.3-.3-1.9z"/></svg>Tools</button>
+      <button class="settings-tab active" data-settings-pane="appearance" onclick="switchSettingsTab('appearance', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v1.4M8 13.1v1.4M1.5 8h1.4M13.1 8h1.4M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"/></svg>Appearance</button>
+      <button class="settings-tab" data-settings-pane="general" onclick="switchSettingsTab('general', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M12.4 3.6l-1 1M4.6 11.4l-1 1"/></svg>General</button>
+      <button class="settings-tab" data-settings-pane="models" onclick="switchSettingsTab('models', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/><path d="M8 1.4v1.3M8 13.3v1.3"/></svg>Models</button>
+      <button class="settings-tab" data-settings-pane="permissions" onclick="switchSettingsTab('permissions', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.7l4.8 1.8v3.6c0 3.4-2.1 5.8-4.8 7.2-2.7-1.4-4.8-3.8-4.8-7.2V3.5z"/><path d="M5.7 8l1.5 1.5 3-3"/></svg>Permissions</button>
+      <button class="settings-tab" data-settings-pane="tools" onclick="switchSettingsTab('tools', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 2.3a3 3 0 00-3.6 3.6l-4 4a1.5 1.5 0 002.1 2.1l4-4a3 3 0 003.6-3.6l-1.8 1.8-1.9-.3-.3-1.9z"/></svg>Tools</button>
     </nav>
+    </template>
+    <div id="fallbackSettingsNavigationMount" hidden></div>
     <div class="settings-content">
       <div class="settings-pane active" id="pane-appearance">
         <div class="settings-pane-title">Appearance</div>
@@ -2671,6 +2697,7 @@ html[data-theme-mode="dark"] .settings-content {
 
 <!-- ============ Tauri IPC 脚本 ============ -->
 
+<script src="gui_shared.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

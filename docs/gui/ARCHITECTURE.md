@@ -4,11 +4,12 @@
 
 ## 1. 概述
 
-Rózsa GUI 基于 **Tauri 2.x** 构建，采用 Rust 后端 + Web 前端的跨平台架构：
+Rózsa GUI 基于固定版本 **Tauri 2.11.5** 构建，采用 Rust 后端 + Web 前端的跨平台架构：
 
 - **Rust 后端**：负责 agent 会话管理、工具执行、权限审批、状态持久化。
-- **Tauri IPC 层**：前端通过 `invoke()` 调用后端命令，后端通过 `emit()` 推送事件到前端。
-- **Web 前端**：单文件 HTML/CSS/JS，渲染聊天界面、工具调用、权限面板、设置。
+- **Tauri IPC 层**：前端通过 `invoke()` 调用后端命令，后端按 `main` / `sidebar` WebView 定向推送事件。
+- **Web 前端**：macOS 使用两个持久 WebView；非 macOS 在 main WebView 中保留 CSS fallback 布局。
+- **macOS 原生容器**：一个 `NSWindow` 内安装一个 `NativeSplitHost`，由 `NSSplitViewController` 管理 sidebar 与 main panel。
 
 **设计目标**：
 
@@ -27,10 +28,16 @@ crates/rozsa-gui/
 │   ├── lib.rs              — crate 入口，GuiConfig + run() 公开接口
 │   ├── state.rs            — GuiState 共享状态 + 前端数据结构
 │   ├── commands.rs         — Tauri IPC 命令处理器（send_message, get_sessions 等）
-│   └── events.rs           — AgentEvent → GuiEvent 转换 + 权限监听任务
+│   ├── events.rs           — main/sidebar targeted event + 权限监听任务
+│   ├── scene_router.rs     — revisioned GuiScene 与 WebView ready 协调
+│   ├── native_split_view.rs— macOS NSSplitViewController 与 sidebar backing
+│   └── native_titlebar.rs  — macOS drag/toggle/zoom/fullscreen chrome
 └── frontend/
-    ├── index.html          — 完整单文件 UI（CSS + HTML + JS）
-    └── main.js             — TauriBridge (IPC wrapper) + SessionStore (前端状态)
+    ├── index.html          — main WebView 的 MainContent/SettingsContent roots
+    ├── app.js              — main scene、chat、permission、settings form
+    ├── sidebar.html        — sidebar WebView 的两个 sidebar scene roots
+    ├── sidebar.js          — session/status 与 settings navigation
+    └── gui_shared.js       — scene/theme revision 与共享 DOM helper
 ```
 
 **crate 定位**：
@@ -63,20 +70,43 @@ crates/rozsa-gui/
 
 **后端 → 前端（Events）**：
 
-后端通过 `app_handle.emit(event_name, payload)` 推送事件，前端通过 `window.__TAURI__.event.listen(event_name, handler)` 监听。
+后端通过 `emit_to("main", ...)`、`emit_to("sidebar", ...)` 或显式的 `emit_both(...)` 推送事件。前端仍通过 `window.__TAURI__.event.listen(event_name, handler)` 监听，但两个 WebView 只订阅各自职责内的事件。
 
 ### 3.3 Web 前端
 
 前端文件：
 
-- `frontend/index.html`：完整单文件 UI，包含 CSS + HTML + JS（内联 `<style>` 和 `<script>`）。
-- `frontend/main.js`：Tauri API 封装层，导出 `TauriBridge` 和 `SessionStore`。
+- `frontend/index.html` + `app.js`：持久 main WebView。Main scene 承载 chat/composer/permission；Settings scene 承载当前 settings pane。
+- `frontend/sidebar.html` + `sidebar.js`：持久 sidebar WebView。Main scene 承载 session/status；Settings scene 承载 settings navigation。
+- `frontend/gui_shared.js`：两个 WebView 共用的 scene/theme revision 应用规则。
 
 前端职责：
 
 - 渲染聊天流、工具调用、权限面板、设置面板。
-- 监听 `agent-event` 事件，逐步更新 UI（流式显示）。
-- 管理本地会话状态（`SessionStore`），存储消息、工具调用、当前会话 ID。
+- main WebView 监听 `ui-state`、`tool-event` 和 `permission-request`，逐步更新 UI。
+- 按 session 保存 draft、selection、scroll、展开状态和 permission UI progress。
+
+### 3.4 macOS 原生 split 与 scene
+
+macOS 运行时结构固定为：
+
+```text
+NSWindow
+├─ NativeTitlebarHost
+│  ├─ TitlebarDragView
+│  └─ sidebar toggle -> NSSplitViewController.toggleSidebar
+└─ NativeSplitHost / NSSplitViewController
+   ├─ sidebar NSSplitViewItem -> sidebar WebView
+   │  ├─ MainSidebar
+   │  └─ SettingsSidebar
+   └─ main NSSplitViewItem -> main WebView
+      ├─ MainContent
+      └─ SettingsContent
+```
+
+两个 split item 和两个 WebView 在 Main/Settings 切换期间保持 identity。`scene_router.rs` 持有窗口级 `GuiScene` 和 revision；前端只切换预创建 root 的 `hidden` / `inert`，不 reload 或重建 stateful roots。pane frame、divider、collapse、fullscreen overlay 和 width persistence 只由 AppKit 管理。
+
+实现锚点：[`native_split_view.rs`](../../crates/rozsa-gui/src/native_split_view.rs)、[`native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs)、[`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js)。验证记录见 [`NATIVE_SPLIT_VALIDATION.md`](./NATIVE_SPLIT_VALIDATION.md)。
 
 ## 4. IPC 协议
 
@@ -86,7 +116,7 @@ crates/rozsa-gui/
 
 | 命令 | 参数 | 返回值 | 说明 |
 |------|------|--------|------|
-| `send_message` | `{ message: string }` | `()` | 发送用户消息，触发 agent loop，通过 `agent-event` 流式返回 |
+| `send_message` | `{ message: string }` | `()` | 发送用户消息，触发 agent loop，通过 `ui-state` / `tool-event` 定向返回 |
 | `get_sessions` | - | `SessionInfo[]` | 列出所有会话（从 `session_dir` 读取 `.jsonl` 文件） |
 | `switch_session` | `{ sessionId: string }` | `()` | 切换到指定会话 |
 | `new_session` | - | `string` | 创建新会话并返回 ID |
@@ -97,37 +127,25 @@ crates/rozsa-gui/
 
 ### 4.2 Events（后端 → 前端）
 
-所有事件通过 `agent-event` channel 发送，payload 是 `GuiEvent` 枚举。
+事件按消费者职责定向，不使用 app-global consumer：
 
-#### GuiEvent 变体
+| Event | Target | 说明 |
+| --- | --- | --- |
+| `gui-scene-snapshot` | ready 的 `main` / `sidebar` | 完整 `{revision, scene, selectedPane}`；旧 revision 丢弃 |
+| `ui-state` | `main` | active session 的消息与流式 UI snapshot |
+| `tool-event` | `main` | tool 生命周期 |
+| `permission-request` | `main` | 权限审批请求 |
+| `sidebar-state` | `sidebar` | session/status/git/quota/actions 完整 snapshot |
+| `theme-state` | native host，再到 `main` + `sidebar` | 原生 backing 先更新，再发布同 revision 完整 theme snapshot |
 
-`GuiEvent` 是 tagged enum，序列化为 `{ "type": "...", "data": {...} }`。
-
-| 事件类型 | 数据字段 | 说明 |
-|---------|---------|------|
-| `ThinkingStart` | - | Thinking 开始 |
-| `ThinkingContent` | `{ text: string }` | Thinking 流式内容 |
-| `ThinkingEnd` | `{ duration_ms: u64 }` | Thinking 结束 |
-| `MessageStart` | - | Assistant 消息开始 |
-| `MessageDelta` | `{ text: string }` | Assistant 消息流式增量 |
-| `MessageEnd` | - | Assistant 消息结束 |
-| `ToolCallStart` | `{ id, name, args }` | 工具调用开始 |
-| `ToolCallEnd` | `{ id, status, duration_ms, output }` | 工具调用结束 |
-| `PermissionRequired` | `{ id, title, risk_type, tool_name, command, description }` | 需要权限审批 |
-| `Error` | `{ message: string }` | Agent loop 错误 |
-| `SessionEnd` | `{ total_duration_ms, files_changed }` | 会话结束（包含文件变更摘要） |
-
-**转换逻辑**：
-
-- `events.rs::convert_agent_event()` 将 `rozsa_core::events::AgentEvent` 转换为 `GuiEvent`。
-- 内部生命周期事件（`AgentStart`, `TurnStart` 等）不转发到前端。
+`theme-state` 中包含 light/dark theme definition。`translucentSidebar=true` 时原生 host 显示系统 sidebar material；关闭时显示当前主题的 opaque sidebar color。sidebar WebView 本身始终透明。
 
 ### 4.3 权限事件流
 
 权限审批通过专用通道推送到前端：
 
 1. 后端权限系统生成审批请求，通过 `permission_request_rx` (mpsc channel) 发送 `(request_id, ApprovalInfo)`。
-2. `events.rs::start_permission_listener()` 在后台任务中监听通道，收到请求后转换为 `GuiEvent::PermissionRequired` 并 emit 到前端。
+2. `events.rs::spawn_permission_listener()` 在后台任务中监听通道，收到请求后向 main WebView 发送 `permission-request`。
 3. 前端弹出权限面板，用户点击 Approve/Deny。
 4. 前端调用 `approve_permission(requestId)` 或 `deny_permission(requestId)`。
 5. 后端从 `PendingApprovals` (DashMap) 中取出对应的 oneshot sender，发送 `PermissionResponse::Allow` 或 `Deny`。
@@ -173,7 +191,7 @@ class SessionStore {
 
 **流式更新**：
 
-- 前端监听 `agent-event` 事件，根据事件类型更新 UI：
+- main WebView 监听 `ui-state` / `tool-event`，根据 snapshot 和事件更新 UI：
   - `MessageStart`：创建新消息占位符。
   - `MessageDelta`：追加文本到当前消息。
   - `ToolCallStart`：插入工具调用占位符。
@@ -226,7 +244,7 @@ pub async fn send_message(
     // 2. 订阅 session.subscribe() 获取 event receiver
     // 3. 克隆 app_handle 到 spawned task
     // 4. spawn agent loop: session.prompt(&message)
-    // 5. spawn event listener: loop { rx.recv(), convert_agent_event(), emit() }
+    // 5. event forwarder 把 active session snapshot 定向发送到 main WebView
     // 6. agent loop 结束后设置 is_running = false
 }
 ```
@@ -236,41 +254,17 @@ pub async fn send_message(
 - **订阅先于 spawn**：避免丢失事件（broadcast channel 会 lag 但不会丢失已发送的事件）。
 - **两个并行任务**：
   - Task 1: `session.prompt()` 执行 agent loop。
-  - Task 2: 监听 event stream，转换并 emit 到前端。
+  - Task 2: 监听 event stream，更新 live state 并向 main WebView 发布定向事件。
 - **事件监听终止**：收到 `AgentEnd` 或 `RecvError::Closed` 时退出 loop。
 
 ### 6.3 前端流式渲染
 
-前端监听 `agent-event` 事件，根据事件类型更新 DOM：
+main WebView 分别监听定向事件：
 
 ```javascript
-window.__TAURI__.event.listen("agent-event", (event) => {
-  const { type, data } = event.payload;
-  
-  switch (type) {
-    case "ThinkingStart":
-      // 创建 thinking 块
-      break;
-    case "ThinkingContent":
-      // 追加 thinking 文本
-      break;
-    case "MessageStart":
-      // 创建 assistant 消息占位符
-      break;
-    case "MessageDelta":
-      // 追加消息文本（streaming）
-      break;
-    case "ToolCallStart":
-      // 插入工具调用卡片，状态设为 "running"
-      break;
-    case "ToolCallEnd":
-      // 更新工具调用状态和输出
-      break;
-    case "PermissionRequired":
-      // 弹出权限面板
-      break;
-  }
-});
+window.__TAURI__.event.listen("ui-state", event => renderState(event.payload));
+window.__TAURI__.event.listen("tool-event", event => handleToolEvent(event.payload));
+window.__TAURI__.event.listen("permission-request", event => showPermission(event.payload));
 ```
 
 ## 7. 权限系统集成
@@ -423,37 +417,19 @@ GUI 视觉设计和交互规范见 [UI_USAGE_GUIDELINES.md](./UI_USAGE_GUIDELINE
 ## 架构图
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                         Tauri Window                          │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │                     Frontend (Web)                      │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
-│  │  │ SessionStore │  │ TauriBridge  │  │   Renderer   │  │  │
-│  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  │  │
-│  │         │                 │                 │           │  │
-│  └─────────┼─────────────────┼─────────────────┼───────────┘  │
-│            │                 │                 │              │
-│            │    invoke()     │    listen()     │              │
-│            ▼                 ▼                 ▼              │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │                    Tauri IPC Layer                      │  │
-│  │           commands.rs           events.rs               │  │
-│  └─────────────────────┬───────────────┬───────────────────┘  │
-│                        │               │                      │
-│                        │               │ emit()               │
-│                        ▼               ▼                      │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │                    Rust Backend                         │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
-│  │  │  GuiState    │  │ AgentSession │  │ Permissions  │  │  │
-│  │  │ (managed)    │  │ (broadcast)  │  │ (DashMap)    │  │  │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  │  │
-│  └─────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                     ┌────────────────────┐
-                     │   rozsa-core       │
-                     │   (LLM, Tools)     │
-                     └────────────────────┘
+NSWindow
+├─ NativeTitlebarHost
+└─ NativeSplitHost / NSSplitViewController
+   ├─ sidebar NSSplitViewItem -> persistent sidebar WebView
+   │  └─ MainSidebar | SettingsSidebar
+   └─ main NSSplitViewItem -> persistent main WebView
+      └─ MainContent | SettingsContent
+             │
+             ├─ invoke(command)
+             ▼
+      commands.rs + scene_router.rs + events.rs
+             │
+             ├─ emit_to(main/sidebar)
+             ▼
+      GuiState + AgentSession + PermissionController
 ```

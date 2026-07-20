@@ -1,6 +1,6 @@
 name: rozsa
-phase: TEST
-mode: fast
+phase: DEV
+mode: quick
 goals_minor: rozsa 基本功能进入可用状态
-updated: 2026-07-12 03:41
+updated: 2026-07-21 00:28
 started: 2026-06-05 19:57

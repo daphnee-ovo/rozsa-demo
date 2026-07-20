@@ -108,6 +108,7 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
     let session_id = created.id.clone();
     let agent = Arc::new(created.agent);
     let gui_state = GuiState {
+        scene_router: Arc::new(Mutex::new(Default::default())),
         tabs: Arc::new(Mutex::new(vec![SessionTab::Active {
             path: created.path,
             agent: agent.clone(),
@@ -127,14 +128,18 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
         )),
         global_settings_path: None,
         runtime_settings: Arc::new(Mutex::new(settings_manager.resolved().clone())),
+        quota_summary: Arc::new(Mutex::new(None)),
     };
     let app = tauri::test::mock_app();
+    let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
     let (ui_tx, mut ui_rx) = tokio::sync::mpsc::unbounded_channel();
     let (tool_tx, mut tool_rx) = tokio::sync::mpsc::unbounded_channel();
-    app.listen("ui-state", move |event: Event| {
+    main.listen("ui-state", move |event: Event| {
         let _ = ui_tx.send(event.payload().to_string());
     });
-    app.listen("tool-event", move |event: Event| {
+    main.listen("tool-event", move |event: Event| {
         let _ = tool_tx.send(event.payload().to_string());
     });
     spawn_event_forwarder_for_session(app.handle().clone(), session_id.clone(), gui_state);

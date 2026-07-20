@@ -18,8 +18,11 @@
 // |   +-- Appearance switches and theme persistence
 // +-- Slash Command Autocomplete (updateAutocomplete, selectSlashCmd, navigateAutocomplete)
 // +-- Input Composition (IME lifecycle and input refresh)
+// +-- Native File Drag (Finder paths to @path composer references)
 // +-- Keyboard Shortcuts (global keydown handler)
 // +-- UI Helpers (toggleToolCall, toggleThinking, copyCode, autoResize, escapeHtml)
+// +-- Native Scene Routing (persistent MainContent/SettingsContent roots)
+// Design: ../../../.dev-doc/main/SPEC.md#6-frontend-迁移边界
 // ===================================================================
 
 let invoke, listen;
@@ -74,6 +77,12 @@ let restoringSessionScroll = false;
 let scrollStateFrame = 0;
 let sidebarCollapsed = false;
 let sidebarAutoCollapsed = false;
+let nativeSplitMode = false;
+const guiSceneState = { revision: 0, scene: 'main', selectedPane: null };
+const mainThemeState = { revision: 0 };
+let pendingGuiSceneSnapshot = null;
+let pendingGuiSceneIntent = null;
+let mainSceneContinuity = null;
 
 // =============== Slash Commands Registry ===============
 
@@ -131,9 +140,13 @@ const LOCAL_COMMANDS = new Set([
 // =============== Initialization ===============
 
 window.addEventListener('DOMContentLoaded', async () => {
+  nativeSplitMode = window.RozsaGuiShared.isNativeSplitPlatform();
+  preparePlatformSceneDom();
   setupChatScrollLock();
-  syncMainSidebarViewport();
-  syncChromeBackgroundGeometry();
+  if (!nativeSplitMode) {
+    syncMainSidebarViewport();
+    syncChromeBackgroundGeometry();
+  }
 
   let retries = 0;
   while (!window.__TAURI__ && retries < 30) {
@@ -149,13 +162,18 @@ window.addEventListener('DOMContentLoaded', async () => {
   invoke = window.__TAURI__.core.invoke;
   listen = window.__TAURI__.event.listen;
   configureAttachmentPicker();
+  await configureNativeFileDrag();
 
+  await listen('gui-scene-snapshot', ev => applyGuiSceneSnapshot(ev.payload));
+  await listen('theme-state', ev => applyMainThemeState(ev.payload));
   await listen('ui-state', ev => renderState(ev.payload));
   await listen('tool-event', ev => handleToolEvent(ev.payload));
   await listen('permission-request', ev => showPermission(ev.payload));
   await listen('error', ev => showError(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
   await listen('notification', ev => showNotification(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
-  await listen('native-sidebar-toggle', () => toggleMainSidebar());
+  await listen('native-sidebar-toggle', () => {
+    if (!nativeSplitMode) toggleMainSidebar();
+  });
   await listen('native-fullscreen', ev => {
     console.debug('[rozsa-gui][fullscreen] native event', ev.payload);
     const payload = ev.payload;
@@ -166,8 +184,22 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
   scheduleNativeFullscreenSync('startup');
 
+  if (nativeSplitMode) {
+    try {
+      const snapshot = await invoke('gui_webview_ready', {
+        webview: 'main',
+        lastRevision: guiSceneState.revision,
+      });
+      applyGuiSceneSnapshot(snapshot);
+    } catch (e) {
+      showError('gui_webview_ready failed: ' + String(e));
+    }
+  }
+
   try { const s = await invoke('get_state'); renderState(s); } catch (e) { showError('get_state failed: ' + String(e)); }
-  try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { showSidebarError('sessionList', 'get_sessions failed: ' + String(e)); }
+  if (!nativeSplitMode) {
+    try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { showSidebarError('sessionList', 'get_sessions failed: ' + String(e)); }
+  }
   try { models = await invoke('list_models'); renderModelSelector(); } catch (e) { showError('list_models failed: ' + String(e)); }
   loadSettings().catch(() => {});
   refreshRateLimits(false);
@@ -200,11 +232,11 @@ function renderState(snap) {
     return;
   }
   updateHeader(snap);
-  updateSidebar(snap);
+  if (!nativeSplitMode) updateSidebar(snap);
   renderMessages(snap.messages, snap.isStreaming, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
   renderRunningMessages(snap.queuedMessages, snap.steeringConversation);
   updateAbortButton();
-  renderSessionList();
+  if (!nativeSplitMode) renderSessionList();
   if (sessionChanged) restoreSessionDraft(snap.sessionId);
   schedulePermPanelDisplay();
 }
@@ -1392,7 +1424,10 @@ function handleCompositionEnd(input) {
   // Let the browser commit the final composition text before highlight DOM
   // replacement. A new composition invalidates this deferred refresh.
   setTimeout(() => {
-    if (!isInputComposing) updateAutocomplete();
+    if (!isInputComposing) {
+      updateAutocomplete();
+      flushPendingGuiSceneTransition();
+    }
   }, 0);
 }
 
@@ -1511,8 +1546,10 @@ async function sendMessage() {
   try {
     await invoke('send_message', { message: text });
     // 发消息后刷新 session 列表（新会话首条消息会创建 .jsonl）
-    sessions = await invoke('get_sessions');
-    renderSessionList();
+    if (!nativeSplitMode) {
+      sessions = await invoke('get_sessions');
+      renderSessionList();
+    }
   } catch (e) {
     showError(String(e));
   }
@@ -1545,8 +1582,10 @@ async function handleSlashAction(action, value) {
       showHotkeys();
       return;
     case 'refreshSessions':
-      sessions = await invoke('get_sessions');
-      renderSessionList();
+      if (!nativeSplitMode) {
+        sessions = await invoke('get_sessions');
+        renderSessionList();
+      }
       return;
     case 'refreshModels':
       models = await invoke('list_models');
@@ -1767,6 +1806,131 @@ function isSidebarCollapsed() {
   return sidebarCollapsed || sidebarAutoCollapsed;
 }
 
+function preparePlatformSceneDom() {
+  document.body.classList.toggle('native-split-main', nativeSplitMode);
+  if (nativeSplitMode) return;
+  materializeFallbackTemplate('fallbackSidebarTemplate', 'fallbackSidebarMount');
+  materializeFallbackTemplate('fallbackSettingsNavigationTemplate', 'fallbackSettingsNavigationMount');
+}
+
+function materializeFallbackTemplate(templateId, mountId) {
+  const template = document.getElementById(templateId);
+  const mount = document.getElementById(mountId);
+  if (!template || !mount) return;
+  mount.replaceWith(template.content.cloneNode(true));
+}
+
+function applyGuiSceneSnapshot(snapshot) {
+  if (!nativeSplitMode) return false;
+  if (isInputComposing && snapshot?.scene !== guiSceneState.scene) {
+    if (!pendingGuiSceneSnapshot || snapshot.revision > pendingGuiSceneSnapshot.revision) {
+      pendingGuiSceneSnapshot = snapshot;
+    }
+    return false;
+  }
+  return window.RozsaGuiShared.applySceneSnapshot(guiSceneState, snapshot, renderNativeMainScene);
+}
+
+function applyMainThemeState(snapshot) {
+  return window.RozsaGuiShared.applyThemeSnapshot(mainThemeState, snapshot, renderMainThemeState);
+}
+
+function renderMainThemeState(snapshot) {
+  themeDefinitions.light = snapshot.lightTheme;
+  themeDefinitions.dark = snapshot.darkTheme;
+  const theme = window.RozsaGuiShared.resolveTheme(snapshot);
+  applyThemeDefinition(theme, snapshot.themeMode, snapshot.isMacos);
+  applyFontSize(snapshot.fontSize);
+}
+
+function renderNativeMainScene(snapshot) {
+  const settingsVisible = snapshot.scene === 'settings';
+  const leavingMain = settingsVisible && guiSceneState.scene === 'main';
+  const returningMain = !settingsVisible && guiSceneState.scene === 'settings';
+  if (leavingMain) captureMainSceneContinuity();
+  window.RozsaGuiShared.setSceneRootVisible(
+    document.getElementById('mainContentScene'),
+    !settingsVisible,
+  );
+  window.RozsaGuiShared.setSceneRootVisible(
+    document.getElementById('settingsPanel'),
+    settingsVisible,
+  );
+  document.body.classList.toggle('settings-visible', settingsVisible);
+  document.getElementById('settingsPanel')?.classList.toggle('visible', settingsVisible);
+  if (settingsVisible) {
+    renderSettingsSelection(snapshot.selectedPane || 'appearance');
+    loadSettings().catch(() => {});
+  } else if (returningMain) {
+    requestAnimationFrame(restoreMainSceneContinuity);
+  }
+}
+
+async function requestGuiScene(scene, selectedPane = null, allowRetry = true) {
+  if (isInputComposing && scene !== guiSceneState.scene) {
+    pendingGuiSceneIntent = { scene, selectedPane };
+    return null;
+  }
+  const expectedRevision = guiSceneState.revision;
+  const snapshot = await invoke('set_gui_scene', {
+    scene,
+    selectedPane,
+    expectedRevision,
+  });
+  applyGuiSceneSnapshot(snapshot);
+  if (isInputComposing) return snapshot;
+  const desiredPane = scene === 'settings' ? selectedPane : null;
+  if (allowRetry && snapshot.revision !== expectedRevision &&
+      (guiSceneState.scene !== scene || guiSceneState.selectedPane !== desiredPane)) {
+    return requestGuiScene(scene, selectedPane, false);
+  }
+  return snapshot;
+}
+
+function captureMainSceneContinuity() {
+  const chat = document.getElementById('chatMessages');
+  const input = document.getElementById('msgInput');
+  const mainRoot = document.getElementById('mainContentScene');
+  if (activeSessionId) captureSessionDraft(activeSessionId);
+  if (activeSessionId && chat) persistSessionViewState(activeSessionId, chat);
+  if (activeSessionId) capturePermissionUiState(activeSessionId);
+  mainSceneContinuity = {
+    activeSessionId,
+    focusOwner: mainRoot?.contains(document.activeElement) ? document.activeElement : null,
+    inputSelection: getInputSelection(input),
+  };
+}
+
+function restoreMainSceneContinuity() {
+  const memory = mainSceneContinuity;
+  const input = document.getElementById('msgInput');
+  const focusOwner = memory?.focusOwner;
+  if (focusOwner?.isConnected && typeof focusOwner.focus === 'function') {
+    focusOwner.focus({ preventScroll: true });
+    if (focusOwner === input && memory.inputSelection) {
+      setInputSelection(input, memory.inputSelection.start, memory.inputSelection.end);
+    }
+    return;
+  }
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  const fallbackOffset = getInputText(input).length;
+  setInputSelection(input, fallbackOffset, fallbackOffset);
+}
+
+function flushPendingGuiSceneTransition() {
+  const snapshot = pendingGuiSceneSnapshot;
+  const intent = pendingGuiSceneIntent;
+  pendingGuiSceneSnapshot = null;
+  pendingGuiSceneIntent = null;
+  if (snapshot) applyGuiSceneSnapshot(snapshot);
+  if (intent && (guiSceneState.scene !== intent.scene ||
+      guiSceneState.selectedPane !== (intent.scene === 'settings' ? intent.selectedPane : null))) {
+    void requestGuiScene(intent.scene, intent.selectedPane)
+      .catch(error => showError('Failed to switch GUI scene: ' + String(error)));
+  }
+}
+
 function updateSidebarToggleButtons(collapsed) {
   document.querySelectorAll('.sidebar-toggle-button').forEach(button => {
     button.setAttribute('aria-pressed', String(!collapsed));
@@ -1802,6 +1966,7 @@ function toggleMainSidebar() {
 }
 
 function syncMainSidebarViewport() {
+  if (nativeSplitMode) return;
   const shouldAutoCollapse = window.innerWidth <= 1100;
   if (shouldAutoCollapse !== sidebarAutoCollapsed) {
     sidebarAutoCollapsed = shouldAutoCollapse;
@@ -1822,6 +1987,7 @@ function sidebarChromeBoundary(element, collapsed) {
 }
 
 function syncChromeBackgroundGeometry() {
+  if (nativeSplitMode) return;
   const root = document.documentElement;
   const collapsed = isSidebarCollapsed();
   root.style.setProperty(
@@ -1835,6 +2001,7 @@ function syncChromeBackgroundGeometry() {
 }
 
 function handleSidebarEdgeReveal(event) {
+  if (nativeSplitMode) return;
   const collapsed = isSidebarCollapsed();
   const settingsPanel = document.getElementById('settingsPanel');
   const settingsVisible = settingsPanel?.classList.contains('visible');
@@ -1894,6 +2061,12 @@ function setNativeFullscreen(fullscreen) {
 }
 
 function toggleSettings() {
+  if (nativeSplitMode) {
+    const scene = guiSceneState.scene === 'settings' ? 'main' : 'settings';
+    void requestGuiScene(scene, scene === 'settings' ? 'appearance' : null)
+      .catch(error => showError('Failed to switch GUI scene: ' + String(error)));
+    return;
+  }
   const panel = document.getElementById('settingsPanel');
   if (!panel) return;
   if (panel.classList.contains('visible')) {
@@ -1908,6 +2081,10 @@ function toggleSettings() {
 }
 
 function closeSettings() {
+  if (nativeSplitMode) {
+    void requestGuiScene('main').catch(error => showError('Failed to close Settings: ' + String(error)));
+    return;
+  }
   const panel = document.getElementById('settingsPanel');
   document.body.classList.remove('settings-visible');
   if (panel) panel.classList.remove('visible');
@@ -1915,9 +2092,19 @@ function closeSettings() {
 }
 
 function switchSettingsTab(tabId, btn) {
+  if (nativeSplitMode) {
+    void requestGuiScene('settings', tabId)
+      .catch(error => showError('Failed to switch Settings pane: ' + String(error)));
+    return;
+  }
+  renderSettingsSelection(tabId, btn);
+}
+
+function renderSettingsSelection(tabId, btn = null) {
   document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.settings-pane').forEach(p => p.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+  const selectedButton = btn || document.querySelector(`[data-settings-pane="${tabId}"]`);
+  if (selectedButton) selectedButton.classList.add('active');
   const pane = document.getElementById('pane-' + tabId);
   if (pane) pane.classList.add('active');
 }
@@ -2289,18 +2476,18 @@ function installSystemThemeListener() {
   systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
   const handleChange = () => {
     if (currentSettings?.appearance?.themeMode === 'system') {
-      applySelectedTheme().catch(error => showError('Failed to apply system theme: ' + String(error)));
+      invoke('get_settings').catch(error => showError('Failed to apply system theme: ' + String(error)));
     }
   };
   if (systemThemeMediaQuery.addEventListener) systemThemeMediaQuery.addEventListener('change', handleChange);
   else systemThemeMediaQuery.addListener(handleChange);
 }
 
-function applyThemeDefinition(theme, themeMode) {
+function applyThemeDefinition(theme, themeMode, isMacos = currentSettings?.appearance?.isMacos) {
   const root = document.documentElement;
   root.setAttribute('data-theme-mode', themeMode === 'system' ? effectiveThemeMode(themeMode) : themeMode);
   root.setAttribute('data-theme-id', theme.id);
-  root.setAttribute('data-theme-translucent-sidebar', theme.translucentSidebar && currentSettings?.appearance?.isMacos ? 'true' : 'false');
+  root.setAttribute('data-theme-translucent-sidebar', theme.translucentSidebar && isMacos ? 'true' : 'false');
   Object.entries(theme.variables || {}).forEach(([key, value]) => root.style.setProperty(key, value));
   root.style.setProperty('--accent', theme.accent);
   root.style.setProperty('--semantic-accent', theme.accent);
@@ -2407,6 +2594,46 @@ function configureAttachmentPicker() {
   if (directoryButton) directoryButton.hidden = combined;
 }
 
+const nativeFileDragEvents = {
+  'tauri://drag-enter': 'enter',
+  'tauri://drag-over': 'over',
+  'tauri://drag-drop': 'drop',
+  'tauri://drag-leave': 'leave',
+};
+
+function handleNativeFileDrag(type, payload = {}) {
+  const inputWrapper = document.querySelector('.input-wrapper');
+  const active = type === 'enter' || type === 'over';
+  inputWrapper?.classList.toggle('file-drop-active', active);
+
+  if (type !== 'drop') return;
+
+  const paths = Array.isArray(payload?.paths)
+    ? payload.paths.filter(path => typeof path === 'string' && path.length > 0)
+    : [];
+  if (paths.length > 0) {
+    insertFileReferences(paths);
+  }
+}
+
+async function configureNativeFileDrag() {
+  const input = document.getElementById('msgInput');
+  if (!input || typeof listen !== 'function') return;
+
+  // Finder drops are delivered through Tauri's native events. Prevent the
+  // contenteditable default from navigating or inserting an opaque File node.
+  input.addEventListener('dragover', event => event.preventDefault());
+  input.addEventListener('drop', event => event.preventDefault());
+
+  try {
+    await Promise.all(Object.entries(nativeFileDragEvents).map(([eventName, type]) => (
+      listen(eventName, event => handleNativeFileDrag(type, event.payload))
+    )));
+  } catch (error) {
+    showError('Native file drag listener failed: ' + String(error));
+  }
+}
+
 async function attachFileReference() {
   const mode = usesCombinedAttachmentPicker() ? 'any' : 'file';
   await attachReference(mode);
@@ -2420,7 +2647,7 @@ async function attachReference(mode) {
   try {
     const path = await invoke('pick_attachment', { mode });
     if (!path) return;
-    insertInputText(formatFileReference(path));
+    insertFileReferences([path]);
   } catch (e) {
     showError('Attachment picker failed: ' + String(e));
   }
@@ -2443,6 +2670,16 @@ function insertInputText(text) {
   input.focus();
   autoResize(input);
   updateAutocomplete();
+}
+
+function insertFileReferences(paths) {
+  const input = document.getElementById('msgInput');
+  if (!input || !Array.isArray(paths) || paths.length === 0) return;
+  const current = getInputText(input);
+  const selection = getInputSelection(input);
+  const beforeSelection = current.slice(0, selection.start);
+  const separator = beforeSelection.length > 0 && !/\s$/.test(beforeSelection) ? ' ' : '';
+  insertInputText(separator + paths.map(formatFileReference).join(''));
 }
 
 function formatFileReference(path) {

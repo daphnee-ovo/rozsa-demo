@@ -19,6 +19,8 @@ use rozsa_app::session::manager::SessionManager;
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 
+use crate::scene_router::SceneRouter;
+
 pub use crate::turn_diff::{TurnActivity, TurnSummary, VerificationResult};
 
 pub type PreToolUseHook = Arc<
@@ -152,6 +154,8 @@ impl SessionTab {
 /// Tauri managed state
 #[derive(Clone)]
 pub struct GuiState {
+    /// Window-level Main/Settings scene shared by the two persistent WebViews.
+    pub scene_router: Arc<Mutex<SceneRouter>>,
     /// 所有 session tabs（key = session file path）
     pub tabs: Arc<Mutex<Vec<SessionTab>>>,
     /// 当前活跃 tab 的 index
@@ -165,6 +169,102 @@ pub struct GuiState {
     pub permission_controller: Arc<rozsa_app::permissions::PermissionController>,
     pub global_settings_path: Option<PathBuf>,
     pub runtime_settings: Arc<Mutex<rozsa_app::settings::Settings>>,
+    pub quota_summary: Arc<Mutex<Option<rozsa_model::rate_limit::RateLimitSnapshot>>>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidebarSessionSnapshot {
+    pub id: String,
+    pub path: String,
+    pub name: String,
+    pub modified: String,
+    pub message_count: u32,
+    pub activity: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidebarActionsSnapshot {
+    pub can_new_session: bool,
+    pub can_rename_session: bool,
+    pub can_delete_session: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidebarSnapshot {
+    pub sessions: Vec<SidebarSessionSnapshot>,
+    pub active_session_id: Option<String>,
+    pub git: Option<GitStatus>,
+    pub quota: Option<rozsa_model::rate_limit::RateLimitSnapshot>,
+    pub actions: SidebarActionsSnapshot,
+}
+
+impl GuiState {
+    pub async fn sidebar_snapshot(&self) -> Result<SidebarSnapshot, String> {
+        let session_dir = self
+            .session_dir
+            .as_ref()
+            .ok_or("No session directory configured")?;
+        let metas = SessionManager::list_dir(session_dir).map_err(|error| error.to_string())?;
+        let active_index = *self.active_tab.lock().await;
+        let tabs = self.tabs.lock().await;
+        let active_session_id = tabs.get(active_index).map(SessionTab::session_id);
+        let sessions = metas
+            .into_iter()
+            .map(|meta| {
+                let activity = tabs
+                    .iter()
+                    .find(|tab| tab.session_id() == meta.id)
+                    .map(|tab| {
+                        let approval_prefix = format!("{}:", meta.id);
+                        if self
+                            .pending_permission_contexts
+                            .iter()
+                            .any(|entry| entry.key().starts_with(&approval_prefix))
+                        {
+                            "approval"
+                        } else if tab.is_streaming() {
+                            "running"
+                        } else {
+                            "idle"
+                        }
+                    })
+                    .unwrap_or("idle")
+                    .to_owned();
+                let name = meta.name.unwrap_or_else(|| {
+                    let preview = meta.first_message.chars().take(50).collect::<String>();
+                    if meta.first_message.chars().count() > 50 {
+                        format!("{preview}...")
+                    } else {
+                        meta.first_message
+                    }
+                });
+                SidebarSessionSnapshot {
+                    id: meta.id,
+                    path: meta.path.to_string_lossy().to_string(),
+                    name,
+                    modified: meta.modified,
+                    message_count: meta.message_count,
+                    activity,
+                }
+            })
+            .collect();
+        drop(tabs);
+        let has_active_session = active_session_id.is_some();
+        Ok(SidebarSnapshot {
+            sessions,
+            active_session_id,
+            git: git_status(&self.shared.cwd),
+            quota: self.quota_summary.lock().await.clone(),
+            actions: SidebarActionsSnapshot {
+                can_new_session: true,
+                can_rename_session: has_active_session,
+                can_delete_session: has_active_session,
+            },
+        })
+    }
 }
 
 /// 创建新 AgentSession 所需的共享资源（不持有具体 session 状态）

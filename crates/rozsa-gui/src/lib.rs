@@ -7,7 +7,10 @@ pub mod events;
 pub mod file_refs;
 pub mod git_diff;
 #[cfg(target_os = "macos")]
+mod native_split_view;
+#[cfg(target_os = "macos")]
 mod native_titlebar;
+pub mod scene_router;
 pub mod state;
 pub mod turn_diff;
 
@@ -73,6 +76,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let gui_state = GuiState {
+        scene_router: Arc::new(tokio::sync::Mutex::new(scene_router::SceneRouter::default())),
         tabs: Arc::new(tokio::sync::Mutex::new(vec![initial_tab])),
         active_tab: Arc::new(tokio::sync::Mutex::new(0)),
         shared,
@@ -83,6 +87,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         permission_controller: config.permission_controller,
         global_settings_path: config.global_settings_path,
         runtime_settings: Arc::new(tokio::sync::Mutex::new(runtime_settings)),
+        quota_summary: Arc::new(tokio::sync::Mutex::new(None)),
     };
 
     let perm_rx = config.permission_request_rx;
@@ -91,6 +96,8 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_dialog::init())
         .manage(gui_state)
         .invoke_handler(tauri::generate_handler![
+            commands::set_gui_scene,
+            commands::gui_webview_ready,
             commands::send_message,
             commands::abort,
             commands::send_running_message,
@@ -128,34 +135,50 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
 
                 #[cfg(target_os = "macos")]
                 {
-                    let sidebar_event_handle = app.handle().clone();
+                    let sidebar_url =
+                        tauri::WebviewUrl::App(std::path::PathBuf::from("sidebar.html"));
+                    let titlebar_window = window.clone();
                     let fullscreen_event_handle = app.handle().clone();
-                    native_titlebar::install(
-                        &window,
-                        move || {
-                            let _ = sidebar_event_handle.emit("native-sidebar-toggle", ());
-                        },
-                        move |fullscreen, transitioning| {
-                            let payload = serde_json::json!({
-                                "fullscreen": fullscreen,
-                                "transitioning": transitioning,
-                            });
-                            match fullscreen_event_handle.emit("native-fullscreen", payload) {
-                                Ok(()) => eprintln!(
-                                    "[rozsa-gui][native-titlebar] emitted native-fullscreen={fullscreen} transitioning={transitioning}"
-                                ),
-                                Err(error) => eprintln!(
-                                    "[rozsa-gui][native-titlebar] failed to emit native-fullscreen={fullscreen} transitioning={transitioning}: {error}"
-                                ),
-                            }
-                        },
-                    )
+                    native_split_view::install(&window, sidebar_url, move || {
+                        native_titlebar::install(
+                            &titlebar_window,
+                            move || {
+                                if let Err(error) = native_split_view::toggle_sidebar() {
+                                    eprintln!(
+                                        "[rozsa-gui][native-titlebar] sidebar toggle failed: {error}"
+                                    );
+                                }
+                            },
+                            move |fullscreen, transitioning| {
+                                let payload = serde_json::json!({
+                                    "fullscreen": fullscreen,
+                                    "transitioning": transitioning,
+                                });
+                                match fullscreen_event_handle.emit("native-fullscreen", payload) {
+                                    Ok(()) => eprintln!(
+                                        "[rozsa-gui][native-titlebar] emitted native-fullscreen={fullscreen} transitioning={transitioning}"
+                                    ),
+                                    Err(error) => eprintln!(
+                                        "[rozsa-gui][native-titlebar] failed to emit native-fullscreen={fullscreen} transitioning={transitioning}: {error}"
+                                    ),
+                                }
+                            },
+                        )
+                    })
                     .map_err(std::io::Error::other)?;
                 }
 
                 let pending_approvals = app.state::<GuiState>().pending_approvals.clone();
                 window.on_window_event(move |event| {
                     if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                        #[cfg(target_os = "macos")]
+                        if let Err(error) = native_titlebar::teardown() {
+                            eprintln!("[rozsa-gui][native-titlebar] teardown failed: {error}");
+                        }
+                        #[cfg(target_os = "macos")]
+                        if let Err(error) = native_split_view::teardown() {
+                            eprintln!("[rozsa-gui][native-split] teardown failed: {error}");
+                        }
                         if let Some(approvals) = &pending_approvals {
                             deny_pending_approvals(approvals, None);
                         }

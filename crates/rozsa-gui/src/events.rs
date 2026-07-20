@@ -2,15 +2,158 @@
 //
 // 事件转发：每个 Active session tab 有独立的事件监听任务。
 
+use serde::Serialize;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use rozsa_app::themes::ThemeDefinition;
 use rozsa_core::events::AgentEvent;
 
+use crate::commands::AppearanceSnapshot;
 use crate::state::{
     GuiState, PermissionEvent, PermissionRequest, SessionTab, ToolEvent, UiSnapshot,
     find_tab_index_by_session,
 };
+
+pub const MAIN_WEBVIEW: &str = "main";
+pub const SIDEBAR_WEBVIEW: &str = "sidebar";
+static THEME_REVISION: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeStateSnapshot {
+    pub revision: u64,
+    pub theme_mode: String,
+    pub font_size: u8,
+    pub light_theme: ThemeDefinition,
+    pub dark_theme: ThemeDefinition,
+    pub is_macos: bool,
+}
+
+pub fn emit_to_webview<R: Runtime, S: Serialize + Clone>(
+    app: &AppHandle<R>,
+    webview: &str,
+    event: &str,
+    payload: S,
+) -> Result<(), String> {
+    app.emit_to(webview, event, payload)
+        .map_err(|error| format!("Failed to emit {event} to {webview}: {error}"))
+}
+
+pub fn emit_main<R: Runtime, S: Serialize + Clone>(
+    app: &AppHandle<R>,
+    event: &str,
+    payload: S,
+) -> Result<(), String> {
+    emit_to_webview(app, MAIN_WEBVIEW, event, payload)
+}
+
+pub fn emit_sidebar<R: Runtime, S: Serialize + Clone>(
+    app: &AppHandle<R>,
+    event: &str,
+    payload: S,
+) -> Result<(), String> {
+    emit_to_webview(app, SIDEBAR_WEBVIEW, event, payload)
+}
+
+pub fn emit_both<R: Runtime, S: Serialize + Clone>(
+    app: &AppHandle<R>,
+    event: &str,
+    payload: S,
+) -> Result<(), String> {
+    emit_main(app, event, payload.clone())?;
+    emit_sidebar(app, event, payload)
+}
+
+#[cfg(target_os = "macos")]
+fn native_theme_variant(theme: &ThemeDefinition) -> crate::native_split_view::NativeThemeVariant {
+    crate::native_split_view::NativeThemeVariant {
+        translucent: theme.translucent_sidebar,
+        opaque_color: theme
+            .variables
+            .get("--sidebar-bg")
+            .cloned()
+            .unwrap_or_else(|| theme.background.clone()),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn apply_native_theme_surface<R: Runtime>(
+    app: &AppHandle<R>,
+    revision: u64,
+    snapshot: &ThemeStateSnapshot,
+) -> Result<(), String> {
+    let surface = crate::native_split_view::NativeThemeSurface {
+        theme_mode: snapshot.theme_mode.clone(),
+        light: native_theme_variant(&snapshot.light_theme),
+        dark: native_theme_variant(&snapshot.dark_theme),
+    };
+    if objc2::MainThreadMarker::new().is_some() {
+        return crate::native_split_view::apply_theme_surface(revision, surface);
+    }
+
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let result = crate::native_split_view::apply_theme_surface(revision, surface);
+        let _ = sender.send(result);
+    })
+    .map_err(|error| format!("failed to schedule native theme surface: {error}"))?;
+    receiver
+        .recv()
+        .map_err(|error| format!("native theme surface response was dropped: {error}"))?
+}
+
+pub fn emit_theme_state<R: Runtime>(
+    app: &AppHandle<R>,
+    appearance: &AppearanceSnapshot,
+    light_theme: ThemeDefinition,
+    dark_theme: ThemeDefinition,
+) -> Result<ThemeStateSnapshot, String> {
+    let revision = THEME_REVISION.fetch_add(1, Ordering::SeqCst) + 1;
+    let snapshot = ThemeStateSnapshot {
+        revision,
+        theme_mode: appearance.theme_mode.clone(),
+        font_size: appearance.font_size,
+        light_theme,
+        dark_theme,
+        is_macos: appearance.is_macos,
+    };
+    #[cfg(target_os = "macos")]
+    apply_native_theme_surface(app, revision, &snapshot)?;
+    emit_both(app, "theme-state", snapshot.clone())?;
+    Ok(snapshot)
+}
+
+pub async fn emit_sidebar_state<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &GuiState,
+) -> Result<(), String> {
+    let snapshot = state.sidebar_snapshot().await?;
+    emit_sidebar(app, "sidebar-state", snapshot)
+}
+
+pub fn emit_gui_scene_snapshot<R: Runtime>(
+    app: &AppHandle<R>,
+    targets: &[crate::scene_router::GuiWebview],
+    snapshot: &crate::scene_router::GuiSceneSnapshot,
+) -> Result<(), String> {
+    for target in targets {
+        app.emit_to(
+            target.label(),
+            crate::scene_router::GUI_SCENE_SNAPSHOT_EVENT,
+            snapshot,
+        )
+        .map_err(|error| {
+            format!(
+                "Failed to emit GUI scene revision {} to {}: {error}",
+                snapshot.revision,
+                target.label()
+            )
+        })?;
+    }
+    Ok(())
+}
 
 /// Start an event forwarder addressed to an immutable session id, not a tab index.
 pub fn spawn_event_forwarder_for_session<R: Runtime>(
@@ -67,7 +210,8 @@ pub fn spawn_event_forwarder_for_session<R: Runtime>(
                             tool_name,
                             args,
                         } => {
-                            let _ = app.emit(
+                            let _ = emit_main(
+                                &app,
                                 "tool-event",
                                 ToolEvent::Start {
                                     session_id: session_id.clone(),
@@ -95,7 +239,8 @@ pub fn spawn_event_forwarder_for_session<R: Runtime>(
                                 })
                                 .collect::<Vec<_>>()
                                 .join("\n");
-                            let _ = app.emit(
+                            let _ = emit_main(
+                                &app,
                                 "tool-event",
                                 ToolEvent::End {
                                     session_id: session_id.clone(),
@@ -133,9 +278,17 @@ pub fn spawn_event_forwarder_for_session<R: Runtime>(
                                 } else {
                                     UiSnapshot::from_tab(tab, &shared)
                                 };
-                                let _ = app.emit("ui-state", &snapshot);
+                                let _ = emit_main(&app, "ui-state", &snapshot);
                             }
                         }
+                    }
+                    if matches!(
+                        event,
+                        AgentEvent::AgentStart
+                            | AgentEvent::AgentEnd { .. }
+                            | AgentEvent::ToolExecutionEnd { .. }
+                    ) {
+                        let _ = emit_sidebar_state(&app, &gui_state).await;
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -178,7 +331,9 @@ pub fn spawn_permission_listener(
                 trust_levels: request.info.trust_levels.clone(),
                 trust_groups: request.info.trust_groups.clone(),
             };
-            let _ = app.emit("permission-request", &event);
+            let _ = emit_main(&app, "permission-request", &event);
+            let state = app.state::<GuiState>();
+            let _ = emit_sidebar_state(&app, state.inner()).await;
         }
     });
 }

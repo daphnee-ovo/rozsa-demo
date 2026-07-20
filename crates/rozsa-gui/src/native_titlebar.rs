@@ -1,8 +1,13 @@
-//! Native macOS titlebar integration.
+//! Native macOS titlebar integration for `NativeSplitHost`.
 //!
-//! The webview owns the content and sidebar layout. AppKit owns the window
-//! chrome, while this module adds only the sidebar accessory action required
-//! by the GUI prototype.
+//! NativeSplitHost installs first and owns pane layout. This module then adds
+//! one drag surface and sidebar action to the stable split content root. The
+//! action calls the same split controller in Main and Settings. `teardown`
+//! removes notification observers and clears the action target before the
+//! split hierarchy and child WebView are destroyed.
+//!
+//! Related design: `docs/gui/ARCHITECTURE.md` and `.dev-doc/main/SPEC.md`.
+//! Lifecycle evidence: `docs/gui/NATIVE_SPLIT_VALIDATION.md`.
 
 #![cfg(target_os = "macos")]
 
@@ -12,7 +17,6 @@ use objc2::runtime::{AnyObject, NSObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSButton, NSColor, NSEvent, NSImage, NSImageScaling, NSView,
-    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
     NSWindow, NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification,
     NSWindowDidResizeNotification, NSWindowOrderingMode, NSWindowStyleMask,
     NSWindowTitleVisibility, NSWindowWillEnterFullScreenNotification,
@@ -24,20 +28,8 @@ use tauri::WebviewWindow;
 const TITLEBAR_ACCESSORY_HEIGHT: f64 = 32.0;
 const TITLEBAR_LEADING_INSET: f64 = 76.0;
 
-fn install_sidebar_material(mtm: MainThreadMarker, webview_parent: &NSView) {
-    let material: objc2::rc::Retained<NSVisualEffectView> = unsafe {
-        msg_send![
-            NSVisualEffectView::alloc(mtm),
-            initWithFrame: webview_parent.bounds()
-        ]
-    };
-    material.setMaterial(NSVisualEffectMaterial::Sidebar);
-    material.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-    material.setState(NSVisualEffectState::FollowsWindowActiveState);
-    material.setAutoresizingMask(
-        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
-    );
-    webview_parent.addSubview_positioned_relativeTo(&material, NSWindowOrderingMode::Below, None);
+thread_local! {
+    static HOST: RefCell<Option<NativeTitlebarHost>> = const { RefCell::new(None) };
 }
 
 struct TitlebarDragViewIvars {
@@ -83,6 +75,29 @@ impl TitlebarDragView {
 
     fn retain_fullscreen_observer(&self, observer: objc2::rc::Retained<FullscreenObserver>) {
         self.ivars().fullscreen_observer.replace(Some(observer));
+    }
+
+    fn release_fullscreen_observer(&self) {
+        self.ivars().fullscreen_observer.replace(None);
+    }
+}
+
+struct NativeTitlebarHost {
+    drag_view: objc2::rc::Retained<TitlebarDragView>,
+    sidebar_button: objc2::rc::Retained<NSButton>,
+    fullscreen_observer: objc2::rc::Retained<FullscreenObserver>,
+}
+
+impl NativeTitlebarHost {
+    fn teardown(self) {
+        let notification_center = NSNotificationCenter::defaultCenter();
+        unsafe {
+            notification_center.removeObserver(self.fullscreen_observer.as_ref() as &AnyObject);
+            self.sidebar_button.setAction(None);
+            self.sidebar_button.setTarget(None);
+        }
+        self.drag_view.release_fullscreen_observer();
+        self.drag_view.removeFromSuperview();
     }
 }
 
@@ -203,19 +218,13 @@ pub fn install(
     let retained_window =
         unsafe { objc2::rc::Retained::retain(ns_window as *const NSWindow as *mut NSWindow) }
             .ok_or_else(|| "native NSWindow was released during titlebar setup".to_string())?;
-    let raw_webview_parent = window
-        .ns_view()
-        .map_err(|error| format!("failed to access native WebView parent: {error}"))?;
-    let webview_parent = unsafe { &*(raw_webview_parent as *const NSView) };
-    let retained_webview_parent =
-        unsafe { objc2::rc::Retained::retain(webview_parent as *const NSView as *mut NSView) }
-            .ok_or_else(|| {
-                "native WebView parent was released during titlebar setup".to_string()
-            })?;
-    install_sidebar_material(mtm, webview_parent);
+    let content_root = ns_window
+        .contentView()
+        .ok_or_else(|| "native split window has no content root".to_string())?;
+    let retained_content_root = content_root.clone();
 
     let drag_view = TitlebarDragView::new(mtm, on_toggle);
-    let webview_bounds = webview_parent.bounds();
+    let webview_bounds = content_root.bounds();
     let titlebar_width = (webview_bounds.size.width - TITLEBAR_LEADING_INSET).max(1.0);
     drag_view.setFrame(NSRect::new(
         NSPoint::new(
@@ -245,10 +254,10 @@ pub fn install(
         sidebar_button.setAction(Some(sel!(toggleSidebar:)));
     }
     drag_view.addSubview(&sidebar_button);
-    webview_parent.addSubview_positioned_relativeTo(&drag_view, NSWindowOrderingMode::Above, None);
+    content_root.addSubview_positioned_relativeTo(&drag_view, NSWindowOrderingMode::Above, None);
 
     let window_weak = objc2::rc::Weak::from_retained(&retained_window);
-    let webview_parent_weak = objc2::rc::Weak::from_retained(&retained_webview_parent);
+    let webview_parent_weak = objc2::rc::Weak::from_retained(&retained_content_root);
     let fullscreen_observer = FullscreenObserver::new(
         mtm,
         window_weak,
@@ -301,7 +310,38 @@ pub fn install(
     ns_window.setTitlebarSeparatorStyle(objc2_app_kit::NSTitlebarSeparatorStyle::None);
     ns_window.setOpaque(false);
     ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
-    log_window_geometry("installed", ns_window, Some(webview_parent));
+    log_window_geometry("installed", ns_window, Some(&content_root));
 
+    let host = NativeTitlebarHost {
+        drag_view,
+        sidebar_button,
+        fullscreen_observer,
+    };
+    let duplicate = HOST.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.is_some() {
+            Some(host)
+        } else {
+            *slot = Some(host);
+            None
+        }
+    });
+    if let Some(host) = duplicate {
+        host.teardown();
+        return Err("native titlebar is already installed".to_string());
+    }
+
+    Ok(())
+}
+
+/// Remove observers and action targets before NativeSplitHost teardown.
+pub fn teardown() -> Result<(), String> {
+    MainThreadMarker::new()
+        .ok_or_else(|| "native titlebar teardown must run on the main thread".to_string())?;
+    HOST.with(|slot| {
+        if let Some(host) = slot.borrow_mut().take() {
+            host.teardown();
+        }
+    });
     Ok(())
 }
