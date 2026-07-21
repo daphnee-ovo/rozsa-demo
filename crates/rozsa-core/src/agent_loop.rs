@@ -591,7 +591,26 @@ async fn execute_parallel(
                 context: context.clone(),
                 signal: signal.cloned(),
             };
-            if let Some(result) = before(ctx).await {
+            let before_result = match signal {
+                Some(token) => {
+                    tokio::select! {
+                        biased;
+                        _ = token.cancelled() => {
+                            let finalized = make_cancelled_finalized(call);
+                            emit.push(AgentEvent::ToolExecutionEnd {
+                                tool_call_id: call.id.clone(),
+                                tool_name: call.name.clone(),
+                                result: finalized_to_result_message(&finalized),
+                            });
+                            entries.push(PreparedEntry::Immediate(finalized));
+                            break;
+                        }
+                        result = before(ctx) => result,
+                    }
+                }
+                None => before(ctx).await,
+            };
+            if let Some(result) = before_result {
                 if result.block {
                     let reason = result
                         .reason
@@ -668,53 +687,21 @@ async fn execute_parallel(
 
         let finalized = match entry {
             PreparedEntry::Immediate(f) => f,
-            PreparedEntry::Pending { call, handle } => match handle.await {
-                Ok((call, exec_result)) => {
-                    let (content, details, is_error, terminate) = match exec_result {
-                        Ok(result) => (result.content, result.details, false, result.terminate),
-                        Err(err) => (
-                            vec![ContentBlock::Text {
-                                text: format!("{}", err),
-                                signature: None,
-                            }],
-                            serde_json::Value::Null,
-                            true,
-                            false,
-                        ),
-                    };
-
-                    let mut f = FinalizedToolCall {
-                        tool_call: call.clone(),
-                        content,
-                        details,
-                        is_error,
-                        terminate,
-                    };
-
-                    if let Some(ref after) = config.post_tool_use {
-                        apply_post_tool_use(&mut f, after.as_ref(), assistant_message, context);
+            PreparedEntry::Pending { call, mut handle } => match match signal {
+                Some(token) => {
+                    tokio::select! {
+                        biased;
+                        _ = token.cancelled() => {
+                            handle.abort();
+                            None
+                        }
+                        result = &mut handle => Some(result),
                     }
-
-                    emit.push(AgentEvent::ToolExecutionEnd {
-                        tool_call_id: f.tool_call.id.clone(),
-                        tool_name: f.tool_call.name.clone(),
-                        result: finalized_to_result_message(&f),
-                    });
-
-                    f
                 }
-                Err(join_error) => {
-                    let error_msg = format!("Tool execution panicked: {}", join_error);
-                    let f = FinalizedToolCall {
-                        tool_call: call.clone(),
-                        content: vec![ContentBlock::Text {
-                            text: error_msg,
-                            signature: None,
-                        }],
-                        details: serde_json::Value::Null,
-                        is_error: true,
-                        terminate: false,
-                    };
+                None => Some(handle.await),
+            } {
+                None => {
+                    let f = make_cancelled_finalized(&call);
                     emit.push(AgentEvent::ToolExecutionEnd {
                         tool_call_id: call.id.clone(),
                         tool_name: call.name.clone(),
@@ -722,6 +709,61 @@ async fn execute_parallel(
                     });
                     f
                 }
+                Some(join_result) => match join_result {
+                    Ok((call, exec_result)) => {
+                        let (content, details, is_error, terminate) = match exec_result {
+                            Ok(result) => (result.content, result.details, false, result.terminate),
+                            Err(err) => (
+                                vec![ContentBlock::Text {
+                                    text: format!("{}", err),
+                                    signature: None,
+                                }],
+                                serde_json::Value::Null,
+                                true,
+                                false,
+                            ),
+                        };
+
+                        let mut f = FinalizedToolCall {
+                            tool_call: call.clone(),
+                            content,
+                            details,
+                            is_error,
+                            terminate,
+                        };
+
+                        if let Some(ref after) = config.post_tool_use {
+                            apply_post_tool_use(&mut f, after.as_ref(), assistant_message, context);
+                        }
+
+                        emit.push(AgentEvent::ToolExecutionEnd {
+                            tool_call_id: f.tool_call.id.clone(),
+                            tool_name: f.tool_call.name.clone(),
+                            result: finalized_to_result_message(&f),
+                        });
+
+                        f
+                    }
+                    Err(join_error) => {
+                        let error_msg = format!("Tool execution panicked: {}", join_error);
+                        let f = FinalizedToolCall {
+                            tool_call: call.clone(),
+                            content: vec![ContentBlock::Text {
+                                text: error_msg,
+                                signature: None,
+                            }],
+                            details: serde_json::Value::Null,
+                            is_error: true,
+                            terminate: false,
+                        };
+                        emit.push(AgentEvent::ToolExecutionEnd {
+                            tool_call_id: call.id.clone(),
+                            tool_name: call.name.clone(),
+                            result: finalized_to_result_message(&f),
+                        });
+                        f
+                    }
+                },
             },
         };
         finalized_calls.push(finalized);
@@ -735,16 +777,7 @@ async fn execute_parallel(
             }
             PreparedEntry::Pending { call, handle } => {
                 handle.abort();
-                let f = FinalizedToolCall {
-                    tool_call: call.clone(),
-                    content: vec![ContentBlock::Text {
-                        text: "Tool execution was cancelled".to_string(),
-                        signature: None,
-                    }],
-                    details: serde_json::Value::Null,
-                    is_error: true,
-                    terminate: false,
-                };
+                let f = make_cancelled_finalized(&call);
                 emit.push(AgentEvent::ToolExecutionEnd {
                     tool_call_id: call.id.clone(),
                     tool_name: call.name.clone(),
@@ -799,7 +832,17 @@ async fn execute_single_tool(
             context: context.clone(),
             signal: signal.cloned(),
         };
-        if let Some(result) = before(ctx).await {
+        let before_result = match signal {
+            Some(token) => {
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => return make_cancelled_finalized(call),
+                    result = before(ctx) => result,
+                }
+            }
+            None => before(ctx).await,
+        };
+        if let Some(result) = before_result {
             if result.block {
                 let reason = result
                     .reason
@@ -827,9 +870,17 @@ async fn execute_single_tool(
         });
     };
 
-    let exec_result = tool
-        .execute(&call.id, args, signal.cloned(), Some(&on_update))
-        .await;
+    let execute = tool.execute(&call.id, args, signal.cloned(), Some(&on_update));
+    let exec_result = match signal {
+        Some(token) => {
+            tokio::select! {
+                biased;
+                _ = token.cancelled() => return make_cancelled_finalized(call),
+                result = execute => result,
+            }
+        }
+        None => execute.await,
+    };
 
     let (content, details, is_error, terminate) = match exec_result {
         Ok(result) => (result.content, result.details, false, result.terminate),
@@ -870,6 +921,10 @@ fn make_error_finalized(call: &ToolCall, message: String) -> FinalizedToolCall {
         is_error: true,
         terminate: false,
     }
+}
+
+fn make_cancelled_finalized(call: &ToolCall) -> FinalizedToolCall {
+    make_error_finalized(call, "Tool execution was cancelled".to_string())
 }
 
 fn finalized_to_result_message(f: &FinalizedToolCall) -> ToolResultMessage {

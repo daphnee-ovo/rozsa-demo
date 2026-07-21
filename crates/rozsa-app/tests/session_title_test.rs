@@ -99,6 +99,19 @@ fn test_session(temp: &tempfile::TempDir, model_stream: ModelStream) -> AgentSes
 }
 
 #[tokio::test]
+async fn abort_discards_pending_steering_and_follow_up_messages() {
+    let temp = tempfile::tempdir().unwrap();
+    let session = test_session(&temp, scripted_stream(Duration::ZERO));
+    session.steer("adjust the current turn");
+    session.follow_up("continue after the current turn");
+    assert_eq!(session.pending_messages().len(), 2);
+
+    session.abort().await;
+
+    assert!(session.pending_messages().is_empty());
+}
+
+#[tokio::test]
 async fn generated_name_is_isolated_cleaned_and_persisted() {
     let temp = tempfile::tempdir().unwrap();
     let observation = Arc::new(Mutex::new(None));

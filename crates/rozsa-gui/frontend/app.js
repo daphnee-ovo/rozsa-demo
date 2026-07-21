@@ -85,6 +85,8 @@ let pendingGuiSceneSnapshot = null;
 let pendingGuiSceneIntent = null;
 let mainSceneContinuity = null;
 const TRANSIENT_POPUP_IDS = ['autocomplete', 'forkPicker', 'subagentPanel', 'quotaTooltip'];
+const DOUBLE_ESCAPE_WINDOW_MS = 1000;
+let lastStreamingEscapeAt = 0;
 
 // =============== Slash Commands Registry ===============
 
@@ -223,6 +225,7 @@ function renderState(snap) {
   const wasStreaming = isStreaming;
   isStreaming = !!snap.isStreaming;
   if (wasStreaming && !isStreaming) chatAutoScrollPaused = false;
+  if (!isStreaming) lastStreamingEscapeAt = 0;
   // 记录当前活跃 session 的 streaming 状态
   if (snap.sessionId) {
     activeSessionId = snap.sessionId;
@@ -2910,6 +2913,19 @@ document.addEventListener('keydown', function(e) {
   // intact; Enter/send, autocomplete, and DOM replacement run after commit.
   if (isInputComposing || e.isComposing || e.keyCode === 229) return;
 
+  // A first Escape keeps its contextual behavior (dismiss, deny, close).
+  // A second Escape within the window always stops the active interaction.
+  if (e.key === 'Escape' && isStreaming) {
+    const now = performance.now();
+    const isDoubleEscape = now - lastStreamingEscapeAt <= DOUBLE_ESCAPE_WINDOW_MS;
+    lastStreamingEscapeAt = isDoubleEscape ? 0 : now;
+    if (isDoubleEscape) {
+      e.preventDefault();
+      abortAgent();
+      return;
+    }
+  }
+
   // Permission panel shortcuts
   if (currentPermissionId) {
     const hintPage = document.getElementById('permPanelHint');
@@ -2969,7 +2985,7 @@ document.addEventListener('keydown', function(e) {
     if (document.getElementById('settingsPanel').classList.contains('visible')) {
       closeSettings(); return;
     }
-    if (isStreaming) { e.preventDefault(); abortAgent(); return; }
+    if (isStreaming) { e.preventDefault(); return; }
     return;
   }
 
@@ -3164,7 +3180,8 @@ function showHelp(topic) {
     helpText += '### Keyboard Shortcuts\n\n' +
       '- **Enter** — Send message\n' +
       '- **Shift+Enter** — New line\n' +
-      '- **Escape** — Abort streaming / close panel\n' +
+      '- **Double Escape** — Abort streaming\n' +
+      '- **Escape** — Close panel\n' +
       '- **Ctrl+T** — Toggle thinking display\n' +
       '- **Ctrl+N** — New session\n' +
       '- **Ctrl+,** — Open settings\n';
@@ -3187,7 +3204,8 @@ function showHotkeys() {
     '|-----|--------|\n' +
     '| Enter | Send message |\n' +
     '| Shift+Enter | New line |\n' +
-    '| Escape | Abort / Close panel |\n' +
+    '| Double Escape | Abort streaming |\n' +
+    '| Escape | Close panel |\n' +
     '| Ctrl+T | Toggle thinking |\n' +
     '| Ctrl+N | New session |\n' +
     '| Ctrl+, | Settings |\n' +

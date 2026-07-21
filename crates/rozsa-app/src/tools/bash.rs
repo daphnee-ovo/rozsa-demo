@@ -7,7 +7,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio::select;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -16,6 +16,46 @@ use crate::session::manager::SessionManager;
 
 const DEFAULT_TIMEOUT_MS: u64 = 120_000; // 2 minutes
 const MAX_OUTPUT_BYTES: usize = 100 * 1024; // 100KB
+
+struct ProcessGroupGuard {
+    #[cfg(unix)]
+    pid: Option<u32>,
+}
+
+impl ProcessGroupGuard {
+    fn new(child: &Child) -> Self {
+        Self {
+            #[cfg(unix)]
+            pid: child.id(),
+        }
+    }
+
+    fn terminate(&mut self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.pid.take() {
+            // Synchronous by design: this also runs from Drop when an outer
+            // cancellation select discards the Bash future.
+            let _ = std::process::Command::new("/bin/kill")
+                .args(["-KILL", &format!("-{pid}")])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+
+    fn disarm(&mut self) {
+        #[cfg(unix)]
+        {
+            self.pid = None;
+        }
+    }
+}
+
+impl Drop for ProcessGroupGuard {
+    fn drop(&mut self) {
+        self.terminate();
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BashParams {
@@ -79,6 +119,11 @@ impl BashTool {
         }
     }
 
+    async fn kill_process_tree(child: &mut Child, process_group: &mut ProcessGroupGuard) {
+        process_group.terminate();
+        let _ = child.kill().await;
+    }
+
     async fn execute_command(
         command: &str,
         working_dir: &std::path::Path,
@@ -88,17 +133,22 @@ impl BashTool {
         let wrapped_command = format!(
             "{{ {command}; }}; status=$?; printf '\\n__ROZSA_CWD__%s\\n' \"$PWD\"; exit \"$status\""
         );
-        // Spawn bash process
-        let mut child = Command::new("bash")
+        // Spawn bash in its own process group so cancellation includes descendants.
+        let mut child_command = Command::new("bash");
+        child_command
             .arg("-c")
             .arg(wrapped_command)
             .current_dir(working_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::null())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        #[cfg(unix)]
+        child_command.process_group(0);
+        let mut child = child_command
             .spawn()
             .map_err(|e| format!("Failed to spawn bash process: {}", e))?;
+        let mut process_group = ProcessGroupGuard::new(&child);
 
         let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
         let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
@@ -132,7 +182,8 @@ impl BashTool {
                         }
                     } => {
                         // Cancelled - kill the process
-                        let _ = child.kill().await;
+                        Self::kill_process_tree(&mut child, &mut process_group).await;
+                        let _ = child.wait().await;
                         return Err("Command cancelled".to_string());
                     }
                     line_result = stdout_reader.next_line(), if !stdout_done => {
@@ -143,7 +194,7 @@ impl BashTool {
 
                                 if total_bytes + line_bytes.len() > MAX_OUTPUT_BYTES {
                                     truncated = true;
-                                    let _ = child.kill().await;
+                                    Self::kill_process_tree(&mut child, &mut process_group).await;
                                     break;
                                 }
 
@@ -164,7 +215,7 @@ impl BashTool {
 
                                 if total_bytes + line_bytes.len() > MAX_OUTPUT_BYTES {
                                     truncated = true;
-                                    let _ = child.kill().await;
+                                    Self::kill_process_tree(&mut child, &mut process_group).await;
                                     break;
                                 }
 
@@ -183,6 +234,7 @@ impl BashTool {
             // Wait for process to exit
             match child.wait().await {
                 Ok(status) => {
+                    process_group.disarm();
                     let (output, cwd) =
                         split_cwd_marker(String::from_utf8_lossy(&output_buffer).to_string());
                     Ok((output, status.code(), truncated, cwd))
@@ -196,7 +248,7 @@ impl BashTool {
             Ok(inner_result) => inner_result,
             Err(_) => {
                 // Timeout - kill the process
-                let _ = child.kill().await;
+                Self::kill_process_tree(&mut child, &mut process_group).await;
                 let _ = child.wait().await; // Prevent zombie
 
                 let output = String::from_utf8_lossy(&output_buffer).to_string();

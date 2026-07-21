@@ -1318,6 +1318,64 @@ async fn cancel_during_model_stream_stops_waiting_for_next_event() {
 }
 
 #[tokio::test]
+async fn cancel_during_permission_hook_stops_without_a_permission_response() {
+    let mut config = config_with_stream(|| {
+        let (sender, stream) = create_event_stream();
+        sender.push(StreamEvent::Done {
+            reason: StopReason::ToolUse,
+            message: assistant_message(vec![ContentBlock::ToolCall(ToolCall {
+                id: "approval-call".to_string(),
+                name: "write".to_string(),
+                arguments: serde_json::json!({}),
+            })]),
+        });
+        stream
+    });
+    config.tools = vec![Arc::new(FakeTool {
+        name: "write".to_string(),
+        response: "unreachable".to_string(),
+        schema: serde_json::json!({ "type": "object" }),
+    })];
+    config.pre_tool_use = Some(Box::new(|_| {
+        Box::pin(std::future::pending::<
+            Option<rozsa_core::config::PreToolUseResult>,
+        >())
+    }));
+    let prompt = AgentMessage::standard(Message::User(UserMessage {
+        content: UserContent::Text("write a file".to_string()),
+        display_text: None,
+        timestamp: 1,
+    }));
+    let cancel_token = CancellationToken::new();
+    let cancel_clone = cancel_token.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        cancel_clone.cancel();
+    });
+
+    let mut stream = agent_loop(vec![prompt], empty_context(), config, Some(cancel_token));
+    let events = tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
+        let mut events = Vec::new();
+        while let Some(event) = stream.next().await {
+            events.push(event);
+        }
+        events
+    })
+    .await
+    .expect("agent loop should not wait for permission after cancellation");
+
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentEvent::ToolExecutionEnd { result, .. } if result.is_error
+    )));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AgentEvent::AgentEnd { .. }))
+    );
+}
+
+#[tokio::test]
 async fn parallel_cancel_aborts_pending_handles() {
     struct SlowTool {
         name: String,
@@ -1342,31 +1400,11 @@ async fn parallel_cancel_aborts_pending_handles() {
             &self,
             _tool_call_id: &str,
             _params: serde_json::Value,
-            signal: Option<CancellationToken>,
+            _signal: Option<CancellationToken>,
             _on_update: Option<&(dyn Fn(ToolResult) + Send + Sync)>,
         ) -> Result<ToolResult, ToolError> {
-            // Simulate long-running operation that respects cancellation
-            tokio::select! {
-                _ = tokio::time::sleep(tokio::time::Duration::from_secs(10)) => {
-                    Ok(ToolResult {
-                        content: vec![ContentBlock::Text {
-                            text: "completed".to_string(),
-                            signature: None,
-                        }],
-                        details: serde_json::Value::Null,
-                        terminate: false,
-                    })
-                }
-                _ = async {
-                    if let Some(token) = signal {
-                        token.cancelled().await;
-                    } else {
-                        std::future::pending::<()>().await;
-                    }
-                } => {
-                    Err(ToolError::Cancelled)
-                }
-            }
+            // Simulate an external tool or OS prompt that never observes the token.
+            std::future::pending().await
         }
     }
 

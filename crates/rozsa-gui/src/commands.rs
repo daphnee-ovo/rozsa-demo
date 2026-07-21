@@ -638,9 +638,14 @@ pub async fn dispatch_slash_command(
 #[tauri::command]
 pub async fn abort(state: State<'_, GuiState>) -> Result<(), String> {
     let idx = *state.active_tab.lock().await;
-    let tabs = state.tabs.lock().await;
-    let active = tabs.get(idx).and_then(|tab| match tab {
-        SessionTab::Active { agent, .. } => Some((tab.session_id(), agent.clone())),
+    let mut tabs = state.tabs.lock().await;
+    let active = tabs.get_mut(idx).and_then(|tab| match tab {
+        SessionTab::Active {
+            path, agent, live, ..
+        } => {
+            live.clear_queued_messages();
+            Some((session_id_from_path(path), agent.clone()))
+        }
         _ => None,
     });
     drop(tabs);

@@ -244,10 +244,9 @@ pub async fn run(args: &Args) -> Result<()> {
                                 .unwrap_or_default();
                             let (tx, rx) = tokio::sync::oneshot::channel();
                             let request_id = ctx.tool_call_id.clone();
-                            pending.insert(
-                                rozsa_gui::state::permission_pending_key(&session_id, &request_id),
-                                tx,
-                            );
+                            let pending_key =
+                                rozsa_gui::state::permission_pending_key(&session_id, &request_id);
+                            pending.insert(pending_key.clone(), tx);
                             let _ = perm_req_tx.send(rozsa_gui::state::PermissionRequest {
                                 session_id: session_id.clone(),
                                 turn_id: ctx
@@ -262,7 +261,24 @@ pub async fn run(args: &Args) -> Result<()> {
                                 info,
                             });
 
-                            match rx.await {
+                            let response = match ctx.signal {
+                                Some(signal) => {
+                                    tokio::select! {
+                                        biased;
+                                        _ = signal.cancelled() => {
+                                            pending.remove(&pending_key);
+                                            return Some(rozsa_core::config::PreToolUseResult {
+                                                block: true,
+                                                reason: Some("Permission request cancelled".to_string()),
+                                            });
+                                        }
+                                        response = rx => response,
+                                    }
+                                }
+                                None => rx.await,
+                            };
+                            pending.remove(&pending_key);
+                            match response {
                                 Ok(PermissionResponse::Allow) => None,
                                 Ok(PermissionResponse::AllowSession { trust_key }) => {
                                     if let Err(error) =

@@ -440,6 +440,10 @@ impl LiveState {
         self.queued_messages.push(message);
     }
 
+    pub fn clear_queued_messages(&mut self) {
+        self.queued_messages.clear();
+    }
+
     pub fn begin_interaction(&mut self) {
         self.interaction_active = true;
         self.turn_activity = TurnActivity::default();

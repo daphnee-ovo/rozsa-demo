@@ -467,8 +467,12 @@ impl AgentSession {
     /// Abort the currently running loop.
     ///
     /// Signals the CancellationToken, causing the agent loop to terminate
-    /// gracefully at the next check point. Safe to call concurrently with `prompt`.
+    /// gracefully at the next check point. Pending steering and follow-up input
+    /// belongs to the stopped interaction and is discarded. Safe to call
+    /// concurrently with `prompt`.
     pub async fn abort(&self) {
+        self.steering_queue.lock().unwrap().clear();
+        self.follow_up_queue.lock().unwrap().clear();
         if let Some(token) = self.cancel_token.lock().await.as_ref() {
             token.cancel();
         }

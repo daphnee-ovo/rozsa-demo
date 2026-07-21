@@ -32,6 +32,22 @@ fn queue_is_fifo_and_keeps_running_until_the_next_prompt_starts() {
 }
 
 #[test]
+fn stopping_an_interaction_discards_queued_prompts() {
+    let mut state = LiveState::default();
+    state.apply(&AgentEvent::AgentStart);
+    state.enqueue_message("first queued message".to_string());
+    state.enqueue_message("second queued message".to_string());
+
+    state.clear_queued_messages();
+    state.apply(&AgentEvent::AgentEnd {
+        messages: Vec::<AgentMessage>::new(),
+    });
+
+    assert!(!state.is_streaming);
+    assert_eq!(state.take_next_queued_message(), None);
+}
+
+#[test]
 fn steer_leaves_the_waiting_panel_when_its_user_message_is_delivered() {
     let mut state = LiveState::default();
     state.apply(&AgentEvent::AgentStart);

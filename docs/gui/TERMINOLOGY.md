@@ -162,7 +162,7 @@ agent loop 产生 AgentEvent
 | `tool result` | 工具执行后的内容和 `details`；可能包含 `file_deltas` 或验证字段 |
 | queue | GUI-owned FIFO；当前 prompt 返回后再启动下一条消息 |
 | steer | 将运行中的用户输入交给当前 agent，在下一个工具结果之间处理；不等同于 queue |
-| abort | 发送取消信号；不等于删除 session、清空历史或撤销已完成的文件变更 |
+| abort | Stop button 或 1 秒内连续两次 Escape 发送取消信号，并丢弃尚未执行的 queue / steer / follow-up；不删除 session、不清空历史，也不撤销已完成的文件变更 |
 | partial output | abort 或错误前已经收到的流式输出；讨论时要说明它是 UI 已显示内容还是已持久化 message |
 
 代码锚点：[`agent_session.rs`](../../crates/rozsa-app/src/agent_session.rs)、[`events.rs`](../../crates/rozsa-gui/src/events.rs)、[`app.js`](../../crates/rozsa-gui/frontend/app.js)。
