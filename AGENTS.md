@@ -121,19 +121,6 @@ When closing issues via commit:
 
 - Include `fixes #<number>` or `closes #<number>` in the message so merging auto-closes the issue. For multiple issues, repeat the keyword per issue (`closes #1, closes #2`); a shared keyword (`closes #1, #2`) only closes the first.
 
-## Testing Interactive Mode with tmux
-
-Run the TUI in a controlled terminal (from the repo root):
-
-```bash
-tmux new-session -d -s rozsa-test -x 80 -y 24
-tmux send-keys -t rozsa-test "./devtools/before/pi-test.sh" Enter
-sleep 3 && tmux capture-pane -t rozsa-test -p     # capture after startup
-tmux send-keys -t rozsa-test "your prompt here" Enter
-tmux send-keys -t rozsa-test Escape               # special keys (also C-o for ctrl+o, etc.)
-tmux kill-session -t rozsa-test
-```
-
 ## Changelog
 
 Location: `packages/*/CHANGELOG.md` (one per package).

@@ -4,31 +4,14 @@
 
 Read `AGENTS.md` for project-specific development rules. If you use an agent, run it from the repository root so it picks up these rules automatically.
 
-## Requirements
+## Development Tools
 
-- Rust (stable toolchain)
-- Node.js >= 22.19.0 (for legacy TypeScript packages)
-- npm
+in `devtools/`  
 
-## Development Workflow
-
-```bash
-# Rust
-cargo build
-cargo test
-
-# TypeScript (legacy, still active during migration)
-npm install --ignore-scripts
-npm run check          # lint + format + type check
-./devtools/before/test.sh   # run tests
-```
-
-Both `cargo test` and `npm run check` must pass before submitting changes.
 
 ## Code Style
 
 - Rust: standard `rustfmt` and `clippy`
-- TypeScript: Biome (lint + format), erasable syntax only
 
 ## Pull Requests
 
