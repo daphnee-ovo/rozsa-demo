@@ -1,6 +1,7 @@
-//! Cross-platform Web Inspector launch.
+//! Opt-in cross-platform Web Inspector launch.
 //!
-//! Non-macOS platforms use Wry's native DevTools window. On macOS, WebKit's
+//! `ROZSA_WEB_INSPECTOR=1` enables the Inspector. Non-macOS platforms then use
+//! Wry's native DevTools window. On macOS, WebKit's
 //! inspector receives a retained delegate after the main WKWebView has been
 //! installed in the native split hierarchy. The delegate detaches from
 //! `inspectorFrontendLoaded:` before WebKit's first bring-to-front operation,
@@ -9,6 +10,17 @@
 //! error instead of aborting the process.
 //!
 //! Related behavior: `docs/gui/NATIVE_SPLIT_VALIDATION.md`.
+
+const INSPECTOR_ENV: &str = "ROZSA_WEB_INSPECTOR";
+
+pub fn enabled() -> bool {
+    std::env::var(INSPECTOR_ENV).is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
 
 #[cfg(not(target_os = "macos"))]
 use tauri::WebviewWindow;

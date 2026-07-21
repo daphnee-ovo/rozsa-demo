@@ -22,3 +22,15 @@ fn subagent_view_payload_keeps_runtime_identity_and_status() {
     assert_eq!(value["status"], "running");
     assert_eq!(value["message_count"], 3);
 }
+
+#[test]
+fn native_main_panel_starts_at_the_window_top() {
+    let html = include_str!("../frontend/index.html");
+    let native_main = html
+        .split("body.native-split-main [data-od-id=\"app-body\"] {")
+        .nth(1)
+        .and_then(|tail| tail.split('}').next())
+        .unwrap();
+
+    assert!(native_main.contains("padding-top: 0"));
+}

@@ -83,6 +83,7 @@ pub struct SceneUpdate {
 pub struct ReadyUpdate {
     pub snapshot: GuiSceneSnapshot,
     pub should_emit: bool,
+    pub all_webviews_ready: bool,
 }
 
 pub struct SceneRouter {
@@ -161,6 +162,7 @@ impl SceneRouter {
         ReadyUpdate {
             snapshot: self.snapshot,
             should_emit: last_revision < self.snapshot.revision,
+            all_webviews_ready: self.ready_webviews.len() == 2,
         }
     }
 }

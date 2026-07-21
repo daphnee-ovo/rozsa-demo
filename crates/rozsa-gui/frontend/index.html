@@ -290,21 +290,13 @@ body {
   background: var(--border);
   color: var(--fg);
 }
-.permission-badge {
+.thinking-level-badge {
   font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 999px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  padding: 3px 4px;
   font-weight: 500;
-}
-.perm-auto {
-  background: oklch(96.8% 0.003 350);
-  color: oklch(47% 0.01 350);
-  border: 1px solid color-mix(in oklch, var(--border) 78%, var(--surface));
-}
-.perm-on {
-  background: oklch(96.5% 0.02 90);
-  color: oklch(48% 0.06 85);
-  border: 1px solid oklch(88% 0.035 90);
+  flex: 0 0 auto;
 }
 .header-spacer { flex: 1; }
 .context-info {
@@ -559,21 +551,19 @@ body {
   margin: 0 0 10px;
   min-width: 0;
   max-width: 100%;
-  border: 1px solid oklch(90% 0.008 355);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: oklch(97.5% 0.006 355);
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
 }
 .thinking-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 3px 0;
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s;
 }
-.thinking-header:hover { background: oklch(95% 0.01 355); }
 .thinking-icon { color: var(--accent); flex-shrink: 0; }
 .thinking-label {
   font-size: 11px;
@@ -597,7 +587,7 @@ body {
 .thinking-block.expanded .thinking-chevron { transform: rotate(90deg); }
 .thinking-content {
   display: none;
-  border-top: 1px solid oklch(90% 0.008 355);
+  border: 0;
   min-width: 0;
   max-height: min(46vh, 440px);
   overflow: auto;
@@ -610,7 +600,7 @@ body {
 .thinking-expanded .thinking-content { display: block; }
 .thinking-markdown {
   min-width: 0;
-  padding: 8px 12px;
+  padding: 7px 0 4px 19px;
   overflow-wrap: anywhere;
 }
 .thinking-markdown p { margin-bottom: 6px; }
@@ -1546,7 +1536,6 @@ html[data-theme-mode="dark"] .msg-assistant .msg-avatar {
   background: var(--accent-bg);
   color: var(--accent-hover);
 }
-html[data-theme-mode="dark"] .thinking-header,
 html[data-theme-mode="dark"] .tool-log-item:hover,
 html[data-theme-mode="dark"] .session-item:hover,
 html[data-theme-mode="dark"] .sidebar-btn:hover {
@@ -2412,7 +2401,7 @@ html[data-theme-mode="dark"] .settings-content {
 [data-native-scene-root][hidden] { display: none !important; }
 body.native-split-main [data-od-id="app-body"] {
   display: block;
-  padding-top: var(--native-titlebar-offset);
+  padding-top: 0;
   background: var(--bg);
 }
 body.native-split-main.native-fullscreen [data-od-id="app-body"] { padding-top: 0; }
@@ -2507,7 +2496,6 @@ body.native-split-main .settings-dialog { background: var(--bg); }
     <!-- 面板头部 -->
     <div data-od-id="panel-header">
       <span class="current-session-name" id="currentSessionName">Rózsa</span>
-      <span class="permission-badge perm-auto" data-od-id="perm-badge">auto-approve</span>
       <div class="header-spacer"></div>
     </div>
 
@@ -2582,6 +2570,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
             <span class="context-tokens" id="contextTokens">0k</span>
           </div>
           <button class="model-selector" data-od-id="model-badge" title="Switch model" id="modelSelector" onclick="showModelPicker()">(not configured)</button>
+          <span class="thinking-level-badge" id="thinkingLevel" title="Thinking level">off</span>
           <select class="model-selector" id="runningSendMode" title="Send mode while running" onchange="updateAbortButton()" hidden><option value="queue">Queue</option><option value="steer">Steer</option></select>
           <button class="send-btn" data-od-id="send-btn" onclick="sendMessage()">Send</button>
         </div>
@@ -2647,6 +2636,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="settings-group-label">AI</div>
           <div class="setting-item"><span class="setting-label">Thinking Level</span><select class="setting-select" id="settingsThinking" aria-label="Thinking Level"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
           <div class="setting-item"><span class="setting-label">Auto Compact</span><button class="setting-toggle" id="settingsAutoCompact" type="button" role="switch" aria-checked="false" aria-label="Auto Compact"></button></div>
+          <div class="setting-item"><span class="setting-label">Auto-name sessions</span><button class="setting-toggle" id="settingsAutoSessionNaming" type="button" role="switch" aria-checked="true" aria-label="Auto-name sessions"></button></div>
           <div class="setting-item"><span class="setting-label">Steering Mode</span><select class="setting-select" id="settingsSteeringMode" aria-label="Steering Mode"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
           <div class="setting-item"><span class="setting-label">Follow-up Mode</span><select class="setting-select" id="settingsFollowUpMode" aria-label="Follow-up Mode"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
           <div class="setting-item"><span class="setting-label">Default send mode while running</span><select class="setting-select" id="settingsRunningSendMode" aria-label="Default send mode while running"><option value="queue">Queue</option><option value="steer">Steer</option></select></div>

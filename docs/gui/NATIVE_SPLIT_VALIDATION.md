@@ -6,7 +6,13 @@ persistent `NSSplitViewController` containing two real Tauri WKWebViews.
 Current implementation: `crates/rozsa-gui/src/native_split_view.rs`,
 `crates/rozsa-gui/src/native_titlebar.rs`, and
 `crates/rozsa-gui/src/scene_router.rs`.
-Inspector launch: `crates/rozsa-gui/src/inspector.rs`.
+Inspector launch: `crates/rozsa-gui/src/inspector.rs`. It is disabled by
+default and can be enabled explicitly with `ROZSA_WEB_INSPECTOR=1`.
+Reusable product-app deployment: `devtools/deploy-test-app.sh`.
+The product window can begin loading after both WKWebViews are installed, but
+the complete native split root remains hidden. The main and sidebar readiness
+handshake reveals that root in one AppKit operation, so neither pane is exposed
+ahead of the other.
 Foreground harness: `temp/native-split-validation/`.
 Related design: `.dev-doc/main/SPEC.md`.
 
@@ -80,6 +86,9 @@ foreground product result.
 | Opaque Dark sidebar | PASS | After making the sidebar WKWebView transparent, both AppKit backing and WebView content rendered Dark without a light layer |
 | Translucent Dark sidebar | PASS | Initial test exposed light `NSVisualEffectView`; applying `NSAppearanceNameDarkAqua` fixed the contrast on retest |
 | Live theme/surface ordering | PASS | Light/Dark and opaque/translucent switches updated both panes together; no visible backing flash was observed |
+
+The Inspector PASS above was captured with `ROZSA_WEB_INSPECTOR=1`. Normal
+product and test-app launches show only the product window.
 
 ## Automated acceptance
 

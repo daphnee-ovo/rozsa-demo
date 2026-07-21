@@ -47,6 +47,13 @@ fn titlebar_installs_after_split_and_uses_the_stable_content_root() {
     assert!(titlebar.contains("performWindowDragWithEvent"));
     assert!(titlebar.contains("event.clickCount() == 2"));
     assert!(titlebar.contains("performZoom"));
+    let titlebar_install = lib
+        .find("native_titlebar::install(")
+        .expect("native titlebar installation is missing");
+    let show = lib
+        .find("failed to show installed GUI window")
+        .expect("installed split must reveal the product window");
+    assert!(titlebar_install < show);
 }
 
 #[test]
@@ -78,6 +85,17 @@ fn inspector_detaches_from_the_frontend_loaded_delegate() {
     assert!(!inspector.contains("isAttached"));
     assert!(!inspector.contains("std::thread"));
     assert!(!inspector.contains("run_on_main_thread"));
+}
+
+#[test]
+fn inspector_is_opt_in_and_does_not_replace_the_product_window() {
+    let inspector = include_str!("../src/inspector.rs");
+    let lib = include_str!("../src/lib.rs");
+
+    assert!(inspector.contains("ROZSA_WEB_INSPECTOR"));
+    assert!(inspector.contains("pub fn enabled() -> bool"));
+    assert_eq!(lib.matches("if inspector::enabled()").count(), 2);
+    assert!(lib.contains("window.show().map_err(std::io::Error::other)?"));
 }
 
 #[test]

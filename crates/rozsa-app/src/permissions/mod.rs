@@ -140,7 +140,8 @@ impl PermissionController {
         } else {
             verdict
         };
-        if !matched_ask && rules_cover_request(&config.allow, tool_name, args, &self.workspace_root) {
+        if !matched_ask && rules_cover_request(&config.allow, tool_name, args, &self.workspace_root)
+        {
             return PolicyVerdict::Allow;
         }
 
@@ -355,28 +356,8 @@ pub type PendingApprovals = Arc<DashMap<String, oneshot::Sender<PermissionRespon
 
 const WORKSPACE_READ_TOOLS: &[&str] = &["Grep", "Ls", "Find", "grep", "ls", "find"];
 const SAFE_SHELL_COMMANDS: &[&str] = &[
-    "head",
-    "tail",
-    "cat",
-    "grep",
-    "sort",
-    "pwd",
-    "ls",
-    "basename",
-    "dirname",
-    "realpath",
-    "readlink",
-    "stat",
-    "file",
-    "wc",
-    "diff",
-    "cmp",
-    "comm",
-    "cut",
-    "tr",
-    "uniq",
-    "strings",
-    "od",
+    "head", "tail", "cat", "grep", "sort", "pwd", "ls", "basename", "dirname", "realpath",
+    "readlink", "stat", "file", "wc", "diff", "cmp", "comm", "cut", "tr", "uniq", "strings", "od",
     "xxd",
 ];
 
@@ -555,11 +536,7 @@ impl PermissionPolicy {
         Self::path_is_within_workspace(path, workspace_root)
     }
 
-    fn is_safe_readonly_bash_request(
-        tool_name: &str,
-        args: &Value,
-        workspace_root: &Path,
-    ) -> bool {
+    fn is_safe_readonly_bash_request(tool_name: &str, args: &Value, workspace_root: &Path) -> bool {
         if !matches!(tool_name, "Bash" | "bash") {
             return false;
         }
@@ -568,9 +545,25 @@ impl PermissionPolicy {
         };
         let command = command.trim();
         if command.is_empty()
-            || command
-                .chars()
-                .any(|ch| matches!(ch, '\n' | '\r' | ';' | '&' | '<' | '>' | '$' | '`' | '(' | ')' | '\\' | '*' | '?' | '[' | ']'))
+            || command.chars().any(|ch| {
+                matches!(
+                    ch,
+                    '\n' | '\r'
+                        | ';'
+                        | '&'
+                        | '<'
+                        | '>'
+                        | '$'
+                        | '`'
+                        | '('
+                        | ')'
+                        | '\\'
+                        | '*'
+                        | '?'
+                        | '['
+                        | ']'
+                )
+            })
         {
             return false;
         }

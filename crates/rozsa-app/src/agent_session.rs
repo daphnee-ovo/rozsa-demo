@@ -8,6 +8,7 @@
 // │   ├── register_tool()       # Add a single tool
 // │   ├── register_default_tools()  # Register read/write/edit/bash/ls/grep/find
 // │   ├── prompt()              # Send user message and run agent loop
+// │   ├── generate_session_name() # Run an isolated auxiliary title request
 // │   ├── continue_session()    # Continue without new user input
 // │   └── abort()               # Cancel the running loop
 // └── Helper functions
@@ -588,6 +589,100 @@ impl AgentSession {
         self.runtime.lock().await.thinking_level == ThinkingLevel::Off
     }
 
+    /// Generate and persist a concise name for a session's first real user turn.
+    ///
+    /// This request is isolated from the conversation history and tools. The
+    /// caller may run it in the background. A second name check immediately
+    /// before persistence ensures a manual rename always wins.
+    pub async fn generate_session_name(&self, first_user_message: &str) -> Result<Option<String>> {
+        let first_user_message = first_user_message.trim();
+        if first_user_message.is_empty() {
+            return Ok(None);
+        }
+        {
+            let manager = self.session_manager.lock().await;
+            if manager.current_name().is_some() || persisted_user_message_count(&manager) != 1 {
+                return Ok(None);
+            }
+        }
+
+        let model = self.runtime.lock().await.model.clone();
+        let credentials = resolve_credentials(&model).await?;
+        let context = rozsa_model::types::Context {
+            system_prompt: Some(
+                "Generate a concise title of 4 to 8 words for the user's coding task. \
+                 Reply with only the title. Do not include reasoning, labels, quotes, or punctuation."
+                    .to_string(),
+            ),
+            messages: vec![Message::User(UserMessage {
+                content: UserContent::Text(first_user_message.to_string()),
+                display_text: None,
+                timestamp: current_timestamp_ms(),
+            })],
+            tools: Vec::new(),
+        };
+        let options = SimpleStreamOptions {
+            base: StreamOptions {
+                temperature: None,
+                max_tokens: Some(64),
+                api_key: credentials.api_key,
+                transport: Transport::Auto,
+                cache_retention: CacheRetention::Short,
+                session_id: None,
+                headers: merge_headers(model.headers.clone(), credentials.headers),
+                timeout_ms: self
+                    .static_config
+                    .settings_manager
+                    .resolved()
+                    .retry
+                    .timeout_ms,
+                max_retries: Some(2),
+                max_retry_delay_ms: self
+                    .static_config
+                    .settings_manager
+                    .resolved()
+                    .retry
+                    .max_retry_delay_ms,
+                metadata: None,
+            },
+            reasoning: None,
+            thinking_budgets: None,
+            tool_choice: None,
+        };
+        let mut stream = (self.model_stream)(&model, &context, &options);
+        let mut raw_title = String::new();
+        while let Some(event) = stream.next().await {
+            match event {
+                rozsa_model::types::StreamEvent::Done { message, .. } => {
+                    for block in message.content {
+                        if let ContentBlock::Text { text, .. } = block {
+                            raw_title.push_str(&text);
+                        }
+                    }
+                    break;
+                }
+                rozsa_model::types::StreamEvent::Error { error, .. } => {
+                    anyhow::bail!(
+                        "Session naming request failed: {}",
+                        error
+                            .error_message
+                            .unwrap_or_else(|| "provider returned an error".to_string())
+                    );
+                }
+                _ => {}
+            }
+        }
+        let title = clean_generated_session_name(&raw_title)
+            .ok_or_else(|| anyhow::anyhow!("Session naming request returned no usable title"))?;
+
+        let mut manager = self.session_manager.lock().await;
+        if manager.current_name().is_some() {
+            return Ok(None);
+        }
+        manager.append_session_info(Some(title.clone()))?;
+        Ok(Some(title))
+    }
+
     // --- Phase B: Compaction ---
 
     /// Whether compaction is currently running.
@@ -1073,6 +1168,53 @@ impl AgentSession {
 
 fn should_persist_loop_message(message: &Message) -> bool {
     !matches!(message, Message::User(_))
+}
+
+fn persisted_user_message_count(manager: &SessionManager) -> usize {
+    manager
+        .entries()
+        .iter()
+        .filter(|entry| {
+            matches!(
+                entry,
+                crate::session::manager::SessionEntry::Message(message)
+                    if matches!(message.message, Message::User(_))
+            )
+        })
+        .count()
+}
+
+fn clean_generated_session_name(raw: &str) -> Option<String> {
+    let mut cleaned = raw.to_string();
+    while let Some(start) = cleaned.find("<think>") {
+        let Some(relative_end) = cleaned[start + "<think>".len()..].find("</think>") else {
+            cleaned.truncate(start);
+            break;
+        };
+        let end = start + "<think>".len() + relative_end + "</think>".len();
+        cleaned.replace_range(start..end, "");
+    }
+    let line = cleaned
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    let line = line
+        .strip_prefix("Title:")
+        .or_else(|| line.strip_prefix("title:"))
+        .unwrap_or(line)
+        .trim()
+        .trim_matches(['"', '\'', '`']);
+    let normalized = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    if normalized.chars().count() <= 60 {
+        return Some(normalized);
+    }
+    Some(format!(
+        "{}...",
+        normalized.chars().take(57).collect::<String>()
+    ))
 }
 
 fn skill_command_tokens(text: &str) -> Vec<(usize, usize, &str)> {

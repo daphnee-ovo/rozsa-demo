@@ -17,6 +17,7 @@
 // +-- Settings (toggleSettings, closeSettings, switchSettingsTab, loadSettings, saveSetting)
 // |   +-- Appearance switches and theme persistence
 // +-- Slash Command Autocomplete (updateAutocomplete, selectSlashCmd, navigateAutocomplete)
+// +-- Transient Popups (outside click and Escape dismissal)
 // +-- Input Composition (IME lifecycle and input refresh)
 // +-- Native File Drag (Finder paths to @path composer references)
 // +-- Keyboard Shortcuts (global keydown handler)
@@ -83,6 +84,7 @@ const mainThemeState = { revision: 0 };
 let pendingGuiSceneSnapshot = null;
 let pendingGuiSceneIntent = null;
 let mainSceneContinuity = null;
+const TRANSIENT_POPUP_IDS = ['autocomplete', 'forkPicker', 'subagentPanel', 'quotaTooltip'];
 
 // =============== Slash Commands Registry ===============
 
@@ -243,21 +245,13 @@ function renderState(snap) {
 
 function updateHeader(snap) {
   const nameEl = document.getElementById('currentSessionName');
-  if (nameEl && snap.sessionName) nameEl.textContent = snap.sessionName;
+  if (nameEl && !snap.streamUpdate) nameEl.textContent = snap.sessionName || 'Rózsa';
 
   const modelBtn = document.getElementById('modelSelector');
   if (modelBtn && snap.model) modelBtn.textContent = snap.model.id;
 
-  const badge = document.querySelector('[data-od-id="perm-badge"]');
-  if (badge) {
-    if (snap.isStreaming) {
-      badge.textContent = 'streaming...';
-      badge.className = 'permission-badge perm-on';
-    } else {
-      badge.textContent = snap.thinkingLevel || 'ready';
-      badge.className = 'permission-badge perm-auto';
-    }
-  }
+  const thinkingLevel = document.getElementById('thinkingLevel');
+  if (thinkingLevel && snap.thinkingLevel) thinkingLevel.textContent = snap.thinkingLevel;
 }
 
 function updateQuotaBars(snapshot) {
@@ -2520,6 +2514,13 @@ function renderGeneralSettings(settings) {
     wireSettingSwitch('settingsAutoCompact', enabled => saveSetting('auto_compact', String(enabled)));
   }
 
+  const namingSwitch = document.getElementById('settingsAutoSessionNaming');
+  if (namingSwitch) {
+    setSettingSwitch(namingSwitch, settings.auto_session_naming);
+    wireSettingSwitch('settingsAutoSessionNaming', enabled =>
+      saveSetting('auto_session_naming', String(enabled)));
+  }
+
   // Steering mode
   const steerSel = document.getElementById('settingsSteeringMode');
   if (steerSel) {
@@ -2802,6 +2803,47 @@ function hideAutocomplete(clearMatch = true) {
   }
 }
 
+function isTransientPopupVisible(popup) {
+  if (!popup) return false;
+  if (popup.id === 'autocomplete' || popup.id === 'quotaTooltip') {
+    return popup.classList.contains('visible');
+  }
+  return !popup.hidden;
+}
+
+function hideTransientPopup(popup) {
+  if (popup.id === 'autocomplete') {
+    acRequestSeq++;
+    hideAutocomplete();
+  } else if (popup.id === 'quotaTooltip') {
+    hideQuotaTooltip();
+  } else {
+    popup.hidden = true;
+  }
+}
+
+function dismissTransientPopupsOutside(target) {
+  let dismissed = false;
+  for (const id of TRANSIENT_POPUP_IDS) {
+    const popup = document.getElementById(id);
+    if (!isTransientPopupVisible(popup) || popup.contains(target)) continue;
+    hideTransientPopup(popup);
+    dismissed = true;
+  }
+  return dismissed;
+}
+
+function dismissTransientPopups() {
+  let dismissed = false;
+  for (const id of TRANSIENT_POPUP_IDS) {
+    const popup = document.getElementById(id);
+    if (!isTransientPopupVisible(popup)) continue;
+    hideTransientPopup(popup);
+    dismissed = true;
+  }
+  return dismissed;
+}
+
 function setInputMatchState(valid) {
   const wrapper = document.querySelector('.input-wrapper');
   if (wrapper) wrapper.classList.toggle('valid-token', valid);
@@ -2912,7 +2954,7 @@ document.addEventListener('keydown', function(e) {
 
   // Escape handling
   if (e.key === 'Escape') {
-    if (acVisible) { hideAutocomplete(); return; }
+    if (dismissTransientPopups()) { e.preventDefault(); return; }
     if (document.getElementById('settingsPanel').classList.contains('visible')) {
       closeSettings(); return;
     }
@@ -2978,6 +3020,10 @@ document.addEventListener('keydown', function(e) {
     input.focus();
     // Don't prevent default - let the / character be typed
   }
+});
+
+document.addEventListener('pointerdown', function(e) {
+  dismissTransientPopupsOutside(e.target);
 });
 
 document.addEventListener('paste', function(e) {

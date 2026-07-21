@@ -84,6 +84,8 @@ pub struct Settings {
     pub transport: String,
     pub block_images: bool,
     pub hide_thinking: bool,
+    /// Generate a concise session name after the first real user turn.
+    pub auto_session_naming: bool,
     pub steering_mode: String,
     pub follow_up_mode: String,
     pub running_send_mode: String,
@@ -106,6 +108,7 @@ impl Default for Settings {
             transport: "auto".to_string(),
             block_images: false,
             hide_thinking: false,
+            auto_session_naming: true,
             steering_mode: "one-at-a-time".to_string(),
             follow_up_mode: "one-at-a-time".to_string(),
             running_send_mode: "queue".to_string(),
@@ -187,6 +190,8 @@ pub struct PartialSettings {
     pub block_images: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_thinking: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_session_naming: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steering_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

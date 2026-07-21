@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::permissions::PermissionResponse;
@@ -78,7 +78,31 @@ pub async fn gui_webview_ready(
     if webview == crate::scene_router::GuiWebview::Sidebar {
         crate::events::emit_sidebar_state(&app, state.inner()).await?;
     }
+    if update.all_webviews_ready {
+        #[cfg(target_os = "macos")]
+        reveal_native_split(&app)?;
+        app.get_webview_window("main")
+            .ok_or_else(|| "main GUI window is unavailable".to_owned())?
+            .show()
+            .map_err(|error| format!("failed to show ready GUI window: {error}"))?;
+    }
     Ok(update.snapshot)
+}
+
+#[cfg(target_os = "macos")]
+fn reveal_native_split(app: &AppHandle) -> Result<(), String> {
+    if objc2::MainThreadMarker::new().is_some() {
+        return crate::native_split_view::reveal_content();
+    }
+
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let _ = sender.send(crate::native_split_view::reveal_content());
+    })
+    .map_err(|error| format!("failed to schedule native split reveal: {error}"))?;
+    receiver
+        .recv()
+        .map_err(|error| format!("native split reveal response was dropped: {error}"))?
 }
 
 // --- 对话 ---
@@ -171,11 +195,23 @@ pub async fn send_message(
     let pending_approvals = state.pending_approvals.clone();
     let gui_state = state.inner().clone();
     tokio::spawn(async move {
-        if let Err(e) = agent
+        let prompt_succeeded = if let Err(e) = agent
             .prompt_with_prefix_blocks(&message, expansion.blocks, expansion.display_text)
             .await
         {
             append_prompt_error(idx, &agent, &tabs_ref, &shared, &app, e.to_string()).await;
+            false
+        } else {
+            true
+        };
+        if prompt_succeeded {
+            spawn_session_name_generation(
+                gui_state.clone(),
+                app.clone(),
+                agent.clone(),
+                session_id.clone(),
+                message.clone(),
+            );
         }
         if let Some(approvals) = &pending_approvals {
             deny_pending_approvals(approvals, Some(&session_id));
@@ -443,12 +479,15 @@ pub async fn dispatch_slash_command(
                     .unwrap_or_else(|| "(unnamed)".to_string());
                 emit_info(&app, &format!("Session name: {name}"));
             } else {
-                agent
-                    .session_manager()
-                    .await
-                    .append_session_info(Some(args.clone()))
-                    .map_err(|e| e.to_string())?;
+                let session_id = {
+                    let mut manager = agent.session_manager().await;
+                    manager
+                        .append_session_info(Some(args.clone()))
+                        .map_err(|e| e.to_string())?;
+                    manager.session_id().to_string()
+                };
                 emit_info(&app, &format!("Session name set: {args}"));
+                emit_session_views(state.inner(), &app, &session_id).await?;
                 return slash_action("refreshSessions");
             }
         }
@@ -727,12 +766,54 @@ async fn finish_interaction(gui_state: &GuiState, app: &AppHandle, session_id: &
         }
     }
 
-    let tabs = gui_state.tabs.lock().await;
-    let Some(index) = find_tab_index_by_session(&tabs, session_id) else {
-        return;
+    if let Err(error) = emit_session_views(gui_state, app, session_id).await {
+        eprintln!("[rozsa-gui][session] failed to refresh completed interaction: {error}");
+    }
+}
+
+fn spawn_session_name_generation(
+    gui_state: GuiState,
+    app: AppHandle,
+    agent: Arc<AgentSession>,
+    session_id: String,
+    first_user_message: String,
+) {
+    tokio::spawn(async move {
+        if !gui_state.runtime_settings.lock().await.auto_session_naming {
+            return;
+        }
+        match agent.generate_session_name(&first_user_message).await {
+            Ok(Some(_)) => {
+                if let Err(error) = emit_session_views(&gui_state, &app, &session_id).await {
+                    eprintln!("[rozsa-gui][session-name] failed to refresh views: {error}");
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                // Naming is auxiliary: the deterministic first-message preview
+                // remains visible and the conversation must continue normally.
+                eprintln!("[rozsa-gui][session-name] generation failed: {error}");
+            }
+        }
+    });
+}
+
+async fn emit_session_views(
+    gui_state: &GuiState,
+    app: &AppHandle,
+    session_id: &str,
+) -> Result<(), String> {
+    let active_index = *gui_state.active_tab.lock().await;
+    let snapshot = {
+        let tabs = gui_state.tabs.lock().await;
+        tabs.get(active_index)
+            .filter(|tab| tab.session_id() == session_id)
+            .map(|tab| UiSnapshot::from_tab(tab, &gui_state.shared))
     };
-    let snapshot = UiSnapshot::from_tab(&tabs[index], &gui_state.shared);
-    let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
+    if let Some(snapshot) = snapshot {
+        crate::events::emit_main(app, "ui-state", &snapshot)?;
+    }
+    crate::events::emit_sidebar_state(app, gui_state).await
 }
 
 // --- 状态查询 ---
@@ -1066,6 +1147,7 @@ pub async fn get_settings(
         hide_thinking: rt.hide_thinking,
         transport: rt.transport.clone(),
         auto_compact: rt.compaction.enabled,
+        auto_session_naming: rt.auto_session_naming,
         steering_mode: rt.steering_mode.clone(),
         follow_up_mode: rt.follow_up_mode.clone(),
         running_send_mode: rt.running_send_mode.clone(),
@@ -1155,6 +1237,11 @@ pub async fn update_setting(
             let mut s = state.runtime_settings.lock().await;
             s.compaction.enabled = value == "true";
             drop(s);
+            persist_settings(&state).await;
+            Ok(())
+        }
+        "auto_session_naming" => {
+            state.runtime_settings.lock().await.auto_session_naming = value == "true";
             persist_settings(&state).await;
             Ok(())
         }
@@ -1447,9 +1534,28 @@ pub async fn rename_session(
     path: String,
     name: String,
 ) -> Result<(), String> {
-    SessionManager::rename(&path, if name.is_empty() { None } else { Some(name) })
-        .map_err(|e| e.to_string())?;
-    crate::events::emit_sidebar_state(&app, state.inner()).await
+    let new_name = (!name.trim().is_empty()).then(|| name.trim().to_string());
+    let active_agent = {
+        let tabs = state.tabs.lock().await;
+        tabs.iter().find_map(|tab| match tab {
+            SessionTab::Active {
+                path: active_path,
+                agent,
+                ..
+            } if active_path == &path => Some(agent.clone()),
+            _ => None,
+        })
+    };
+    if let Some(agent) = active_agent {
+        agent
+            .session_manager()
+            .await
+            .append_session_info(new_name)
+            .map_err(|error| error.to_string())?;
+    } else {
+        SessionManager::rename(&path, new_name).map_err(|error| error.to_string())?;
+    }
+    emit_session_views(state.inner(), &app, &session_id_from_path(&path)).await
 }
 
 #[tauri::command]
@@ -2621,6 +2727,7 @@ pub struct SettingsSnapshot {
     pub hide_thinking: bool,
     pub transport: String,
     pub auto_compact: bool,
+    pub auto_session_naming: bool,
     pub steering_mode: String,
     pub follow_up_mode: String,
     pub running_send_mode: String,

@@ -233,14 +233,10 @@ impl GuiState {
                     })
                     .unwrap_or("idle")
                     .to_owned();
-                let name = meta.name.unwrap_or_else(|| {
-                    let preview = meta.first_message.chars().take(50).collect::<String>();
-                    if meta.first_message.chars().count() > 50 {
-                        format!("{preview}...")
-                    } else {
-                        meta.first_message
-                    }
-                });
+                let name = meta
+                    .name
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or_else(|| session_preview(&meta.first_message));
                 SidebarSessionSnapshot {
                     id: meta.id,
                     path: meta.path.to_string_lossy().to_string(),
@@ -611,7 +607,9 @@ impl UiSnapshot {
             is_streaming: tab.is_streaming(),
             model: Some(model_info),
             thinking_level: thinking_str,
-            session_name: None,
+            // Stream updates retain the existing header. Full snapshots resolve
+            // the latest persisted name, then fall back to the first user turn.
+            session_name: (!stream_update).then(|| session_display_name(tab)),
             cwd: shared.cwd.to_string_lossy().to_string(),
             git: (!stream_update).then(|| git_status(&shared.cwd)).flatten(),
             context_usage: context_usage.clone(),
@@ -637,6 +635,50 @@ impl UiSnapshot {
             },
             stream_update,
         }
+    }
+}
+
+/// Resolve the selected session's user-facing title without conflating the
+/// durable name with its deterministic first-message preview.
+pub fn session_display_name(tab: &SessionTab) -> String {
+    if let Ok(manager) = SessionManager::open(tab.path())
+        && let Some(name) = manager
+            .current_name()
+            .filter(|name| !name.trim().is_empty())
+    {
+        return name;
+    }
+    if let SessionTab::Idle { name, .. } = tab
+        && !name.trim().is_empty()
+    {
+        return name.clone();
+    }
+    let first_user_message = tab.messages().iter().find_map(|message| {
+        let rozsa_model::types::Message::User(user) = message.as_standard()? else {
+            return None;
+        };
+        let text = user
+            .display_text
+            .clone()
+            .unwrap_or_else(|| user.content.text());
+        (!text.trim().is_empty()).then_some(text)
+    });
+    first_user_message.map_or_else(
+        || "Untitled".to_string(),
+        |message| session_preview(&message),
+    )
+}
+
+fn session_preview(message: &str) -> String {
+    let message = message.trim();
+    if message.is_empty() {
+        return "Untitled".to_string();
+    }
+    let preview = message.chars().take(50).collect::<String>();
+    if message.chars().count() > 50 {
+        format!("{preview}...")
+    } else {
+        preview
     }
 }
 

@@ -31,6 +31,8 @@ fn native_split_dependencies_are_exact_and_verified() {
 fn native_split_host_owns_two_persistent_panes_on_the_main_thread() {
     let source = include_str!("../src/native_split_view.rs");
     let lib = include_str!("../src/lib.rs");
+    let commands = include_str!("../src/commands.rs");
+    let config = include_str!("../tauri.conf.json");
 
     assert!(source.contains("thread_local!"));
     assert!(source.contains("MainThreadMarker::new()"));
@@ -48,6 +50,12 @@ fn native_split_host_owns_two_persistent_panes_on_the_main_thread() {
     assert!(!source.contains("set_position("));
     assert!(lib.contains("mod native_split_view;"));
     assert!(lib.contains("native_split_view::install"));
+    assert!(config.contains("\"visible\": false"));
+    assert!(source.contains("split_controller.view().setHidden(true)"));
+    assert!(source.contains("pub fn reveal_content()"));
+    assert!(commands.contains("update.all_webviews_ready"));
+    assert!(commands.contains("reveal_native_split(&app)?"));
+    assert!(commands.contains("failed to show ready GUI window"));
 }
 
 #[test]

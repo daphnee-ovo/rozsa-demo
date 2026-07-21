@@ -43,6 +43,7 @@ fn unready_webviews_receive_only_the_latest_snapshot_when_ready() {
     let mut router = SceneRouter::default();
     let main_ready = router.webview_ready(GuiWebview::Main, 0);
     assert!(main_ready.should_emit);
+    assert!(!main_ready.all_webviews_ready);
 
     let first = router
         .set_scene(GuiScene::Settings, Some(SettingsPane::Models), 1)
@@ -55,6 +56,7 @@ fn unready_webviews_receive_only_the_latest_snapshot_when_ready() {
 
     let sidebar_ready = router.webview_ready(GuiWebview::Sidebar, 0);
     assert!(sidebar_ready.should_emit);
+    assert!(sidebar_ready.all_webviews_ready);
     assert_eq!(sidebar_ready.snapshot.revision, 3);
     assert_eq!(
         sidebar_ready.snapshot.selected_pane,

@@ -106,6 +106,8 @@ NSWindow
 
 两个 split item 和两个 WebView 在 Main/Settings 切换期间保持 identity。`scene_router.rs` 持有窗口级 `GuiScene` 和 revision；前端只切换预创建 root 的 `hidden` / `inert`，不 reload 或重建 stateful roots。pane frame、divider、collapse、fullscreen overlay 和 width persistence 只由 AppKit 管理。
 
+窗口配置为初始隐藏。main 与 sidebar WebView 分别完成 `gui_webview_ready` 后，`scene_router.rs` 才允许显示同一个 `NSWindow`，避免启动和原生重挂载期间先暴露单独 pane。非 macOS fallback 没有第二个 WebView，在完成单 WebView setup 后直接显示窗口。
+
 实现锚点：[`native_split_view.rs`](../../crates/rozsa-gui/src/native_split_view.rs)、[`native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs)、[`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js)。验证记录见 [`NATIVE_SPLIT_VALIDATION.md`](./NATIVE_SPLIT_VALIDATION.md)。
 
 ## 4. IPC 协议

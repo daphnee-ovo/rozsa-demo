@@ -11,8 +11,11 @@
 //!
 //! Installation order: create child WebView -> retain native handles -> create
 //! child controllers/items -> pin both WKWebViews with Auto Layout -> install
-//! the split controller. Teardown reverses that order before asynchronously
-//! closing the child WebView, avoiding a main-thread dispatcher deadlock.
+//! the split controller. The window can then load while the complete split root
+//! stays hidden. Both WebViews completing `gui_webview_ready` reveals that root
+//! in one AppKit operation, so the two panes first appear as one surface.
+//! Teardown reverses that order before asynchronously closing the child WebView,
+//! avoiding a main-thread dispatcher deadlock.
 //! Theme updates are revisioned and ordered native backing first, WebView event
 //! second. The sidebar WKWebView stays transparent above either a system
 //! sidebar material or the current theme's opaque sidebar color.
@@ -29,8 +32,8 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{MainThreadMarker, MainThreadOnly, msg_send};
 use objc2_app_kit::{
-    NSAppearance, NSAppearanceCustomization, NSAutoresizingMaskOptions, NSBox, NSBoxType,
-    NSColor, NSLayoutConstraint, NSSplitViewController, NSSplitViewItem, NSView, NSViewController,
+    NSAppearance, NSAppearanceCustomization, NSAutoresizingMaskOptions, NSBox, NSBoxType, NSColor,
+    NSLayoutConstraint, NSSplitViewController, NSSplitViewItem, NSView, NSViewController,
     NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
     NSWindow,
 };
@@ -221,6 +224,7 @@ fn install_native_split(
     split_view.setAutosaveName(Some(ns_string!("RózsaNativeSidebarSplit")));
 
     window.setContentViewController(Some(&split_controller));
+    split_controller.view().setHidden(true);
     window.setFrame_display(original_window_frame, true);
 
     eprintln!(
@@ -408,6 +412,20 @@ pub fn toggle_sidebar() -> Result<(), String> {
     })
 }
 
+/// Reveal both WebView panes together after their frontend roots are ready.
+pub fn reveal_content() -> Result<(), String> {
+    MainThreadMarker::new()
+        .ok_or_else(|| "native split reveal must run on the main thread".to_string())?;
+    HOST.with(|slot| {
+        let slot = slot.borrow();
+        let host = slot
+            .as_ref()
+            .ok_or_else(|| "native split host is not installed".to_string())?;
+        host.split_controller.view().setHidden(false);
+        Ok(())
+    })
+}
+
 fn window_uses_dark_appearance(window: &NSWindow) -> bool {
     let appearances = vec![
         NSString::from_str("NSAppearanceNameAqua"),
@@ -420,10 +438,7 @@ fn window_uses_dark_appearance(window: &NSWindow) -> bool {
         .is_some_and(|name| name.to_string() == "NSAppearanceNameDarkAqua")
 }
 
-fn apply_sidebar_appearance(
-    material: &NSVisualEffectView,
-    theme_mode: &str,
-) -> Result<(), String> {
+fn apply_sidebar_appearance(material: &NSVisualEffectView, theme_mode: &str) -> Result<(), String> {
     let appearance_name = match theme_mode {
         "light" => Some("NSAppearanceNameAqua"),
         "dark" => Some("NSAppearanceNameDarkAqua"),

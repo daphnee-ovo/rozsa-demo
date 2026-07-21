@@ -163,13 +163,24 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             },
                         )?;
-                        inspector::open_from_webview_raw(main_webview_raw)
+                        titlebar_window
+                            .show()
+                            .map_err(|error| format!("failed to show installed GUI window: {error}"))?;
+                        if inspector::enabled() {
+                            inspector::open_from_webview_raw(main_webview_raw)?;
+                        }
+                        Ok(())
                     })
                     .map_err(std::io::Error::other)?;
                 }
 
                 #[cfg(not(target_os = "macos"))]
-                inspector::open_in_separate_window(&window);
+                {
+                    if inspector::enabled() {
+                        inspector::open_in_separate_window(&window);
+                    }
+                    window.show().map_err(std::io::Error::other)?;
+                }
 
                 let pending_approvals = app.state::<GuiState>().pending_approvals.clone();
                 window.on_window_event(move |event| {

@@ -13,7 +13,7 @@
 │ SIDEBAR              │ MAIN PANEL                                    │
 │                      │                                               │
 │ sidebar header       │ panel header                                  │
-│   Sessions   [+]     │   current session title  +  permission badge  │
+│   Sessions   [+]     │   current session title                       │
 │                      │                                               │
 │ session list         │ chat region                                   │
 │   session item       │   └─ empty state / message stream              │
@@ -29,7 +29,7 @@
 │                      │ │ composer surface                          │ │
 │                      │ │ message editor                            │ │
 │                      │ │ input toolbar                              │ │
-│                      │ │ [attach] [slash]   hint  context  model Send│ │
+│                      │ │ [attach] [slash] hint context model think Send│ │
 │                      │ └───────────────────────────────────────────┘ │
 └──────────────────────┴───────────────────────────────────────────────┘
 ```
@@ -80,6 +80,7 @@ composer = 用户组织并提交消息的整个底部区域
    ├─ shortcut hint
    ├─ context meter
    ├─ model selector
+   ├─ thinking level indicator
    └─ submit control: Send
 
 tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
@@ -104,7 +105,7 @@ tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
 | `native pane` | AppKit `NSSplitViewItem` 管理的 sidebar/main 区域 | divider、collapse、width 不由 CSS 管理 |
 | `page header` / `panel header` | WebView 页面内部的内容标题区 | 当前主区的 `panel-header`，不是 native titlebar |
 
-不要说“顶部 toolbar”来指截图左上角的原生标题栏。要说 `native titlebar`；如果指主内容里的 Rózsa 和权限模式，则说 `panel header`。
+不要说“顶部 toolbar”来指截图左上角的原生标题栏。要说 `native titlebar`；如果指主内容里的当前 session title，则说 `panel header`。
 
 ## 4. Sidebar 术语
 
@@ -137,9 +138,7 @@ tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
 | --- | --- | --- |
 | `main panel` | 主面板 | `[data-od-id="main-panel"]`，承载当前 session 的主要工作区 |
 | `panel header` | 主面板头部 | `[data-od-id="panel-header"]` |
-| `session title` | 当前会话标题 | `#currentSessionName`，截图中的 `Rózsa` |
-| `status badge` | 状态徽标 | 具有短文本的 pill/badge；例如 permission mode |
-| `permission badge` | 权限模式徽标 | `[data-od-id="perm-badge"]`，截图中的 `medium`/模式文字 |
+| `session title` | 当前会话标题 | `#currentSessionName`；优先手动名称、自动生成名称、首条用户消息 preview，选中空 session 时为 `Untitled` |
 | `header spacer` | 头部弹性占位 | `.header-spacer`，用于把可选控件推到右侧 |
 | `chat region` | 聊天内容区 | `#chatMessages`，可滚动显示 empty state、消息和 tool call |
 | `message stream` | 消息流 | chat region 中按事件增量更新的消息内容 |
@@ -147,7 +146,7 @@ tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
 | `empty-state hint` | 空状态提示 | “Describe your coding task…” 及快捷键说明 |
 | `keyboard hint` | 键盘提示 | `<kbd>` 视觉元素和对应文字，不等同于 input toolbar |
 
-`status badge` 是视觉组件的泛称；具体说明权限时用 `permission badge`，不要把它和 sidebar 的 `session status indicator` 混为一谈。
+只有未选中任何 session 时，`#currentSessionName` 才显示产品名 `Rózsa`。session name 更新由后端同时推送 main `ui-state` 与 `sidebar-state`。
 
 ## 6. Composer 与 Input toolbar 术语
 
@@ -165,6 +164,7 @@ tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
 | 辅助文本 | `shortcut hint` | 快捷键提示 | `.input-hint` |
 | 指示器 | `context meter` | 上下文用量指示器 | `.context-ring` + `#contextTokens` |
 | 控件 | `model selector` | 模型选择器 | `#modelSelector.model-selector` |
+| 指示器 | `thinking level indicator` | 思考级别指示器 | `#thinkingLevel`，紧跟 model selector |
 | 控件 | `submit control` / `send button` | 提交控件/发送按钮 | `.send-btn`，文字为 `Send` |
 
 ### 6.2 Composer 结构图
@@ -510,6 +510,7 @@ settings scene
 | `AI settings group` | AI 设置分组 | Thinking、compact、steering 和 follow-up 设置 | `#pane-general .settings-group`；`renderGeneralSettings()` |
 | `thinking level selector` | 思考级别选择器 | 选择 Off/Low/Medium/High | `#settingsThinking` |
 | `auto compact switch` | 自动压缩开关 | 控制上下文自动 compact | `#settingsAutoCompact`；`wireSettingSwitch()` |
+| `auto session naming switch` | 自动会话命名开关 | 控制首次真实用户 turn 后的后台 title 请求 | `#settingsAutoSessionNaming`；`wireSettingSwitch()` |
 | `steering mode selector` | Steering 模式选择器 | 选择一次处理一条或全部 steering 消息 | `#settingsSteeringMode` |
 | `follow-up mode selector` | Follow-up 模式选择器 | 选择 follow-up 消息的处理方式 | `#settingsFollowUpMode` |
 | `default running send mode selector` | 运行中默认发送模式选择器 | 选择 Queue 或 Steer | `#settingsRunningSendMode` |

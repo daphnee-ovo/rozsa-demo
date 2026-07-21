@@ -13,10 +13,7 @@ fn parse_permission_mode() {
         PermissionMode::parse("auto-permission"),
         Some(PermissionMode::AutoApprove)
     );
-    assert_eq!(
-        PermissionMode::parse("yolo"),
-        Some(PermissionMode::Yolo)
-    );
+    assert_eq!(PermissionMode::parse("yolo"), Some(PermissionMode::Yolo));
     assert_eq!(PermissionMode::parse("invalid"), None);
 }
 
