@@ -79,6 +79,7 @@ let scrollStateFrame = 0;
 let sidebarCollapsed = false;
 let sidebarAutoCollapsed = false;
 let nativeSplitMode = false;
+let nativeSidebarOverlayVisible = false;
 const guiSceneState = { revision: 0, scene: 'main', selectedPane: null };
 const mainThemeState = { revision: 0 };
 let pendingGuiSceneSnapshot = null;
@@ -86,7 +87,16 @@ let pendingGuiSceneIntent = null;
 let mainSceneContinuity = null;
 const TRANSIENT_POPUP_IDS = ['autocomplete', 'forkPicker', 'subagentPanel', 'quotaTooltip'];
 const DOUBLE_ESCAPE_WINDOW_MS = 1000;
+const COMPOSER_HINT_ROTATION_MS = 30_000;
+const COMPOSER_HINTS = [
+  'Message Rózsa, supports Markdown…',
+  '⏎ Send · ⇧⏎ New line',
+  '⌃T Toggle thinking',
+];
 let lastStreamingEscapeAt = 0;
+let composerHintIndex = 0;
+let composerHintTimer = null;
+let composerHintsDismissed = false;
 
 // =============== Slash Commands Registry ===============
 
@@ -167,6 +177,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   listen = window.__TAURI__.event.listen;
   configureAttachmentPicker();
   await configureNativeFileDrag();
+  setupComposerHints();
 
   await listen('gui-scene-snapshot', ev => applyGuiSceneSnapshot(ev.payload));
   await listen('theme-state', ev => applyMainThemeState(ev.payload));
@@ -177,6 +188,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('notification', ev => showNotification(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
   await listen('native-sidebar-toggle', () => {
     if (!nativeSplitMode) toggleMainSidebar();
+  });
+  await listen('native-sidebar-state', ev => {
+    if (nativeSplitMode) {
+      const collapsed = Boolean(ev.payload);
+      if (!collapsed) nativeSidebarOverlayVisible = false;
+      setMainSidebarCollapsed(collapsed, false);
+    }
   });
   await listen('native-fullscreen', ev => {
     console.debug('[rozsa-gui][fullscreen] native event', ev.payload);
@@ -190,6 +208,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   if (nativeSplitMode) {
     try {
+      setMainSidebarCollapsed(Boolean(await invoke('native_sidebar_collapsed')), false);
       const snapshot = await invoke('gui_webview_ready', {
         webview: 'main',
         lastRevision: guiSceneState.revision,
@@ -213,6 +232,33 @@ window.addEventListener('resize', syncMainSidebarViewport);
 window.addEventListener('resize', syncChromeBackgroundGeometry);
 window.addEventListener('resize', scheduleNativeFullscreenSync);
 window.addEventListener('pointermove', handleSidebarEdgeReveal);
+window.addEventListener('pointerdown', handleSidebarEdgeReveal);
+document.documentElement.addEventListener('pointerenter', handleSidebarEdgeReveal);
+
+function setupComposerHints() {
+  const input = document.getElementById('msgInput');
+  if (!input) return;
+  input.dataset.placeholder = COMPOSER_HINTS[composerHintIndex];
+  composerHintTimer = window.setInterval(rotateComposerHint, COMPOSER_HINT_ROTATION_MS);
+  input.addEventListener('pointerdown', dismissComposerHints, { once: true });
+}
+
+function rotateComposerHint() {
+  const input = document.getElementById('msgInput');
+  if (!input || composerHintsDismissed) return;
+  composerHintIndex = (composerHintIndex + 1) % COMPOSER_HINTS.length;
+  input.dataset.placeholder = COMPOSER_HINTS[composerHintIndex];
+}
+
+function dismissComposerHints() {
+  composerHintsDismissed = true;
+  if (composerHintTimer !== null) {
+    window.clearInterval(composerHintTimer);
+    composerHintTimer = null;
+  }
+  const input = document.getElementById('msgInput');
+  if (input) input.dataset.placeholder = '';
+}
 
 // =============== State Rendering ===============
 
@@ -237,6 +283,7 @@ function renderState(snap) {
     return;
   }
   updateHeader(snap);
+  updateContextUsage(snap.contextUsage);
   if (!nativeSplitMode) updateSidebar(snap);
   renderMessages(snap.messages, snap.isStreaming, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
   renderRunningMessages(snap.queuedMessages, snap.steeringConversation);
@@ -317,20 +364,6 @@ async function refreshRateLimits(showResult) {
 function updateSidebar(snap) {
   updateQuotaVisibility(snap.model);
 
-  if (snap.contextUsage) {
-    const pct = clampPercent(Number(snap.contextUsage.percent || 0));
-    const tokens = Number(snap.contextUsage.tokens || 0);
-    const ctxEl = document.getElementById('contextTokens');
-    if (ctxEl) ctxEl.textContent = formatCompactTokens(tokens);
-    const ring = document.querySelector('.context-ring circle:last-child');
-    if (ring) ring.setAttribute('stroke-dashoffset', 44 - (44 * pct / 100));
-    const ringWrap = document.querySelector('.context-ring');
-    if (ringWrap) {
-      ringWrap.removeAttribute('title');
-      ringWrap.dataset.quotaTooltip = formatContextTooltip(snap.contextUsage);
-    }
-  }
-
   const branchEl = document.getElementById('gitBranch');
   const addEl = document.getElementById('gitAdd');
   const delEl = document.getElementById('gitDel');
@@ -346,6 +379,22 @@ function updateSidebar(snap) {
     if (addEl) addEl.textContent = '—';
     if (delEl) delEl.textContent = '—';
     if (filesEl) filesEl.textContent = '—';
+  }
+}
+
+function updateContextUsage(contextUsage) {
+  if (contextUsage) {
+    const pct = clampPercent(Number(contextUsage.percent || 0));
+    const tokens = Number(contextUsage.tokens || 0);
+    const ctxEl = document.getElementById('contextTokens');
+    if (ctxEl) ctxEl.textContent = formatCompactTokens(tokens);
+    const ring = document.querySelector('.context-ring circle:last-child');
+    if (ring) ring.setAttribute('stroke-dashoffset', 44 - (44 * pct / 100));
+    const ringWrap = document.querySelector('.context-ring');
+    if (ringWrap) {
+      ringWrap.removeAttribute('title');
+      ringWrap.dataset.quotaTooltip = formatContextTooltip(contextUsage);
+    }
   }
 }
 
@@ -1814,7 +1863,11 @@ function isSidebarCollapsed() {
 
 function preparePlatformSceneDom() {
   document.body.classList.toggle('native-split-main', nativeSplitMode);
-  if (nativeSplitMode) return;
+  if (nativeSplitMode) {
+    document.getElementById('nativeSidebarEdgeTrigger')
+      ?.addEventListener('pointerenter', showNativeSidebarOverlay);
+    return;
+  }
   materializeFallbackTemplate('fallbackSidebarTemplate', 'fallbackSidebarMount');
   materializeFallbackTemplate('fallbackSettingsNavigationTemplate', 'fallbackSettingsNavigationMount');
 }
@@ -2007,17 +2060,44 @@ function syncChromeBackgroundGeometry() {
 }
 
 function handleSidebarEdgeReveal(event) {
-  if (nativeSplitMode) return;
+  if (nativeSplitMode) {
+    if (nativeSidebarOverlayVisible) hideNativeSidebarOverlay();
+    return;
+  }
   const collapsed = isSidebarCollapsed();
   const settingsPanel = document.getElementById('settingsPanel');
   const settingsVisible = settingsPanel?.classList.contains('visible');
-  const edgeVisible = event.clientX <= 18;
-  if (settingsVisible) {
-    settingsPanel.classList.toggle('settings-edge-visible', collapsed && edgeVisible);
-    return;
-  }
-  const appBody = document.querySelector('[data-od-id="app-body"]');
-  appBody?.classList.toggle('sidebar-edge-visible', collapsed && edgeVisible);
+  const panel = settingsVisible ? settingsPanel : document.querySelector('[data-od-id="app-body"]');
+  const sidebar = settingsVisible
+    ? settingsPanel?.querySelector('.settings-tabs')
+    : panel?.querySelector('[data-od-id="sidebar"]');
+  const sidebarWidth = sidebar?.getBoundingClientRect().width || 260;
+  const visibleClass = settingsVisible ? 'settings-edge-visible' : 'sidebar-edge-visible';
+  const edgeVisible = event.clientX <= 18 || (
+    panel?.classList.contains(visibleClass) && event.clientX <= sidebarWidth + 12
+  );
+  setSidebarEdgeVisible(collapsed && edgeVisible);
+}
+
+function showNativeSidebarOverlay() {
+  if (!nativeSplitMode || !isSidebarCollapsed() || nativeSidebarOverlayVisible) return;
+  invoke('set_native_sidebar_overlay_visible', { visible: true })
+    .then(() => { nativeSidebarOverlayVisible = true; })
+    .catch(error => showError('Failed to reveal sidebar: ' + String(error)));
+}
+
+function hideNativeSidebarOverlay() {
+  nativeSidebarOverlayVisible = false;
+  invoke('set_native_sidebar_overlay_visible', { visible: false })
+    .catch(error => showError('Failed to hide sidebar: ' + String(error)));
+}
+
+function setSidebarEdgeVisible(visible) {
+  const settingsPanel = document.getElementById('settingsPanel');
+  const settingsVisible = settingsPanel?.classList.contains('visible');
+  settingsPanel?.classList.toggle('settings-edge-visible', settingsVisible && visible);
+  document.querySelector('[data-od-id="app-body"]')
+    ?.classList.toggle('sidebar-edge-visible', !settingsVisible && visible);
 }
 
 function currentTauriWindow() {

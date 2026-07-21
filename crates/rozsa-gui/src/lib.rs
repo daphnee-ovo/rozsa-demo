@@ -49,6 +49,31 @@ pub struct GuiConfig {
     pub resources: rozsa_app::resources::LoadedResources,
 }
 
+#[tauri::command]
+fn native_sidebar_collapsed() -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        native_split_view::is_sidebar_collapsed()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn set_native_sidebar_overlay_visible(visible: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        native_split_view::set_sidebar_overlay_visible(visible)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = visible;
+        Ok(())
+    }
+}
+
 pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_settings = config.settings_manager.resolved().clone();
     // 共享资源（创建新 agent backend 时复用）
@@ -129,6 +154,8 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::run_bash,
             commands::autocomplete_input,
             commands::pick_attachment,
+            native_sidebar_collapsed,
+            set_native_sidebar_overlay_visible,
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -137,17 +164,32 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
                     let sidebar_url =
                         tauri::WebviewUrl::App(std::path::PathBuf::from("sidebar.html"));
                     let titlebar_window = window.clone();
+                    let sidebar_event_handle = app.handle().clone();
                     let fullscreen_event_handle = app.handle().clone();
                     native_split_view::install(&window, sidebar_url, move |main_webview_raw| {
                         native_titlebar::install(
                             &titlebar_window,
                             move || {
-                                if let Err(error) = native_split_view::toggle_sidebar() {
-                                    eprintln!(
-                                        "[rozsa-gui][native-titlebar] sidebar toggle failed: {error}"
-                                    );
+                                match native_split_view::toggle_sidebar() {
+                                    Ok(collapsed) => {
+                                        if let Err(error) = sidebar_event_handle
+                                            .emit("native-sidebar-state", collapsed)
+                                        {
+                                            eprintln!(
+                                                "[rozsa-gui][native-titlebar] failed to emit native-sidebar-state={collapsed}: {error}"
+                                            );
+                                        }
+                                        Some(collapsed)
+                                    }
+                                    Err(error) => {
+                                        eprintln!(
+                                            "[rozsa-gui][native-titlebar] sidebar toggle failed: {error}"
+                                        );
+                                        None
+                                    }
                                 }
                             },
+                            || native_split_view::is_sidebar_collapsed().ok(),
                             move |fullscreen, transitioning| {
                                 let payload = serde_json::json!({
                                     "fullscreen": fullscreen,

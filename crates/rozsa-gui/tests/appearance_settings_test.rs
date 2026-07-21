@@ -25,7 +25,11 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(native.contains("FullSizeContentView"));
     assert!(native.contains("setTitleVisibility(NSWindowTitleVisibility::Hidden)"));
     assert!(native.contains("toggleSidebar:"));
-    assert!(native.contains("rectangle.split.2x1"));
+    assert!(native.contains("sidebar.left"));
+    assert!(native.contains("sidebar.right"));
+    assert!(native.contains("configurationWithScale(NSImageSymbolScale::Medium)"));
+    assert!(native.contains("image.setSize(NSSize::new(14.0, 14.0))"));
+    assert!(native.contains("button.setImageScaling(NSImageScaling::ScaleNone)"));
     assert!(native.contains("mouseDown:"));
     assert!(native.contains("event.clickCount() == 2"));
     assert!(native.contains("performZoom"));

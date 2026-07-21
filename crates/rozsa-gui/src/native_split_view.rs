@@ -66,12 +66,19 @@ struct NativeSplitHost {
     original_autoresizing: NSAutoresizingMaskOptions,
     main_view: Retained<NSView>,
     sidebar_view: Retained<NSView>,
+    sidebar_pane: Retained<NSView>,
+    sidebar_overlay: Retained<NSView>,
     sidebar_material: Retained<NSVisualEffectView>,
     sidebar_opaque_backing: Retained<NSBox>,
     main_constraints: Retained<NSArray<NSLayoutConstraint>>,
     sidebar_constraints: Retained<NSArray<NSLayoutConstraint>>,
     sidebar_material_constraints: Retained<NSArray<NSLayoutConstraint>>,
     sidebar_opaque_constraints: Retained<NSArray<NSLayoutConstraint>>,
+    sidebar_overlay_constraints: Retained<NSArray<NSLayoutConstraint>>,
+    sidebar_overlay_width_constraint: Retained<NSLayoutConstraint>,
+    overlay_sidebar_constraints: Retained<NSArray<NSLayoutConstraint>>,
+    overlay_material_constraints: Retained<NSArray<NSLayoutConstraint>>,
+    overlay_opaque_constraints: Retained<NSArray<NSLayoutConstraint>>,
     split_controller: Retained<NSSplitViewController>,
     sidebar_item: Retained<NSSplitViewItem>,
     main_item: Retained<NSSplitViewItem>,
@@ -79,6 +86,7 @@ struct NativeSplitHost {
     _main_controller: Retained<NSViewController>,
     sidebar_webview: tauri::Webview,
     theme_revision: u64,
+    sidebar_overlay_visible: bool,
 }
 
 #[derive(Clone)]
@@ -95,6 +103,48 @@ pub struct NativeThemeSurface {
 }
 
 impl NativeSplitHost {
+    fn set_sidebar_overlay_visible(&mut self, visible: bool) -> Result<(), String> {
+        if visible == self.sidebar_overlay_visible {
+            return Ok(());
+        }
+        if visible && !self.sidebar_item.isCollapsed() {
+            return Ok(());
+        }
+
+        if visible {
+            NSLayoutConstraint::deactivateConstraints(&self.sidebar_constraints);
+            NSLayoutConstraint::deactivateConstraints(&self.sidebar_material_constraints);
+            NSLayoutConstraint::deactivateConstraints(&self.sidebar_opaque_constraints);
+            self.sidebar_view.removeFromSuperview();
+            self.sidebar_material.removeFromSuperview();
+            self.sidebar_opaque_backing.removeFromSuperview();
+            self.sidebar_overlay
+                .addSubview(&self.sidebar_opaque_backing);
+            self.sidebar_overlay.addSubview(&self.sidebar_material);
+            self.sidebar_overlay.addSubview(&self.sidebar_view);
+            NSLayoutConstraint::activateConstraints(&self.overlay_opaque_constraints);
+            NSLayoutConstraint::activateConstraints(&self.overlay_material_constraints);
+            NSLayoutConstraint::activateConstraints(&self.overlay_sidebar_constraints);
+            self.sidebar_overlay.setHidden(false);
+        } else {
+            self.sidebar_overlay.setHidden(true);
+            NSLayoutConstraint::deactivateConstraints(&self.overlay_sidebar_constraints);
+            NSLayoutConstraint::deactivateConstraints(&self.overlay_material_constraints);
+            NSLayoutConstraint::deactivateConstraints(&self.overlay_opaque_constraints);
+            self.sidebar_view.removeFromSuperview();
+            self.sidebar_material.removeFromSuperview();
+            self.sidebar_opaque_backing.removeFromSuperview();
+            self.sidebar_pane.addSubview(&self.sidebar_opaque_backing);
+            self.sidebar_pane.addSubview(&self.sidebar_material);
+            self.sidebar_pane.addSubview(&self.sidebar_view);
+            NSLayoutConstraint::activateConstraints(&self.sidebar_opaque_constraints);
+            NSLayoutConstraint::activateConstraints(&self.sidebar_material_constraints);
+            NSLayoutConstraint::activateConstraints(&self.sidebar_constraints);
+        }
+        self.sidebar_overlay_visible = visible;
+        Ok(())
+    }
+
     fn restore_hierarchy(self) -> tauri::Webview {
         self.main_view.removeFromSuperview();
         self.sidebar_view.removeFromSuperview();
@@ -104,6 +154,11 @@ impl NativeSplitHost {
         NSLayoutConstraint::deactivateConstraints(&self.sidebar_constraints);
         NSLayoutConstraint::deactivateConstraints(&self.sidebar_material_constraints);
         NSLayoutConstraint::deactivateConstraints(&self.sidebar_opaque_constraints);
+        NSLayoutConstraint::deactivateConstraints(&self.sidebar_overlay_constraints);
+        NSLayoutConstraint::deactivateConstraints(&self.overlay_sidebar_constraints);
+        NSLayoutConstraint::deactivateConstraints(&self.overlay_material_constraints);
+        NSLayoutConstraint::deactivateConstraints(&self.overlay_opaque_constraints);
+        self.sidebar_overlay.removeFromSuperview();
         self.split_controller.removeSplitViewItem(&self.main_item);
         self.split_controller
             .removeSplitViewItem(&self.sidebar_item);
@@ -156,6 +211,12 @@ fn make_opaque_backing(
 fn pin_to_parent(child: &NSView, parent: &NSView) -> Retained<NSArray<NSLayoutConstraint>> {
     child.setTranslatesAutoresizingMaskIntoConstraints(false);
     parent.addSubview(child);
+    let constraints = constraints_to_parent(child, parent);
+    NSLayoutConstraint::activateConstraints(&constraints);
+    constraints
+}
+
+fn constraints_to_parent(child: &NSView, parent: &NSView) -> Retained<NSArray<NSLayoutConstraint>> {
     let constraints = NSArray::from_retained_slice(&[
         child
             .leadingAnchor()
@@ -170,7 +231,6 @@ fn pin_to_parent(child: &NSView, parent: &NSView) -> Retained<NSArray<NSLayoutCo
             .bottomAnchor()
             .constraintEqualToAnchor(&parent.bottomAnchor()),
     ]);
-    NSLayoutConstraint::activateConstraints(&constraints);
     constraints
 }
 
@@ -224,6 +284,31 @@ fn install_native_split(
     split_view.setAutosaveName(Some(ns_string!("RózsaNativeSidebarSplit")));
 
     window.setContentViewController(Some(&split_controller));
+    let split_root = split_controller.view();
+    let sidebar_overlay = NSView::new(mtm);
+    sidebar_overlay.setHidden(true);
+    sidebar_overlay.setTranslatesAutoresizingMaskIntoConstraints(false);
+    split_root.addSubview(&sidebar_overlay);
+    let sidebar_overlay_width_constraint = sidebar_overlay
+        .widthAnchor()
+        .constraintEqualToConstant(SIDEBAR_INITIAL_WIDTH);
+    let sidebar_overlay_constraints = NSArray::from_retained_slice(&[
+        sidebar_overlay
+            .leadingAnchor()
+            .constraintEqualToAnchor(&split_root.leadingAnchor()),
+        sidebar_overlay
+            .topAnchor()
+            .constraintEqualToAnchor(&split_root.topAnchor()),
+        sidebar_overlay
+            .bottomAnchor()
+            .constraintEqualToAnchor(&split_root.bottomAnchor()),
+        sidebar_overlay_width_constraint.clone(),
+    ]);
+    NSLayoutConstraint::activateConstraints(&sidebar_overlay_constraints);
+    let overlay_sidebar_constraints = constraints_to_parent(&sidebar_view, &sidebar_overlay);
+    let overlay_material_constraints = constraints_to_parent(&sidebar_material, &sidebar_overlay);
+    let overlay_opaque_constraints =
+        constraints_to_parent(&sidebar_opaque_backing, &sidebar_overlay);
     split_controller.view().setHidden(true);
     window.setFrame_display(original_window_frame, true);
 
@@ -239,12 +324,19 @@ fn install_native_split(
         original_autoresizing,
         main_view,
         sidebar_view,
+        sidebar_pane,
+        sidebar_overlay,
         sidebar_material,
         sidebar_opaque_backing,
         main_constraints,
         sidebar_constraints,
         sidebar_material_constraints,
         sidebar_opaque_constraints,
+        sidebar_overlay_constraints,
+        sidebar_overlay_width_constraint,
+        overlay_sidebar_constraints,
+        overlay_material_constraints,
+        overlay_opaque_constraints,
         split_controller,
         sidebar_item,
         main_item,
@@ -252,6 +344,7 @@ fn install_native_split(
         _main_controller: main_controller,
         sidebar_webview,
         theme_revision: 0,
+        sidebar_overlay_visible: false,
     })
 }
 
@@ -399,16 +492,49 @@ pub fn install(
 }
 
 /// Toggle the single AppKit-owned sidebar used by every GUI scene.
-pub fn toggle_sidebar() -> Result<(), String> {
+pub fn toggle_sidebar() -> Result<bool, String> {
     MainThreadMarker::new()
         .ok_or_else(|| "native sidebar toggle must run on the main thread".to_string())?;
     HOST.with(|slot| {
-        let slot = slot.borrow();
+        let mut slot = slot.borrow_mut();
         let host = slot
-            .as_ref()
+            .as_mut()
             .ok_or_else(|| "native split host is not installed".to_string())?;
+        if !host.sidebar_item.isCollapsed() {
+            let expanded_width = host.sidebar_pane.frame().size.width;
+            if expanded_width >= SIDEBAR_MIN_WIDTH {
+                host.sidebar_overlay_width_constraint
+                    .setConstant(expanded_width);
+            }
+        }
+        host.set_sidebar_overlay_visible(false)?;
         unsafe { host.split_controller.toggleSidebar(None::<&AnyObject>) };
-        Ok(())
+        Ok(host.sidebar_item.isCollapsed())
+    })
+}
+
+/// Show or hide the existing sidebar WebView as a leading overlay while the
+/// AppKit sidebar item remains collapsed.
+pub fn set_sidebar_overlay_visible(visible: bool) -> Result<(), String> {
+    MainThreadMarker::new()
+        .ok_or_else(|| "native sidebar overlay must update on the main thread".to_string())?;
+    HOST.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .ok_or_else(|| "native split host is not installed".to_string())?
+            .set_sidebar_overlay_visible(visible)
+    })
+}
+
+/// Read the AppKit-owned collapsed state without changing it.
+pub fn is_sidebar_collapsed() -> Result<bool, String> {
+    MainThreadMarker::new()
+        .ok_or_else(|| "native sidebar state must be read on the main thread".to_string())?;
+    HOST.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|host| host.sidebar_item.isCollapsed())
+            .ok_or_else(|| "native split host is not installed".to_string())
     })
 }
 

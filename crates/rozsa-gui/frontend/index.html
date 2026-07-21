@@ -278,17 +278,23 @@ body {
 .model-selector {
   font-size: 11px;
   font-family: var(--font-mono);
-  padding: 3px 10px;
-  border-radius: 4px;
-  background: var(--code-bg);
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: transparent;
   color: var(--muted);
-  border: 1px solid var(--code-border);
+  border: 0;
+  appearance: none;
   cursor: pointer;
+  text-align: right;
   transition: background 0.12s, color 0.12s;
 }
 .model-selector:hover {
-  background: var(--border);
+  background: var(--code-bg);
   color: var(--fg);
+}
+.model-selector:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 .thinking-level-badge {
   font-size: 11px;
@@ -1118,16 +1124,6 @@ body {
 }
 .input-tool-btn:hover { background: var(--code-bg); color: var(--fg); transform: translateY(-1px); }
 .input-spacer { flex: 1 1 12px; min-width: 8px; }
-.input-hint {
-  min-width: 0;
-  flex: 1 1 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10.5px;
-  font-family: var(--font-mono);
-  color: oklch(72% 0.008 350);
-}
 .send-btn {
   border: none;
   background: var(--accent-btn);
@@ -1145,7 +1141,7 @@ body {
 .input-toolbar .context-ring { flex: 0 1 auto; min-width: 0; }
 .input-toolbar .context-tokens { min-width: 0; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .input-toolbar .model-selector {
-  flex: 0 1 clamp(110px, 22vw, 220px);
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 220px;
   overflow: hidden;
@@ -1935,9 +1931,10 @@ button:focus-visible, .session-item:focus-visible,
 :root {
   --main-sidebar-width: clamp(240px, 20vw, 320px);
   --settings-sidebar-width: clamp(220px, 22vw, 320px);
+  --main-content-max-width: 960px;
   --chrome-sidebar-boundary: var(--main-sidebar-width);
   --settings-chrome-sidebar-boundary: var(--settings-sidebar-width);
-  --native-titlebar-offset: 42px;
+  --native-titlebar-offset: 32px;
   --semantic-accent: var(--accent);
 }
 
@@ -2137,7 +2134,7 @@ body.sidebar-collapsed [data-od-id="app-body"] {
   min-width: 0;
   max-height: none;
   overflow-y: auto;
-  padding: clamp(34px, 6vw, 74px) clamp(26px, 7vw, 108px) 96px;
+  padding: 0 clamp(26px, 7vw, 108px) 96px;
   background: var(--bg);
 }
 .settings-pane-title {
@@ -2389,12 +2386,10 @@ html[data-theme-mode="dark"] .settings-content {
   .appearance-range { width: min(300px, 38vw); min-width: 120px; }
   .theme-color-control { width: min(240px, 38vw); }
   [data-od-id="chat-input"] { padding-inline: 10px; }
-  .input-hint { flex-basis: 110px; max-width: 28%; }
-  .input-toolbar .model-selector { flex-basis: 120px; max-width: 120px; }
+  .input-toolbar .model-selector { max-width: 120px; }
 }
 @media (max-width: 560px) {
-  .input-hint { display: none; }
-  .input-toolbar .model-selector { flex-basis: 104px; max-width: 104px; }
+  .input-toolbar .model-selector { max-width: 104px; }
 }
 
 /* macOS native split: AppKit owns pane width; this WebView owns content only. */
@@ -2404,8 +2399,34 @@ body.native-split-main [data-od-id="app-body"] {
   padding-top: 0;
   background: var(--bg);
 }
+body.native-split-main {
+  width: 100%;
+}
 body.native-split-main.native-fullscreen [data-od-id="app-body"] { padding-top: 0; }
-body.native-split-main [data-od-id="main-panel"] { width: 100%; height: 100%; }
+body.native-split-main [data-od-id="main-panel"] {
+  width: 100%;
+  height: 100%;
+  align-items: center;
+}
+body.native-split-main [data-od-id="panel-header"] { align-self: stretch; }
+body.native-split-main.sidebar-collapsed:not(.native-fullscreen) [data-od-id="panel-header"] {
+  height: 58px;
+  flex: 0 0 58px;
+  padding-top: 12px;
+}
+#nativeSidebarEdgeTrigger { display: none; }
+body.native-split-main.sidebar-collapsed #nativeSidebarEdgeTrigger {
+  position: fixed;
+  z-index: 30;
+  inset: var(--native-titlebar-offset) auto 0 0;
+  display: block;
+  width: 18px;
+}
+[data-od-id="chat-messages"],
+[data-od-id="chat-input"] {
+  width: 100%;
+  max-width: var(--main-content-max-width);
+}
 body.native-split-main .settings-workspace { display: block; height: 100%; }
 body.native-split-main .settings-content { height: 100%; max-height: none; }
 body.native-split-main .settings-dialog { background: var(--bg); }
@@ -2414,6 +2435,8 @@ body.native-split-main .settings-dialog { background: var(--bg); }
 </style>
 </head>
 <body>
+
+<div id="nativeSidebarEdgeTrigger" aria-hidden="true"></div>
 
 <!-- ============ 主体 2:8；窗口 chrome 由 Tauri 原生提供 ============ -->
 <div data-od-id="app-body">
@@ -2563,12 +2586,11 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <button class="input-tool-btn" id="attachFileButton" title="Attach file" aria-label="Attach file" onclick="attachFileReference()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
           <button class="input-tool-btn" id="attachDirectoryButton" title="Attach folder" aria-label="Attach folder" onclick="attachDirectoryReference()" hidden><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 4.5h4l1.4 1.5h7.1v6.75a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/></svg></button>
           <button class="input-tool-btn" title="Slash commands" aria-label="Slash commands" onclick="insertSlashCommandPrefix()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 2.5L6 13.5"/></svg></button>
-          <div class="input-spacer"></div>
-          <span class="input-hint">Markdown · ⏎ Send · ⇧⏎ New line · ⌃T Think</span>
           <div class="context-ring" data-od-id="context-info">
             <svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" stroke="var(--border)" stroke-width="2" fill="none"/><circle cx="9" cy="9" r="7" stroke="var(--accent)" stroke-width="2" fill="none" stroke-dasharray="44" stroke-dashoffset="34.8" stroke-linecap="round" transform="rotate(-90 9 9)"/></svg>
             <span class="context-tokens" id="contextTokens">0k</span>
           </div>
+          <div class="input-spacer"></div>
           <button class="model-selector" data-od-id="model-badge" title="Switch model" id="modelSelector" onclick="showModelPicker()">(not configured)</button>
           <span class="thinking-level-badge" id="thinkingLevel" title="Thinking level">off</span>
           <select class="model-selector" id="runningSendMode" title="Send mode while running" onchange="updateAbortButton()" hidden><option value="queue">Queue</option><option value="steer">Steer</option></select>

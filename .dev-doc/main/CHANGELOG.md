@@ -13,3 +13,6 @@
 
 ## 2026-07-22
 - 01:14 fix(gui): stabilize session presentation and window lifecycle
+- 01:45 fix(gui): make agent interruption unconditional
+- 02:54 fix: ISSUE-I004：修正 main pane 居中与 sidebar 图标视觉尺寸
+- 03:26 doc: 简单更新文档

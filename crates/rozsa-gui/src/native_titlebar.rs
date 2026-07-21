@@ -16,8 +16,9 @@ use std::cell::RefCell;
 use objc2::runtime::{AnyObject, NSObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSButton, NSColor, NSEvent, NSImage, NSImageScaling, NSView,
-    NSWindow, NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification,
+    NSAutoresizingMaskOptions, NSButton, NSColor, NSEvent, NSImage, NSImageScaling,
+    NSImageSymbolConfiguration, NSImageSymbolScale, NSView, NSWindow,
+    NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification,
     NSWindowDidResizeNotification, NSWindowOrderingMode, NSWindowStyleMask,
     NSWindowTitleVisibility, NSWindowWillEnterFullScreenNotification,
     NSWindowWillExitFullScreenNotification,
@@ -33,7 +34,8 @@ thread_local! {
 }
 
 struct TitlebarDragViewIvars {
-    on_toggle: Box<dyn Fn() + Send + Sync + 'static>,
+    on_toggle: Box<dyn Fn() -> Option<bool> + Send + Sync + 'static>,
+    sidebar_button: RefCell<Option<objc2::rc::Weak<NSButton>>>,
     fullscreen_observer: RefCell<Option<objc2::rc::Retained<FullscreenObserver>>>,
 }
 
@@ -46,7 +48,9 @@ define_class!(
     impl TitlebarDragView {
         #[unsafe(method(toggleSidebar:))]
         fn toggle_sidebar(&self, _sender: Option<&AnyObject>) {
-            (self.ivars().on_toggle)();
+            if let Some(collapsed) = (self.ivars().on_toggle)() {
+                self.update_sidebar_symbol(collapsed);
+            }
         }
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
@@ -64,10 +68,11 @@ define_class!(
 impl TitlebarDragView {
     fn new(
         mtm: MainThreadMarker,
-        on_toggle: impl Fn() + Send + Sync + 'static,
+        on_toggle: impl Fn() -> Option<bool> + Send + Sync + 'static,
     ) -> objc2::rc::Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(TitlebarDragViewIvars {
             on_toggle: Box::new(on_toggle),
+            sidebar_button: RefCell::new(None),
             fullscreen_observer: RefCell::new(None),
         });
         unsafe { msg_send![super(this), init] }
@@ -79,6 +84,24 @@ impl TitlebarDragView {
 
     fn release_fullscreen_observer(&self) {
         self.ivars().fullscreen_observer.replace(None);
+    }
+
+    fn bind_sidebar_button(&self, button: &objc2::rc::Retained<NSButton>) {
+        self.ivars()
+            .sidebar_button
+            .replace(Some(objc2::rc::Weak::from_retained(button)));
+    }
+
+    fn update_sidebar_symbol(&self, collapsed: bool) {
+        if let Some(button) = self
+            .ivars()
+            .sidebar_button
+            .borrow()
+            .as_ref()
+            .and_then(objc2::rc::Weak::load)
+        {
+            set_sidebar_button_symbol(&button, collapsed);
+        }
     }
 }
 
@@ -105,6 +128,7 @@ struct FullscreenObserverIvars {
     window: objc2::rc::Weak<NSWindow>,
     webview_parent: objc2::rc::Weak<NSView>,
     drag_view: objc2::rc::Weak<TitlebarDragView>,
+    on_sidebar_collapsed: Box<dyn Fn() -> Option<bool> + Send + Sync + 'static>,
     on_fullscreen: Box<dyn Fn(bool, bool) + Send + Sync + 'static>,
 }
 
@@ -179,6 +203,11 @@ define_class!(
                 let webview_parent = self.ivars().webview_parent.load();
                 log_window_geometry("did-resize", &window, webview_parent.as_deref());
             }
+            if let Some(collapsed) = (self.ivars().on_sidebar_collapsed)()
+                && let Some(drag_view) = self.ivars().drag_view.load()
+            {
+                drag_view.update_sidebar_symbol(collapsed);
+            }
         }
     }
 );
@@ -189,15 +218,41 @@ impl FullscreenObserver {
         window: objc2::rc::Weak<NSWindow>,
         webview_parent: objc2::rc::Weak<NSView>,
         drag_view: objc2::rc::Weak<TitlebarDragView>,
+        on_sidebar_collapsed: impl Fn() -> Option<bool> + Send + Sync + 'static,
         on_fullscreen: impl Fn(bool, bool) + Send + Sync + 'static,
     ) -> objc2::rc::Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(FullscreenObserverIvars {
             window,
             webview_parent,
             drag_view,
+            on_sidebar_collapsed: Box::new(on_sidebar_collapsed),
             on_fullscreen: Box::new(on_fullscreen),
         });
         unsafe { msg_send![super(this), init] }
+    }
+}
+
+fn set_sidebar_button_symbol(button: &NSButton, collapsed: bool) {
+    let symbol = if collapsed {
+        ns_string!("sidebar.right")
+    } else {
+        ns_string!("sidebar.left")
+    };
+    let description = if collapsed {
+        ns_string!("Show sidebar")
+    } else {
+        ns_string!("Hide sidebar")
+    };
+    button.setToolTip(Some(description));
+    if let Some(image) =
+        NSImage::imageWithSystemSymbolName_accessibilityDescription(symbol, Some(description))
+    {
+        let symbol_configuration =
+            NSImageSymbolConfiguration::configurationWithScale(NSImageSymbolScale::Medium);
+        button.setSymbolConfiguration(Some(&symbol_configuration));
+        image.setSize(NSSize::new(14.0, 14.0));
+        button.setImage(Some(&image));
+        button.setImageScaling(NSImageScaling::ScaleNone);
     }
 }
 
@@ -205,7 +260,8 @@ impl FullscreenObserver {
 /// the webview content with the titlebar without removing native decorations.
 pub fn install(
     window: &WebviewWindow,
-    on_toggle: impl Fn() + Send + Sync + 'static,
+    on_toggle: impl Fn() -> Option<bool> + Send + Sync + 'static,
+    on_sidebar_collapsed: impl Fn() -> Option<bool> + Send + Sync + 'static,
     on_fullscreen: impl Fn(bool, bool) + Send + Sync + 'static,
 ) -> Result<(), String> {
     let raw_window = window
@@ -242,13 +298,9 @@ pub fn install(
     sidebar_button.setBordered(false);
     sidebar_button.setRefusesFirstResponder(true);
     sidebar_button.setToolTip(Some(ns_string!("Show or hide sidebar")));
-    if let Some(image) = NSImage::imageWithSystemSymbolName_accessibilityDescription(
-        ns_string!("rectangle.split.2x1"),
-        Some(ns_string!("Sidebar")),
-    ) {
-        sidebar_button.setImage(Some(&image));
-        sidebar_button.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
-    }
+    let initial_sidebar_collapsed = on_sidebar_collapsed().unwrap_or(false);
+    set_sidebar_button_symbol(&sidebar_button, initial_sidebar_collapsed);
+    drag_view.bind_sidebar_button(&sidebar_button);
     unsafe {
         sidebar_button.setTarget(Some(drag_view.as_ref() as &AnyObject));
         sidebar_button.setAction(Some(sel!(toggleSidebar:)));
@@ -263,6 +315,7 @@ pub fn install(
         window_weak,
         webview_parent_weak,
         objc2::rc::Weak::from_retained(&drag_view),
+        on_sidebar_collapsed,
         on_fullscreen,
     );
     drag_view.retain_fullscreen_observer(fullscreen_observer.clone());
