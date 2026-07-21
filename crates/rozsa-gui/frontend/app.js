@@ -1748,6 +1748,15 @@ function renderModelSelector() {
     const currentModelId = currentSettings?.model_id || document.getElementById('modelSelector')?.textContent || '';
     if (currentModelId && models.some(m => m.id === currentModelId)) select.value = currentModelId;
   }
+  const smallSelect = document.getElementById('settingsSmallModelSelect');
+  if (smallSelect) {
+    smallSelect.innerHTML = '<option value="">Disabled</option>' + models.map(model =>
+      '<option value="' + escapeHtml(model.id) + '">' + escapeHtml(model.name || model.id) +
+      ' (' + escapeHtml(model.provider || '') + ')</option>'
+    ).join('');
+    smallSelect.value = currentSettings?.small_model || '';
+    smallSelect.onchange = () => saveSetting('small_model', smallSelect.value);
+  }
 }
 
 async function onModelChange(modelId) {
@@ -2175,6 +2184,8 @@ function renderSettingsPane(settings) {
   if (modelSel && settings.model_id) {
     modelSel.value = settings.model_id;
   }
+  const smallModelSel = document.getElementById('settingsSmallModelSelect');
+  if (smallModelSel) smallModelSel.value = settings.small_model || '';
 
   // Provider info
   const providerEl = document.getElementById('settingsProvider');

@@ -66,3 +66,24 @@ fn frontend_places_thinking_level_next_to_model_and_reserves_brand_for_no_sessio
     assert!(app.contains("snap.sessionName || 'Rózsa'"));
     assert!(!html.contains("data-od-id=\"perm-badge\""));
 }
+
+#[test]
+fn title_generation_starts_before_the_main_prompt_and_exposes_small_models() {
+    let commands = include_str!("../src/commands.rs");
+    let html = include_str!("../frontend/index.html");
+    let app = include_str!("../frontend/app.js");
+    let send = commands.find("pub async fn send_message").unwrap();
+    let naming = commands[send..]
+        .find("spawn_session_name_generation(")
+        .unwrap();
+    let prompt = commands[send..]
+        .find(".prompt_with_prefix_blocks(")
+        .unwrap();
+
+    assert!(naming < prompt);
+    assert!(commands.contains("is_initial_session_name_candidate().await"));
+    assert!(commands.contains("provider_available()"));
+    assert!(html.contains("id=\"settingsSmallModelSelect\""));
+    assert!(!app.contains("models.filter(model => !model.reasoning)"));
+    assert!(app.contains("saveSetting('small_model', smallSelect.value)"));
+}

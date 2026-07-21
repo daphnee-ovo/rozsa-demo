@@ -10,3 +10,6 @@
 - 02:21 feat(gui): integrate native split workspace
 - 02:23 fix(gui): detach Web Inspector into separate window
 - 23:56 fix: 调整 main panel 顶部布局与 thinking 展示
+
+## 2026-07-22
+- 01:14 fix(gui): stabilize session presentation and window lifecycle

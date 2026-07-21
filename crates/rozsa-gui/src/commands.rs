@@ -158,6 +158,7 @@ pub async fn send_message(
         }
     };
     drop(tabs);
+    let should_name_session = agent.is_initial_session_name_candidate().await;
     if spawn_forwarder {
         crate::events::spawn_event_forwarder_for_session(
             app.clone(),
@@ -195,16 +196,7 @@ pub async fn send_message(
     let pending_approvals = state.pending_approvals.clone();
     let gui_state = state.inner().clone();
     tokio::spawn(async move {
-        let prompt_succeeded = if let Err(e) = agent
-            .prompt_with_prefix_blocks(&message, expansion.blocks, expansion.display_text)
-            .await
-        {
-            append_prompt_error(idx, &agent, &tabs_ref, &shared, &app, e.to_string()).await;
-            false
-        } else {
-            true
-        };
-        if prompt_succeeded {
+        if should_name_session {
             spawn_session_name_generation(
                 gui_state.clone(),
                 app.clone(),
@@ -212,6 +204,12 @@ pub async fn send_message(
                 session_id.clone(),
                 message.clone(),
             );
+        }
+        if let Err(e) = agent
+            .prompt_with_prefix_blocks(&message, expansion.blocks, expansion.display_text)
+            .await
+        {
+            append_prompt_error(idx, &agent, &tabs_ref, &shared, &app, e.to_string()).await;
         }
         if let Some(approvals) = &pending_approvals {
             deny_pending_approvals(approvals, Some(&session_id));
@@ -779,10 +777,25 @@ fn spawn_session_name_generation(
     first_user_message: String,
 ) {
     tokio::spawn(async move {
-        if !gui_state.runtime_settings.lock().await.auto_session_naming {
+        let settings = gui_state.runtime_settings.lock().await;
+        if !settings.auto_session_naming {
             return;
         }
-        match agent.generate_session_name(&first_user_message).await {
+        let small_model_id = settings.small_model.clone();
+        drop(settings);
+        let small_model = small_model_id.and_then(|model_id| {
+            let registry = gui_state.model_registry.as_ref()?;
+            let model = registry.find_by_id(&model_id)?;
+            let provider_available = registry
+                .provider_available()
+                .get(model.provider.as_str())
+                .is_some_and(|availability| availability.configured);
+            provider_available.then_some(model)
+        });
+        match agent
+            .generate_session_name(&first_user_message, small_model)
+            .await
+        {
             Ok(Some(_)) => {
                 if let Err(error) = emit_session_views(&gui_state, &app, &session_id).await {
                     eprintln!("[rozsa-gui][session-name] failed to refresh views: {error}");
@@ -1148,6 +1161,7 @@ pub async fn get_settings(
         transport: rt.transport.clone(),
         auto_compact: rt.compaction.enabled,
         auto_session_naming: rt.auto_session_naming,
+        small_model: rt.small_model.clone(),
         steering_mode: rt.steering_mode.clone(),
         follow_up_mode: rt.follow_up_mode.clone(),
         running_send_mode: rt.running_send_mode.clone(),
@@ -1242,6 +1256,23 @@ pub async fn update_setting(
         }
         "auto_session_naming" => {
             state.runtime_settings.lock().await.auto_session_naming = value == "true";
+            persist_settings(&state).await;
+            Ok(())
+        }
+        "small_model" => {
+            let small_model = if value.trim().is_empty() {
+                None
+            } else {
+                let registry = state
+                    .model_registry
+                    .as_ref()
+                    .ok_or("No model registry available")?;
+                let model = registry
+                    .find_by_id(value.trim())
+                    .ok_or_else(|| format!("Unknown small model: {}", value.trim()))?;
+                Some(model.id)
+            };
+            state.runtime_settings.lock().await.small_model = small_model;
             persist_settings(&state).await;
             Ok(())
         }
@@ -1385,6 +1416,7 @@ pub async fn list_models(state: State<'_, GuiState>) -> Result<Vec<ModelListEntr
             id: m.id.clone(),
             name: m.name.clone(),
             provider: format!("{:?}", m.provider),
+            reasoning: m.reasoning,
         })
         .collect())
 }
@@ -2712,6 +2744,7 @@ pub struct ModelListEntry {
     pub id: String,
     pub name: String,
     pub provider: String,
+    pub reasoning: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -2728,6 +2761,7 @@ pub struct SettingsSnapshot {
     pub transport: String,
     pub auto_compact: bool,
     pub auto_session_naming: bool,
+    pub small_model: Option<String>,
     pub steering_mode: String,
     pub follow_up_mode: String,
     pub running_send_mode: String,

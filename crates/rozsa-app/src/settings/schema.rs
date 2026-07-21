@@ -78,6 +78,8 @@ impl Default for PermissionSettings {
 pub struct Settings {
     pub default_provider: Option<String>,
     pub default_model: Option<String>,
+    /// Optional low-cost model used by bounded auxiliary requests.
+    pub small_model: Option<String>,
     pub default_thinking_level: Option<rozsa_model::types::ThinkingLevel>,
     pub compaction: CompactionSettings,
     pub retry: RetrySettings,
@@ -102,6 +104,7 @@ impl Default for Settings {
         Self {
             default_provider: None,
             default_model: None,
+            small_model: None,
             default_thinking_level: None,
             compaction: CompactionSettings::default(),
             retry: RetrySettings::default(),
@@ -178,6 +181,8 @@ pub struct PartialSettings {
     pub default_provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub small_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_thinking_level: Option<rozsa_model::types::ThinkingLevel>,
     #[serde(skip_serializing_if = "Option::is_none")]

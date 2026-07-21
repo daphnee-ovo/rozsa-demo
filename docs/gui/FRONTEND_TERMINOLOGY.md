@@ -510,7 +510,7 @@ settings scene
 | `AI settings group` | AI 设置分组 | Thinking、compact、steering 和 follow-up 设置 | `#pane-general .settings-group`；`renderGeneralSettings()` |
 | `thinking level selector` | 思考级别选择器 | 选择 Off/Low/Medium/High | `#settingsThinking` |
 | `auto compact switch` | 自动压缩开关 | 控制上下文自动 compact | `#settingsAutoCompact`；`wireSettingSwitch()` |
-| `auto session naming switch` | 自动会话命名开关 | 控制首次真实用户 turn 后的后台 title 请求 | `#settingsAutoSessionNaming`；`wireSettingSwitch()` |
+| `auto session naming switch` | 自动会话命名开关 | 控制首次真实用户 turn 的并发命名；短输入本地直用，长输入调用 small model | `#settingsAutoSessionNaming`；`wireSettingSwitch()` |
 | `steering mode selector` | Steering 模式选择器 | 选择一次处理一条或全部 steering 消息 | `#settingsSteeringMode` |
 | `follow-up mode selector` | Follow-up 模式选择器 | 选择 follow-up 消息的处理方式 | `#settingsFollowUpMode` |
 | `default running send mode selector` | 运行中默认发送模式选择器 | 选择 Queue 或 Steer | `#settingsRunningSendMode` |
@@ -520,6 +520,7 @@ settings scene
 | `shortcut row` | 快捷键行 | 展示 Send、New line、Toggle thinking panel 等快捷键 | `#pane-general` 的 `Shortcuts` group |
 | `models pane` | 模型页面 | 查看和切换当前模型、provider、context window | `#pane-models` |
 | `model setting selector` | 模型设置选择器 | 在 Settings 中切换模型 | `#settingsModelSelect`；`onModelChange()` |
+| `small model selector` | 小模型选择器 | 为长输入的 session title 请求选择低成本模型；请求固定使用 Low reasoning，Disabled 时只使用本地短标题和 preview fallback | `#settingsSmallModelSelect`；`saveSetting('small_model', ...)` |
 | `provider value` | Provider 值 | 展示当前模型提供方 | `#settingsProvider` |
 | `context window value` | 上下文窗口值 | 展示当前模型的 context window | `#settingsContextWindow` |
 | `permissions pane` | 权限页面 | 配置 permission mode 和自动批准规则 | `#pane-permissions` |

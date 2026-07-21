@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rozsa_app::agent_session::{AgentSession, AgentSessionConfig, ModelStream};
@@ -60,7 +61,7 @@ fn scripted_stream(title_delay: Duration) -> ModelStream {
         let is_title = context
             .system_prompt
             .as_deref()
-            .is_some_and(|prompt| prompt.contains("Generate a concise title"));
+            .is_some_and(|prompt| prompt.contains("Create a concise session title"));
         let (sender, stream) = create_event_stream();
         if is_title {
             let delay = title_delay;
@@ -100,21 +101,123 @@ fn test_session(temp: &tempfile::TempDir, model_stream: ModelStream) -> AgentSes
 #[tokio::test]
 async fn generated_name_is_isolated_cleaned_and_persisted() {
     let temp = tempfile::tempdir().unwrap();
-    let session = test_session(&temp, scripted_stream(Duration::ZERO));
-    session
-        .prompt("The app crashes during startup")
-        .await
-        .unwrap();
+    let observation = Arc::new(Mutex::new(None));
+    let captured = observation.clone();
+    let stream: ModelStream = Arc::new(move |model, context, options| {
+        *captured.lock().unwrap() = Some((
+            model.id.clone(),
+            options.reasoning,
+            options.base.max_tokens,
+            context.messages.len(),
+            context.tools.len(),
+            context.system_prompt.clone(),
+        ));
+        let (sender, stream) = create_event_stream();
+        sender.push(done_event("<think>hidden</think>\nFix startup crash"));
+        stream
+    });
+    let session = test_session(&temp, stream);
+    assert!(session.is_initial_session_name_candidate().await);
 
     let generated = session
-        .generate_session_name("The app crashes during startup")
+        .generate_session_name(
+            "The desktop application crashes during startup after loading the saved workspace",
+            Some(test_model()),
+        )
         .await
         .unwrap();
 
     assert_eq!(generated.as_deref(), Some("Fix startup crash"));
+    let observed = observation.lock().unwrap().clone().unwrap();
+    assert_eq!(observed.0, "scripted");
+    assert_eq!(observed.1, Some(ThinkingLevel::Low));
+    assert_eq!(observed.2, Some(32));
+    assert_eq!(observed.3, 1);
+    assert_eq!(observed.4, 0);
+    assert!(
+        observed
+            .5
+            .unwrap()
+            .contains("Use the same language as the user")
+    );
     assert_eq!(
         session.session_manager().await.current_name().as_deref(),
         Some("Fix startup crash")
+    );
+}
+
+#[tokio::test]
+async fn short_input_is_used_directly_without_a_model_request() {
+    let temp = tempfile::tempdir().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let captured = calls.clone();
+    let stream: ModelStream = Arc::new(move |_, _, _| {
+        captured.fetch_add(1, Ordering::SeqCst);
+        let (_, stream) = create_event_stream();
+        stream
+    });
+    let session = test_session(&temp, stream);
+
+    assert_eq!(
+        session
+            .generate_session_name("  Fix   startup crash  ", None)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("Fix startup crash")
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn long_input_without_a_small_model_keeps_the_preview_fallback() {
+    let temp = tempfile::tempdir().unwrap();
+    let session = test_session(&temp, scripted_stream(Duration::ZERO));
+
+    assert_eq!(
+        session
+            .generate_session_name(
+                "The desktop application crashes during startup after loading the saved workspace",
+                None,
+            )
+            .await
+            .unwrap(),
+        None
+    );
+    assert!(session.session_manager().await.current_name().is_none());
+}
+
+#[tokio::test]
+async fn reasoning_model_uses_fixed_low_for_the_title_request() {
+    let temp = tempfile::tempdir().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let captured = calls.clone();
+    let observed_reasoning = Arc::new(Mutex::new(None));
+    let captured_reasoning = observed_reasoning.clone();
+    let stream: ModelStream = Arc::new(move |_, _, options| {
+        captured.fetch_add(1, Ordering::SeqCst);
+        *captured_reasoning.lock().unwrap() = options.reasoning;
+        let (sender, stream) = create_event_stream();
+        sender.push(done_event("Low reasoning title"));
+        stream
+    });
+    let session = test_session(&temp, stream);
+    let mut reasoning_model = test_model();
+    reasoning_model.reasoning = true;
+
+    let title = session
+        .generate_session_name(
+            "The desktop application crashes during startup after loading the saved workspace",
+            Some(reasoning_model),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(title.as_deref(), Some("Low reasoning title"));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        *observed_reasoning.lock().unwrap(),
+        Some(ThinkingLevel::Low)
     );
 }
 
@@ -133,7 +236,10 @@ async fn manual_rename_wins_over_in_flight_generation() {
     let naming_session = session.clone();
     let generation = tokio::spawn(async move {
         naming_session
-            .generate_session_name("The app crashes during startup")
+            .generate_session_name(
+                "The desktop application crashes during startup after loading the saved workspace",
+                Some(test_model()),
+            )
             .await
             .unwrap()
     });

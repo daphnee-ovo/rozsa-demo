@@ -16,6 +16,10 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
             .default_model
             .clone()
             .or_else(|| base.default_model.clone()),
+        small_model: overlay
+            .small_model
+            .clone()
+            .or_else(|| base.small_model.clone()),
         default_thinking_level: overlay
             .default_thinking_level
             .clone()

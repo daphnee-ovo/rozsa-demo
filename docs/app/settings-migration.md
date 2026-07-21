@@ -138,6 +138,12 @@ pub struct PermissionSettings {
 }
 ```
 
+当前 Rust 实现使用 `defaultModel` 和 `smallModel`。`smallModel` 是可选的
+辅助模型 id；session title 请求固定使用 Low reasoning，不继承主会话的
+thinking level。session 自动命名对少于 8 个词且满足字符限制的输入直接
+使用规范化原文，长输入才并发调用 `smallModel`。未配置、模型不可用或
+请求失败时保留首条消息 preview，不回退到主模型。
+
 ### Partial Settings (per layer)
 
 ```rust

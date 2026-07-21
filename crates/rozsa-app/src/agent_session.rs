@@ -8,7 +8,8 @@
 // │   ├── register_tool()       # Add a single tool
 // │   ├── register_default_tools()  # Register read/write/edit/bash/ls/grep/find
 // │   ├── prompt()              # Send user message and run agent loop
-// │   ├── generate_session_name() # Run an isolated auxiliary title request
+// │   ├── is_initial_session_name_candidate() # Gate the first naming attempt
+// │   ├── generate_session_name() # Direct short title or isolated small-model request
 // │   ├── continue_session()    # Continue without new user input
 // │   └── abort()               # Cancel the running loop
 // └── Helper functions
@@ -589,29 +590,48 @@ impl AgentSession {
         self.runtime.lock().await.thinking_level == ThinkingLevel::Off
     }
 
+    /// Return whether the next real user turn is eligible to name this session.
+    pub async fn is_initial_session_name_candidate(&self) -> bool {
+        let manager = self.session_manager.lock().await;
+        manager.current_name().is_none() && persisted_user_message_count(&manager) == 0
+    }
+
     /// Generate and persist a concise name for a session's first real user turn.
     ///
-    /// This request is isolated from the conversation history and tools. The
-    /// caller may run it in the background. A second name check immediately
-    /// before persistence ensures a manual rename always wins.
-    pub async fn generate_session_name(&self, first_user_message: &str) -> Result<Option<String>> {
+    /// Short input is used directly. Longer input requires an explicitly
+    /// selected small model, uses fixed Low reasoning, and is isolated from
+    /// conversation history and tools. A second name check before persistence
+    /// ensures manual rename always wins.
+    pub async fn generate_session_name(
+        &self,
+        first_user_message: &str,
+        small_model: Option<rozsa_model::types::Model>,
+    ) -> Result<Option<String>> {
         let first_user_message = first_user_message.trim();
         if first_user_message.is_empty() {
             return Ok(None);
         }
         {
             let manager = self.session_manager.lock().await;
-            if manager.current_name().is_some() || persisted_user_message_count(&manager) != 1 {
+            if manager.current_name().is_some() {
                 return Ok(None);
             }
         }
 
-        let model = self.runtime.lock().await.model.clone();
+        if let Some(title) = direct_session_name(first_user_message) {
+            return self.persist_generated_session_name(title).await;
+        }
+
+        let Some(model) = small_model else {
+            return Ok(None);
+        };
         let credentials = resolve_credentials(&model).await?;
         let context = rozsa_model::types::Context {
             system_prompt: Some(
-                "Generate a concise title of 4 to 8 words for the user's coding task. \
-                 Reply with only the title. Do not include reasoning, labels, quotes, or punctuation."
+                "Create a concise session title for the user's coding task. \
+                 Use the same language as the user. Return only the title. \
+                 Use at most 8 words, or at most 24 characters for languages without spaces. \
+                 Do not explain, reason, add labels, quotes, or ending punctuation."
                     .to_string(),
             ),
             messages: vec![Message::User(UserMessage {
@@ -624,7 +644,7 @@ impl AgentSession {
         let options = SimpleStreamOptions {
             base: StreamOptions {
                 temperature: None,
-                max_tokens: Some(64),
+                max_tokens: Some(32),
                 api_key: credentials.api_key,
                 transport: Transport::Auto,
                 cache_retention: CacheRetention::Short,
@@ -645,7 +665,7 @@ impl AgentSession {
                     .max_retry_delay_ms,
                 metadata: None,
             },
-            reasoning: None,
+            reasoning: Some(ThinkingLevel::Low),
             thinking_budgets: None,
             tool_choice: None,
         };
@@ -675,6 +695,10 @@ impl AgentSession {
         let title = clean_generated_session_name(&raw_title)
             .ok_or_else(|| anyhow::anyhow!("Session naming request returned no usable title"))?;
 
+        self.persist_generated_session_name(title).await
+    }
+
+    async fn persist_generated_session_name(&self, title: String) -> Result<Option<String>> {
         let mut manager = self.session_manager.lock().await;
         if manager.current_name().is_some() {
             return Ok(None);
@@ -1215,6 +1239,21 @@ fn clean_generated_session_name(raw: &str) -> Option<String> {
         "{}...",
         normalized.chars().take(57).collect::<String>()
     ))
+}
+
+fn direct_session_name(input: &str) -> Option<String> {
+    let normalized = input.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() || normalized.split_whitespace().count() >= 8 {
+        return None;
+    }
+    let contains_cjk = normalized.chars().any(|character| {
+        matches!(
+            character as u32,
+            0x2E80..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x2FA1F
+        )
+    });
+    let max_characters = if contains_cjk { 24 } else { 60 };
+    (normalized.chars().count() <= max_characters).then_some(normalized)
 }
 
 fn skill_command_tokens(text: &str) -> Vec<(usize, usize, &str)> {
