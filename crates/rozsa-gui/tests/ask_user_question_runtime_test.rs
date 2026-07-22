@@ -106,9 +106,18 @@ fn frontend_contract_always_exposes_custom_input() {
     let source = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"questionPanel\""));
+    assert!(html.contains("id=\"questionPanelTitle\""));
+    assert!(html.contains("padding: 6px 8px;"));
+    assert!(html.contains("min-height: 28px;"));
+    assert!(html.contains(".question-panel-error:empty { display: none; }"));
+    assert!(html.contains("align-items: center;"));
+    assert!(html.contains("margin-left: auto;"));
     assert!(html.contains("id=\"questionPanelOtherInput\""));
+    assert!(!html.contains("id=\"questionPanelProgress\""));
+    assert!(!html.contains("id=\"questionPanelQuestion\""));
     assert!(source.contains("question-request"));
     assert!(source.contains("respond_user_question"));
+    assert!(source.contains("title.textContent = '['"));
     assert!(source.contains("'Other'"));
     assert!(source.contains("data-option-number"));
     assert!(source.contains("clearQuestionOtherInput"));

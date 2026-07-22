@@ -1349,8 +1349,8 @@ body {
 .question-panel {
   display: none;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px 12px;
+  gap: 6px;
+  padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius);
@@ -1358,19 +1358,14 @@ body {
 }
 .question-panel.visible { display: flex; }
 .question-panel-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--fg);
-}
-.question-panel-progress {
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.question-panel-question {
-  color: var(--fg);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 15px;
-  line-height: 1.5;
-  white-space: pre-wrap;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--fg);
 }
 .question-panel-options {
   display: flex;
@@ -1383,7 +1378,7 @@ body {
   display: grid;
   grid-template-columns: 24px 18px minmax(0, 1fr);
   column-gap: 8px;
-  align-items: start;
+  align-items: center;
   padding: 9px 12px;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -1396,7 +1391,7 @@ body {
   background: color-mix(in oklch, var(--surface) 92%, var(--accent));
 }
 .question-panel-option input {
-  margin: 3px 0 0;
+  margin: 0;
   accent-color: var(--accent);
 }
 .question-panel-option-key {
@@ -1451,40 +1446,42 @@ body {
   font-size: 12px;
   line-height: 1.3;
 }
+.question-panel-error:empty { display: none; }
 .question-panel-answer-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 28px;
 }
 .question-panel-actions {
   display: flex;
   justify-content: flex-end;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 .question-panel-submit {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 7px 15px;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
   border: 1px solid var(--accent);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--accent-btn);
   color: white;
   cursor: pointer;
-  font: 13px var(--font-ui);
+  font: 12px var(--font-ui);
 }
 .question-panel-submit-key {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
   border: 1px solid color-mix(in oklch, white 45%, var(--accent-btn));
-  border-radius: 5px;
-  font: 11px var(--font-mono);
+  border-radius: 4px;
+  font: 10px var(--font-mono);
 }
 .question-panel-submit:disabled {
   cursor: default;
@@ -2778,9 +2775,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           </div>
         </div>
         <div class="question-panel" id="questionPanel">
-          <div class="question-panel-title">Agent Question</div>
-          <div class="question-panel-progress" id="questionPanelProgress"></div>
-          <div class="question-panel-question" id="questionPanelQuestion"></div>
+          <div class="question-panel-title" id="questionPanelTitle"></div>
           <div class="question-panel-options" id="questionPanelOptions"></div>
           <div class="question-panel-error" id="questionPanelError" role="alert"></div>
           <div class="question-panel-answer-row">

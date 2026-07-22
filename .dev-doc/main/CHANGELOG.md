@@ -23,3 +23,6 @@
 - 23:41 fix: 同步 Codex 模型端点客户端版本
 - 23:43 fix: 从 GitHub 同步 Codex 模型端点客户端版本
 - 23:54 fix: ISSUE-I005：隐藏未配置凭据的 Bedrock 模型
+
+## 2026-07-23
+- 02:24 feat: tools(askUserQuesttion); gpt模型自动更新；修复新启动session选择旧会话上下文丢失的问题；文档更新

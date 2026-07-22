@@ -1177,19 +1177,16 @@ async function displayQuestionPanelIfNeeded() {
 function renderQuestionPage(ev) {
   const question = ev.questions[currentQuestionIndex];
   if (!question) return;
-  const progress = document.getElementById('questionPanelProgress');
-  const prompt = document.getElementById('questionPanelQuestion');
+  const title = document.getElementById('questionPanelTitle');
   const options = document.getElementById('questionPanelOptions');
   const otherInput = document.getElementById('questionPanelOtherInput');
   const error = document.getElementById('questionPanelError');
   const submit = document.getElementById('questionPanelSubmit');
-  if (!prompt || !options || !otherInput || !error || !submit) return;
+  if (!title || !options || !otherInput || !error || !submit) return;
 
-  if (progress) {
-    progress.textContent = 'Question ' + (currentQuestionIndex + 1) + ' of ' +
-      ev.questions.length + ' · ' + (question.header || '');
-  }
-  prompt.textContent = question.question || '';
+  const questionText = question.question || '';
+  title.textContent = '[' + (currentQuestionIndex + 1) + '/' + ev.questions.length + '] ' + questionText;
+  title.title = questionText;
   error.textContent = '';
   options.replaceChildren();
   const inputType = question.multiSelect ? 'checkbox' : 'radio';
