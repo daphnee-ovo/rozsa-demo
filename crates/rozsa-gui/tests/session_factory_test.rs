@@ -3,7 +3,9 @@ use std::path::Path;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
 use rozsa_gui::state::SharedResources;
-use rozsa_model::types::{Api, Model, ModelCost, Provider, ThinkingLevel};
+use rozsa_model::types::{
+    Api, Message, Model, ModelCost, Provider, ThinkingLevel, UserContent, UserMessage,
+};
 use tokio::sync::Mutex;
 
 fn test_model() -> Model {
@@ -38,6 +40,7 @@ fn shared_resources(cwd: &Path) -> SharedResources {
         model: Mutex::new(test_model()),
         thinking_level: Mutex::new(ThinkingLevel::Off),
         pre_tool_use_factory: None,
+        question_request_tx: None,
         model_stream: None,
     }
 }
@@ -54,17 +57,67 @@ async fn gui_factory_creates_lazy_and_restored_sessions() {
     assert!(created.path.ends_with(&format!("{}.jsonl", created.id)));
     assert!(!std::path::Path::new(&created.path).exists());
 
-    SessionManager::create(
+    let mut persisted = SessionManager::create(
         &created.path,
         created.id.clone(),
         temp.path().to_string_lossy().to_string(),
         None,
     )
     .unwrap();
+    persisted
+        .append_message(Message::User(UserMessage {
+            content: UserContent::Text("restored context".to_string()),
+            display_text: None,
+            timestamp: 1,
+        }))
+        .unwrap();
     let restored = shared
         .restore_agent(std::path::Path::new(&created.path))
         .await
         .unwrap();
     assert_eq!(restored.cwd(), temp.path());
     assert_eq!(restored.model().await.id, "test-model");
+    assert!(restored.messages().await.iter().any(|message| matches!(
+        message.as_standard(),
+        Some(Message::User(user)) if user.content.text() == "restored context"
+    )));
+}
+
+#[tokio::test]
+async fn gui_factory_copies_context_for_continued_sessions() {
+    let temp = tempfile::tempdir().unwrap();
+    let sessions = temp.path().join("sessions");
+    let parent_path = sessions.join("parent.jsonl");
+    let mut parent = SessionManager::create(
+        &parent_path,
+        "parent".to_string(),
+        temp.path().to_string_lossy().to_string(),
+        None,
+    )
+    .unwrap();
+    parent
+        .append_message(Message::User(UserMessage {
+            content: UserContent::Text("parent context".to_string()),
+            display_text: None,
+            timestamp: 1,
+        }))
+        .unwrap();
+
+    let shared = shared_resources(temp.path());
+    let continued = shared
+        .create_continued_agent(&sessions, &parent_path)
+        .await
+        .unwrap();
+
+    assert!(
+        continued
+            .agent
+            .messages()
+            .await
+            .iter()
+            .any(|message| matches!(
+                message.as_standard(),
+                Some(Message::User(user)) if user.content.text() == "parent context"
+            ))
+    );
 }

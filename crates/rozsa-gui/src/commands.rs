@@ -1,3 +1,125 @@
+// FrameworkTree
+// commands.rs
+// ├── set_gui_scene()
+// ├── gui_webview_ready()
+// ├── reveal_native_split()
+// ├── send_message()
+// ├── struct SlashCommandResult
+// ├── struct AutocompleteResponse
+// ├── struct InputHighlightRange
+// ├── autocomplete_input()
+// ├── pick_attachment()
+// ├── pick_any_attachment()
+// ├── pick_any_attachment_macos()
+// ├── dispatch_slash_command()
+// ├── abort()
+// ├── send_running_message()
+// ├── advance_interaction()
+// ├── finish_interaction()
+// ├── spawn_session_name_generation()
+// ├── emit_session_views()
+// ├── get_state()
+// ├── get_subagents()
+// ├── get_file_diff()
+// ├── get_sessions()
+// ├── struct ForkPoint
+// ├── get_fork_points()
+// ├── fork_session()
+// ├── switch_session()
+// ├── new_session()
+// ├── respond_permission()
+// ├── respond_user_question()
+// ├── prepare_permission()
+// ├── get_settings()
+// ├── list_themes()
+// ├── get_theme()
+// ├── save_theme()
+// ├── update_setting()
+// ├── parse_theme_mode()
+// ├── theme_store()
+// ├── publish_theme_state()
+// ├── emit_theme_state()
+// ├── spawn_codex_oauth_model_refresh()
+// ├── refresh_codex_oauth_models()
+// ├── list_models()
+// ├── switch_model()
+// ├── auth_login()
+// ├── auth_logout()
+// ├── get_rate_limits()
+// ├── refresh_rate_limits()
+// ├── compact()
+// ├── rename_session()
+// ├── delete_session()
+// ├── run_bash()
+// ├── slash_action()
+// ├── slash_action_arg()
+// ├── emit_info()
+// ├── parse_slash_completion_prefix()
+// ├── utf16_offset_to_byte_index()
+// ├── parse_at_completion_prefix()
+// ├── input_highlight_ranges()
+// ├── struct SkillSlashCommand
+// ├── collect_skill_slash_commands()
+// ├── slash_command_ranges()
+// ├── first_builtin_slash_command()
+// ├── first_skill_slash_command()
+// ├── struct SlashCommandToken
+// ├── slash_command_tokens()
+// ├── valid_slash_command()
+// ├── is_builtin_slash_command()
+// ├── skill_name_for_command()
+// ├── file_reference_ranges()
+// ├── char_offset()
+// ├── resolved_autocomplete_path()
+// ├── mod token_tests
+// ├── attachment_pick_modes_accept_file_directory_and_any()
+// ├── slash_tokens_highlight_anywhere_in_input()
+// ├── skill_tokens_highlight_without_active_agent()
+// ├── skill_tokens_normalize_all_matches()
+// ├── file_reference_tokens_highlight_anywhere_in_input()
+// ├── quoted_file_reference_tokens_with_spaces_highlight()
+// ├── utf16_cursor_offsets_never_split_multibyte_characters()
+// ├── enum AttachmentPickMode
+// ├── impl AttachmentPickMode
+// ├── parse()
+// ├── normalize_skill_commands_in_text()
+// ├── active_agent()
+// ├── active_session_summary()
+// ├── create_new_session()
+// ├── switch_model_reference()
+// ├── parse_thinking_level()
+// ├── set_thinking_level()
+// ├── compact_active_session()
+// ├── last_assistant_text()
+// ├── search_messages()
+// ├── session_tree_summary()
+// ├── conversation_graph_summary()
+// ├── clone_active_session()
+// ├── import_session_summary()
+// ├── share_active_session()
+// ├── gc_old_sessions()
+// ├── export_active_session()
+// ├── session_entry_summary()
+// ├── message_summary()
+// ├── text_from_blocks()
+// ├── truncate_chars()
+// ├── move_to_trash()
+// ├── persist_settings()
+// ├── append_prompt_error()
+// ├── append_prompt_error_for_session()
+// ├── current_timestamp_ms()
+// ├── models_dir()
+// ├── open_url()
+// ├── ensure_codex_oauth_models_config()
+// ├── codex_oauth_model()
+// ├── load_session_messages()
+// ├── load_session_summary()
+// ├── activate_session()
+// ├── struct SessionListEntry
+// ├── struct ModelListEntry
+// ├── struct SettingsSnapshot
+// └── struct AppearanceSnapshot
+
 // File: commands.rs
 //
 // Tauri IPC 命令。多会话架构：操作都针对当前活跃 tab。
@@ -11,18 +133,21 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 use rozsa_app::agent_session::AgentSession;
+use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::PermissionResponse;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::skills::SkillRegistry;
 use rozsa_app::themes::{self, ThemeDefinition, ThemeMode, ThemeStore, ThemeSummary};
+use rozsa_app::tools::AskUserQuestionAnswer;
 use rozsa_core::messages::AgentMessage;
 use rozsa_model::types::{
-    AssistantMessage, ContentBlock, Message, StopReason, ThinkingLevel, Usage,
+    AssistantMessage, ContentBlock, Message, Provider, StopReason, ThinkingLevel, Usage,
 };
 
 use crate::state::{
-    GuiState, SessionTab, UiSnapshot, deny_pending_approvals, find_tab_index_by_session,
-    permission_pending_key, session_id_from_path,
+    GuiState, SessionTab, UiSnapshot, cancel_pending_user_questions, deny_pending_approvals,
+    find_tab_index_by_session, permission_pending_key, respond_pending_user_question,
+    session_id_from_path,
 };
 use crate::turn_diff::{INTERACTION_STARTED, INTERACTION_SUMMARY};
 
@@ -194,6 +319,7 @@ pub async fn send_message(
     let tabs_ref = state.tabs.clone();
     let active_tab_ref = state.active_tab.clone();
     let pending_approvals = state.pending_approvals.clone();
+    let pending_user_questions = state.pending_user_questions.clone();
     let gui_state = state.inner().clone();
     tokio::spawn(async move {
         if should_name_session {
@@ -214,6 +340,7 @@ pub async fn send_message(
         if let Some(approvals) = &pending_approvals {
             deny_pending_approvals(approvals, Some(&session_id));
         }
+        cancel_pending_user_questions(&pending_user_questions, Some(&session_id));
         advance_interaction(gui_state, app.clone(), session_id.clone());
         // 完成后推送最终状态
         let current_idx = *active_tab_ref.lock().await;
@@ -498,6 +625,9 @@ pub async fn dispatch_slash_command(
                 .model_registry
                 .as_ref()
                 .ok_or("No model registry available")?;
+            let registry = registry
+                .read()
+                .map_err(|_| "Model registry lock is poisoned")?;
             let lines = registry
                 .all()
                 .iter()
@@ -653,6 +783,7 @@ pub async fn abort(state: State<'_, GuiState>) -> Result<(), String> {
         if let Some(approvals) = &state.pending_approvals {
             deny_pending_approvals(approvals, Some(&session_id));
         }
+        cancel_pending_user_questions(&state.pending_user_questions, Some(&session_id));
         agent.abort().await;
     }
     Ok(())
@@ -726,6 +857,7 @@ fn advance_interaction(gui_state: GuiState, app: AppHandle, session_id: String) 
         if let Some(approvals) = &gui_state.pending_approvals {
             deny_pending_approvals(approvals, Some(&session_id));
         }
+        cancel_pending_user_questions(&gui_state.pending_user_questions, Some(&session_id));
         advance_interaction(gui_state, app, session_id);
     });
 }
@@ -790,6 +922,7 @@ fn spawn_session_name_generation(
         drop(settings);
         let small_model = small_model_id.and_then(|model_id| {
             let registry = gui_state.model_registry.as_ref()?;
+            let registry = registry.read().ok()?;
             let model = registry.find_by_id(&model_id)?;
             let provider_available = registry
                 .provider_available()
@@ -957,6 +1090,7 @@ pub async fn fork_session(
                 .map_err(|error| error.to_string())?;
         }
     }
+    created.agent.reload_messages_from_session().await;
     let messages = load_session_messages(&created.path)?;
     let session_id = created.id.clone();
     let mut tabs = state.tabs.lock().await;
@@ -1095,6 +1229,16 @@ pub async fn respond_permission(
         .send(response)
         .map_err(|_| "Failed to send permission response".to_string())?;
     crate::events::emit_sidebar_state(&app, state.inner()).await
+}
+
+#[tauri::command]
+pub async fn respond_user_question(
+    state: State<'_, GuiState>,
+    session_id: String,
+    id: String,
+    answers: std::collections::BTreeMap<String, AskUserQuestionAnswer>,
+) -> Result<(), String> {
+    respond_pending_user_question(&state.pending_user_questions, &session_id, &id, answers)
 }
 
 /// Re-evaluate a queued request immediately before showing it. A trust granted
@@ -1272,6 +1416,9 @@ pub async fn update_setting(
                     .model_registry
                     .as_ref()
                     .ok_or("No model registry available")?;
+                let registry = registry
+                    .read()
+                    .map_err(|_| "Model registry lock is poisoned")?;
                 let model = registry
                     .find_by_id(value.trim())
                     .ok_or_else(|| format!("Unknown small model: {}", value.trim()))?;
@@ -1407,20 +1554,92 @@ async fn emit_theme_state(state: &State<'_, GuiState>, app: &AppHandle) -> Resul
 
 // --- 模型 ---
 
+pub(crate) fn spawn_codex_oauth_model_refresh(app: AppHandle, state: GuiState) {
+    tokio::spawn(async move {
+        if let Err(error) = refresh_codex_oauth_models(&app, &state).await {
+            eprintln!("[rozsa-gui][models] codex-oauth refresh failed: {error}");
+        }
+    });
+}
+
+async fn refresh_codex_oauth_models(app: &AppHandle, state: &GuiState) -> Result<(), String> {
+    let models_dir = models_dir()?;
+    let auth_path = models_dir.join("auth.json");
+    let auth_path_text = auth_path.to_string_lossy();
+    let Some(account_id) =
+        rozsa_model::credentials::read_account_id(auth_path_text.as_ref(), "codex-oauth")
+    else {
+        return Ok(());
+    };
+    let Some(access_token) = rozsa_model::credentials::resolve_auth_json_api_key_pub(
+        auth_path_text.as_ref(),
+        "codex-oauth",
+    )
+    .await?
+    else {
+        return Ok(());
+    };
+
+    let config_path = models_dir.join("codex-oauth.json");
+    let refreshed = rozsa_model::models_endpoint::refresh_models_if_needed(
+        &config_path,
+        &access_token,
+        &account_id,
+        false,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    if !refreshed {
+        return Ok(());
+    }
+
+    let project_models_dir = state.shared.cwd.join(".rozsa").join("models");
+    let refreshed_registry = ModelRegistry::load_from_dirs(&[&models_dir, &project_models_dir])
+        .map_err(|error| error.to_string())?;
+    let Some(shared_registry) = state.model_registry.as_ref() else {
+        return Ok(());
+    };
+    let models_changed = {
+        let current_registry = shared_registry
+            .read()
+            .map_err(|_| "Model registry lock is poisoned")?;
+        current_registry.all_json() != refreshed_registry.all_json()
+    };
+    if !models_changed {
+        return Ok(());
+    }
+
+    *shared_registry
+        .write()
+        .map_err(|_| "Model registry lock is poisoned")? = refreshed_registry;
+    crate::events::emit_main(app, "models-updated", ())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn list_models(state: State<'_, GuiState>) -> Result<Vec<ModelListEntry>, String> {
     let registry = state
         .model_registry
         .as_ref()
         .ok_or("No model registry available")?;
+    let registry = registry
+        .read()
+        .map_err(|_| "Model registry lock is poisoned")?;
+    let provider_available = registry.provider_available();
 
     Ok(registry
         .all()
         .iter()
+        .filter(|model| {
+            model.provider != Provider::AmazonBedrock
+                || provider_available
+                    .get(model.provider.as_str())
+                    .is_some_and(|availability| availability.configured)
+        })
         .map(|m| ModelListEntry {
             id: m.id.clone(),
             name: m.name.clone(),
-            provider: format!("{:?}", m.provider),
+            provider: m.provider.display_name(),
             reasoning: m.reasoning,
         })
         .collect())
@@ -1428,12 +1647,17 @@ pub async fn list_models(state: State<'_, GuiState>) -> Result<Vec<ModelListEntr
 
 #[tauri::command]
 pub async fn switch_model(state: State<'_, GuiState>, model_id: String) -> Result<(), String> {
-    let registry = state
-        .model_registry
-        .as_ref()
-        .ok_or("No model registry available")?;
-
-    let model = match registry.find_by_id(&model_id) {
+    let registered_model = {
+        let registry = state
+            .model_registry
+            .as_ref()
+            .ok_or("No model registry available")?;
+        registry
+            .read()
+            .map_err(|_| "Model registry lock is poisoned")?
+            .find_by_id(&model_id)
+    };
+    let model = match registered_model {
         Some(model) => model,
         None => {
             let mut model = state.shared.model.lock().await.clone();
@@ -1605,6 +1829,7 @@ pub async fn delete_session(
     if let Some(approvals) = &state.pending_approvals {
         deny_pending_approvals(approvals, Some(&session_id));
     }
+    cancel_pending_user_questions(&state.pending_user_questions, Some(&session_id));
     // 从 tabs 移除该 session
     let mut tabs = state.tabs.lock().await;
     tabs.retain(|t| t.path() != path);
@@ -2136,22 +2361,28 @@ async fn switch_model_reference(
     state: &State<'_, GuiState>,
     reference: &str,
 ) -> Result<(), String> {
-    let registry = state
-        .model_registry
-        .as_ref()
-        .ok_or("No model registry available")?;
-
-    let model = if let Some((provider, id)) = reference.split_once('/') {
-        registry
-            .resolve(provider, id)
-            .ok_or_else(|| format!("Model {provider}/{id} not found"))?
-    } else {
-        registry
-            .all()
-            .iter()
-            .find(|m| m.id == reference || m.id.contains(reference) || m.id.ends_with(reference))
-            .cloned()
-            .ok_or_else(|| format!("Model not found: {reference}"))?
+    let model = {
+        let registry = state
+            .model_registry
+            .as_ref()
+            .ok_or("No model registry available")?;
+        let registry = registry
+            .read()
+            .map_err(|_| "Model registry lock is poisoned")?;
+        if let Some((provider, id)) = reference.split_once('/') {
+            registry
+                .resolve(provider, id)
+                .ok_or_else(|| format!("Model {provider}/{id} not found"))?
+        } else {
+            registry
+                .all()
+                .iter()
+                .find(|m| {
+                    m.id == reference || m.id.contains(reference) || m.id.ends_with(reference)
+                })
+                .cloned()
+                .ok_or_else(|| format!("Model not found: {reference}"))?
+        }
     };
 
     *state.shared.model.lock().await = model.clone();
@@ -2666,23 +2897,40 @@ fn open_url(url: &str) -> bool {
 fn ensure_codex_oauth_models_config(models_dir: &std::path::Path) -> Result<(), String> {
     let config_path = models_dir.join("codex-oauth.json");
     if config_path.exists() {
-        return Ok(());
+        let Ok(content) = std::fs::read_to_string(&config_path) else {
+            return Ok(());
+        };
+        let Ok(existing_config) = serde_json::from_str::<serde_json::Value>(&content) else {
+            return Ok(());
+        };
+        let is_managed_fallback = existing_config
+            .get("_fallback_source")
+            .and_then(serde_json::Value::as_str)
+            == Some("codex-rs/models-manager/models.json");
+        let fallback_version = existing_config
+            .get("_fallback_version")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_default();
+        if !is_managed_fallback || fallback_version >= 4 {
+            return Ok(());
+        }
     }
 
     let default_config = serde_json::json!({
         "_fallback_source": "codex-rs/models-manager/models.json",
-        "_fallback_version": 2,
+        "_fallback_version": 4,
         "providers": {
             "codex-oauth": {
                 "baseUrl": "https://api.openai.com/v1",
                 "api": "openai-responses",
                 "authHeader": true,
                 "models": [
-                    codex_oauth_model("gpt-5.5", "GPT-5.5"),
-                    codex_oauth_model("gpt-5.4", "gpt-5.4"),
-                    codex_oauth_model("gpt-5.4-mini", "GPT-5.4-Mini"),
-                    codex_oauth_model("gpt-5.3-codex", "gpt-5.3-codex"),
-                    codex_oauth_model("gpt-5.2", "gpt-5.2")
+                    codex_oauth_model("gpt-5.6-sol", "GPT-5.6-Sol", 372_000),
+                    codex_oauth_model("gpt-5.6-terra", "GPT-5.6-Terra", 372_000),
+                    codex_oauth_model("gpt-5.6-luna", "GPT-5.6-Luna", 372_000),
+                    codex_oauth_model("gpt-5.5", "GPT-5.5", 272_000),
+                    codex_oauth_model("gpt-5.4", "GPT-5.4", 272_000),
+                    codex_oauth_model("gpt-5.4-mini", "GPT-5.4-Mini", 272_000)
                 ]
             }
         }
@@ -2693,12 +2941,12 @@ fn ensure_codex_oauth_models_config(models_dir: &std::path::Path) -> Result<(), 
         .map_err(|e| format!("Failed to write {}: {e}", config_path.display()))
 }
 
-fn codex_oauth_model(id: &str, name: &str) -> serde_json::Value {
+fn codex_oauth_model(id: &str, name: &str, context_window: u64) -> serde_json::Value {
     serde_json::json!({
         "id": id,
         "name": name,
-        "contextWindow": 272000,
-        "maxTokens": 136000,
+        "contextWindow": context_window,
+        "maxTokens": context_window / 2,
         "reasoning": true,
         "input": ["text", "image"],
         "cost": { "input": 0.0, "output": 0.0, "cacheRead": 0.0, "cacheWrite": 0.0 }

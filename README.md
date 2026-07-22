@@ -33,11 +33,6 @@ Rózsa is under active development, migrating from a TypeScript monorepo. Retire
 ```bash
 # Rust crates
 cargo build
-
-# Legacy TypeScript (still active)
-npm install --ignore-scripts
-npm run build
-npm run check
 ```
 
 ## Project Structure

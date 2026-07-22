@@ -56,6 +56,37 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(html.contains("value=\"dark\""));
     assert!(html.contains("id=\"settingsFontSizeRange\" type=\"range\" min=\"5\" max=\"50\""));
     assert!(html.contains("id=\"settingsFontSizeInput\" type=\"number\" min=\"5\" max=\"50\""));
+    for tooltip in [
+        "Applies to the whole Rózsa interface.",
+        "The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.",
+        "The default dark theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.",
+        "The font used by navigation, labels and message text.",
+        "The font used inside code blocks and tool output.",
+        "Available on macOS. Uses the system glass material for the sidebar.",
+    ] {
+        assert!(
+            html.contains(&format!("data-tooltip=\"{tooltip}\"")),
+            "missing appearance help tip: {tooltip}"
+        );
+    }
+    assert_eq!(html.matches("class=\"settings-hint\"").count(), 9);
+    let help_tip_style = html
+        .split(".settings-hint {")
+        .nth(1)
+        .and_then(|styles| styles.split("}").next())
+        .expect("missing settings help tip styles");
+    assert!(help_tip_style.contains("width: 12px;"));
+    assert!(help_tip_style.contains("height: 12px;"));
+    assert!(help_tip_style.contains("flex: 0 0 12px;"));
+    assert!(help_tip_style.contains("font: 8px/1 var(--font-ui);"));
+    assert!(
+        help_tip_style
+            .contains("border: 1px solid color-mix(in srgb, var(--muted) 55%, transparent);")
+    );
+    assert!(help_tip_style.contains("color: color-mix(in srgb, var(--muted) 55%, transparent);"));
+    assert!(html.contains(".settings-hint:hover::after"));
+    assert!(html.contains(".settings-hint:focus::after"));
+    assert!(html.contains("class=\"settings-hint\" tabindex=\"0\""));
     for mode in ["system", "light", "dark"] {
         assert!(
             html.contains(&format!("data-theme-mode-card=\"{mode}\"")),

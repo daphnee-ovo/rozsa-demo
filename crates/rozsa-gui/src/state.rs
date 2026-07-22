@@ -1,3 +1,68 @@
+// FrameworkTree
+// state.rs
+// ├── struct CreatedGuiSession
+// ├── struct PermissionRequest
+// ├── struct PendingPermissionContext
+// ├── struct PendingUserQuestion
+// ├── permission_pending_key()
+// ├── user_question_pending_key()
+// ├── session_id_from_path()
+// ├── find_tab_index_by_session()
+// ├── deny_pending_approvals()
+// ├── cancel_pending_user_questions()
+// ├── respond_pending_user_question()
+// ├── enum SessionTab
+// ├── impl SessionTab
+// ├── path()
+// ├── session_id()
+// ├── messages()
+// ├── is_streaming()
+// ├── struct GuiState
+// ├── struct SidebarSessionSnapshot
+// ├── struct SidebarActionsSnapshot
+// ├── struct SidebarSnapshot
+// ├── impl GuiState
+// ├── sidebar_snapshot()
+// ├── struct SharedResources
+// ├── impl SharedResources
+// ├── create_new_agent()
+// ├── create_continued_agent()
+// ├── restore_agent()
+// ├── create_agent()
+// ├── struct LiveState
+// ├── struct SteeringConversationEntry
+// ├── impl LiveState
+// ├── apply()
+// ├── update_streaming_message()
+// ├── record_tool_activity()
+// ├── enqueue_message()
+// ├── clear_queued_messages()
+// ├── begin_interaction()
+// ├── finish_interaction()
+// ├── take_next_queued_message()
+// ├── add_steering_message()
+// ├── remove_delivered_steering_message()
+// ├── is_assistant_message()
+// ├── struct UiSnapshot
+// ├── struct ModelInfo
+// ├── struct ContextUsage
+// ├── struct GitStatus
+// ├── struct RuntimeState
+// ├── impl UiSnapshot
+// ├── from_tab()
+// ├── from_stream_update()
+// ├── build()
+// ├── session_display_name()
+// ├── session_preview()
+// ├── context_usage_from_messages()
+// ├── usage_context_tokens()
+// ├── latest_turn_summary()
+// ├── git_status()
+// ├── git_diff_stat()
+// ├── struct PermissionEvent
+// ├── struct UserQuestionEvent
+// └── enum ToolEvent
+
 // File: state.rs
 //
 // GUI 多会话状态模型。
@@ -6,7 +71,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use dashmap::DashMap;
 use serde::Serialize;
@@ -16,6 +81,10 @@ use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::{PendingApprovals, PermissionResponse, TrustGroup, TrustLevel};
 use rozsa_app::session::manager::SessionManager;
+use rozsa_app::tools::{
+    AskUserQuestion, AskUserQuestionAnswer, AskUserQuestionRequestSender, AskUserQuestionResponse,
+    validate_ask_user_question_answers,
+};
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 
@@ -61,7 +130,18 @@ pub struct PendingPermissionContext {
     pub info: rozsa_app::permissions::ApprovalInfo,
 }
 
+pub struct PendingUserQuestion {
+    pub questions: Vec<AskUserQuestion>,
+    pub response_tx: tokio::sync::oneshot::Sender<AskUserQuestionResponse>,
+}
+
+pub type PendingUserQuestions = Arc<DashMap<String, PendingUserQuestion>>;
+
 pub fn permission_pending_key(session_id: &str, request_id: &str) -> String {
+    format!("{session_id}:{request_id}")
+}
+
+pub fn user_question_pending_key(session_id: &str, request_id: &str) -> String {
     format!("{session_id}:{request_id}")
 }
 
@@ -86,7 +166,7 @@ pub fn deny_pending_approvals(approvals: &PendingApprovals, session_id: Option<&
         .filter_map(|entry| {
             prefix
                 .as_deref()
-                .map_or(true, |prefix| entry.key().starts_with(prefix))
+                .is_none_or(|prefix| entry.key().starts_with(prefix))
                 .then(|| entry.key().clone())
         })
         .collect::<Vec<_>>();
@@ -98,6 +178,55 @@ pub fn deny_pending_approvals(approvals: &PendingApprovals, session_id: Option<&
         }
     }
     resolved
+}
+
+/// Resolve outstanding askUserQuestion requests so an aborted, closed, or
+/// deleted session cannot leave its agent loop waiting on a frontend response.
+pub fn cancel_pending_user_questions(
+    questions: &PendingUserQuestions,
+    session_id: Option<&str>,
+) -> usize {
+    let prefix = session_id.map(|id| format!("{id}:"));
+    let keys = questions
+        .iter()
+        .filter_map(|entry| {
+            prefix
+                .as_deref()
+                .is_none_or(|prefix| entry.key().starts_with(prefix))
+                .then(|| entry.key().clone())
+        })
+        .collect::<Vec<_>>();
+    let mut resolved = 0;
+    for key in keys {
+        if let Some((_, pending)) = questions.remove(&key) {
+            let _ = pending.response_tx.send(AskUserQuestionResponse::Cancelled);
+            resolved += 1;
+        }
+    }
+    resolved
+}
+
+pub fn respond_pending_user_question(
+    questions: &PendingUserQuestions,
+    session_id: &str,
+    request_id: &str,
+    answers: std::collections::BTreeMap<String, AskUserQuestionAnswer>,
+) -> Result<(), String> {
+    let key = user_question_pending_key(session_id, request_id);
+    let expected_questions = questions
+        .get(&key)
+        .map(|pending| pending.questions.clone())
+        .ok_or_else(|| format!("No pending user question: {session_id}:{request_id}"))?;
+    validate_ask_user_question_answers(&expected_questions, &answers)
+        .map_err(|error| error.to_string())?;
+
+    let (_, pending) = questions
+        .remove(&key)
+        .ok_or_else(|| format!("No pending user question: {session_id}:{request_id}"))?;
+    pending
+        .response_tx
+        .send(AskUserQuestionResponse::Answered { answers })
+        .map_err(|_| "User question response channel is closed".to_string())
 }
 
 /// 单个 session tab 的状态
@@ -162,10 +291,11 @@ pub struct GuiState {
     pub active_tab: Arc<Mutex<usize>>,
     /// 创建新 agent backend 所需的共享资源
     pub shared: Arc<SharedResources>,
-    pub model_registry: Option<Arc<ModelRegistry>>,
+    pub model_registry: Option<Arc<RwLock<ModelRegistry>>>,
     pub session_dir: Option<PathBuf>,
     pub pending_approvals: Option<PendingApprovals>,
     pub pending_permission_contexts: Arc<DashMap<String, PendingPermissionContext>>,
+    pub pending_user_questions: PendingUserQuestions,
     pub permission_controller: Arc<rozsa_app::permissions::PermissionController>,
     pub global_settings_path: Option<PathBuf>,
     pub runtime_settings: Arc<Mutex<rozsa_app::settings::Settings>>,
@@ -272,6 +402,7 @@ pub struct SharedResources {
     pub model: Mutex<rozsa_model::types::Model>,
     pub thinking_level: Mutex<rozsa_model::types::ThinkingLevel>,
     pub pre_tool_use_factory: Option<PreToolUseHookFactory>,
+    pub question_request_tx: Option<AskUserQuestionRequestSender>,
     pub model_stream: Option<rozsa_app::agent_session::ModelStream>,
 }
 
@@ -298,6 +429,31 @@ impl SharedResources {
         })
     }
 
+    /// Create a child session that continues the persisted parent context.
+    pub async fn create_continued_agent(
+        &self,
+        session_dir: &Path,
+        parent_session: &Path,
+    ) -> Result<CreatedGuiSession, String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let path = session_dir.join(format!("{id}.jsonl"));
+        let mut session_manager = SessionManager::create_lazy(
+            &path,
+            id.clone(),
+            self.cwd.to_string_lossy().to_string(),
+            Some(parent_session.to_string_lossy().to_string()),
+        );
+        session_manager
+            .copy_context_messages_from_path(parent_session)
+            .map_err(|error| error.to_string())?;
+        let agent = self.create_agent(session_manager).await;
+        Ok(CreatedGuiSession {
+            id,
+            path: path.to_string_lossy().to_string(),
+            agent,
+        })
+    }
+
     /// Restore a persisted session through the same factory used for new sessions.
     pub async fn restore_agent(&self, path: &Path) -> Result<AgentSession, String> {
         let session_manager = SessionManager::open(path).map_err(|error| error.to_string())?;
@@ -310,7 +466,7 @@ impl SharedResources {
         let model = self.model.lock().await.clone();
         let thinking_level = *self.thinking_level.lock().await;
         let pre_tool_use = self.pre_tool_use_factory.as_ref().map(|factory| {
-            let hook = factory(session_id);
+            let hook = factory(session_id.clone());
             Box::new(move |context| hook(context)) as _
         });
 
@@ -325,7 +481,14 @@ impl SharedResources {
             pre_tool_use,
             model_stream: self.model_stream.clone(),
         });
-        session.register_default_tools(&self.cwd).await;
+        session
+            .register_default_tools_with_question_sender(
+                &self.cwd,
+                self.question_request_tx
+                    .clone()
+                    .map(|sender| (session_id, sender)),
+            )
+            .await;
         session
     }
 }
@@ -841,6 +1004,14 @@ pub struct PermissionEvent {
     pub trust_key: String,
     pub trust_levels: Vec<TrustLevel>,
     pub trust_groups: Vec<TrustGroup>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserQuestionEvent {
+    pub session_id: String,
+    pub request_id: String,
+    pub questions: Vec<AskUserQuestion>,
 }
 
 /// 工具执行事件

@@ -44,6 +44,7 @@ fn shared_resources(cwd: &Path, factory: PreToolUseHookFactory) -> SharedResourc
         model: Mutex::new(test_model()),
         thinking_level: Mutex::new(ThinkingLevel::Off),
         pre_tool_use_factory: Some(factory),
+        question_request_tx: None,
         model_stream: None,
     }
 }

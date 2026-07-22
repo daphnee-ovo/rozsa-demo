@@ -489,6 +489,7 @@ settings scene
 | `theme mode card` | 主题模式卡片 | 用预览图选择主题模式的控件 | `.theme-mode-card`、`data-theme-mode-card` |
 | `theme preview` | 主题预览 | 卡片中的视觉预览缩略图 | `.theme-preview`、`.theme-preview-body` |
 | `font size` | 字体大小 | 页面 UI 字号设置 | `#settingsFontSizeRange`、`#settingsFontSizeInput` |
+| `settings help tip` | 设置帮助提示 | 在 Appearance 标签旁显示原型定义的 `?` 图标；悬停或键盘聚焦时展示说明 | `.settings-hint`、`data-tooltip` |
 | `range slider` | 范围滑块 | 连续调整 font size 的 range 控件 | `.appearance-range`；`renderAppearanceSettings()` |
 | `numeric input` | 数值输入框 | 直接输入字号数值的 number 控件 | `.appearance-font-size-input`、`#settingsFontSizeInput` |
 | `theme section` | 主题配置区 | 承载 Light Theme 或 Dark Theme 的完整配置 | `.appearance-theme-section`、`#appearanceLightSection` / `#appearanceDarkSection` |

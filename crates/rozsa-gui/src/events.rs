@@ -1,3 +1,19 @@
+// FrameworkTree
+// events.rs
+// ├── struct ThemeStateSnapshot
+// ├── emit_to_webview()
+// ├── emit_main()
+// ├── emit_sidebar()
+// ├── emit_both()
+// ├── native_theme_variant()
+// ├── apply_native_theme_surface()
+// ├── emit_theme_state()
+// ├── emit_sidebar_state()
+// ├── emit_gui_scene_snapshot()
+// ├── spawn_event_forwarder_for_session()
+// ├── spawn_permission_listener()
+// └── spawn_user_question_listener()
+
 // File: events.rs
 //
 // 事件转发：每个 Active session tab 有独立的事件监听任务。
@@ -8,12 +24,13 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use rozsa_app::themes::ThemeDefinition;
+use rozsa_app::tools::{AskUserQuestionRequest, AskUserQuestionResponse};
 use rozsa_core::events::AgentEvent;
 
 use crate::commands::AppearanceSnapshot;
 use crate::state::{
-    GuiState, PermissionEvent, PermissionRequest, SessionTab, ToolEvent, UiSnapshot,
-    find_tab_index_by_session,
+    GuiState, PendingUserQuestion, PermissionEvent, PermissionRequest, SessionTab, ToolEvent,
+    UiSnapshot, UserQuestionEvent, find_tab_index_by_session, user_question_pending_key,
 };
 
 pub const MAIN_WEBVIEW: &str = "main";
@@ -334,6 +351,43 @@ pub fn spawn_permission_listener(
             let _ = emit_main(&app, "permission-request", &event);
             let state = app.state::<GuiState>();
             let _ = emit_sidebar_state(&app, state.inner()).await;
+        }
+    });
+}
+
+/// Listen for app-runtime askUserQuestion requests, retain the response
+/// channel in GUI state, and publish only serializable question data to main.
+pub fn spawn_user_question_listener(
+    app: AppHandle,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<AskUserQuestionRequest>,
+) {
+    tokio::spawn(async move {
+        while let Some(request) = rx.recv().await {
+            let key = user_question_pending_key(&request.session_id, &request.request_id);
+            let state = app.state::<GuiState>();
+            if let Some(previous) = state.pending_user_questions.insert(
+                key.clone(),
+                PendingUserQuestion {
+                    questions: request.questions.clone(),
+                    response_tx: request.response_tx,
+                },
+            ) {
+                let _ = previous
+                    .response_tx
+                    .send(AskUserQuestionResponse::Cancelled);
+            }
+
+            let event = UserQuestionEvent {
+                session_id: request.session_id,
+                request_id: request.request_id,
+                questions: request.questions,
+            };
+            if let Err(error) = emit_main(&app, "question-request", &event) {
+                eprintln!("[rozsa-gui][question] failed to emit question request: {error}");
+                if let Some((_, pending)) = state.pending_user_questions.remove(&key) {
+                    let _ = pending.response_tx.send(AskUserQuestionResponse::Cancelled);
+                }
+            }
         }
     });
 }

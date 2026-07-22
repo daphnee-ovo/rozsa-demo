@@ -1345,6 +1345,152 @@ body {
   flex: 1;
 }
 
+/* Agent question panel */
+.question-panel {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  background: var(--surface);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+  animation: permFadeIn 0.18s;
+}
+.question-panel.visible { display: flex; }
+.question-panel-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.question-panel-progress {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.question-panel-question {
+  color: var(--fg);
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.question-panel-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+}
+.question-panel-option {
+  display: grid;
+  grid-template-columns: 24px 18px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.question-panel-option:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--surface) 92%, var(--accent));
+}
+.question-panel-option input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+.question-panel-option-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--code-border);
+  border-radius: 5px;
+  background: var(--code-bg);
+  color: var(--muted);
+  font: 11px var(--font-mono);
+}
+.question-panel-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.question-panel-option-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.question-panel-option-description {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.question-panel-other-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: 13px var(--font-ui);
+  outline: none;
+}
+.question-panel-other-input[hidden] { display: none; }
+.question-panel-other-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 20%, transparent);
+}
+.question-panel-error {
+  min-height: 0;
+  color: var(--danger, #b42318);
+  font-size: 12px;
+  line-height: 1.3;
+}
+.question-panel-answer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+.question-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+.question-panel-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 15px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent-btn);
+  color: white;
+  cursor: pointer;
+  font: 13px var(--font-ui);
+}
+.question-panel-submit-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in oklch, white 45%, var(--accent-btn));
+  border-radius: 5px;
+  font: 11px var(--font-mono);
+}
+.question-panel-submit:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 /* 设置面板 */
 .settings-panel {
   position: fixed; inset: 0;
@@ -1418,6 +1564,56 @@ body {
   letter-spacing: 0.08em;
   color: oklch(60% 0.01 350);
   margin-bottom: 8px;
+}
+.setting-label-with-hint,
+.settings-group-label-with-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.settings-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border: 1px solid color-mix(in srgb, var(--muted) 55%, transparent);
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--muted) 55%, transparent);
+  font: 8px/1 var(--font-ui);
+  cursor: help;
+}
+.settings-hint::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 10;
+  top: -7px;
+  left: 22px;
+  width: max-content;
+  max-width: 260px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 8px 20px rgb(30 20 25 / 12%);
+  font: 11px/1.35 var(--font-ui);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity .12s, transform .12s;
+}
+.settings-hint:hover::after,
+.settings-hint:focus::after { opacity: 1; transform: translateY(0); }
+.settings-hint:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 2px;
 }
 .setting-item {
   display: flex;
@@ -2581,6 +2777,19 @@ body.native-split-main .settings-dialog { background: var(--bg); }
             <div class="perm-panel-actions" id="permTrustActions"></div>
           </div>
         </div>
+        <div class="question-panel" id="questionPanel">
+          <div class="question-panel-title">Agent Question</div>
+          <div class="question-panel-progress" id="questionPanelProgress"></div>
+          <div class="question-panel-question" id="questionPanelQuestion"></div>
+          <div class="question-panel-options" id="questionPanelOptions"></div>
+          <div class="question-panel-error" id="questionPanelError" role="alert"></div>
+          <div class="question-panel-answer-row">
+            <input class="question-panel-other-input" id="questionPanelOtherInput" type="text" autocomplete="off" spellcheck="false" placeholder="Type your own answer…" hidden>
+            <div class="question-panel-actions">
+              <button class="question-panel-submit" id="questionPanelSubmit" type="button" aria-label="Done (D)" onclick="submitUserQuestion()"><span class="question-panel-submit-key">D</span><span>Done</span></button>
+            </div>
+          </div>
+        </div>
         <div id="msgInput" class="rich-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Message Rózsa, supports Markdown…" oninput="handleInput(this, event)" oncompositionstart="handleCompositionStart(event)" oncompositionupdate="handleCompositionUpdate(this)" oncompositionend="handleCompositionEnd(this)"></div>
         <div class="input-toolbar">
           <button class="input-tool-btn" id="attachFileButton" title="Attach file" aria-label="Attach file" onclick="attachFileReference()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
@@ -2627,28 +2836,28 @@ body.native-split-main .settings-dialog { background: var(--bg); }
             <button class="theme-mode-card" type="button" data-theme-mode-card="light" onclick="selectThemeModeCard('light')" aria-pressed="false"><div class="theme-preview"><div class="theme-preview-top"></div><div class="theme-preview-body light"><span></span><span></span></div></div><span>Light</span></button>
             <button class="theme-mode-card" type="button" data-theme-mode-card="dark" onclick="selectThemeModeCard('dark')" aria-pressed="false"><div class="theme-preview"><div class="theme-preview-top"></div><div class="theme-preview-body dark"><span></span><span></span></div></div><span>Dark</span></button>
           </div><select class="setting-select settings-theme-mode-select" id="settingsThemeMode" aria-label="Theme Mode"><option value="system">system</option><option value="light">light</option><option value="dark">dark</option></select></div>
-          <div class="setting-item"><span class="setting-label">Font Size</span><span style="display:flex;align-items:center;gap:10px"><input class="appearance-range" id="settingsFontSizeRange" type="range" min="5" max="50" step="1" aria-label="Font Size"><input class="setting-input appearance-font-size-input" id="settingsFontSizeInput" type="number" min="5" max="50" step="1" aria-label="Font Size in pixels"><span class="setting-value">px</span></span></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">Font Size <span class="settings-hint" tabindex="0" aria-label="Font Size help: Applies to the whole Rózsa interface." data-tooltip="Applies to the whole Rózsa interface.">?</span></span><span style="display:flex;align-items:center;gap:10px"><input class="appearance-range" id="settingsFontSizeRange" type="range" min="5" max="50" step="1" aria-label="Font Size"><input class="setting-input appearance-font-size-input" id="settingsFontSizeInput" type="number" min="5" max="50" step="1" aria-label="Font Size in pixels"><span class="setting-value">px</span></span></div>
         </div>
         <div class="appearance-theme-section" id="appearanceLightSection">
-          <div class="settings-group-label">Light Theme</div>
+          <div class="settings-group-label settings-group-label-with-hint">Light Theme <span class="settings-hint" tabindex="0" aria-label="Light Theme help: The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/." data-tooltip="The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.">?</span></div>
           <div class="setting-item"><span class="setting-label">Theme</span><select class="setting-select" id="settingsLightTheme" aria-label="Light Theme"></select></div>
           <div class="setting-item"><span class="setting-label">Accent</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeAccentPicker" type="color" value="#D7827E" aria-label="Light Theme Accent color picker"><input class="setting-input theme-hex-input" id="lightThemeAccent" type="text" spellcheck="false" aria-label="Light Theme Accent HEX"></span></div>
           <div class="setting-item"><span class="setting-label">Background</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeBackgroundPicker" type="color" value="#FFFFFF" aria-label="Light Theme Background color picker"><input class="setting-input theme-hex-input" id="lightThemeBackground" type="text" spellcheck="false" aria-label="Light Theme Background HEX"></span></div>
           <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeForegroundPicker" type="color" value="#575279" aria-label="Light Theme Foreground color picker"><input class="setting-input theme-hex-input" id="lightThemeForeground" type="text" spellcheck="false" aria-label="Light Theme Foreground HEX"></span></div>
-          <div class="setting-item"><span class="setting-label">UI font</span><input class="setting-input" id="lightThemeUiFont" type="text" spellcheck="false" aria-label="Light Theme UI font"></div>
-          <div class="setting-item"><span class="setting-label">Code font</span><input class="setting-input" id="lightThemeCodeFont" type="text" spellcheck="false" aria-label="Light Theme Code font"></div>
-          <div class="setting-item appearance-sidebar-option" id="lightThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><button class="setting-toggle" id="lightThemeTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Light Theme Translucent sidebar"></button></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">UI font <span class="settings-hint" tabindex="0" aria-label="UI font help: The font used by navigation, labels and message text." data-tooltip="The font used by navigation, labels and message text.">?</span></span><input class="setting-input" id="lightThemeUiFont" type="text" spellcheck="false" aria-label="Light Theme UI font"></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">Code font <span class="settings-hint" tabindex="0" aria-label="Code font help: The font used inside code blocks and tool output." data-tooltip="The font used inside code blocks and tool output.">?</span></span><input class="setting-input" id="lightThemeCodeFont" type="text" spellcheck="false" aria-label="Light Theme Code font"></div>
+          <div class="setting-item appearance-sidebar-option" id="lightThemeSidebarOption"><span class="setting-label setting-label-with-hint">Translucent sidebar <span class="settings-hint" tabindex="0" aria-label="Translucent sidebar help: Available on macOS. Uses the system glass material for the sidebar." data-tooltip="Available on macOS. Uses the system glass material for the sidebar.">?</span></span><button class="setting-toggle" id="lightThemeTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Light Theme Translucent sidebar"></button></div>
           <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('light')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
         </div>
         <div class="appearance-theme-section" id="appearanceDarkSection">
-          <div class="settings-group-label">Dark Theme</div>
+          <div class="settings-group-label settings-group-label-with-hint">Dark Theme <span class="settings-hint" tabindex="0" aria-label="Dark Theme help: The default dark theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/." data-tooltip="The default dark theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.">?</span></div>
           <div class="setting-item"><span class="setting-label">Theme</span><select class="setting-select" id="settingsDarkTheme" aria-label="Dark Theme"></select></div>
           <div class="setting-item"><span class="setting-label">Accent</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeAccentPicker" type="color" value="#D88991" aria-label="Dark Theme Accent color picker"><input class="setting-input theme-hex-input" id="darkThemeAccent" type="text" spellcheck="false" aria-label="Dark Theme Accent HEX"></span></div>
           <div class="setting-item"><span class="setting-label">Background</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeBackgroundPicker" type="color" value="#1D1A1C" aria-label="Dark Theme Background color picker"><input class="setting-input theme-hex-input" id="darkThemeBackground" type="text" spellcheck="false" aria-label="Dark Theme Background HEX"></span></div>
           <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeForegroundPicker" type="color" value="#F1E9EB" aria-label="Dark Theme Foreground color picker"><input class="setting-input theme-hex-input" id="darkThemeForeground" type="text" spellcheck="false" aria-label="Dark Theme Foreground HEX"></span></div>
-          <div class="setting-item"><span class="setting-label">UI font</span><input class="setting-input" id="darkThemeUiFont" type="text" spellcheck="false" aria-label="Dark Theme UI font"></div>
-          <div class="setting-item"><span class="setting-label">Code font</span><input class="setting-input" id="darkThemeCodeFont" type="text" spellcheck="false" aria-label="Dark Theme Code font"></div>
-          <div class="setting-item appearance-sidebar-option" id="darkThemeSidebarOption"><span class="setting-label">Translucent sidebar</span><button class="setting-toggle" id="darkThemeTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Dark Theme Translucent sidebar"></button></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">UI font <span class="settings-hint" tabindex="0" aria-label="UI font help: The font used by navigation, labels and message text." data-tooltip="The font used by navigation, labels and message text.">?</span></span><input class="setting-input" id="darkThemeUiFont" type="text" spellcheck="false" aria-label="Dark Theme UI font"></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">Code font <span class="settings-hint" tabindex="0" aria-label="Code font help: The font used inside code blocks and tool output." data-tooltip="The font used inside code blocks and tool output.">?</span></span><input class="setting-input" id="darkThemeCodeFont" type="text" spellcheck="false" aria-label="Dark Theme Code font"></div>
+          <div class="setting-item appearance-sidebar-option" id="darkThemeSidebarOption"><span class="setting-label setting-label-with-hint">Translucent sidebar <span class="settings-hint" tabindex="0" aria-label="Translucent sidebar help: Available on macOS. Uses the system glass material for the sidebar." data-tooltip="Available on macOS. Uses the system glass material for the sidebar.">?</span></span><button class="setting-toggle" id="darkThemeTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Dark Theme Translucent sidebar"></button></div>
           <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('dark')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
         </div>
       </div>

@@ -38,6 +38,7 @@ fn shared_resources(cwd: &Path) -> SharedResources {
         model: Mutex::new(test_model()),
         thinking_level: Mutex::new(ThinkingLevel::Off),
         pre_tool_use_factory: None,
+        question_request_tx: None,
         model_stream: None,
     }
 }

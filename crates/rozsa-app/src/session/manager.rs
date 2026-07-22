@@ -1,3 +1,52 @@
+// FrameworkTree
+// manager.rs
+// ├── struct SessionHeader
+// ├── struct SessionEntryBase
+// ├── struct SessionMessageEntry
+// ├── struct ThinkingLevelChangeEntry
+// ├── struct ModelChangeEntry
+// ├── struct CompactionEntry
+// ├── struct CustomEntry
+// ├── struct LabelEntry
+// ├── struct SessionInfoEntry
+// ├── enum SessionEntry
+// ├── impl SessionEntry
+// ├── id()
+// ├── parent_id()
+// ├── struct SessionMeta
+// ├── struct SessionManager
+// ├── impl SessionManager
+// ├── cwd()
+// ├── set_cwd()
+// ├── create()
+// ├── create_lazy()
+// ├── generate_id()
+// ├── ensure_materialized()
+// ├── append_entry()
+// ├── append_message()
+// ├── append_compaction()
+// ├── append_model_change()
+// ├── append_thinking_level_change()
+// ├── append_custom()
+// ├── append_label()
+// ├── leaf_id()
+// ├── session_id()
+// ├── session_file()
+// ├── entries()
+// ├── context_messages()
+// ├── copy_context_messages_from()
+// ├── copy_context_messages_from_path()
+// ├── latest_custom()
+// ├── append_session_info()
+// ├── open()
+// ├── delete()
+// ├── rename()
+// ├── current_name()
+// ├── list_dir()
+// ├── build_session_meta()
+// ├── extract_message_text()
+// └── systemtime_to_rfc3339()
+
 use anyhow::{Context, Result};
 use rozsa_model::types::Message;
 use serde::{Deserialize, Serialize};
@@ -547,6 +596,35 @@ impl SessionManager {
         }
         entries.reverse();
         entries
+    }
+
+    /// Return the persisted standard messages on the active session branch.
+    ///
+    /// Session metadata entries are intentionally excluded. The returned
+    /// order is the order the agent should see when continuing the branch.
+    pub fn context_messages(&self) -> Vec<Message> {
+        self.entries()
+            .into_iter()
+            .filter_map(|entry| match entry {
+                SessionEntry::Message(message) => Some(message.message),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Copy the source branch's persisted messages into this session.
+    pub fn copy_context_messages_from(&mut self, source: &SessionManager) -> Result<()> {
+        for message in source.context_messages() {
+            self.append_message(message)?;
+        }
+        Ok(())
+    }
+
+    /// Open another session file and copy its persisted messages into this
+    /// session. This is used when creating a continued child session.
+    pub fn copy_context_messages_from_path(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        let source = SessionManager::open(path)?;
+        self.copy_context_messages_from(&source)
     }
 
     /// Return the latest custom entry of `custom_type` by persisted timestamp.

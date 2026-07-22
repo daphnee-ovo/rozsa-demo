@@ -1,3 +1,17 @@
+// FrameworkTree
+// models_endpoint.rs
+// ├── refresh_models_if_needed()
+// ├── is_cache_fresh()
+// ├── fetch_remote_models()
+// ├── convert_to_registry_format()
+// ├── write_config()
+// ├── enum ModelRefreshError
+// ├── struct ModelsPayload
+// ├── struct RemoteModel
+// ├── mod tests
+// ├── remote_model()
+// └── convert_to_registry_format_keeps_only_visible_api_models()
+
 // Auto-refresh model list for codex-oauth from the ChatGPT backend API.
 //
 // Internal Framework:
@@ -18,6 +32,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const CACHE_DURATION_SECS: u64 = 24 * 60 * 60; // 24 hours
 const MODELS_ENDPOINT: &str = "/wham/models";
 const DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api";
+const CODEX_MODELS_CLIENT_VERSION: &str = "0.146.0";
 
 /// Check if the cached model config needs refresh and update if so.
 /// Returns Ok(true) if refreshed, Ok(false) if cache is fresh.
@@ -64,6 +79,7 @@ async fn fetch_remote_models(
     let client = reqwest::Client::new();
     let response = client
         .get(&url)
+        .query(&[("client_version", CODEX_MODELS_CLIENT_VERSION)])
         .header("Authorization", format!("Bearer {access_token}"))
         .header("ChatGPT-Account-ID", account_id)
         .timeout(std::time::Duration::from_secs(15))

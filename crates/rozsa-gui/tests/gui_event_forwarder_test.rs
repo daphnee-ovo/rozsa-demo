@@ -99,6 +99,7 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
         model: Mutex::new(model()),
         thinking_level: Mutex::new(ThinkingLevel::Off),
         pre_tool_use_factory: None,
+        question_request_tx: None,
         model_stream: Some(scripted_stream(source.to_string_lossy().to_string())),
     });
     let created = shared
@@ -120,6 +121,7 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
         session_dir: None,
         pending_approvals: None,
         pending_permission_contexts: Arc::new(DashMap::new()),
+        pending_user_questions: Arc::new(DashMap::new()),
         permission_controller: Arc::new(PermissionController::new(
             PermissionMode::OnRequest,
             vec![],

@@ -147,6 +147,7 @@ agent loop 产生 AgentEvent
         ├─ MessageStart/Update/End ──> "ui-state" ──> streaming message
         ├─ ToolExecutionStart/End ──> "tool-event" ──> tool call / result
         ├─ Permission request ───────> "permission-request" ──> approval panel
+        ├─ askUserQuestion ──────────> "question-request" ──> question panel
         └─ AgentEnd ─────────────────> turn 收束、持久化、TurnActivity summary
         │
         ├─ abort command -> CancellationToken.cancel() -> loop 在检查点停止
@@ -160,6 +161,10 @@ agent loop 产生 AgentEvent
 | `tool-event` | 工具开始/结束的独立事件，带 `session_id`、`turn_id`、tool 名称和结果详情 |
 | `tool call` | agent 请求执行某个工具的动作和参数 |
 | `tool result` | 工具执行后的内容和 `details`；可能包含 `file_deltas` 或验证字段 |
+| `askUserQuestion` | GUI-only 的 agent 交互工具；一次请求可包含 1–4 个问题，每题单选或多选 |
+| `question-request` | 后端发给 main WebView 的待回答问题事件；按 `session_id` 和 request ID 隔离 |
+| `Other` | 每个问题始终存在的自定义输入选项；不是 agent 可关闭的 schema 开关 |
+| `question result` | `{"answers": {header: string | string[]}}`；单选是字符串，多选是字符串数组 |
 | queue | GUI-owned FIFO；当前 prompt 返回后再启动下一条消息 |
 | steer | 将运行中的用户输入交给当前 agent，在下一个工具结果之间处理；不等同于 queue |
 | abort | Stop button 或 1 秒内连续两次 Escape 发送取消信号，并丢弃尚未执行的 queue / steer / follow-up；不删除 session、不清空历史，也不撤销已完成的文件变更 |
@@ -228,6 +233,7 @@ PermissionController.evaluate(session_id, tool, args)
 | `PermissionController` | runtime-owned 权限控制器，按 `session_id` 评估并记录信任 | 不是只改 UI 的开关 |
 | `PermissionMode` | `OnRequest`、`AutoApprove`、`Yolo` 三种策略模式 | `auto-approve` 是易读说法；讨论配置解析时保留代码枚举名 |
 | `PolicyVerdict` | `Allow`、`Block`、`NeedApproval` | 一次调用的 runtime 裁定 |
+| default allowed tool | 内置加入 `allowed_tools` 的无副作用工具，例如 `askUserQuestion` | 仍经过 `PermissionController`；显式 `deny` / `ask` 规则可以覆盖 |
 | `ApprovalInfo` | 提交给 UI 的工具、参数摘要、风险和可选 trust scope | 不是最终用户决定 |
 | `trust_key` | 一个可复用的授权范围的规范 key | 不要把它当 request ID |
 | `TrustLevel` | 一个可选的信任范围，例如精确命令或更宽前缀 | 是“选择项” |
@@ -262,6 +268,12 @@ project trust:  <project>/.rozsa/agent/settings.json
 讨论权限问题时，至少同时说清：`session_id`、tool、目标（命令/文件）、裁定（allow/block/ask）和 trust scope。只说“权限弹窗不对”信息不够。
 
 代码锚点：[`permissions/mod.rs`](../../crates/rozsa-app/src/permissions/mod.rs)、[`app.js` permission flow](../../crates/rozsa-gui/frontend/app.js)、[`commands.rs` permission commands](../../crates/rozsa-gui/src/commands.rs)。
+
+### 5.4 Agent question 与 Permission 的边界
+
+`askUserQuestion` 的 question panel 是 agent 主动请求用户提供上下文，不是授权操作本身。tool 调用仍先经过 `PermissionController`，默认命中 `allowed_tools` 白名单而直接得到 `Allow`；显式 `deny` / `ask` 规则仍按 permission 语义处理。question 结果只返回给当前 tool call，不写入 session trust，也没有允许 agent 关闭 `Other` 的配置项。
+
+代码锚点：[`ask_user_question.rs`](../../crates/rozsa-app/src/tools/ask_user_question.rs)、[`state.rs` question state](../../crates/rozsa-gui/src/state.rs)、[`app.js` question flow](../../crates/rozsa-gui/frontend/app.js)。
 
 ## 6. 输入框、Caret、IME 与 Token
 
@@ -378,6 +390,7 @@ sidebar material 错     -> native_split_view.rs + revisioned theme-state
 | sidebar scene/rendering | [`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js)、[`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html) |
 | scene revision / shared frontend | [`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js) |
 | live agent loop and abort | [`crates/rozsa-app/src/agent_session.rs`](../../crates/rozsa-app/src/agent_session.rs) |
+| askUserQuestion tool | [`crates/rozsa-app/src/tools/ask_user_question.rs`](../../crates/rozsa-app/src/tools/ask_user_question.rs)、[`crates/rozsa-gui/src/events.rs`](../../crates/rozsa-gui/src/events.rs) |
 | permission runtime | [`crates/rozsa-app/src/permissions/mod.rs`](../../crates/rozsa-app/src/permissions/mod.rs) |
 | tool file delta | [`crates/rozsa-app/src/tools/file_delta.rs`](../../crates/rozsa-app/src/tools/file_delta.rs) |
 | turn summary / verification | [`crates/rozsa-gui/src/turn_diff.rs`](../../crates/rozsa-gui/src/turn_diff.rs) |

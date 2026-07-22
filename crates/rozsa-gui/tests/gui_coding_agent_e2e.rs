@@ -188,6 +188,7 @@ async fn gui_runtime_completes_scripted_coding_turn_with_session_bound_approval(
         model: Mutex::new(test_model()),
         thinking_level: Mutex::new(ThinkingLevel::Off),
         pre_tool_use_factory: Some(approval_factory(pending.clone(), request_tx)),
+        question_request_tx: None,
         model_stream: Some(scripted_model(source_path.to_string_lossy().to_string())),
     };
     let created = shared.create_new_agent(&sessions, None).await.unwrap();

@@ -1,3 +1,74 @@
+// FrameworkTree
+// mod.rs
+// ├── mod audit
+// ├── struct PermissionController
+// ├── struct PermissionConfig
+// ├── impl PermissionController
+// ├── new()
+// ├── with_project_rules()
+// ├── update()
+// ├── evaluate()
+// ├── record_session_approval()
+// ├── record_project_approval()
+// ├── enum PermissionMode
+// ├── impl PermissionMode
+// ├── parse()
+// ├── enum RiskLevel
+// ├── enum PolicyVerdict
+// ├── struct ApprovalInfo
+// ├── struct TrustLevel
+// ├── struct TrustGroup
+// ├── enum PermissionResponse
+// ├── safer_alternative_hint()
+// ├── struct PermissionPolicy
+// ├── impl PermissionPolicy
+// ├── new()
+// ├── with_workspace_root()
+// ├── set_on_approval()
+// ├── evaluate()
+// ├── is_workspace_read_request()
+// ├── is_safe_readonly_bash_request()
+// ├── safe_readonly_shell_segment()
+// ├── is_write_option()
+// ├── inline_readonly_path_option()
+// ├── path_is_within_workspace()
+// ├── resolve_scoped_path()
+// ├── expand_home_path()
+// ├── canonicalize_with_missing()
+// ├── lexical_normalize()
+// ├── record_session_approval()
+// ├── mode()
+// ├── build_hardcoded_blacklist()
+// ├── split_shell_segments()
+// ├── check_blacklist_with_segments()
+// ├── check_command_deep()
+// ├── extract_subcommands()
+// ├── has_sensitive_env_leak()
+// ├── classify_risk()
+// ├── infer_risk_level()
+// ├── is_secret_path()
+// ├── build_trust_key()
+// ├── generate_trust_levels()
+// ├── generate_trust_level_options()
+// ├── file_trust_levels()
+// ├── command_trust_levels()
+// ├── first_effective_line()
+// ├── request_trust_key()
+// ├── request_matches_session_approval()
+// ├── command_matches_session_approval()
+// ├── patterns_cover_request()
+// ├── untrusted_trust_levels()
+// ├── untrusted_trust_groups()
+// ├── approval_info()
+// ├── rules_match_any()
+// ├── rules_cover_request()
+// ├── request_targets()
+// ├── rule_matches()
+// ├── normalize_rule_path()
+// ├── trust_key_to_project_rule()
+// ├── summarize_args()
+// └── truncate_str()
+
 // File: permissions/mod.rs
 //
 // Internal Framework:
@@ -355,6 +426,7 @@ pub type PendingApprovals = Arc<DashMap<String, oneshot::Sender<PermissionRespon
 // ---------------------------------------------------------------------------
 
 const WORKSPACE_READ_TOOLS: &[&str] = &["Grep", "Ls", "Find", "grep", "ls", "find"];
+const DEFAULT_ALLOWED_TOOLS: &[&str] = &["askUserQuestion"];
 const SAFE_SHELL_COMMANDS: &[&str] = &[
     "head", "tail", "cat", "grep", "sort", "pwd", "ls", "basename", "dirname", "realpath",
     "readlink", "stat", "file", "wc", "diff", "cmp", "comm", "cut", "tr", "uniq", "strings", "od",
@@ -412,6 +484,16 @@ impl PermissionPolicy {
         workspace_root: PathBuf,
     ) -> Self {
         let blacklist = build_hardcoded_blacklist();
+
+        let mut allowed_tools = allowed_tools;
+        for tool_name in DEFAULT_ALLOWED_TOOLS {
+            if !allowed_tools
+                .iter()
+                .any(|configured| configured == tool_name)
+            {
+                allowed_tools.push((*tool_name).to_string());
+            }
+        }
 
         let auto_approve_patterns = auto_approve_patterns
             .iter()

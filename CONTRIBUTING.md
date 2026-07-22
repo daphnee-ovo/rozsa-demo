@@ -6,7 +6,19 @@ Read `AGENTS.md` for project-specific development rules. If you use an agent, ru
 
 ## Development Tools
 
-in `devtools/`  
+Development and synchronization tools live in `devtools/`.
+
+### Synchronize the Codex models client version
+
+The ChatGPT models endpoint filters its response using Codex CLI version semantics. Rózsa therefore keeps a dedicated `CODEX_MODELS_CLIENT_VERSION`; do not replace it with the Rózsa workspace version.
+
+Synchronize the compatibility version directly from the newest valid `rust-v*` tag in the `openai/codex` GitHub repository:
+
+```bash
+./devtools/sync-codex-model-client-version.sh
+```
+
+The tool uses `git ls-remote` and does not require a local Codex checkout. Use `--check` in CI or review workflows to verify that the checked-in constant is already current. Prerelease suffixes such as `-alpha.30` and `-beta.2` are intentionally removed because the endpoint expects the whole `major.minor.patch` client version used by Codex's models manager. `--repo-url` exists for mirrors and automated tests; normal development should use the default GitHub repository.
 
 
 ## Code Style

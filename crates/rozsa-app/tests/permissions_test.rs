@@ -1,6 +1,6 @@
 use rozsa_app::permissions::{
-    PermissionMode, PermissionPolicy, PolicyVerdict, RiskLevel, build_trust_key, classify_risk,
-    generate_trust_levels, infer_risk_level, split_shell_segments,
+    PermissionController, PermissionMode, PermissionPolicy, PolicyVerdict, RiskLevel,
+    build_trust_key, classify_risk, generate_trust_levels, infer_risk_level, split_shell_segments,
 };
 
 #[test]
@@ -462,6 +462,20 @@ fn allowed_tools_auto_allow() {
         PolicyVerdict::NeedApproval { .. } => {}
         other => panic!("expected NeedApproval for UnknownTool, got: {other:?}"),
     }
+}
+
+#[test]
+fn ask_user_question_is_in_the_default_allowed_tools_whitelist() {
+    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "askUserQuestion",
+            &serde_json::json!({"questions": []}),
+        ),
+        PolicyVerdict::Allow
+    ));
 }
 
 #[test]

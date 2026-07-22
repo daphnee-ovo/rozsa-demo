@@ -1,5 +1,66 @@
+// FrameworkTree
+// types.rs
+// ├── enum Api
+// ├── enum Provider
+// ├── impl Provider
+// ├── fmt()
+// ├── impl Provider
+// ├── as_str()
+// ├── display_name()
+// ├── enum InputModality
+// ├── struct ModelCost
+// ├── enum ThinkingLevel
+// ├── struct ThinkingBudgets
+// ├── struct Model
+// ├── enum Transport
+// ├── enum CacheRetention
+// ├── struct StreamOptions
+// ├── struct SimpleStreamOptions
+// ├── enum StopReason
+// ├── struct ToolCall
+// ├── enum ContentBlock
+// ├── struct UsageCost
+// ├── struct Usage
+// ├── enum UserContent
+// ├── impl UserContent
+// ├── text()
+// ├── struct UserMessage
+// ├── struct AssistantMessage
+// ├── struct ToolResultMessage
+// ├── enum Message
+// ├── struct ToolSchema
+// ├── struct Context
+// └── enum StreamEvent
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+const BUILT_IN_PROVIDER_NAMES: &[(&str, &str)] = &[
+    ("codex-oauth", "CodexOauth"),
+    ("anthropic", "Anthropic"),
+    ("openai", "OpenAI"),
+    ("amazon-bedrock", "AmazonBedrock"),
+    ("google", "Google"),
+    ("google-vertex", "GoogleVertex"),
+    ("deepseek", "DeepSeek"),
+    ("openrouter", "OpenRouter"),
+    ("xai", "XAI"),
+    ("groq", "Groq"),
+    ("cerebras", "Cerebras"),
+    ("mistral", "Mistral"),
+    ("nvidia", "Nvidia"),
+    ("zai", "Zai"),
+    ("together", "Together"),
+    ("moonshot-ai", "MoonshotAI"),
+    ("moonshot-ai-cn", "MoonshotAICn"),
+    ("huggingface", "HuggingFace"),
+    ("cloudflare-workers-ai", "CloudflareWorkersAI"),
+    ("cloudflare-ai-gateway", "CloudflareAIGateway"),
+    ("xiaomi", "Xiaomi"),
+    ("xiaomi-token-plan-cn", "XiaomiTokenPlanCn"),
+    ("xiaomi-token-plan-ams", "XiaomiTokenPlanAms"),
+    ("xiaomi-token-plan-sgp", "XiaomiTokenPlanSgp"),
+];
 
 /// Provider protocol family used to select a streaming implementation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -76,6 +137,56 @@ impl Provider {
             Self::XiaomiTokenPlanAms => "xiaomi-token-plan-ams",
             Self::XiaomiTokenPlanSgp => "xiaomi-token-plan-sgp",
             Self::Custom(s) => s.as_str(),
+        }
+    }
+
+    /// Stable user-facing provider name, independent of routing identifiers.
+    pub fn display_name(&self) -> String {
+        let built_in_name = match self {
+            Self::Anthropic => Some("Anthropic"),
+            Self::OpenAI => Some("OpenAI"),
+            Self::AmazonBedrock => Some("AmazonBedrock"),
+            Self::Google => Some("Google"),
+            Self::GoogleVertex => Some("GoogleVertex"),
+            Self::DeepSeek => Some("DeepSeek"),
+            Self::OpenRouter => Some("OpenRouter"),
+            Self::XAI => Some("XAI"),
+            Self::Groq => Some("Groq"),
+            Self::Cerebras => Some("Cerebras"),
+            Self::Mistral => Some("Mistral"),
+            Self::Nvidia => Some("Nvidia"),
+            Self::Zai => Some("Zai"),
+            Self::Together => Some("Together"),
+            Self::MoonshotAI => Some("MoonshotAI"),
+            Self::MoonshotAICn => Some("MoonshotAICn"),
+            Self::HuggingFace => Some("HuggingFace"),
+            Self::CloudflareWorkersAI => Some("CloudflareWorkersAI"),
+            Self::CloudflareAIGateway => Some("CloudflareAIGateway"),
+            Self::Xiaomi => Some("Xiaomi"),
+            Self::XiaomiTokenPlanCn => Some("XiaomiTokenPlanCn"),
+            Self::XiaomiTokenPlanAms => Some("XiaomiTokenPlanAms"),
+            Self::XiaomiTokenPlanSgp => Some("XiaomiTokenPlanSgp"),
+            Self::Custom(_) => None,
+        };
+        if let Some(name) = built_in_name {
+            return name.to_string();
+        }
+
+        let Self::Custom(name) = self else {
+            unreachable!("built-in providers have an explicit display name");
+        };
+        if name == "codex-oauth" {
+            return "CodexOauth".to_string();
+        }
+
+        let conflicts_with_built_in =
+            BUILT_IN_PROVIDER_NAMES.iter().any(|(identifier, display)| {
+                name.eq_ignore_ascii_case(identifier) || name.eq_ignore_ascii_case(display)
+            });
+        if conflicts_with_built_in {
+            format!("Custom:{name}")
+        } else {
+            name.clone()
         }
     }
 }

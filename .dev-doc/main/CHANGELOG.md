@@ -16,3 +16,10 @@
 - 01:45 fix(gui): make agent interruption unconditional
 - 02:54 fix: ISSUE-I004：修正 main pane 居中与 sidebar 图标视觉尺寸
 - 03:26 doc: 简单更新文档
+- 03:28 fix(gui): polish native sidebar layout
+- 22:59 fix: 补齐 Appearance 设置的 help tip icon
+- 23:07 docs: 更新项目 AGENTS.md 以匹配当前仓库
+- 23:09 fix: 调淡 Appearance help tip icon 颜色
+- 23:41 fix: 同步 Codex 模型端点客户端版本
+- 23:43 fix: 从 GitHub 同步 Codex 模型端点客户端版本
+- 23:54 fix: ISSUE-I005：隐藏未配置凭据的 Bedrock 模型

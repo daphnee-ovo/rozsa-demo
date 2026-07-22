@@ -12,6 +12,7 @@ use rozsa_app::permissions::{
 use rozsa_app::resources::ResourceLoader;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
+use rozsa_app::tools::AskUserQuestionRequest;
 use rozsa_core::events::AgentEvent;
 
 use crate::args::Args;
@@ -118,8 +119,8 @@ pub async fn run(args: &Args) -> Result<()> {
     let session_dir = agent_dir.join("sessions").join(format!("-{cwd_encoded}-"));
     std::fs::create_dir_all(&session_dir)?;
 
-    // Resolve only a session locator for GUI startup. The GUI owns creating
-    // its initial SessionManager and AgentSession through its own factory.
+    // Resolve the parent session path for GUI or direct continuation. The
+    // consumer copies the parent's persisted context into the new branch.
     let initial_parent_session = if args.continue_session {
         // Find the most recent session file
         let mut entries: Vec<_> = std::fs::read_dir(&session_dir)?
@@ -136,12 +137,7 @@ pub async fn run(args: &Args) -> Result<()> {
 
         if let Some(last_entry) = entries.last() {
             let path = last_entry.path();
-            let old_session_id = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
-            Some(old_session_id)
+            Some(path.to_string_lossy().to_string())
         } else {
             anyhow::bail!("No previous session found to continue");
         }
@@ -151,7 +147,7 @@ pub async fn run(args: &Args) -> Result<()> {
         if !existing_path.exists() {
             anyhow::bail!("Session {} not found", resume_id);
         }
-        Some(resume_id.clone())
+        Some(existing_path.to_string_lossy().to_string())
     } else {
         None
     };
@@ -210,6 +206,8 @@ pub async fn run(args: &Args) -> Result<()> {
     let pending_approvals: PendingApprovals = Arc::new(DashMap::new());
     let (perm_req_tx, perm_req_rx) =
         tokio::sync::mpsc::unbounded_channel::<rozsa_gui::state::PermissionRequest>();
+    let (question_req_tx, question_req_rx) =
+        tokio::sync::mpsc::unbounded_channel::<AskUserQuestionRequest>();
 
     let pre_tool_use_factory: rozsa_gui::state::PreToolUseHookFactory = {
         let controller = permission_controller.clone();
@@ -329,6 +327,8 @@ pub async fn run(args: &Args) -> Result<()> {
             global_settings_path: Some(global_settings_path),
             pending_approvals: Some(pending_approvals),
             permission_request_rx: Some(perm_req_rx),
+            question_request_tx: Some(question_req_tx),
+            question_request_rx: Some(question_req_rx),
             permission_controller,
             pre_tool_use_factory: Some(pre_tool_use_factory),
             system_prompt,
@@ -340,12 +340,16 @@ pub async fn run(args: &Args) -> Result<()> {
 
     let session_id = uuid::Uuid::new_v4().to_string();
     let session_path = session_dir.join(format!("{session_id}.jsonl"));
-    let session_manager = SessionManager::create_lazy(
+    let parent_session = initial_parent_session.clone();
+    let mut session_manager = SessionManager::create_lazy(
         &session_path,
         session_id.clone(),
         cwd.to_string_lossy().to_string(),
         initial_parent_session,
     );
+    if let Some(parent_path) = parent_session {
+        session_manager.copy_context_messages_from_path(parent_path)?;
+    }
 
     let config = AgentSessionConfig {
         model,

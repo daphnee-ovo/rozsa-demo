@@ -70,6 +70,8 @@ NVIDIA model discovery note:
 Provider availability (auth check):
 
 - Rust `ModelRegistry::provider_available()` checks whether each provider has configured credentials via environment variables (using `env_keys::get_env_api_key`) or via `models.json` `apiKey` field (literal value, env var reference, or `!command` marker).
+- On GUI startup, Rózsa asynchronously refreshes the `codex-oauth` model catalog only when persisted OAuth credentials include a ChatGPT account ID and a resolvable access token. The refresh uses the 24-hour cache in `refresh_models_if_needed`; when the refreshed registry differs from the in-memory registry, Rózsa atomically replaces it and emits `models-updated` so the model selector rerenders without restarting.
+- The ChatGPT models endpoint requires a `client_version` query parameter with Codex CLI version semantics. Rózsa pins `CODEX_MODELS_CLIENT_VERSION` to the stable `major.minor.patch` portion of the newest Codex release tag, rather than sending the unrelated Rózsa package version. Run `./devtools/sync-codex-model-client-version.sh` to query `openai/codex` GitHub tags directly and update the constant, or add `--check` in verification-only workflows.
 - The bridge response includes `providerAvailable: Record<provider, {configured, source}>` alongside the full model list.
 - TypeScript `ModelRegistry.hasConfiguredAuth()` uses the Rust-provided `providerAvailable` for API key auth, and separately checks TS-managed OAuth tokens (`AuthStorage`). A model is available if either path reports configured.
 - When `ROZSA_MODEL_REGISTRY_BACKEND=ts`, Rust is not invoked and the TS side uses its original env var + models.json check logic.

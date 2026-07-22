@@ -1,3 +1,82 @@
+// FrameworkTree
+// agent_session.rs
+// ├── struct AgentSessionConfig
+// ├── struct StaticConfig
+// ├── struct RuntimeParams
+// ├── struct AgentSession
+// ├── impl AgentSession
+// ├── new()
+// ├── register_extension()
+// ├── skill_registry()
+// ├── reload_skills()
+// ├── subscribe()
+// ├── register_tool()
+// ├── register_default_tools()
+// ├── register_default_tools_with_question_sender()
+// ├── prompt()
+// ├── prompt_with_prefix_blocks()
+// ├── continue_session()
+// ├── drain_and_broadcast()
+// ├── abort()
+// ├── is_running()
+// ├── messages()
+// ├── reload_messages_from_session()
+// ├── subagent_manager()
+// ├── subagent_manager_try_lock()
+// ├── viewing_subagent_id()
+// ├── viewing_subagent_id_try_lock()
+// ├── set_viewing_subagent()
+// ├── session_manager()
+// ├── switch_session()
+// ├── settings_manager()
+// ├── cwd()
+// ├── current_cwd()
+// ├── thinking_level()
+// ├── model()
+// ├── set_model()
+// ├── set_thinking_level()
+// ├── show_images()
+// ├── hide_thinking()
+// ├── is_initial_session_name_candidate()
+// ├── generate_session_name()
+// ├── persist_generated_session_name()
+// ├── is_compacting()
+// ├── compact()
+// ├── compact_inner()
+// ├── maybe_auto_compact()
+// ├── latest_context_tokens()
+// ├── runtime_state_snapshot()
+// ├── cycle_edit_mode()
+// ├── steer()
+// ├── follow_up()
+// ├── pending_messages()
+// ├── execute_bash()
+// ├── expand_skill_command()
+// ├── build_agent_context()
+// ├── build_loop_config()
+// ├── persist_new_messages()
+// ├── should_persist_loop_message()
+// ├── persisted_user_message_count()
+// ├── clean_generated_session_name()
+// ├── direct_session_name()
+// ├── skill_command_tokens()
+// ├── convert_to_llm()
+// ├── should_stop_for_compaction()
+// ├── usage_context_tokens()
+// ├── default_model_stream()
+// ├── struct ResolvedCredentials
+// ├── resolve_credentials()
+// ├── oauth_auth_provider_id()
+// ├── is_oauth_custom_provider()
+// ├── oauth_request_headers()
+// ├── merge_headers()
+// ├── current_timestamp_ms()
+// ├── mod tests
+// ├── auth_json_provider_gate_only_allows_oauth_providers()
+// ├── codex_oauth_headers_require_account_id()
+// ├── finds_multiple_skill_command_tokens()
+// └── prompted_user_message_is_not_persisted_twice_at_agent_end()
+
 // File: agent_session.rs
 //
 // Internal Framework:
@@ -47,8 +126,9 @@ use crate::resources::LoadedResources;
 use crate::session::manager::SessionManager;
 use crate::settings::SettingsManager;
 use crate::tools::{
-    create_bash_tool_with_session, create_edit_tool, create_find_tool, create_grep_tool,
-    create_ls_tool, create_read_tool, create_subagent_tool, create_write_tool,
+    AskUserQuestionRequestSender, create_ask_user_question_tool, create_bash_tool_with_session,
+    create_edit_tool, create_find_tool, create_grep_tool, create_ls_tool, create_read_tool,
+    create_subagent_tool, create_write_tool,
 };
 
 /// Configuration bundle for creating an AgentSession.
@@ -182,6 +262,11 @@ impl AgentSession {
             pre_tool_use,
             model_stream,
         } = config;
+        let restored_messages = session_manager
+            .context_messages()
+            .into_iter()
+            .map(AgentMessage::standard)
+            .collect::<Vec<_>>();
         let session_manager_id = session_manager.session_id().to_string();
         let session_manager_file = Some(session_manager.session_file().to_path_buf());
         let session_manager = Arc::new(Mutex::new(session_manager));
@@ -244,7 +329,7 @@ impl AgentSession {
             tools: tools_arc,
             cancel_token: Mutex::new(None),
             is_running: AtomicBool::new(false),
-            messages: Mutex::new(Vec::new()),
+            messages: Mutex::new(restored_messages),
             event_tx,
             is_compacting: AtomicBool::new(false),
             runtime_state: Arc::new(tokio::sync::Mutex::new(
@@ -294,6 +379,17 @@ impl AgentSession {
 
     /// Register the default built-in tools (read, write, edit, bash, ls, grep, find, subagent).
     pub async fn register_default_tools(&self, cwd: &Path) {
+        self.register_default_tools_with_question_sender(cwd, None)
+            .await;
+    }
+
+    /// Register built-in tools and, when an interactive frontend is available,
+    /// the session-scoped askUserQuestion tool.
+    pub async fn register_default_tools_with_question_sender(
+        &self,
+        cwd: &Path,
+        question: Option<(String, AskUserQuestionRequestSender)>,
+    ) {
         let defaults: Vec<Box<dyn Tool>> = vec![
             create_read_tool(),
             create_write_tool(),
@@ -308,6 +404,10 @@ impl AgentSession {
             create_find_tool(),
             create_subagent_tool(self.subagent_manager.clone()),
         ];
+        let mut defaults = defaults;
+        if let Some((session_id, request_tx)) = question {
+            defaults.push(create_ask_user_question_tool(session_id, request_tx));
+        }
         let mut tools = self.tools.lock().await;
         for tool in defaults {
             tools.push(Arc::from(tool));
@@ -488,6 +588,23 @@ impl AgentSession {
         self.messages.lock().await.clone()
     }
 
+    /// Rebuild the in-memory conversation from the current session branch.
+    ///
+    /// GUI fork setup appends the selected history after constructing the
+    /// AgentSession, so it must explicitly synchronize the agent before the
+    /// first prompt.
+    pub async fn reload_messages_from_session(&self) {
+        let restored_messages = self
+            .session_manager
+            .lock()
+            .await
+            .context_messages()
+            .into_iter()
+            .map(AgentMessage::standard)
+            .collect();
+        *self.messages.lock().await = restored_messages;
+    }
+
     /// Access the subagent manager (lock-guarded).
     pub async fn subagent_manager(
         &self,
@@ -530,20 +647,25 @@ impl AgentSession {
     }
 
     /// Switch to a different session file. Replaces the internal SessionManager
-    /// and clears conversation history. Returns the old session path.
+    /// and loads that branch's persisted conversation history. Returns the old
+    /// session path.
     pub async fn switch_session(
         &self,
         path: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<String> {
         let new_mgr = SessionManager::open(&path)?;
+        let restored_messages = new_mgr
+            .context_messages()
+            .into_iter()
+            .map(AgentMessage::standard)
+            .collect();
         let mut mgr = self.session_manager.lock().await;
         let new_cwd = PathBuf::from(new_mgr.cwd());
         let old_path = mgr.session_file().to_string_lossy().to_string();
         *mgr = new_mgr;
         drop(mgr);
         *self.current_cwd.lock().await = new_cwd;
-        // Clear in-memory conversation — the new session has its own history.
-        self.messages.lock().await.clear();
+        *self.messages.lock().await = restored_messages;
         Ok(old_path)
     }
 

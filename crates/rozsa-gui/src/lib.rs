@@ -1,3 +1,20 @@
+// FrameworkTree
+// lib.rs
+// ├── mod commands
+// ├── mod events
+// ├── mod file_refs
+// ├── mod git_diff
+// ├── mod inspector
+// ├── mod native_split_view
+// ├── mod native_titlebar
+// ├── mod scene_router
+// ├── mod state
+// ├── mod turn_diff
+// ├── struct GuiConfig
+// ├── native_sidebar_collapsed()
+// ├── set_native_sidebar_overlay_visible()
+// └── run()
+
 // File: lib.rs
 //
 // rozsa-gui 入口。多会话架构：每个 session tab 有独立的 agent backend（懒加载）。
@@ -17,18 +34,19 @@ pub mod turn_diff;
 
 pub use git_diff::read_workspace_diff;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::PendingApprovals;
 use rozsa_app::settings::SettingsManager;
+use rozsa_app::tools::{AskUserQuestionRequest, AskUserQuestionRequestSender};
 use rozsa_model::types::{Model, ThinkingLevel};
 use tauri::{Emitter, Manager};
 
 use state::{
     GuiState, PermissionRequest, PreToolUseHookFactory, SessionTab, SharedResources,
-    deny_pending_approvals,
+    cancel_pending_user_questions, deny_pending_approvals,
 };
 
 pub struct GuiConfig {
@@ -44,6 +62,8 @@ pub struct GuiConfig {
     pub pending_approvals: Option<PendingApprovals>,
     pub permission_controller: Arc<rozsa_app::permissions::PermissionController>,
     pub permission_request_rx: Option<tokio::sync::mpsc::UnboundedReceiver<PermissionRequest>>,
+    pub question_request_tx: Option<AskUserQuestionRequestSender>,
+    pub question_request_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AskUserQuestionRequest>>,
     pub pre_tool_use_factory: Option<PreToolUseHookFactory>,
     pub system_prompt: String,
     pub resources: rozsa_app::resources::LoadedResources,
@@ -85,20 +105,30 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         model: tokio::sync::Mutex::new(config.model),
         thinking_level: tokio::sync::Mutex::new(config.thinking_level),
         pre_tool_use_factory: config.pre_tool_use_factory,
+        question_request_tx: config.question_request_tx,
         model_stream: None,
     });
     let initial_session_dir = config.session_dir.clone();
-    let initial = shared
-        .create_new_agent(&initial_session_dir, config.initial_parent_session)
-        .await
-        .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+    let initial = match config.initial_parent_session.as_deref() {
+        Some(parent_session) => {
+            shared
+                .create_continued_agent(&initial_session_dir, Path::new(parent_session))
+                .await
+        }
+        None => shared.create_new_agent(&initial_session_dir, None).await,
+    }
+    .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
     let initial_session_id = initial.id.clone();
+    let initial_messages = initial.agent.messages().await;
 
     // 初始 tab 与后续新建 tab 都由同一个 GUI factory 创建。
     let initial_tab = SessionTab::Active {
         path: initial.path,
         agent: Arc::new(initial.agent),
-        live: state::LiveState::default(),
+        live: state::LiveState {
+            messages: initial_messages,
+            ..state::LiveState::default()
+        },
     };
 
     let gui_state = GuiState {
@@ -106,10 +136,13 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         tabs: Arc::new(tokio::sync::Mutex::new(vec![initial_tab])),
         active_tab: Arc::new(tokio::sync::Mutex::new(0)),
         shared,
-        model_registry: config.model_registry,
+        model_registry: config
+            .model_registry
+            .map(|registry| Arc::new(std::sync::RwLock::new((*registry).clone()))),
         session_dir: Some(config.session_dir),
         pending_approvals: config.pending_approvals,
         pending_permission_contexts: Arc::new(dashmap::DashMap::new()),
+        pending_user_questions: Arc::new(dashmap::DashMap::new()),
         permission_controller: config.permission_controller,
         global_settings_path: config.global_settings_path,
         runtime_settings: Arc::new(tokio::sync::Mutex::new(runtime_settings)),
@@ -117,6 +150,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let perm_rx = config.permission_request_rx;
+    let question_rx = config.question_request_rx;
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -136,6 +170,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::switch_session,
             commands::new_session,
             commands::respond_permission,
+            commands::respond_user_question,
             commands::prepare_permission,
             commands::get_settings,
             commands::update_setting,
@@ -225,6 +260,8 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 let pending_approvals = app.state::<GuiState>().pending_approvals.clone();
+                let pending_user_questions =
+                    app.state::<GuiState>().pending_user_questions.clone();
                 window.on_window_event(move |event| {
                     if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
                         #[cfg(target_os = "macos")]
@@ -242,6 +279,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
                         if let Some(approvals) = &pending_approvals {
                             deny_pending_approvals(approvals, None);
                         }
+                        cancel_pending_user_questions(&pending_user_questions, None);
                     }
                 });
             }
@@ -254,10 +292,14 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
                 initial_session_id.clone(),
                 gui.inner().clone(),
             );
+            commands::spawn_codex_oauth_model_refresh(handle.clone(), gui.inner().clone());
 
             // 权限请求监听
             if let Some(rx) = perm_rx {
                 events::spawn_permission_listener(handle, rx);
+            }
+            if let Some(rx) = question_rx {
+                events::spawn_user_question_listener(app.handle().clone(), rx);
             }
 
             Ok(())

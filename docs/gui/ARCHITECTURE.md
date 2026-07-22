@@ -55,11 +55,12 @@ crates/rozsa-gui/
 - **会话管理**：`AgentSession` 持有对话历史、工具执行器、权限系统。
 - **模型注册**：`ModelRegistry` 存储可用模型列表，支持运行时切换。
 - **权限审批**：`PendingApprovals` (DashMap) 持有待审批请求，`permission_request_rx` 接收新请求。
+- **Agent 提问**：`PendingUserQuestions` (DashMap) 持有 `askUserQuestion` 的待回答请求，`question_request_rx` 接收新请求。
 - **状态共享**：`GuiState` 包装上述资源，通过 `tauri::State` 注入到 IPC 命令。
 
 核心类型：
 
-- `GuiConfig`：外部注入配置，包含 `session`, `model_registry`, `session_dir`, `pending_approvals`, `permission_request_rx`。
+- `GuiConfig`：外部注入配置，包含 `session`, `model_registry`, `session_dir`, `pending_approvals`, `permission_request_rx` 和 `question_request_rx`。
 - `GuiState`：Tauri managed state，所有 IPC 命令通过 `State<'_, GuiState>` 访问。
 
 ### 3.2 Tauri IPC 层
@@ -76,14 +77,14 @@ crates/rozsa-gui/
 
 前端文件：
 
-- `frontend/index.html` + `app.js`：持久 main WebView。Main scene 承载 chat/composer/permission；Settings scene 承载当前 settings pane。
+- `frontend/index.html` + `app.js`：持久 main WebView。Main scene 承载 chat/composer/permission/question；Settings scene 承载当前 settings pane。
 - `frontend/sidebar.html` + `sidebar.js`：持久 sidebar WebView。Main scene 承载 session/status；Settings scene 承载 settings navigation。
 - `frontend/gui_shared.js`：两个 WebView 共用的 scene/theme revision 应用规则。
 
 前端职责：
 
-- 渲染聊天流、工具调用、权限面板、设置面板。
-- main WebView 监听 `ui-state`、`tool-event` 和 `permission-request`，逐步更新 UI。
+- 渲染聊天流、工具调用、权限面板、agent question 面板、设置面板。
+- main WebView 监听 `ui-state`、`tool-event`、`permission-request` 和 `question-request`，逐步更新 UI。
 - 按 session 保存 draft、selection、scroll、展开状态和 permission UI progress。
 
 ### 3.4 macOS 原生 split 与 scene
@@ -124,6 +125,7 @@ NSWindow
 | `new_session` | - | `string` | 创建新会话并返回 ID |
 | `approve_permission` | `{ requestId: string }` | `()` | 批准权限请求 |
 | `deny_permission` | `{ requestId: string }` | `()` | 拒绝权限请求 |
+| `respond_user_question` | `{ sessionId: string, id: string, answers: object }` | `()` | 提交 `askUserQuestion` 的单选/多选结果 |
 | `get_settings` | - | `JsonValue` | 获取当前设置（从 `AgentSession.settings_manager()` 读取） |
 | `update_settings` | `{ key: string, value: JsonValue }` | `()` | 更新单个设置项（目前支持 `thinking_enabled` / `model`） |
 
@@ -137,6 +139,7 @@ NSWindow
 | `ui-state` | `main` | active session 的消息与流式 UI snapshot |
 | `tool-event` | `main` | tool 生命周期 |
 | `permission-request` | `main` | 权限审批请求 |
+| `question-request` | `main` | `askUserQuestion` 的问题、选项和 request 标识 |
 | `sidebar-state` | `sidebar` | session/status/git/quota/actions 完整 snapshot |
 | `theme-state` | native host，再到 `main` + `sidebar` | 原生 backing 先更新，再发布同 revision 完整 theme snapshot |
 
@@ -152,6 +155,16 @@ NSWindow
 4. 前端调用 `approve_permission(requestId)` 或 `deny_permission(requestId)`。
 5. 后端从 `PendingApprovals` (DashMap) 中取出对应的 oneshot sender，发送 `PermissionResponse::Allow` 或 `Deny`。
 6. Agent loop 收到响应，继续执行或回退。
+
+### 4.4 Agent question 事件流
+
+`askUserQuestion` 是强制可用的交互工具；它只有在 GUI 注入 question channel 时注册。它仍然经过 `PermissionController`，但在默认 `allowed_tools` 白名单中，因此不会产生 permission request；显式 `permission.deny` / `permission.ask` 规则仍可覆盖默认允许。每个问题在 GUI 中始终附带 `Other` 自定义输入项，agent-facing schema 不提供关闭该项的开关。
+
+1. Agent tool 校验 `questions`，为本次调用创建 request ID，并通过 `question_request_tx` 发送问题与 oneshot sender。
+2. `events.rs::spawn_user_question_listener()` 将请求放入按 `session_id + request_id` 隔离的 `PendingUserQuestions`，再向 main WebView 发送 `question-request`。
+3. 前端按页显示问题；单选返回一个字符串，多选返回字符串数组；自定义输入直接作为答案值。
+4. 前端调用 `respond_user_question(sessionId, id, answers)`，后端校验问题数量、单/多选形状并原子移除 pending request。
+5. Agent tool 收到 `Answered` 后返回 `{"answers": ...}`；窗口关闭、abort、session 删除或 channel 断开则返回取消/错误，不伪造答案。
 
 ## 5. 状态管理
 
@@ -213,6 +226,10 @@ class SessionStore {
 6. 后端从 `PendingApprovals` 中 `remove(request_id)`，取出 `oneshot_tx` 并发送响应。
 7. Agent 收到响应，继续或中止工具执行。
 
+### 5.4 Agent question 状态（PendingUserQuestions）
+
+`PendingUserQuestions` 是按 `session_id + request_id` 索引的 `Arc<DashMap<...>>`，值包含问题定义和 `oneshot::Sender<AskUserQuestionResponse>`。响应命令只允许消费一次 pending request；取消和窗口关闭按 session 清理，避免后台 session 的问题覆盖当前 tab。
+
 ## 6. 流式响应机制
 
 ### 6.1 Agent 事件流
@@ -267,6 +284,7 @@ main WebView 分别监听定向事件：
 window.__TAURI__.event.listen("ui-state", event => renderState(event.payload));
 window.__TAURI__.event.listen("tool-event", event => handleToolEvent(event.payload));
 window.__TAURI__.event.listen("permission-request", event => showPermission(event.payload));
+window.__TAURI__.event.listen("question-request", event => showUserQuestion(event.payload));
 ```
 
 ## 7. 权限系统集成
