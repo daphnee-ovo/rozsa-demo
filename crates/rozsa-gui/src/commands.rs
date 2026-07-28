@@ -574,7 +574,7 @@ pub async fn dispatch_slash_command(
             );
         }
         "login" => {
-            let message = auth_login(app.clone()).await?;
+            let message = auth_login(state, app.clone()).await?;
             emit_info(&app, &message);
             return slash_action("refreshModels");
         }
@@ -1556,13 +1556,17 @@ async fn emit_theme_state(state: &State<'_, GuiState>, app: &AppHandle) -> Resul
 
 pub(crate) fn spawn_codex_oauth_model_refresh(app: AppHandle, state: GuiState) {
     tokio::spawn(async move {
-        if let Err(error) = refresh_codex_oauth_models(&app, &state).await {
+        if let Err(error) = refresh_codex_oauth_models(&app, &state, false).await {
             eprintln!("[rozsa-gui][models] codex-oauth refresh failed: {error}");
         }
     });
 }
 
-async fn refresh_codex_oauth_models(app: &AppHandle, state: &GuiState) -> Result<(), String> {
+async fn refresh_codex_oauth_models(
+    app: &AppHandle,
+    state: &GuiState,
+    force: bool,
+) -> Result<(), String> {
     let models_dir = models_dir()?;
     let auth_path = models_dir.join("auth.json");
     let auth_path_text = auth_path.to_string_lossy();
@@ -1585,7 +1589,7 @@ async fn refresh_codex_oauth_models(app: &AppHandle, state: &GuiState) -> Result
         &config_path,
         &access_token,
         &account_id,
-        false,
+        force,
     )
     .await
     .map_err(|error| error.to_string())?;
@@ -1689,7 +1693,7 @@ pub async fn switch_model(state: State<'_, GuiState>, model_id: String) -> Resul
 // --- 认证 ---
 
 #[tauri::command]
-pub async fn auth_login(app: AppHandle) -> Result<String, String> {
+pub async fn auth_login(state: State<'_, GuiState>, app: AppHandle) -> Result<String, String> {
     use rozsa_model::credentials::store_oauth_credentials;
     use rozsa_model::oauth::openai_codex;
     use rozsa_model::oauth::types::OAuthFlowEvent;
@@ -1735,6 +1739,7 @@ pub async fn auth_login(app: AppHandle) -> Result<String, String> {
                 &credentials,
             )?;
             ensure_codex_oauth_models_config(&models_dir)?;
+            refresh_codex_oauth_models(&app, state.inner(), true).await?;
             Ok("codex-oauth login successful.".to_string())
         }
         Ok(Err(e)) => Err(format!("Login failed: {e}")),
