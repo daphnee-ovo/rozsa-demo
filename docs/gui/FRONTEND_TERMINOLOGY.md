@@ -437,7 +437,8 @@ message editor                                  #msgInput.rich-input
 
 ## 13. Settings 控件全量术语
 
-Settings 的截图只展示了 Appearance 页面的一部分。当前页面还有 General、Models、Permissions、Tools 四个 pane，以及大量条件状态和真实表单控件。
+Settings pane 的固定顺序是 Skills、Tools、Extensions、General、Appearance、Keyboard
+shortcuts。Models 与 Permissions 是 General 内的 settings group，不再是独立 pane。
 
 ```text
 settings scene
@@ -467,7 +468,7 @@ settings scene
 | `settings workspace` | 设置工作区 | main WebView 内组织 settings content | `.settings-workspace` |
 | `settings navigation` | 设置导航 | sidebar WebView 中的 pane 切换入口 | `#settingsSidebarScene [data-settings-pane]` |
 | `back action` | 返回应用操作 | 请求切回 Main scene | `.settings-back`；`closeSidebarSettings()` |
-| `settings tab` | 设置页签 | 切换 Appearance、General、Models、Permissions、Tools、Keyboard shortcuts | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
+| `settings tab` | 设置页签 | 按固定顺序切换 Skills、Tools、Extensions、General、Appearance、Keyboard shortcuts | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
 | `settings content` | 设置内容区 | 承载当前 pane 的滚动内容 | `.settings-content` |
 | `settings pane` | 设置页面 | 一个完整的 Settings 分类页面 | `.settings-pane`、`#pane-*`；`renderSettingsPane()` |
 | `pane title` | 页面标题 | 当前 pane 的标题 | `.settings-pane-title` |
@@ -478,6 +479,11 @@ settings scene
 | `setting control` | 设置控件 | select、input、range、color picker 或 switch | `.setting-select`、`.setting-input`、`.setting-toggle` |
 | `setting value` | 设置值 | 只读的 provider、context 或 shortcut 值 | `.setting-value` |
 | `close action` | 关闭操作 | 请求切回 Main scene | `.settings-close`；`closeSettings()` |
+
+Skills 与 Tools pane 中的 `capability scope` 是 Global/Project 子页；
+`capability override` 有 inherit/enabled/disabled 三态。Extensions pane 只使用
+`empty settings state` 说明功能预留。General 的 Models、Permissions、AI 和 Network
+group 只展示已经接到 `update_setting` 的控件。
 
 ### 13.2 Appearance pane
 
@@ -504,7 +510,7 @@ settings scene
 | `save custom theme action` | 保存自定义主题操作 | 将当前主题保存为 custom theme | `.appearance-theme-actions button`；`saveThemeAsCustom()` |
 | `theme note` | 主题说明 | 补充 custom theme 的存储位置说明 | `.appearance-theme-note` |
 
-### 13.3 General、Models、Permissions、Tools panes
+### 13.3 General、Skills、Tools、Extensions panes
 
 | 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
 | --- | --- | --- | --- |
@@ -518,18 +524,18 @@ settings scene
 | `block images switch` | 阻止图片开关 | 控制 Markdown 图片是否被阻止 | `#settingsBlockImages` |
 | `network settings group` | 网络设置分组 | 承载传输方式配置 | `#pane-general` 的 `Network` group |
 | `transport selector` | 传输方式选择器 | 选择 Auto、SSE 或 WebSocket | `#settingsTransport` |
-| `models pane` | 模型页面 | 查看和切换当前模型、provider、context window | `#pane-models` |
+| `models settings group` | 模型设置分组 | 查看和切换当前模型、provider、context window | `#pane-general` |
 | `model setting selector` | 模型设置选择器 | 在 Settings 中切换模型 | `#settingsModelSelect`；`onModelChange()` |
 | `small model selector` | 小模型选择器 | 为长输入的 session title 请求选择低成本模型；请求固定使用 Low reasoning，Disabled 时只使用本地短标题和 preview fallback | `#settingsSmallModelSelect`；`saveSetting('small_model', ...)` |
 | `provider value` | Provider 值 | 展示当前模型提供方 | `#settingsProvider` |
 | `context window value` | 上下文窗口值 | 展示当前模型的 context window | `#settingsContextWindow` |
-| `permissions pane` | 权限页面 | 配置 permission mode 和自动批准规则 | `#pane-permissions` |
+| `permissions settings group` | 权限设置分组 | 配置 permission mode 和规则列表 | `#pane-general` |
 | `permission mode selector` | 权限模式选择器 | 选择 auto-approve、on-request 或 yolo | `#settingsPermMode` |
-| `auto-approve rules group` | 自动批准规则分组 | 展示已配置的自动批准模式 | `#settingsAutoApprove`；`renderSettingsPane()` |
-| `auto-approve pattern row` | 自动批准规则行 | 展示单条 pattern | `#settingsAutoApprove .setting-item` |
-| `tools pane` | 工具页面 | 展示已注册工具 | `#pane-tools` |
-| `registered tools group` | 已注册工具分组 | 承载工具列表标题和动态内容 | `#settingsToolList` |
-| `tool list item` | 工具列表项 | 展示单个 registered tool 的状态或说明 | `#settingsToolList` 动态子项 |
+| `capability scope` | 能力配置层 | 切换 Global 或 Project | `.capability-scope` |
+| `capability override` | 能力覆盖状态 | 选择 inherit、enabled 或 disabled | `.capability-row .setting-select` |
+| `skills pane` | Skills 页面 | 展示分层发现的 skills | `#pane-skills`；`#settingsSkillList` |
+| `tools pane` | Tools 页面 | 展示实际 registered tools | `#pane-tools`；`#settingsToolList` |
+| `extensions pane` | Extensions 预留页 | 明确说明尚未实现 | `#pane-extensions` |
 
 ### 13.4 Keyboard shortcuts pane
 

@@ -1,6 +1,45 @@
+// FrameworkTree
+// tool.rs
+// ├── struct ToolMetadata
+// ├── impl ToolMetadata
+// ├── from_tool()
+// ├── tool_metadata()
+// ├── enum ToolExecutionMode
+// ├── struct ToolResult
+// ├── enum ToolError
+// ├── trait Tool
+// ├── prepare_arguments()
+// └── execution_mode()
+
 use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
+
+/// Stable, serializable metadata derived from a concrete registered tool.
+///
+/// Frontends consume this shape instead of maintaining a second hard-coded
+/// catalog that can drift from the tools available to the agent loop.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolMetadata {
+    pub name: String,
+    pub label: String,
+    pub description: String,
+}
+
+impl ToolMetadata {
+    pub fn from_tool(tool: &dyn Tool) -> Self {
+        Self {
+            name: tool.name().to_owned(),
+            label: tool.label().to_owned(),
+            description: tool.description().to_owned(),
+        }
+    }
+}
+
+pub fn tool_metadata<'a>(tools: impl IntoIterator<Item = &'a dyn Tool>) -> Vec<ToolMetadata> {
+    tools.into_iter().map(ToolMetadata::from_tool).collect()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -1,3 +1,13 @@
+// FrameworkTree
+// merge.rs
+// ├── merge_settings()
+// ├── merge_capabilities()
+// ├── merge_appearance()
+// ├── merge_compaction()
+// ├── merge_retry()
+// ├── merge_permissions()
+// └── merge_rule_list()
+
 use super::schema::{
     AppearanceSettings, CompactionSettings, PartialAppearanceSettings, PartialCompactionSettings,
     PartialPermissionSettings, PartialRetrySettings, PartialSettings, PermissionSettings,
@@ -22,8 +32,7 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
             .or_else(|| base.small_model.clone()),
         default_thinking_level: overlay
             .default_thinking_level
-            .clone()
-            .or_else(|| base.default_thinking_level.clone()),
+            .or(base.default_thinking_level),
         compaction: merge_compaction(&base.compaction, overlay.compaction.as_ref()),
         retry: merge_retry(&base.retry, overlay.retry.as_ref()),
         transport: overlay
@@ -56,8 +65,25 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
             .lsp_mode
             .clone()
             .unwrap_or_else(|| base.lsp_mode.clone()),
+        tools: merge_capabilities(&base.tools, overlay.tools.as_ref()),
+        skills: merge_capabilities(&base.skills, overlay.skills.as_ref()),
         appearance: merge_appearance(&base.appearance, overlay.appearance.as_ref()),
     }
+}
+
+fn merge_capabilities(
+    base: &std::collections::BTreeMap<String, bool>,
+    overlay: Option<&std::collections::BTreeMap<String, bool>>,
+) -> std::collections::BTreeMap<String, bool> {
+    let mut merged = base.clone();
+    if let Some(overlay) = overlay {
+        merged.extend(
+            overlay
+                .iter()
+                .map(|(name, enabled)| (name.clone(), *enabled)),
+        );
+    }
+    merged
 }
 
 fn merge_appearance(

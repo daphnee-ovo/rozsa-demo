@@ -1,3 +1,9 @@
+// FrameworkTree
+// mod.rs
+// ├── mod merge
+// ├── mod schema
+// └── mod storage
+
 pub mod merge;
 pub mod schema;
 pub mod storage;
@@ -6,4 +12,4 @@ pub use schema::{
     AppearanceSettings, CompactionSettings, PartialSettings, PermissionSettings, RetrySettings,
     Settings,
 };
-pub use storage::SettingsManager;
+pub use storage::{CapabilityKind, SettingsManager, SettingsScope};

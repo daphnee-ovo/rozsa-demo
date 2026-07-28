@@ -7,6 +7,7 @@ use std::sync::Arc;
 use rozsa_app::subagent::SubagentStatus;
 use rozsa_app::subagent::manager::{SharedResources, SpawnConfig, SubagentManager};
 use rozsa_app::subagent::scope::SubagentScope;
+use rozsa_app::tools::create_read_tool;
 use rozsa_model::types::{Api, InputModality, Model, ModelCost, Provider, ThinkingLevel};
 use tokio::sync::Mutex;
 
@@ -42,6 +43,7 @@ fn make_manager() -> SubagentManager {
                 .collect()
         }),
         main_tools: Arc::new(Mutex::new(Vec::new())),
+        tool_settings: Arc::new(std::sync::RwLock::new(Default::default())),
         main_model: dummy_model(),
         main_thinking_level: ThinkingLevel::Off,
         cwd: PathBuf::from("/tmp"),
@@ -129,4 +131,41 @@ async fn snapshot_returns_messages() {
     let snap = mgr.snapshot(&info.id).await.expect("snapshot");
     assert_eq!(snap.info.id, info.id);
     assert!(snap.messages.is_empty());
+}
+
+#[tokio::test]
+async fn disabled_main_tools_are_not_inherited_by_subagents() {
+    let shared = SharedResources {
+        model_stream: Arc::new(|m, c, o| rozsa_model::stream::stream_simple(m, c, o)),
+        convert_to_llm: Arc::new(|messages| {
+            messages
+                .iter()
+                .filter_map(|message| message.as_standard().cloned())
+                .collect()
+        }),
+        main_tools: Arc::new(Mutex::new(vec![Arc::from(create_read_tool())])),
+        tool_settings: Arc::new(std::sync::RwLock::new(
+            [("read".to_owned(), false)].into_iter().collect(),
+        )),
+        main_model: dummy_model(),
+        main_thinking_level: ThinkingLevel::Off,
+        cwd: PathBuf::from("/tmp"),
+        session_dir: None,
+        main_session_uuid: "test-session".to_owned(),
+        main_session_file: None,
+        permission_hook: None,
+    };
+    let mut manager = SubagentManager::new(shared);
+    let info = manager
+        .spawn(SpawnConfig {
+            name: None,
+            system_prompt: "test".to_owned(),
+            model: None,
+            thinking_level: None,
+            scope: SubagentScope::inherit(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(manager.tool_names(&info.id).await, Some(Vec::new()));
 }

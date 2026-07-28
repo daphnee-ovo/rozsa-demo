@@ -431,9 +431,20 @@ ls "${ROZSA_CONFIG_DIR:-$HOME/.rozsa}/sessions/"
   "permissions": {
     "mode": "OnRequest",  // 或 "Auto", "Free"
     "auto_approve_patterns": ["Bash:read_*", "Read"]
+  },
+  "tools": {
+    "bash": false
+  },
+  "skills": {
+    "release-check": true
   }
 }
 ```
+
+`tools` 与 `skills` 是按名称合并的布尔映射：项目
+`ROZSA_PROJECT_CONFIG_DIR/settings.json` 只覆盖它声明的名称，未声明项继承全局层，
+两层都未声明时默认启用。新 session 自动读取最新配置；已有 GUI session 使用
+`/reload` 重新加载。
 
 ---
 

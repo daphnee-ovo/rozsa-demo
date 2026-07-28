@@ -1,3 +1,26 @@
+// FrameworkTree
+// manager.rs
+// ├── struct SharedResources
+// ├── struct SpawnConfig
+// ├── struct SubagentSnapshot
+// ├── struct SubagentManager
+// ├── impl SubagentManager
+// ├── new()
+// ├── active_count()
+// ├── spawn()
+// ├── send()
+// ├── wait()
+// ├── abort()
+// ├── list()
+// ├── tool_names()
+// ├── list_sync()
+// ├── get_messages()
+// ├── snapshot()
+// ├── build_loop_config()
+// ├── drain_subagent_stream()
+// ├── resolve_api_key()
+// └── current_timestamp_ms()
+
 // File: subagent/manager.rs
 //
 // SubagentManager — spawns, sends, waits, aborts subagents.
@@ -26,7 +49,7 @@
 // - [scope.rs](./scope.rs)
 // - [agent_session.rs](../agent_session.rs)
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -80,6 +103,7 @@ pub struct SharedResources {
     pub model_stream: ModelStreamArc,
     pub convert_to_llm: ConvertToLlmFn,
     pub main_tools: Arc<Mutex<Vec<Arc<dyn Tool>>>>,
+    pub tool_settings: Arc<std::sync::RwLock<BTreeMap<String, bool>>>,
     pub main_model: Model,
     pub main_thinking_level: ThinkingLevel,
     pub cwd: PathBuf,
@@ -160,8 +184,10 @@ impl SubagentManager {
 
         // Filter tools: exclude blocked, then apply scope whitelist.
         let main_tools_snapshot: Vec<Arc<dyn Tool>> = self.shared.main_tools.lock().await.clone();
+        let tool_settings = self.shared.tool_settings.read().unwrap().clone();
         let filtered_tools: Vec<Arc<dyn Tool>> = main_tools_snapshot
             .into_iter()
+            .filter(|tool| tool_settings.get(tool.name()).copied().unwrap_or(true))
             .filter(|t| !SUBAGENT_BLOCKED_TOOLS.contains(&t.name()))
             .filter(|t| match &config.scope.allowed_tools {
                 AllowedTools::All => true,
@@ -363,6 +389,19 @@ impl SubagentManager {
             out.push(guard.info.clone());
         }
         out
+    }
+
+    /// Return the effective tools captured by a spawned subagent.
+    pub async fn tool_names(&self, id: &str) -> Option<Vec<String>> {
+        let runtime = self.runtimes.get(id)?;
+        let runtime = runtime.lock().await;
+        Some(
+            runtime
+                .tools
+                .iter()
+                .map(|tool| tool.name().to_owned())
+                .collect(),
+        )
     }
 
     /// Synchronous best-effort listing — skips runtimes whose lock is currently held.

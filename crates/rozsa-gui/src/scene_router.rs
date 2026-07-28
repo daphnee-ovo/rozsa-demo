@@ -51,11 +51,11 @@ pub enum GuiScene {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SettingsPane {
-    Appearance,
-    General,
-    Models,
-    Permissions,
+    Skills,
     Tools,
+    Extensions,
+    General,
+    Appearance,
     #[serde(rename = "keyboard-shortcuts")]
     KeyboardShortcuts,
 }

@@ -390,6 +390,13 @@ thinking 展开。修改写入全局配置根目录的 `key_bindings.json`（默
 `~/.rozsa/key_bindings.json`）。权限、问题、自动补全和双击 Escape 等依赖
 当前交互状态的控制在页面中只读展示。
 
+Settings navigation 的固定顺序是 Skills、Tools、Extensions、General、Appearance、
+Keyboard shortcuts。Skills 和 Tools 都提供 Global/Project 子页；每项可设为继承、
+启用或禁用，分别写入对应配置根的 `settings.json`。项目项按名称覆盖全局项。
+这两类能力只在新 session 创建时重新装载；已有 session 使用 `/reload` 应用变更。
+Tools 列表必须来自实际注册的 core tool 元数据，不能由前端维护第二份静态清单。
+Extensions 是明确的预留页面，不得显示尚未实现的开关。
+
 ## 9. 实现约定
 
 权限配置文件格式：

@@ -1,6 +1,31 @@
+// FrameworkTree
+// mod.rs
+// ├── mod loader
+// ├── struct Skill
+// ├── impl Skill
+// ├── from()
+// ├── struct SkillRegistry
+// ├── impl SkillRegistry
+// ├── new()
+// ├── empty()
+// ├── load_from_defaults()
+// ├── load_from_defaults_with_diagnostics()
+// ├── load_from_roots()
+// ├── load_from_roots_with_settings()
+// ├── load_from_roots_with_settings_and_diagnostics()
+// ├── layered_dirs()
+// ├── find_by_name()
+// ├── list()
+// ├── is_empty()
+// ├── format_for_prompt()
+// ├── slash_command_names()
+// ├── filter_enabled()
+// ├── scope_priority()
+// └── format_skill_var_path()
+
 pub mod loader;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::config_paths::ConfigRoots;
@@ -82,7 +107,26 @@ impl SkillRegistry {
         Self::new(result.skills)
     }
 
-    fn layered_dirs(roots: &ConfigRoots) -> Vec<(PathBuf, SkillScope)> {
+    pub fn load_from_roots_with_settings(
+        roots: &ConfigRoots,
+        settings: &BTreeMap<String, bool>,
+    ) -> Self {
+        let result = load_skills_from_dirs(&Self::layered_dirs(roots));
+        Self::new(filter_enabled(result.skills, settings))
+    }
+
+    pub fn load_from_roots_with_settings_and_diagnostics(
+        roots: &ConfigRoots,
+        settings: &BTreeMap<String, bool>,
+    ) -> (Self, Vec<loader::SkillDiagnostic>) {
+        let result = load_skills_from_dirs(&Self::layered_dirs(roots));
+        (
+            Self::new(filter_enabled(result.skills, settings)),
+            result.diagnostics,
+        )
+    }
+
+    pub fn layered_dirs(roots: &ConfigRoots) -> Vec<(PathBuf, SkillScope)> {
         let [global, project] = roots.skill_dirs();
         vec![(global, SkillScope::User), (project, SkillScope::Project)]
     }
@@ -122,6 +166,13 @@ impl SkillRegistry {
     pub fn slash_command_names(&self) -> Vec<String> {
         self.skills.iter().map(|s| s.name.clone()).collect()
     }
+}
+
+fn filter_enabled(skills: Vec<LoadedSkill>, settings: &BTreeMap<String, bool>) -> Vec<LoadedSkill> {
+    skills
+        .into_iter()
+        .filter(|skill| settings.get(&skill.name).copied().unwrap_or(true))
+        .collect()
 }
 
 fn scope_priority(scope: SkillScope) -> u8 {

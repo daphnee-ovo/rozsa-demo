@@ -33,6 +33,9 @@
 // ├── get_key_bindings()
 // ├── update_key_binding()
 // ├── reset_key_binding()
+// ├── get_capability_settings()
+// ├── update_capability_setting()
+// ├── capability_settings_snapshot()
 // ├── get_settings()
 // ├── list_themes()
 // ├── get_theme()
@@ -108,6 +111,10 @@
 // ├── truncate_chars()
 // ├── move_to_trash()
 // ├── persist_settings()
+// ├── parse_positive_u64()
+// ├── parse_optional_u64()
+// ├── parse_optional_u32()
+// ├── parse_setting_lines()
 // ├── append_prompt_error()
 // ├── append_prompt_error_for_session()
 // ├── current_timestamp_ms()
@@ -120,6 +127,8 @@
 // ├── struct SessionListEntry
 // ├── struct ModelListEntry
 // ├── struct SettingsSnapshot
+// ├── struct CapabilitySettingsSnapshot
+// ├── struct CapabilityItemSnapshot
 // └── struct AppearanceSnapshot
 
 // File: commands.rs
@@ -138,7 +147,9 @@ use rozsa_app::agent_session::AgentSession;
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::PermissionResponse;
 use rozsa_app::session::manager::SessionManager;
+use rozsa_app::settings::{CapabilityKind, SettingsScope};
 use rozsa_app::skills::SkillRegistry;
+use rozsa_app::skills::loader::{SkillScope, load_skills_from_dirs};
 use rozsa_app::themes::{self, ThemeDefinition, ThemeMode, ThemeStore, ThemeSummary};
 use rozsa_app::tools::AskUserQuestionAnswer;
 use rozsa_core::messages::AgentMessage;
@@ -569,7 +580,7 @@ pub async fn dispatch_slash_command(
         }
         "thinking" => {
             let level = parse_thinking_level(&args)?;
-            set_thinking_level(&state, level).await;
+            set_thinking_level(&state, level).await?;
             emit_info(
                 &app,
                 &format!("Thinking: {}", format!("{level:?}").to_lowercase()),
@@ -681,7 +692,7 @@ pub async fn dispatch_slash_command(
                 );
             } else if matches!(args.as_str(), "agent_end" | "edit_write" | "disabled") {
                 state.runtime_settings.lock().await.lsp_mode = args.clone();
-                persist_settings(&state).await;
+                persist_settings(&state).await?;
                 emit_info(&app, &format!("LSP mode set to: {args}"));
             } else {
                 emit_info(
@@ -724,8 +735,11 @@ pub async fn dispatch_slash_command(
         }
         "reload" => {
             let agent = active_agent(&state).await?;
-            let diagnostics = agent.reload_skills();
-            for diagnostic in &diagnostics {
+            let reloaded = agent
+                .reload_configuration()
+                .await
+                .map_err(|error| error.to_string())?;
+            for diagnostic in &reloaded.diagnostics {
                 emit_info(
                     &app,
                     &format!(
@@ -735,8 +749,13 @@ pub async fn dispatch_slash_command(
                     ),
                 );
             }
-            let count = agent.skill_registry().list().len();
-            emit_info(&app, &format!("Reloaded skills ({count} loaded)"));
+            emit_info(
+                &app,
+                &format!(
+                    "Reloaded configuration ({} skills, {} tools enabled)",
+                    reloaded.skill_count, reloaded.tool_count
+                ),
+            );
         }
         "changelog" => {
             emit_info(&app, "No changelog entries available in GUI mode");
@@ -1317,6 +1336,104 @@ pub fn reset_key_binding(
 }
 
 #[tauri::command]
+pub async fn get_capability_settings(
+    state: State<'_, GuiState>,
+) -> Result<CapabilitySettingsSnapshot, String> {
+    capability_settings_snapshot(&state).await
+}
+
+#[tauri::command]
+pub async fn update_capability_setting(
+    state: State<'_, GuiState>,
+    kind: CapabilityKind,
+    scope: SettingsScope,
+    name: String,
+    enabled: Option<bool>,
+) -> Result<CapabilitySettingsSnapshot, String> {
+    let current = capability_settings_snapshot(&state).await?;
+    let known = match kind {
+        CapabilityKind::Tools => current.tools.iter().any(|item| item.name == name),
+        CapabilityKind::Skills => current
+            .global_skills
+            .iter()
+            .chain(current.project_skills.iter())
+            .any(|item| item.name == name),
+    };
+    if !known {
+        return Err(format!("Unknown {kind:?} capability: {name}"));
+    }
+    let mut manager = state.shared.settings_manager.clone();
+    manager.reload().map_err(|error| error.to_string())?;
+    manager
+        .set_capability_override(scope, kind, &name, enabled)
+        .map_err(|error| error.to_string())?;
+    capability_settings_snapshot(&state).await
+}
+
+async fn capability_settings_snapshot(
+    state: &State<'_, GuiState>,
+) -> Result<CapabilitySettingsSnapshot, String> {
+    let mut manager = state.shared.settings_manager.clone();
+    manager.reload().map_err(|error| error.to_string())?;
+    let global_tools = manager
+        .capability_overrides(SettingsScope::Global, CapabilityKind::Tools)
+        .map_err(|error| error.to_string())?;
+    let project_tools = manager
+        .capability_overrides(SettingsScope::Project, CapabilityKind::Tools)
+        .map_err(|error| error.to_string())?;
+    let global_skills = manager
+        .capability_overrides(SettingsScope::Global, CapabilityKind::Skills)
+        .map_err(|error| error.to_string())?;
+    let project_skills = manager
+        .capability_overrides(SettingsScope::Project, CapabilityKind::Skills)
+        .map_err(|error| error.to_string())?;
+
+    let tools = state
+        .shared
+        .registered_tool_metadata()
+        .await?
+        .into_iter()
+        .map(|tool| CapabilityItemSnapshot {
+            effective: manager.capability_enabled(CapabilityKind::Tools, &tool.name),
+            global_override: global_tools.get(&tool.name).copied(),
+            project_override: project_tools.get(&tool.name).copied(),
+            name: tool.name,
+            label: tool.label,
+            description: tool.description,
+        })
+        .collect();
+
+    let [global_dir, project_dir] = state.config_roots.skill_dirs();
+    let global_result = load_skills_from_dirs(&[(global_dir, SkillScope::User)]);
+    let project_result = load_skills_from_dirs(&[(project_dir, SkillScope::Project)]);
+    let to_skill_items = |skills: Vec<rozsa_app::skills::loader::LoadedSkill>| {
+        skills
+            .into_iter()
+            .map(|skill| CapabilityItemSnapshot {
+                effective: manager.capability_enabled(CapabilityKind::Skills, &skill.name),
+                global_override: global_skills.get(&skill.name).copied(),
+                project_override: project_skills.get(&skill.name).copied(),
+                name: skill.name.clone(),
+                label: skill.name,
+                description: skill.description,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    Ok(CapabilitySettingsSnapshot {
+        tools,
+        global_skills: to_skill_items(global_result.skills),
+        project_skills: to_skill_items(project_result.skills),
+        diagnostics: global_result
+            .diagnostics
+            .into_iter()
+            .chain(project_result.diagnostics)
+            .map(|diagnostic| format!("{}: {}", diagnostic.path.display(), diagnostic.message))
+            .collect(),
+    })
+}
+
+#[tauri::command]
 pub async fn get_settings(
     state: State<'_, GuiState>,
     app: AppHandle,
@@ -1333,10 +1450,19 @@ pub async fn get_settings(
         model_provider: model.provider.as_str().to_string(),
         auto_approve_patterns: rt.permissions.auto_approve_patterns.clone(),
         allowed_tools: rt.permissions.allowed_tools.clone(),
+        blocked_commands: rt.permissions.blocked_commands.clone(),
+        permission_deny: rt.permissions.deny.clone(),
+        permission_ask: rt.permissions.ask.clone(),
+        permission_allow: rt.permissions.allow.clone(),
         block_images: rt.block_images,
         hide_thinking: rt.hide_thinking,
         transport: rt.transport.clone(),
         auto_compact: rt.compaction.enabled,
+        compaction_threshold_tokens: rt.compaction.threshold_tokens,
+        compaction_target_tokens: rt.compaction.target_tokens,
+        retry_timeout_ms: rt.retry.timeout_ms,
+        retry_max_retries: rt.retry.max_retries,
+        retry_max_delay_ms: rt.retry.max_retry_delay_ms,
         auto_session_naming: rt.auto_session_naming,
         small_model: rt.small_model.clone(),
         steering_mode: rt.steering_mode.clone(),
@@ -1412,34 +1538,67 @@ pub async fn update_setting(
                 let mut s = state.runtime_settings.lock().await;
                 s.default_thinking_level = Some(level);
             }
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             Ok(())
         }
         "permission_mode" => {
+            let mode = rozsa_app::permissions::PermissionMode::parse(&value)
+                .ok_or_else(|| format!("Invalid permission mode: {value}"))?;
             let mut s = state.runtime_settings.lock().await;
             s.permissions.mode = value;
-            let mode = rozsa_app::permissions::PermissionMode::parse(&s.permissions.mode)
-                .ok_or_else(|| format!("Invalid permission mode: {}", s.permissions.mode))?;
-            state.permission_controller.update(
-                mode,
-                s.permissions.auto_approve_patterns.clone(),
-                s.permissions.allowed_tools.clone(),
-                s.permissions.blocked_commands.clone(),
-            );
+            state
+                .permission_controller
+                .update_from_settings(mode, &s.permissions);
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             Ok(())
         }
         "auto_compact" => {
             let mut s = state.runtime_settings.lock().await;
             s.compaction.enabled = value == "true";
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
+            Ok(())
+        }
+        "compaction_threshold_tokens" => {
+            let parsed = parse_positive_u64("compaction threshold", &value)?;
+            state
+                .runtime_settings
+                .lock()
+                .await
+                .compaction
+                .threshold_tokens = parsed;
+            persist_settings(&state).await?;
+            Ok(())
+        }
+        "compaction_target_tokens" => {
+            let parsed = parse_positive_u64("compaction target", &value)?;
+            state.runtime_settings.lock().await.compaction.target_tokens = parsed;
+            persist_settings(&state).await?;
+            Ok(())
+        }
+        "retry_timeout_ms" | "retry_max_retries" | "retry_max_delay_ms" => {
+            let mut settings = state.runtime_settings.lock().await;
+            match key.as_str() {
+                "retry_timeout_ms" => {
+                    settings.retry.timeout_ms = parse_optional_u64("retry timeout", &value)?;
+                }
+                "retry_max_retries" => {
+                    settings.retry.max_retries = parse_optional_u32("max retries", &value)?;
+                }
+                "retry_max_delay_ms" => {
+                    settings.retry.max_retry_delay_ms =
+                        parse_optional_u64("max retry delay", &value)?;
+                }
+                _ => unreachable!(),
+            }
+            drop(settings);
+            persist_settings(&state).await?;
             Ok(())
         }
         "auto_session_naming" => {
             state.runtime_settings.lock().await.auto_session_naming = value == "true";
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             Ok(())
         }
         "small_model" => {
@@ -1459,21 +1618,21 @@ pub async fn update_setting(
                 Some(model.id)
             };
             state.runtime_settings.lock().await.small_model = small_model;
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             Ok(())
         }
         "steering_mode" => {
             let mut s = state.runtime_settings.lock().await;
             s.steering_mode = value;
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             Ok(())
         }
         "follow_up_mode" => {
             let mut s = state.runtime_settings.lock().await;
             s.follow_up_mode = value;
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             Ok(())
         }
         "running_send_mode" => {
@@ -1481,21 +1640,54 @@ pub async fn update_setting(
                 return Err(format!("Invalid running send mode: {value}"));
             }
             state.runtime_settings.lock().await.running_send_mode = value;
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             Ok(())
         }
         "transport" => {
             let mut s = state.runtime_settings.lock().await;
             s.transport = value;
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             Ok(())
         }
         "block_images" => {
             let mut s = state.runtime_settings.lock().await;
             s.block_images = value == "true";
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
+            Ok(())
+        }
+        "hide_thinking" => {
+            state.runtime_settings.lock().await.hide_thinking = value == "true";
+            persist_settings(&state).await?;
+            Ok(())
+        }
+        "permission_deny"
+        | "permission_ask"
+        | "permission_allow"
+        | "permission_auto_approve_patterns"
+        | "permission_allowed_tools"
+        | "permission_blocked_commands" => {
+            let entries = parse_setting_lines(&value);
+            let mut settings = state.runtime_settings.lock().await;
+            match key.as_str() {
+                "permission_deny" => settings.permissions.deny = entries,
+                "permission_ask" => settings.permissions.ask = entries,
+                "permission_allow" => settings.permissions.allow = entries,
+                "permission_auto_approve_patterns" => {
+                    settings.permissions.auto_approve_patterns = entries
+                }
+                "permission_allowed_tools" => settings.permissions.allowed_tools = entries,
+                "permission_blocked_commands" => settings.permissions.blocked_commands = entries,
+                _ => unreachable!(),
+            }
+            let mode = rozsa_app::permissions::PermissionMode::parse(&settings.permissions.mode)
+                .ok_or_else(|| format!("Invalid permission mode: {}", settings.permissions.mode))?;
+            state
+                .permission_controller
+                .update_from_settings(mode, &settings.permissions);
+            drop(settings);
+            persist_settings(&state).await?;
             Ok(())
         }
         "appearance_theme_mode" => {
@@ -1505,7 +1697,7 @@ pub async fn update_setting(
             let mut s = state.runtime_settings.lock().await;
             s.appearance.theme_mode = value;
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             emit_theme_state(&state, &app).await?;
             Ok(())
         }
@@ -1519,7 +1711,7 @@ pub async fn update_setting(
             let mut s = state.runtime_settings.lock().await;
             s.appearance.font_size = font_size;
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             emit_theme_state(&state, &app).await?;
             Ok(())
         }
@@ -1530,7 +1722,7 @@ pub async fn update_setting(
             let mut s = state.runtime_settings.lock().await;
             s.appearance.light_theme = value;
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             emit_theme_state(&state, &app).await?;
             Ok(())
         }
@@ -1541,7 +1733,7 @@ pub async fn update_setting(
             let mut s = state.runtime_settings.lock().await;
             s.appearance.dark_theme = value;
             drop(s);
-            persist_settings(&state).await;
+            persist_settings(&state).await?;
             emit_theme_state(&state, &app).await?;
             Ok(())
         }
@@ -1715,7 +1907,7 @@ pub async fn switch_model(state: State<'_, GuiState>, model_id: String) -> Resul
         settings.default_model = Some(model.id.clone());
         settings.default_provider = Some(model.provider.as_str().to_string());
     }
-    persist_settings(&state).await;
+    persist_settings(&state).await?;
 
     // 同步到所有 active sessions
     let tabs = state.tabs.lock().await;
@@ -2433,7 +2625,7 @@ async fn switch_model_reference(
         settings.default_model = Some(model.id.clone());
         settings.default_provider = Some(model.provider.as_str().to_string());
     }
-    persist_settings(state).await;
+    persist_settings(state).await?;
 
     let tabs = state.tabs.lock().await;
     for tab in tabs.iter() {
@@ -2458,7 +2650,10 @@ fn parse_thinking_level(value: &str) -> Result<ThinkingLevel, String> {
     }
 }
 
-async fn set_thinking_level(state: &State<'_, GuiState>, level: ThinkingLevel) {
+async fn set_thinking_level(
+    state: &State<'_, GuiState>,
+    level: ThinkingLevel,
+) -> Result<(), String> {
     *state.shared.thinking_level.lock().await = level;
     let tabs = state.tabs.lock().await;
     for tab in tabs.iter() {
@@ -2471,7 +2666,7 @@ async fn set_thinking_level(state: &State<'_, GuiState>, level: ThinkingLevel) {
         let mut settings = state.runtime_settings.lock().await;
         settings.default_thinking_level = Some(level);
     }
-    persist_settings(state).await;
+    persist_settings(state).await
 }
 
 async fn compact_active_session(state: &State<'_, GuiState>) -> Result<(), String> {
@@ -2826,30 +3021,81 @@ fn move_to_trash(path: &std::path::Path) -> Result<(), String> {
     }
 }
 
-async fn persist_settings(state: &State<'_, GuiState>) {
-    if let Some(ref path) = state.global_settings_path {
-        let s = state.runtime_settings.lock().await;
-        if let Ok(mut updated) = serde_json::to_value(&*s) {
-            let existing = std::fs::read_to_string(path)
-                .ok()
-                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-                .unwrap_or_else(|| serde_json::json!({}));
-            if let (Some(updated), Some(mut existing)) =
-                (updated.as_object_mut(), existing.as_object().cloned())
-            {
-                // permission is deliberately excluded: global permission rules
-                // are manual-only and project Trust is persisted separately.
-                updated.remove("permission");
-                updated.remove("permissions");
-                for (key, value) in updated {
-                    existing.insert(key.clone(), value.clone());
-                }
-                if let Ok(json) = serde_json::to_string_pretty(&existing) {
-                    let _ = std::fs::write(path, json);
-                }
-            }
-        }
+async fn persist_settings(state: &State<'_, GuiState>) -> Result<(), String> {
+    let path = state
+        .global_settings_path
+        .as_ref()
+        .ok_or("Global settings path is unavailable")?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create {}: {error}", parent.display()))?;
     }
+    let settings = state.runtime_settings.lock().await;
+    let mut updated = serde_json::to_value(&*settings)
+        .map_err(|error| format!("Failed to serialize settings: {error}"))?;
+    drop(settings);
+    let mut existing = if path.exists() {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+        serde_json::from_str::<serde_json::Value>(&text)
+            .map_err(|error| format!("Invalid {}: {error}", path.display()))?
+    } else {
+        serde_json::json!({})
+    };
+    let updated = updated
+        .as_object_mut()
+        .ok_or("Serialized settings must be an object")?;
+    // Capability overrides are persisted through the layer-aware settings API.
+    // Excluding them here prevents project values from leaking into the global layer.
+    updated.remove("tools");
+    updated.remove("skills");
+    let existing = existing
+        .as_object_mut()
+        .ok_or_else(|| format!("Settings root must be an object: {}", path.display()))?;
+    for (key, value) in updated {
+        existing.insert(key.clone(), value.clone());
+    }
+    let json = serde_json::to_string_pretty(&existing)
+        .map_err(|error| format!("Failed to serialize settings: {error}"))?;
+    std::fs::write(path, format!("{json}\n"))
+        .map_err(|error| format!("Failed to write {}: {error}", path.display()))
+}
+
+fn parse_positive_u64(label: &str, value: &str) -> Result<u64, String> {
+    let parsed = value
+        .parse::<u64>()
+        .map_err(|_| format!("Invalid {label}: {value}"))?;
+    (parsed > 0)
+        .then_some(parsed)
+        .ok_or_else(|| format!("{label} must be greater than zero"))
+}
+
+fn parse_optional_u64(label: &str, value: &str) -> Result<Option<u64>, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    parse_positive_u64(label, value).map(Some)
+}
+
+fn parse_optional_u32(label: &str, value: &str) -> Result<Option<u32>, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    value
+        .parse::<u32>()
+        .map(Some)
+        .map_err(|_| format!("Invalid {label}: {value}"))
+}
+
+fn parse_setting_lines(value: &str) -> Vec<String> {
+    value
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 async fn append_prompt_error(
@@ -3045,16 +3291,45 @@ pub struct SettingsSnapshot {
     pub model_provider: String,
     pub auto_approve_patterns: Vec<String>,
     pub allowed_tools: Vec<String>,
+    pub blocked_commands: Vec<String>,
+    pub permission_deny: Vec<String>,
+    pub permission_ask: Vec<String>,
+    pub permission_allow: Vec<String>,
     pub block_images: bool,
     pub hide_thinking: bool,
     pub transport: String,
     pub auto_compact: bool,
+    pub compaction_threshold_tokens: u64,
+    pub compaction_target_tokens: u64,
+    pub retry_timeout_ms: Option<u64>,
+    pub retry_max_retries: Option<u32>,
+    pub retry_max_delay_ms: Option<u64>,
     pub auto_session_naming: bool,
     pub small_model: Option<String>,
     pub steering_mode: String,
     pub follow_up_mode: String,
     pub running_send_mode: String,
     pub appearance: AppearanceSnapshot,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilitySettingsSnapshot {
+    pub tools: Vec<CapabilityItemSnapshot>,
+    pub global_skills: Vec<CapabilityItemSnapshot>,
+    pub project_skills: Vec<CapabilityItemSnapshot>,
+    pub diagnostics: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityItemSnapshot {
+    pub name: String,
+    pub label: String,
+    pub description: String,
+    pub effective: bool,
+    pub global_override: Option<bool>,
+    pub project_override: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

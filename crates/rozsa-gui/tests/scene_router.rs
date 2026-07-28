@@ -46,7 +46,7 @@ fn unready_webviews_receive_only_the_latest_snapshot_when_ready() {
     assert!(!main_ready.all_webviews_ready);
 
     let first = router
-        .set_scene(GuiScene::Settings, Some(SettingsPane::Models), 1)
+        .set_scene(GuiScene::Settings, Some(SettingsPane::General), 1)
         .unwrap();
     assert_eq!(first.ready_webviews, vec![GuiWebview::Main]);
     let second = router
@@ -97,7 +97,7 @@ fn settings_requires_a_selected_pane_and_main_clears_it() {
     assert!(router.set_scene(GuiScene::Settings, None, 1).is_err());
 
     router
-        .set_scene(GuiScene::Settings, Some(SettingsPane::Permissions), 1)
+        .set_scene(GuiScene::Settings, Some(SettingsPane::Skills), 1)
         .unwrap();
     let main = router
         .set_scene(GuiScene::Main, Some(SettingsPane::Appearance), 2)

@@ -69,7 +69,7 @@ async function requestSidebarScene(scene, selectedPane = null, allowRetry = true
 }
 
 function openSidebarSettings() {
-  void requestSidebarScene('settings', 'appearance').catch(renderSidebarError);
+  void requestSidebarScene('settings', 'skills').catch(renderSidebarError);
 }
 
 function closeSidebarSettings() {

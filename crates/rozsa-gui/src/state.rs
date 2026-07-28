@@ -25,6 +25,7 @@
 // ├── sidebar_snapshot()
 // ├── struct SharedResources
 // ├── impl SharedResources
+// ├── registered_tool_metadata()
 // ├── create_new_agent()
 // ├── create_continued_agent()
 // ├── restore_agent()
@@ -409,6 +410,21 @@ pub struct SharedResources {
 }
 
 impl SharedResources {
+    /// Build the same tool catalog used by real GUI sessions without persisting
+    /// a session. Settings must remain inspectable before the first chat exists.
+    pub async fn registered_tool_metadata(
+        &self,
+    ) -> Result<Vec<rozsa_core::tool::ToolMetadata>, String> {
+        let session_manager = SessionManager::create_lazy(
+            self.cwd.join(".rozsa-tool-catalog.jsonl"),
+            "settings-tool-catalog".to_owned(),
+            self.cwd.to_string_lossy().to_string(),
+            None,
+        );
+        let agent = self.create_agent(session_manager).await?;
+        Ok(agent.registered_tool_metadata().await)
+    }
+
     /// Create a lazy session and AgentSession through the GUI-owned factory.
     pub async fn create_new_agent(
         &self,
@@ -423,7 +439,7 @@ impl SharedResources {
             self.cwd.to_string_lossy().to_string(),
             parent_session,
         );
-        let agent = self.create_agent(session_manager).await;
+        let agent = self.create_agent(session_manager).await?;
         Ok(CreatedGuiSession {
             id,
             path: path.to_string_lossy().to_string(),
@@ -448,7 +464,7 @@ impl SharedResources {
         session_manager
             .copy_context_messages_from_path(parent_session)
             .map_err(|error| error.to_string())?;
-        let agent = self.create_agent(session_manager).await;
+        let agent = self.create_agent(session_manager).await?;
         Ok(CreatedGuiSession {
             id,
             path: path.to_string_lossy().to_string(),
@@ -459,10 +475,10 @@ impl SharedResources {
     /// Restore a persisted session through the same factory used for new sessions.
     pub async fn restore_agent(&self, path: &Path) -> Result<AgentSession, String> {
         let session_manager = SessionManager::open(path).map_err(|error| error.to_string())?;
-        Ok(self.create_agent(session_manager).await)
+        self.create_agent(session_manager).await
     }
 
-    async fn create_agent(&self, session_manager: SessionManager) -> AgentSession {
+    async fn create_agent(&self, session_manager: SessionManager) -> Result<AgentSession, String> {
         let session_id = session_manager.session_id().to_string();
         let session_cwd = PathBuf::from(session_manager.cwd());
         let model = self.model.lock().await.clone();
@@ -472,13 +488,17 @@ impl SharedResources {
             Box::new(move |context| hook(context)) as _
         });
 
+        let mut settings_manager = self.settings_manager.clone();
+        settings_manager
+            .reload()
+            .map_err(|error| error.to_string())?;
         let session = AgentSession::new(AgentSessionConfig {
             model,
             thinking_level,
             system_prompt: self.system_prompt.clone(),
             cwd: session_cwd,
             session_manager,
-            settings_manager: self.settings_manager.clone(),
+            settings_manager,
             resources: self.resources.clone(),
             pre_tool_use,
             model_stream: self.model_stream.clone(),
@@ -491,7 +511,7 @@ impl SharedResources {
                     .map(|sender| (session_id, sender)),
             )
             .await;
-        session
+        Ok(session)
     }
 }
 

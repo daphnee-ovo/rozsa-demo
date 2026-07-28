@@ -669,6 +669,7 @@ body {
   overflow: visible;
   background: transparent;
 }
+body.hide-thinking .thinking-block { display: none; }
 .thinking-header {
   display: flex;
   align-items: center;
@@ -1727,6 +1728,50 @@ body {
 }
 .setting-item:hover { background: oklch(99% 0.001 350); }
 .setting-label { font-size: 13px; color: var(--fg); }
+.setting-stack {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  color: var(--fg);
+  font-size: 12px;
+}
+.setting-textarea {
+  width: 100%;
+  min-height: 62px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: 11px/1.45 var(--font-mono);
+}
+.capability-scope { display: flex; gap: 4px; margin-bottom: 10px; }
+.capability-scope button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 12px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.capability-scope button.active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  color: var(--fg);
+}
+.capability-notice { margin: 0 0 16px; color: var(--muted); font-size: 11px; }
+.capability-row { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.capability-row:first-child { border-top: 0; }
+.capability-copy { min-width: 0; }
+.capability-name { font-size: 13px; font-weight: 500; color: var(--fg); }
+.capability-description { margin-top: 2px; font-size: 11px; color: var(--muted); }
+.capability-list {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+.empty-settings-state { color: var(--muted); }
 .shortcut-search {
   width: 100%;
   height: 36px;
@@ -3007,11 +3052,11 @@ body.native-split-main .settings-dialog { background: var(--bg); }
     <template id="fallbackSettingsNavigationTemplate">
     <nav class="settings-tabs" aria-label="Settings navigation">
       <button class="settings-back" type="button" onclick="closeSettings()"><span aria-hidden="true">←</span> Back to app</button>
-      <button class="settings-tab active" data-settings-pane="appearance" onclick="switchSettingsTab('appearance', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v1.4M8 13.1v1.4M1.5 8h1.4M13.1 8h1.4M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"/></svg>Appearance</button>
-      <button class="settings-tab" data-settings-pane="general" onclick="switchSettingsTab('general', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M12.4 3.6l-1 1M4.6 11.4l-1 1"/></svg>General</button>
-      <button class="settings-tab" data-settings-pane="models" onclick="switchSettingsTab('models', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/><path d="M8 1.4v1.3M8 13.3v1.3"/></svg>Models</button>
-      <button class="settings-tab" data-settings-pane="permissions" onclick="switchSettingsTab('permissions', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.7l4.8 1.8v3.6c0 3.4-2.1 5.8-4.8 7.2-2.7-1.4-4.8-3.8-4.8-7.2V3.5z"/><path d="M5.7 8l1.5 1.5 3-3"/></svg>Permissions</button>
-      <button class="settings-tab" data-settings-pane="tools" onclick="switchSettingsTab('tools', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 2.3a3 3 0 00-3.6 3.6l-4 4a1.5 1.5 0 002.1 2.1l4-4a3 3 0 003.6-3.6l-1.8 1.8-1.9-.3-.3-1.9z"/></svg>Tools</button>
+      <button class="settings-tab active" data-settings-pane="skills" onclick="switchSettingsTab('skills', this)">Skills</button>
+      <button class="settings-tab" data-settings-pane="tools" onclick="switchSettingsTab('tools', this)">Tools</button>
+      <button class="settings-tab" data-settings-pane="extensions" onclick="switchSettingsTab('extensions', this)">Extensions</button>
+      <button class="settings-tab" data-settings-pane="general" onclick="switchSettingsTab('general', this)">General</button>
+      <button class="settings-tab" data-settings-pane="appearance" onclick="switchSettingsTab('appearance', this)">Appearance</button>
       <button class="settings-tab" data-settings-pane="keyboard-shortcuts" onclick="switchSettingsTab('keyboard-shortcuts', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M4 6h.01M7 6h.01M10 6h.01M12.5 6h.01M4 9h.01M6.5 9h.01M9 9h3.5M4 11h5"/></svg>Keyboard shortcuts</button>
     </nav>
     </template>
@@ -3062,37 +3107,50 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="setting-item"><span class="setting-label">Follow-up Mode</span><select class="setting-select" id="settingsFollowUpMode" aria-label="Follow-up Mode"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
           <div class="setting-item"><span class="setting-label">Default send mode while running</span><select class="setting-select" id="settingsRunningSendMode" aria-label="Default send mode while running"><option value="queue">Queue</option><option value="steer">Steer</option></select></div>
           <div class="setting-item"><span class="setting-label">Block images</span><button class="setting-toggle" id="settingsBlockImages" type="button" role="switch" aria-checked="false" aria-label="Block images"></button></div>
+          <div class="setting-item"><span class="setting-label">Hide thinking blocks</span><button class="setting-toggle" id="settingsHideThinking" type="button" role="switch" aria-checked="false" aria-label="Hide thinking blocks"></button></div>
+          <div class="setting-item"><span class="setting-label">Compaction threshold</span><input class="setting-input" id="settingsCompactionThreshold" type="number" min="1"></div>
+          <div class="setting-item"><span class="setting-label">Compaction target</span><input class="setting-input" id="settingsCompactionTarget" type="number" min="1"></div>
         </div>
         <div class="settings-group">
-          <div class="settings-group-label">Network</div>
-          <div class="setting-item"><span class="setting-label">Transport</span><select class="setting-select" id="settingsTransport" aria-label="Transport"><option value="auto">Auto</option><option value="sse">SSE</option><option value="websocket">WebSocket</option><option value="websocket-cached">WebSocket (cached)</option></select></div>
-        </div>
-      </div>
-      <div class="settings-pane" id="pane-models">
-        <div class="settings-pane-title">Models</div>
-        <div class="settings-group">
-          <div class="settings-group-label">Current model</div>
+          <div class="settings-group-label">Models</div>
           <div class="setting-item"><span class="setting-label">Model</span><select class="setting-select" id="settingsModelSelect" aria-label="Model" onchange="onModelChange(this.value)"></select></div>
           <div class="setting-item"><span class="setting-label">Small model</span><select class="setting-select" id="settingsSmallModelSelect" aria-label="Small model"></select></div>
           <div class="setting-item"><span class="setting-label">Provider</span><span class="setting-value" id="settingsProvider">—</span></div>
           <div class="setting-item"><span class="setting-label">Context window</span><span class="setting-value" id="settingsContextWindow">—</span></div>
         </div>
-      </div>
-      <div class="settings-pane" id="pane-permissions">
-        <div class="settings-pane-title">Permissions</div>
         <div class="settings-group">
-          <div class="settings-group-label">Mode</div>
+          <div class="settings-group-label">Permissions</div>
           <div class="setting-item"><span class="setting-label">Permission mode</span><select class="setting-select" id="settingsPermMode" aria-label="Permission mode"><option>auto-approve</option><option>on-request</option><option>yolo</option></select></div>
+          <label class="setting-stack"><span>Auto-approve patterns</span><textarea class="setting-textarea" id="settingsPermissionPatterns"></textarea></label>
+          <label class="setting-stack"><span>Allowed tools</span><textarea class="setting-textarea" id="settingsAllowedTools"></textarea></label>
+          <label class="setting-stack"><span>Blocked commands</span><textarea class="setting-textarea" id="settingsBlockedCommands"></textarea></label>
+          <label class="setting-stack"><span>Deny rules</span><textarea class="setting-textarea" id="settingsPermissionDeny"></textarea></label>
+          <label class="setting-stack"><span>Ask rules</span><textarea class="setting-textarea" id="settingsPermissionAsk"></textarea></label>
+          <label class="setting-stack"><span>Allow rules</span><textarea class="setting-textarea" id="settingsPermissionAllow"></textarea></label>
         </div>
-        <div class="settings-group" id="settingsAutoApprove">
-          <div class="settings-group-label">Auto-approve rules</div>
+        <div class="settings-group">
+          <div class="settings-group-label">Network</div>
+          <div class="setting-item"><span class="setting-label">Transport</span><select class="setting-select" id="settingsTransport" aria-label="Transport"><option value="auto">Auto</option><option value="sse">SSE</option><option value="websocket">WebSocket</option><option value="websocket-cached">WebSocket (cached)</option></select></div>
+          <div class="setting-item"><span class="setting-label">Retry timeout (ms)</span><input class="setting-input" id="settingsRetryTimeout" type="number" min="1" placeholder="Default"></div>
+          <div class="setting-item"><span class="setting-label">Maximum retries</span><input class="setting-input" id="settingsRetryMax" type="number" min="0" placeholder="Default"></div>
+          <div class="setting-item"><span class="setting-label">Maximum retry delay (ms)</span><input class="setting-input" id="settingsRetryDelay" type="number" min="1" placeholder="Default"></div>
         </div>
+      </div>
+      <div class="settings-pane active" id="pane-skills">
+        <div class="settings-pane-title">Skills</div>
+        <div class="capability-scope" id="skillsScope"></div>
+        <p class="capability-notice">Changes apply to new sessions. Run <code>/reload</code> in an existing session.</p>
+        <div class="settings-group capability-list" id="settingsSkillList"></div>
       </div>
       <div class="settings-pane" id="pane-tools">
         <div class="settings-pane-title">Tools</div>
-        <div class="settings-group" id="settingsToolList">
-          <div class="settings-group-label">Registered tools</div>
-        </div>
+        <div class="capability-scope" id="toolsScope"></div>
+        <p class="capability-notice">Changes apply to new sessions. Run <code>/reload</code> in an existing session.</p>
+        <div class="settings-group capability-list" id="settingsToolList"></div>
+      </div>
+      <div class="settings-pane" id="pane-extensions">
+        <div class="settings-pane-title">Extensions</div>
+        <div class="settings-group empty-settings-state"><div class="settings-group-label">Coming later</div><p>Extension management is reserved for a future release.</p></div>
       </div>
       <div class="settings-pane" id="pane-keyboard-shortcuts">
         <div class="settings-pane-title">Keyboard shortcuts</div>

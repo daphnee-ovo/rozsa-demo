@@ -7,6 +7,7 @@
 // ├── new()
 // ├── with_project_rules()
 // ├── update()
+// ├── update_from_settings()
 // ├── evaluate()
 // ├── record_session_approval()
 // ├── record_project_approval()
@@ -182,6 +183,21 @@ impl PermissionController {
         config.auto_approve_patterns = auto_approve_patterns;
         config.allowed_tools = allowed_tools;
         config.blocked_commands = blocked_commands;
+    }
+
+    pub fn update_from_settings(
+        &self,
+        mode: PermissionMode,
+        settings: &crate::settings::schema::PermissionSettings,
+    ) {
+        let mut config = self.config.write().unwrap();
+        config.mode = mode;
+        config.auto_approve_patterns = settings.auto_approve_patterns.clone();
+        config.allowed_tools = settings.allowed_tools.clone();
+        config.blocked_commands = settings.blocked_commands.clone();
+        config.deny = settings.deny.clone();
+        config.ask = settings.ask.clone();
+        config.allow = settings.allow.clone();
     }
 
     pub fn evaluate(&self, session_id: &str, tool_name: &str, args: &Value) -> PolicyVerdict {

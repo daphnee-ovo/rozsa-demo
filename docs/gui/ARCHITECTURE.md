@@ -130,8 +130,15 @@ macOS 26 的 AppKit 会为 sidebar behavior 默认采用 floating appearance。R
 | `approve_permission` | `{ requestId: string }` | `()` | 批准权限请求 |
 | `deny_permission` | `{ requestId: string }` | `()` | 拒绝权限请求 |
 | `respond_user_question` | `{ sessionId: string, id: string, answers: object }` | `()` | 提交 `askUserQuestion` 的单选/多选结果 |
-| `get_settings` | - | `JsonValue` | 获取当前设置（从 `AgentSession.settings_manager()` 读取） |
-| `update_settings` | `{ key: string, value: JsonValue }` | `()` | 更新单个设置项（目前支持 `thinking_enabled` / `model`） |
+| `get_settings` | - | `SettingsSnapshot` | 获取当前有效设置 |
+| `update_setting` | `{ key: string, value: string }` | `()` | 更新 General / Appearance 中有运行时消费者的设置 |
+| `get_capability_settings` | - | `CapabilitySettingsSnapshot` | 从实际注册 tools 和分层 skill 目录构建全局/项目能力清单 |
+| `update_capability_setting` | `{ kind, scope, name, enabled }` | `CapabilitySettingsSnapshot` | 写入对应 `settings.json` 层；`enabled: null` 删除覆盖并恢复继承 |
+
+`SettingsManager` 在 app 层负责 `settings.json` 的全局+项目逐项合并。
+`AgentSession` 创建时读取合并结果；`/reload` 会重新加载 settings、过滤 skill registry，
+并更新传给主 agent 与 subagent 的 tool 集合。GUI 只呈现 app 提供的能力清单，不复制
+core tool 名称。
 
 ### 4.2 Events（后端 → 前端）
 

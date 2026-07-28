@@ -1,6 +1,7 @@
 // FrameworkTree
 // agent_session.rs
 // ├── struct AgentSessionConfig
+// ├── struct ConfigurationReload
 // ├── struct StaticConfig
 // ├── struct RuntimeParams
 // ├── struct AgentSession
@@ -9,8 +10,10 @@
 // ├── register_extension()
 // ├── skill_registry()
 // ├── reload_skills()
+// ├── reload_configuration()
 // ├── subscribe()
 // ├── register_tool()
+// ├── registered_tool_metadata()
 // ├── register_default_tools()
 // ├── register_default_tools_with_question_sender()
 // ├── prompt()
@@ -103,6 +106,7 @@
 // - [Tools](./tools/mod.rs)
 // - [Core Agent Loop](../../rozsa-core/src/agent_loop.rs)
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -115,7 +119,7 @@ use rozsa_core::agent_loop::{agent_loop, agent_loop_continue};
 use rozsa_core::config::{AgentContext, AgentLoopConfig, ShouldStopContext};
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
-use rozsa_core::tool::{Tool, ToolExecutionMode};
+use rozsa_core::tool::{Tool, ToolExecutionMode, ToolMetadata, tool_metadata};
 use rozsa_model::event_stream::EventStream;
 use rozsa_model::types::{
     CacheRetention, ContentBlock, Message, Model, SimpleStreamOptions, StreamOptions,
@@ -169,6 +173,12 @@ pub struct AgentSessionConfig {
     pub model_stream: Option<ModelStream>,
 }
 
+pub struct ConfigurationReload {
+    pub diagnostics: Vec<crate::skills::loader::SkillDiagnostic>,
+    pub skill_count: usize,
+    pub tool_count: usize,
+}
+
 pub type ModelStream = Arc<
     dyn Fn(
             &Model,
@@ -183,7 +193,7 @@ pub type ModelStream = Arc<
 struct StaticConfig {
     system_prompt: String,
     cwd: PathBuf,
-    settings_manager: SettingsManager,
+    settings_manager: std::sync::RwLock<SettingsManager>,
     #[allow(dead_code)]
     resources: LoadedResources,
 }
@@ -206,6 +216,7 @@ pub struct AgentSession {
     session_manager: Arc<Mutex<SessionManager>>,
     current_cwd: Arc<Mutex<PathBuf>>,
     tools: Arc<Mutex<Vec<Arc<dyn Tool>>>>,
+    tool_settings: Arc<std::sync::RwLock<BTreeMap<String, bool>>>,
     cancel_token: Mutex<Option<CancellationToken>>,
     is_running: AtomicBool,
     /// Accumulated messages across turns (the conversation history).
@@ -272,7 +283,15 @@ impl AgentSession {
         let session_manager = Arc::new(Mutex::new(session_manager));
         let current_cwd = Arc::new(Mutex::new(cwd.clone()));
         let permission_mode = settings_manager.resolved().permissions.mode.clone();
-        let skill_registry = crate::skills::SkillRegistry::load_from_defaults(&cwd);
+        let config_roots = crate::config_paths::ConfigRoots::discover(&cwd)
+            .expect("Rózsa config roots must be available before loading skills");
+        let skill_registry = crate::skills::SkillRegistry::load_from_roots_with_settings(
+            &config_roots,
+            &settings_manager.resolved().skills,
+        );
+        let tool_settings = Arc::new(std::sync::RwLock::new(
+            settings_manager.resolved().tools.clone(),
+        ));
 
         let tools_arc: Arc<Mutex<Vec<Arc<dyn Tool>>>> = Arc::new(Mutex::new(Vec::new()));
         let main_session_uuid = session_manager_id;
@@ -301,6 +320,7 @@ impl AgentSession {
             model_stream: model_stream.clone(),
             convert_to_llm: Arc::new(convert_to_llm),
             main_tools: tools_arc.clone(),
+            tool_settings: tool_settings.clone(),
             main_model: model.clone(),
             main_thinking_level: thinking_level,
             cwd: cwd.clone(),
@@ -317,7 +337,7 @@ impl AgentSession {
             static_config: StaticConfig {
                 system_prompt,
                 cwd,
-                settings_manager,
+                settings_manager: std::sync::RwLock::new(settings_manager),
                 resources,
             },
             runtime: Mutex::new(RuntimeParams {
@@ -327,6 +347,7 @@ impl AgentSession {
             session_manager,
             current_cwd,
             tools: tools_arc,
+            tool_settings,
             cancel_token: Mutex::new(None),
             is_running: AtomicBool::new(false),
             messages: Mutex::new(restored_messages),
@@ -359,11 +380,51 @@ impl AgentSession {
     /// Reload skills from filesystem.
     /// Returns diagnostics for skills that failed to load.
     pub fn reload_skills(&self) -> Vec<crate::skills::loader::SkillDiagnostic> {
-        let cwd = &self.static_config.cwd;
+        let settings = self
+            .static_config
+            .settings_manager
+            .read()
+            .unwrap()
+            .resolved()
+            .skills
+            .clone();
+        let roots = crate::config_paths::ConfigRoots::discover(&self.static_config.cwd)
+            .expect("Rózsa config roots must be available before loading skills");
         let (new_registry, diagnostics) =
-            crate::skills::SkillRegistry::load_from_defaults_with_diagnostics(cwd);
+            crate::skills::SkillRegistry::load_from_roots_with_settings_and_diagnostics(
+                &roots, &settings,
+            );
         *self.skill_registry.write().unwrap() = new_registry;
         diagnostics
+    }
+
+    pub async fn reload_configuration(&self) -> Result<ConfigurationReload> {
+        let settings = {
+            let mut settings_manager = self.static_config.settings_manager.write().unwrap();
+            settings_manager.reload()?;
+            settings_manager.resolved().clone()
+        };
+        *self.tool_settings.write().unwrap() = settings.tools.clone();
+        let roots = crate::config_paths::ConfigRoots::discover(&self.static_config.cwd)?;
+        let (new_registry, diagnostics) =
+            crate::skills::SkillRegistry::load_from_roots_with_settings_and_diagnostics(
+                &roots,
+                &settings.skills,
+            );
+        *self.skill_registry.write().unwrap() = new_registry;
+        let skill_count = self.skill_registry.read().unwrap().list().len();
+        let tool_count = self
+            .tools
+            .lock()
+            .await
+            .iter()
+            .filter(|tool| settings.tools.get(tool.name()).copied().unwrap_or(true))
+            .count();
+        Ok(ConfigurationReload {
+            diagnostics,
+            skill_count,
+            tool_count,
+        })
     }
 
     /// Subscribe to AgentEvents emitted by `prompt` / `continue_session`.
@@ -375,6 +436,11 @@ impl AgentSession {
     /// Register a single tool.
     pub async fn register_tool(&self, tool: Arc<dyn Tool>) {
         self.tools.lock().await.push(tool);
+    }
+
+    pub async fn registered_tool_metadata(&self) -> Vec<ToolMetadata> {
+        let tools = self.tools.lock().await;
+        tool_metadata(tools.iter().map(|tool| tool.as_ref()))
     }
 
     /// Register the default built-in tools (read, write, edit, bash, ls, grep, find, subagent).
@@ -670,8 +736,8 @@ impl AgentSession {
     }
 
     /// Get the settings manager (read-only, immutable for the session lifetime).
-    pub fn settings_manager(&self) -> &SettingsManager {
-        &self.static_config.settings_manager
+    pub fn settings_manager(&self) -> SettingsManager {
+        self.static_config.settings_manager.read().unwrap().clone()
     }
 
     /// Get the working directory.
@@ -708,7 +774,13 @@ impl AgentSession {
 
     /// Get show_images setting.
     pub fn show_images(&self) -> bool {
-        !self.static_config.settings_manager.resolved().block_images
+        !self
+            .static_config
+            .settings_manager
+            .read()
+            .unwrap()
+            .resolved()
+            .block_images
     }
 
     /// Get hide_thinking flag (true when thinking is off).
@@ -767,6 +839,14 @@ impl AgentSession {
             })],
             tools: Vec::new(),
         };
+        let retry = self
+            .static_config
+            .settings_manager
+            .read()
+            .unwrap()
+            .resolved()
+            .retry
+            .clone();
         let options = SimpleStreamOptions {
             base: StreamOptions {
                 temperature: None,
@@ -776,19 +856,9 @@ impl AgentSession {
                 cache_retention: CacheRetention::Short,
                 session_id: None,
                 headers: merge_headers(model.headers.clone(), credentials.headers),
-                timeout_ms: self
-                    .static_config
-                    .settings_manager
-                    .resolved()
-                    .retry
-                    .timeout_ms,
+                timeout_ms: retry.timeout_ms,
                 max_retries: Some(2),
-                max_retry_delay_ms: self
-                    .static_config
-                    .settings_manager
-                    .resolved()
-                    .retry
-                    .max_retry_delay_ms,
+                max_retry_delay_ms: retry.max_retry_delay_ms,
                 metadata: None,
             },
             reasoning: Some(ThinkingLevel::Low),
@@ -858,7 +928,13 @@ impl AgentSession {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
-        let settings = self.static_config.settings_manager.resolved().clone();
+        let settings = self
+            .static_config
+            .settings_manager
+            .read()
+            .unwrap()
+            .resolved()
+            .clone();
         let engine = CompactionEngine::new(CompactionTrigger {
             threshold_tokens: settings.compaction.threshold_tokens,
             target_tokens: settings.compaction.target_tokens,
@@ -979,7 +1055,13 @@ impl AgentSession {
     }
 
     async fn maybe_auto_compact(&self) -> Result<()> {
-        let settings = self.static_config.settings_manager.resolved().clone();
+        let settings = self
+            .static_config
+            .settings_manager
+            .read()
+            .unwrap()
+            .resolved()
+            .clone();
         if !settings.compaction.enabled {
             return Ok(());
         }
@@ -1136,11 +1218,13 @@ impl AgentSession {
 
     /// Build an AgentContext from the current session state.
     async fn build_agent_context(&self) -> AgentContext {
+        let tool_settings = self.tool_settings.read().unwrap().clone();
         let tool_schemas: Vec<ToolSchema> = self
             .tools
             .lock()
             .await
             .iter()
+            .filter(|tool| tool_settings.get(tool.name()).copied().unwrap_or(true))
             .map(|t| ToolSchema {
                 name: t.name().to_string(),
                 description: t.description().to_string(),
@@ -1168,7 +1252,13 @@ impl AgentSession {
         let model = runtime.model.clone();
         let thinking_level = runtime.thinking_level;
         drop(runtime);
-        let settings = self.static_config.settings_manager.resolved().clone();
+        let settings = self
+            .static_config
+            .settings_manager
+            .read()
+            .unwrap()
+            .resolved()
+            .clone();
 
         // Build stream options from settings
         let reasoning = match thinking_level {

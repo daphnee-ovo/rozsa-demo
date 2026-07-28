@@ -1,5 +1,44 @@
+// FrameworkTree
+// storage.rs
+// ├── enum SettingsError
+// ├── enum SettingsScope
+// ├── enum CapabilityKind
+// ├── struct SettingsManager
+// ├── impl SettingsManager
+// ├── load()
+// ├── reload()
+// ├── read_partial()
+// ├── default_provider()
+// ├── default_model()
+// ├── default_thinking_level()
+// ├── default_thinking_level_parsed()
+// ├── compaction()
+// ├── retry()
+// ├── transport()
+// ├── block_images()
+// ├── steering_mode()
+// ├── follow_up_mode()
+// ├── permissions()
+// ├── project_path()
+// ├── context_window_preference()
+// ├── context_window_preferences()
+// ├── resolved()
+// ├── resolved_mut()
+// ├── capability_enabled()
+// ├── capability_overrides()
+// ├── set_capability_override()
+// ├── global_path()
+// ├── path_for_scope()
+// ├── add_trusted_pattern()
+// ├── add_project_permission_allow()
+// ├── save_global()
+// ├── read_json_object_or_empty()
+// └── write_json()
+
 use super::merge::merge_settings;
 use super::schema::{PartialSettings, Settings};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -18,6 +57,20 @@ pub enum SettingsError {
     },
     #[error("Invalid settings: {message}")]
     Invalid { message: String },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SettingsScope {
+    Global,
+    Project,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CapabilityKind {
+    Tools,
+    Skills,
 }
 
 /// Settings manager: loads, merges, and provides access to settings
@@ -185,6 +238,95 @@ impl SettingsManager {
         &mut self.resolved
     }
 
+    pub fn capability_enabled(&self, kind: CapabilityKind, name: &str) -> bool {
+        let configured = match kind {
+            CapabilityKind::Tools => &self.resolved.tools,
+            CapabilityKind::Skills => &self.resolved.skills,
+        };
+        configured.get(name).copied().unwrap_or(true)
+    }
+
+    pub fn capability_overrides(
+        &self,
+        scope: SettingsScope,
+        kind: CapabilityKind,
+    ) -> Result<BTreeMap<String, bool>, SettingsError> {
+        let path = self.path_for_scope(scope)?;
+        if !path.exists() {
+            return Ok(BTreeMap::new());
+        }
+        let partial = Self::read_partial(path)?;
+        Ok(match kind {
+            CapabilityKind::Tools => partial.tools.unwrap_or_default(),
+            CapabilityKind::Skills => partial.skills.unwrap_or_default(),
+        })
+    }
+
+    /// Set or remove one layer-local capability override while preserving every
+    /// unrelated settings key in the file, then refresh the resolved overlay.
+    pub fn set_capability_override(
+        &mut self,
+        scope: SettingsScope,
+        kind: CapabilityKind,
+        name: &str,
+        enabled: Option<bool>,
+    ) -> Result<(), SettingsError> {
+        if name.trim().is_empty() {
+            return Err(SettingsError::Invalid {
+                message: "capability name cannot be empty".to_owned(),
+            });
+        }
+        let path = self.path_for_scope(scope)?.to_path_buf();
+        let mut value = read_json_object_or_empty(&path)?;
+        let field = match kind {
+            CapabilityKind::Tools => "tools",
+            CapabilityKind::Skills => "skills",
+        };
+        let root = value
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: format!("settings root must be an object: {}", path.display()),
+            })?;
+        let capabilities = root
+            .entry(field.to_owned())
+            .or_insert_with(|| serde_json::json!({}));
+        let capabilities = capabilities
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: format!("settings.{field} must be an object"),
+            })?;
+        match enabled {
+            Some(enabled) => {
+                capabilities.insert(name.to_owned(), serde_json::Value::Bool(enabled));
+            }
+            None => {
+                capabilities.remove(name);
+            }
+        }
+        if capabilities.is_empty() {
+            root.remove(field);
+        }
+        write_json(&path, &value)?;
+        self.reload()
+    }
+
+    pub fn global_path(&self) -> &Path {
+        &self.global_path
+    }
+
+    fn path_for_scope(&self, scope: SettingsScope) -> Result<&Path, SettingsError> {
+        match scope {
+            SettingsScope::Global => Ok(&self.global_path),
+            SettingsScope::Project => {
+                self.project_path
+                    .as_deref()
+                    .ok_or_else(|| SettingsError::Invalid {
+                        message: "project settings path is unavailable".to_owned(),
+                    })
+            }
+        }
+    }
+
     /// Add a trust_key as an auto-approve pattern and persist to settings.
     /// Converts the trust_key into a regex pattern (exact prefix match).
     pub fn add_trusted_pattern(&mut self, trust_key: &str) {
@@ -279,4 +421,43 @@ impl SettingsManager {
             source,
         })
     }
+}
+
+fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value, SettingsError> {
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let content = fs::read_to_string(path).map_err(|source| SettingsError::ReadError {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let value = serde_json::from_str::<serde_json::Value>(&content).map_err(|source| {
+        SettingsError::ParseError {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    if !value.is_object() {
+        return Err(SettingsError::Invalid {
+            message: format!("settings root must be an object: {}", path.display()),
+        });
+    }
+    Ok(value)
+}
+
+fn write_json(path: &Path, value: &serde_json::Value) -> Result<(), SettingsError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| SettingsError::ReadError {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let json = serde_json::to_string_pretty(value).map_err(|source| SettingsError::ParseError {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    fs::write(path, format!("{json}\n")).map_err(|source| SettingsError::ReadError {
+        path: path.to_path_buf(),
+        source,
+    })
 }

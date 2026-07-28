@@ -46,6 +46,8 @@ let currentQuestionAnswers = {};
 let questionDisplayInFlight = false;
 let toolCounts = {};
 let currentSettings = null;
+let capabilitySettings = null;
+const capabilityScope = { skills: 'global', tools: 'global' };
 let keyBindingDefinitions = [
   { action: 'toggleThinking', title: 'Toggle thinking', description: 'Expand or collapse thinking blocks', defaultBinding: 'Ctrl+T', binding: 'Ctrl+T', scope: 'global' },
   { action: 'openModelPicker', title: 'Choose model', description: 'Open the model picker', defaultBinding: 'Ctrl+P', binding: 'Ctrl+P', scope: 'global' },
@@ -2345,7 +2347,7 @@ function renderNativeMainScene(snapshot) {
   document.body.classList.toggle('settings-visible', settingsVisible);
   document.getElementById('settingsPanel')?.classList.toggle('visible', settingsVisible);
   if (settingsVisible) {
-    renderSettingsSelection(snapshot.selectedPane || 'appearance');
+    renderSettingsSelection(snapshot.selectedPane || 'skills');
     loadSettings().catch(() => {});
     loadKeyBindings().catch(() => {});
   } else if (returningMain) {
@@ -2632,7 +2634,7 @@ function setNativeFullscreen(fullscreen) {
 function toggleSettings() {
   if (nativeSplitMode) {
     const scene = guiSceneState.scene === 'settings' ? 'main' : 'settings';
-    void requestGuiScene(scene, scene === 'settings' ? 'appearance' : null)
+    void requestGuiScene(scene, scene === 'settings' ? 'skills' : null)
       .catch(error => showError('Failed to switch GUI scene: ' + String(error)));
     return;
   }
@@ -2702,16 +2704,98 @@ function wireSettingSwitch(id, onChange) {
 
 async function loadSettings() {
   try {
-    currentSettings = await invoke('get_settings');
-    availableThemes = await invoke('list_themes');
+    [currentSettings, availableThemes, capabilitySettings] = await Promise.all([
+      invoke('get_settings'),
+      invoke('list_themes'),
+      invoke('get_capability_settings'),
+    ]);
     renderSettingsPane(currentSettings);
+    renderCapabilitySettings();
     await applySelectedTheme();
   } catch (e) {
-    console.warn('appearance settings:', e);
+    console.warn('settings:', e);
     currentSettings = {};
     availableThemes = [];
-    showError('Failed to load appearance settings: ' + String(e));
+    capabilitySettings = null;
+    showError('Failed to load settings: ' + String(e));
     throw e;
+  }
+}
+
+function renderCapabilitySettings() {
+  if (!capabilitySettings) return;
+  renderCapabilityPane('tools', capabilitySettings.tools || []);
+  const skills = capabilityScope.skills === 'project'
+    ? mergeCapabilityItems(
+        capabilitySettings.globalSkills || [],
+        capabilitySettings.projectSkills || []
+      )
+    : capabilitySettings.globalSkills || [];
+  renderCapabilityPane('skills', skills);
+}
+
+function mergeCapabilityItems(base, overlay) {
+  const merged = new Map(base.map(item => [item.name, item]));
+  for (const item of overlay) merged.set(item.name, item);
+  return [...merged.values()].sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function renderCapabilityPane(kind, items) {
+  const scope = capabilityScope[kind];
+  const scopeHost = document.getElementById(kind + 'Scope');
+  const list = document.getElementById(kind === 'tools' ? 'settingsToolList' : 'settingsSkillList');
+  if (!scopeHost || !list) return;
+  scopeHost.replaceChildren();
+  for (const candidate of ['global', 'project']) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = candidate === 'global' ? 'Global' : 'Project';
+    button.classList.toggle('active', scope === candidate);
+    button.onclick = () => {
+      capabilityScope[kind] = candidate;
+      renderCapabilitySettings();
+    };
+    scopeHost.appendChild(button);
+  }
+
+  list.replaceChildren();
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'capability-description';
+    empty.textContent = kind === 'skills' ? 'No skills found in this scope.' : 'No tools registered.';
+    list.appendChild(empty);
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement('div');
+    row.className = 'setting-item capability-row';
+    const copy = document.createElement('div');
+    copy.className = 'capability-copy';
+    copy.innerHTML = `<div class="capability-name">${escapeHtml(item.label)}</div>` +
+      `<div class="capability-description">${escapeHtml(item.description || item.name)}</div>`;
+    const select = document.createElement('select');
+    select.className = 'setting-select';
+    select.setAttribute('aria-label', `${item.label} ${scope} override`);
+    const inherited = scope === 'project' ? 'Inherit from global' : 'Use default (enabled)';
+    select.innerHTML = `<option value="inherit">${inherited}</option>` +
+      '<option value="true">Enabled</option><option value="false">Disabled</option>';
+    const override = scope === 'global' ? item.globalOverride : item.projectOverride;
+    select.value = override == null ? 'inherit' : String(override);
+    select.title = `Effective: ${item.effective ? 'enabled' : 'disabled'}`;
+    select.onchange = async () => {
+      const enabled = select.value === 'inherit' ? null : select.value === 'true';
+      try {
+        capabilitySettings = await invoke('update_capability_setting', {
+          kind, scope, name: item.name, enabled,
+        });
+        renderCapabilitySettings();
+      } catch (error) {
+        showError(`Failed to update ${kind}: ${String(error)}`);
+        renderCapabilitySettings();
+      }
+    };
+    row.append(copy, select);
+    list.appendChild(row);
   }
 }
 
@@ -2870,6 +2954,7 @@ async function resetKeyBinding(action) {
 
 function renderSettingsPane(settings) {
   if (!settings) return;
+  document.body.classList.toggle('hide-thinking', Boolean(settings.hide_thinking));
 
   // Thinking level
   const thinkingSel = document.getElementById('settingsThinking');
@@ -3245,6 +3330,11 @@ function renderGeneralSettings(settings) {
     wireSettingSwitch('settingsAutoCompact', enabled => saveSetting('auto_compact', String(enabled)));
   }
 
+  wireNumberSetting('settingsCompactionThreshold', settings.compaction_threshold_tokens,
+    'compaction_threshold_tokens');
+  wireNumberSetting('settingsCompactionTarget', settings.compaction_target_tokens,
+    'compaction_target_tokens');
+
   const namingSwitch = document.getElementById('settingsAutoSessionNaming');
   if (namingSwitch) {
     setSettingSwitch(namingSwitch, settings.auto_session_naming);
@@ -3283,6 +3373,15 @@ function renderGeneralSettings(settings) {
     wireSettingSwitch('settingsBlockImages', enabled => saveSetting('block_images', String(enabled)));
   }
 
+  const hideThinkingSwitch = document.getElementById('settingsHideThinking');
+  if (hideThinkingSwitch) {
+    setSettingSwitch(hideThinkingSwitch, settings.hide_thinking);
+    wireSettingSwitch('settingsHideThinking', enabled => {
+      document.body.classList.toggle('hide-thinking', enabled);
+      return saveSetting('hide_thinking', String(enabled));
+    });
+  }
+
   // Transport
   const transportSel = document.getElementById('settingsTransport');
   if (transportSel) {
@@ -3290,12 +3389,46 @@ function renderGeneralSettings(settings) {
     transportSel.onchange = () => saveSetting('transport', transportSel.value);
   }
 
+  wireOptionalNumberSetting('settingsRetryTimeout', settings.retry_timeout_ms, 'retry_timeout_ms');
+  wireOptionalNumberSetting('settingsRetryMax', settings.retry_max_retries, 'retry_max_retries');
+  wireOptionalNumberSetting('settingsRetryDelay', settings.retry_max_delay_ms, 'retry_max_delay_ms');
+
   // Permission mode
   const permSel = document.getElementById('settingsPermMode');
   if (permSel) {
     if (settings.permission_mode) permSel.value = settings.permission_mode;
     permSel.onchange = () => saveSetting('permission_mode', permSel.value);
   }
+
+  wireLinesSetting('settingsPermissionPatterns', settings.auto_approve_patterns,
+    'permission_auto_approve_patterns');
+  wireLinesSetting('settingsAllowedTools', settings.allowed_tools, 'permission_allowed_tools');
+  wireLinesSetting('settingsBlockedCommands', settings.blocked_commands,
+    'permission_blocked_commands');
+  wireLinesSetting('settingsPermissionDeny', settings.permission_deny, 'permission_deny');
+  wireLinesSetting('settingsPermissionAsk', settings.permission_ask, 'permission_ask');
+  wireLinesSetting('settingsPermissionAllow', settings.permission_allow, 'permission_allow');
+}
+
+function wireNumberSetting(id, value, key) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.value = String(value);
+  input.onchange = () => saveSetting(key, input.value);
+}
+
+function wireOptionalNumberSetting(id, value, key) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.value = value == null ? '' : String(value);
+  input.onchange = () => saveSetting(key, input.value);
+}
+
+function wireLinesSetting(id, values, key) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.value = Array.isArray(values) ? values.join('\n') : '';
+  input.onchange = () => saveSetting(key, input.value);
 }
 
 async function saveSetting(key, value) {

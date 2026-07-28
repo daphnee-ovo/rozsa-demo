@@ -1,5 +1,30 @@
+// FrameworkTree
+// schema.rs
+// ├── struct CompactionSettings
+// ├── impl CompactionSettings
+// ├── default()
+// ├── struct RetrySettings
+// ├── impl RetrySettings
+// ├── default()
+// ├── struct PermissionSettings
+// ├── impl PermissionSettings
+// ├── default()
+// ├── struct Settings
+// ├── impl Settings
+// ├── default()
+// ├── struct AppearanceSettings
+// ├── impl AppearanceSettings
+// ├── default()
+// ├── impl AppearanceSettings
+// ├── validate()
+// ├── struct PartialSettings
+// ├── struct PartialAppearanceSettings
+// ├── struct PartialCompactionSettings
+// ├── struct PartialRetrySettings
+// └── struct PartialPermissionSettings
+
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Compaction settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +120,12 @@ pub struct Settings {
     pub permissions: PermissionSettings,
     pub context_window_preferences: HashMap<String, u64>,
     pub lsp_mode: String,
+    /// Per-tool enablement. Missing entries are enabled.
+    #[serde(default)]
+    pub tools: BTreeMap<String, bool>,
+    /// Per-skill enablement. Missing entries are enabled.
+    #[serde(default)]
+    pub skills: BTreeMap<String, bool>,
     #[serde(default)]
     pub appearance: AppearanceSettings,
 }
@@ -118,6 +149,8 @@ impl Default for Settings {
             permissions: PermissionSettings::default(),
             context_window_preferences: HashMap::new(),
             lsp_mode: "disabled".to_string(),
+            tools: BTreeMap::new(),
+            skills: BTreeMap::new(),
             appearance: AppearanceSettings::default(),
         }
     }
@@ -210,6 +243,10 @@ pub struct PartialSettings {
     pub context_window_preferences: Option<HashMap<String, u64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lsp_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<BTreeMap<String, bool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skills: Option<BTreeMap<String, bool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<PartialAppearanceSettings>,
 }
