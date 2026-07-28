@@ -68,6 +68,62 @@ fn frontend_places_thinking_level_next_to_model_and_reserves_brand_for_no_sessio
 }
 
 #[test]
+fn composer_thinking_level_opens_a_model_aware_persisted_slider() {
+    let html = include_str!("../frontend/index.html");
+    let app = include_str!("../frontend/app.js");
+
+    assert!(html.contains("id=\"thinkingLevel\""));
+    assert!(html.contains("aria-haspopup=\"dialog\""));
+    assert!(html.contains("id=\"thinkingLevelSlider\""));
+    assert!(html.contains("type=\"range\""));
+    assert!(html.contains("aria-label=\"Thinking level\""));
+    assert!(app.contains("const THINKING_LEVEL_OPTIONS = Object.freeze("));
+    assert!(app.contains("'off', 'minimal', 'low', 'medium', 'high', 'xhigh'"));
+    assert!(app.contains("model && model.reasoning ? THINKING_LEVEL_OPTIONS"));
+    assert!(app.contains("await saveSetting('thinking', option.value)"));
+    assert!(app.contains("await saveSetting('thinking', 'off')"));
+}
+
+#[test]
+fn thinking_slider_popover_is_not_clipped_by_the_composer_frame() {
+    let html = include_str!("../frontend/index.html");
+    let app = include_str!("../frontend/app.js");
+    let settings_start = html
+        .find("<!-- ============ 设置面板")
+        .expect("settings boundary must exist");
+    let main_end = html[..settings_start]
+        .rfind("</main>")
+        .expect("main content boundary must exist");
+    let popover = html
+        .find("id=\"thinkingLevelPopover\"")
+        .expect("thinking popover must exist");
+
+    assert!(
+        popover > main_end,
+        "popover must live outside the clipped composer"
+    );
+    assert!(html.contains(".thinking-level-popover {\n  position: fixed;"));
+    assert!(app.contains("function positionThinkingLevelPopover()"));
+    assert!(app.contains("popover.style.left ="));
+    assert!(app.contains("popover.style.top ="));
+}
+
+#[test]
+fn thinking_slider_uses_compact_composer_scale() {
+    let html = include_str!("../frontend/index.html");
+
+    assert!(html.contains("width: min(320px, calc(100vw - 32px));"));
+    assert!(
+        html.contains(".thinking-level-slider::-webkit-slider-runnable-track {\n  height: 28px;")
+    );
+    assert!(html.contains(
+        ".thinking-level-slider::-webkit-slider-thumb {\n  width: 38px;\n  height: 38px;"
+    ));
+    assert!(!html.contains("width: min(420px, calc(100vw - 32px));"));
+    assert!(!html.contains("height: 54px;"));
+}
+
+#[test]
 fn title_generation_starts_before_the_main_prompt_and_exposes_small_models() {
     let commands = include_str!("../src/commands.rs");
     let html = include_str!("../frontend/index.html");

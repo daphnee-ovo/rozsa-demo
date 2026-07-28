@@ -300,10 +300,117 @@ body {
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--muted);
-  padding: 3px 4px;
+  padding: 4px 6px;
   font-weight: 500;
   flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
 }
+.thinking-level-badge:hover,
+.thinking-level-badge[aria-expanded="true"] {
+  color: var(--fg);
+  background: var(--code-bg);
+}
+.thinking-level-badge:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.thinking-level-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+.thinking-level-popover {
+  position: fixed;
+  z-index: 180;
+  width: min(320px, calc(100vw - 32px));
+  padding: 14px 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--fg) 16%, transparent);
+}
+.thinking-level-popover[hidden] { display: none; }
+.thinking-level-popover-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 9px;
+}
+.thinking-level-popover-title {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--fg);
+}
+.thinking-level-popover-value {
+  font: 10px var(--font-mono);
+  color: var(--muted);
+}
+.thinking-level-slider-wrap {
+  position: relative;
+  height: 40px;
+  display: flex;
+  align-items: center;
+}
+.thinking-level-slider {
+  --thinking-progress: 0%;
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.thinking-level-slider::-webkit-slider-runnable-track {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0 var(--thinking-progress),
+    var(--surface) var(--thinking-progress) 100%
+  );
+}
+.thinking-level-slider:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+.thinking-level-slider::-webkit-slider-thumb {
+  width: 38px;
+  height: 38px;
+  margin-top: -6px;
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--fg) 22%, transparent);
+}
+.thinking-level-slider:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 4px;
+}
+.thinking-level-marks {
+  position: absolute;
+  z-index: 3;
+  left: 19px;
+  right: 19px;
+  top: 50%;
+  display: flex;
+  justify-content: space-between;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.thinking-level-mark {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--muted) 62%, transparent);
+}
+.thinking-level-mark.active { background: color-mix(in srgb, white 72%, var(--accent)); }
 .header-spacer { flex: 1; }
 .context-info {
   font-size: 11px;
@@ -2802,7 +2909,9 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           </div>
           <div class="input-spacer"></div>
           <button class="model-selector" data-od-id="model-badge" title="Switch model" id="modelSelector" onclick="showModelPicker()">(not configured)</button>
-          <span class="thinking-level-badge" id="thinkingLevel" title="Thinking level">off</span>
+          <div class="thinking-level-control">
+            <button class="thinking-level-badge" id="thinkingLevel" type="button" title="Choose thinking level" aria-haspopup="dialog" aria-expanded="false" onclick="toggleThinkingLevelPicker(event)">off</button>
+          </div>
           <select class="model-selector" id="runningSendMode" title="Send mode while running" onchange="updateAbortButton()" hidden><option value="queue">Queue</option><option value="steer">Steer</option></select>
           <button class="send-btn" data-od-id="send-btn" onclick="sendMessage()">Send</button>
         </div>
@@ -2811,6 +2920,16 @@ body.native-split-main .settings-dialog { background: var(--bg); }
   </main>
 </div>
 
+<div class="thinking-level-popover" id="thinkingLevelPopover" role="dialog" aria-label="Thinking level picker" hidden>
+  <div class="thinking-level-popover-header">
+    <span class="thinking-level-popover-title" id="thinkingLevelPickerTitle">Thinking level</span>
+    <span class="thinking-level-popover-value" id="thinkingLevelPickerValue">Off</span>
+  </div>
+  <div class="thinking-level-slider-wrap">
+    <input class="thinking-level-slider" id="thinkingLevelSlider" type="range" min="0" max="5" step="1" value="0" aria-label="Thinking level" oninput="previewThinkingLevel(this.value)" onchange="selectThinkingLevel(this.value)">
+    <div class="thinking-level-marks" id="thinkingLevelMarks" aria-hidden="true"></div>
+  </div>
+</div>
 
 <!-- ============ 设置面板 ============ -->
 <div class="settings-panel" id="settingsPanel" data-native-scene-root="settings-content" role="dialog" aria-modal="true" aria-label="Settings" onclick="if(event.target===this)closeSettings()">
@@ -2866,7 +2985,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
         <div class="settings-pane-title">General</div>
         <div class="settings-group">
           <div class="settings-group-label">AI</div>
-          <div class="setting-item"><span class="setting-label">Thinking Level</span><select class="setting-select" id="settingsThinking" aria-label="Thinking Level"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+          <div class="setting-item"><span class="setting-label">Thinking Level</span><select class="setting-select" id="settingsThinking" aria-label="Thinking Level"><option value="off">Off</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">XHigh</option></select></div>
           <div class="setting-item"><span class="setting-label">Auto Compact</span><button class="setting-toggle" id="settingsAutoCompact" type="button" role="switch" aria-checked="false" aria-label="Auto Compact"></button></div>
           <div class="setting-item"><span class="setting-label">Auto-name sessions</span><button class="setting-toggle" id="settingsAutoSessionNaming" type="button" role="switch" aria-checked="true" aria-label="Auto-name sessions"></button></div>
           <div class="setting-item"><span class="setting-label">Steering Mode</span><select class="setting-select" id="settingsSteeringMode" aria-label="Steering Mode"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>

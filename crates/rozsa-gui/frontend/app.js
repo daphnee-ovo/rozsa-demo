@@ -96,7 +96,19 @@ const mainThemeState = { revision: 0 };
 let pendingGuiSceneSnapshot = null;
 let pendingGuiSceneIntent = null;
 let mainSceneContinuity = null;
-const TRANSIENT_POPUP_IDS = ['autocomplete', 'forkPicker', 'subagentPanel', 'quotaTooltip'];
+const TRANSIENT_POPUP_IDS = [
+  'autocomplete',
+  'forkPicker',
+  'subagentPanel',
+  'quotaTooltip',
+  'thinkingLevelPopover',
+];
+const THINKING_LEVEL_OPTIONS = Object.freeze(
+  ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].map(value => Object.freeze({
+    value,
+    label: value === 'xhigh' ? 'XHigh' : value[0].toUpperCase() + value.slice(1),
+  }))
+);
 const DOUBLE_ESCAPE_WINDOW_MS = 1000;
 const COMPOSER_HINT_ROTATION_MS = 30_000;
 const COMPOSER_HINTS = [
@@ -255,6 +267,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 window.addEventListener('resize', syncMainSidebarViewport);
 window.addEventListener('resize', syncChromeBackgroundGeometry);
 window.addEventListener('resize', scheduleNativeFullscreenSync);
+window.addEventListener('resize', positionThinkingLevelPopover);
 window.addEventListener('pointermove', handleSidebarEdgeReveal);
 window.addEventListener('pointerdown', handleSidebarEdgeReveal);
 document.documentElement.addEventListener('pointerenter', handleSidebarEdgeReveal);
@@ -329,7 +342,10 @@ function updateHeader(snap) {
   if (modelBtn && snap.model) modelBtn.textContent = snap.model.id;
 
   const thinkingLevel = document.getElementById('thinkingLevel');
-  if (thinkingLevel && snap.thinkingLevel) thinkingLevel.textContent = snap.thinkingLevel;
+  if (thinkingLevel && snap.thinkingLevel) {
+    thinkingLevel.textContent = snap.thinkingLevel;
+    renderThinkingLevelPicker(snap.thinkingLevel);
+  }
 }
 
 function updateQuotaBars(snapshot) {
@@ -2089,17 +2105,25 @@ function renderModelSelector() {
     smallSelect.value = currentSettings?.small_model || '';
     smallSelect.onchange = () => saveSetting('small_model', smallSelect.value);
   }
+  renderThinkingLevelPicker();
 }
 
 async function onModelChange(modelId) {
   try {
     await invoke('switch_model', { modelId: modelId });
-    const state = await invoke('get_state');
+    let state = await invoke('get_state');
     renderState(state);
     currentSettings = await invoke('get_settings');
+    const model = models.find(entry => entry.id === modelId);
+    if (model && !model.reasoning && state.thinkingLevel !== 'off') {
+      await saveSetting('thinking', 'off');
+      state = await invoke('get_state');
+      renderState(state);
+    }
     renderSettingsPane(currentSettings);
     const btn = document.getElementById('modelSelector');
     if (btn) btn.textContent = modelId;
+    renderThinkingLevelPicker(state.thinkingLevel);
   } catch (e) { showError(String(e)); }
 }
 
@@ -2133,6 +2157,118 @@ function selectModel(idx) {
   if (!m) return;
   hideAutocomplete();
   onModelChange(m.id);
+}
+
+function thinkingModel() {
+  const modelId = currentSettings?.model_id
+    || document.getElementById('modelSelector')?.textContent
+    || '';
+  return models.find(model => model.id === modelId);
+}
+
+function supportedThinkingLevels() {
+  const model = thinkingModel();
+  return model && model.reasoning ? THINKING_LEVEL_OPTIONS : THINKING_LEVEL_OPTIONS.slice(0, 1);
+}
+
+function renderThinkingLevelPicker(level) {
+  const popover = document.getElementById('thinkingLevelPopover');
+  const slider = document.getElementById('thinkingLevelSlider');
+  const value = document.getElementById('thinkingLevelPickerValue');
+  const title = document.getElementById('thinkingLevelPickerTitle');
+  const marks = document.getElementById('thinkingLevelMarks');
+  if (!popover || !slider || !value || !title || !marks) return;
+
+  const options = supportedThinkingLevels();
+  const requested = String(
+    level
+      || currentSettings?.thinking_level
+      || document.getElementById('thinkingLevel')?.textContent
+      || 'off'
+  ).toLowerCase();
+  const selectedIndex = Math.max(0, options.findIndex(option => option.value === requested));
+  const selected = options[selectedIndex];
+  const progress = options.length > 1 ? (selectedIndex / (options.length - 1)) * 100 : 0;
+
+  title.textContent = options.length > 1 ? 'Thinking level' : 'Thinking unavailable for this model';
+  value.textContent = selected.label;
+  slider.min = '0';
+  slider.max = String(Math.max(0, options.length - 1));
+  slider.value = String(selectedIndex);
+  slider.disabled = options.length === 1;
+  slider.setAttribute('aria-valuetext', selected.label);
+  slider.style.setProperty('--thinking-progress', progress + '%');
+  marks.innerHTML = options.map((option, index) =>
+    '<span class="thinking-level-mark' + (index === selectedIndex ? ' active' : '') +
+    '" title="' + escapeHtml(option.label) + '"></span>'
+  ).join('');
+  if (!popover.hidden) positionThinkingLevelPopover();
+}
+
+function positionThinkingLevelPopover() {
+  const popover = document.getElementById('thinkingLevelPopover');
+  const trigger = document.getElementById('thinkingLevel');
+  if (!popover || !trigger || popover.hidden) return;
+  const triggerRect = trigger.getBoundingClientRect();
+  const margin = 16;
+  const gap = 12;
+  const left = Math.min(
+    window.innerWidth - popover.offsetWidth - margin,
+    Math.max(margin, triggerRect.right - popover.offsetWidth)
+  );
+  const above = triggerRect.top - popover.offsetHeight - gap;
+  const top = above >= margin ? above : triggerRect.bottom + gap;
+  popover.style.left = Math.round(left) + 'px';
+  popover.style.top = Math.round(top) + 'px';
+}
+
+function toggleThinkingLevelPicker(event) {
+  event?.stopPropagation();
+  const popover = document.getElementById('thinkingLevelPopover');
+  const trigger = document.getElementById('thinkingLevel');
+  if (!popover || !trigger) return;
+  const opening = popover.hidden;
+  dismissTransientPopups();
+  if (!opening) return;
+  renderThinkingLevelPicker();
+  popover.hidden = false;
+  positionThinkingLevelPopover();
+  trigger.setAttribute('aria-expanded', 'true');
+  document.getElementById('thinkingLevelSlider')?.focus();
+}
+
+function hideThinkingLevelPicker() {
+  const popover = document.getElementById('thinkingLevelPopover');
+  if (popover) popover.hidden = true;
+  document.getElementById('thinkingLevel')?.setAttribute('aria-expanded', 'false');
+}
+
+function previewThinkingLevel(index) {
+  const options = supportedThinkingLevels();
+  const selectedIndex = Math.max(0, Math.min(options.length - 1, Number(index)));
+  const option = options[selectedIndex];
+  const slider = document.getElementById('thinkingLevelSlider');
+  if (!option || !slider) return;
+  const progress = options.length > 1 ? (selectedIndex / (options.length - 1)) * 100 : 0;
+  document.getElementById('thinkingLevelPickerValue').textContent = option.label;
+  slider.setAttribute('aria-valuetext', option.label);
+  slider.style.setProperty('--thinking-progress', progress + '%');
+  document.querySelectorAll('#thinkingLevelMarks .thinking-level-mark').forEach((mark, markIndex) => {
+    mark.classList.toggle('active', markIndex === selectedIndex);
+  });
+}
+
+async function selectThinkingLevel(index) {
+  const options = supportedThinkingLevels();
+  const selectedIndex = Math.max(0, Math.min(options.length - 1, Number(index)));
+  const option = options[selectedIndex];
+  if (!option) return;
+  previewThinkingLevel(selectedIndex);
+  if (await saveSetting('thinking', option.value)) {
+    const badge = document.getElementById('thinkingLevel');
+    if (badge) badge.textContent = option.value;
+    renderThinkingLevelPicker(option.value);
+  }
 }
 
 // =============== Settings Panel ===============
@@ -3000,9 +3136,11 @@ async function saveSetting(key, value) {
   try {
     await invoke('update_setting', { key: key, value: value });
     await loadSettings();
+    return true;
   } catch (e) {
     console.warn('update_setting failed:', e);
     showError('Failed to save setting: ' + key);
+    return false;
   }
 }
 
@@ -3246,6 +3384,8 @@ function hideTransientPopup(popup) {
     hideAutocomplete();
   } else if (popup.id === 'quotaTooltip') {
     hideQuotaTooltip();
+  } else if (popup.id === 'thinkingLevelPopover') {
+    hideThinkingLevelPicker();
   } else {
     popup.hidden = true;
   }
