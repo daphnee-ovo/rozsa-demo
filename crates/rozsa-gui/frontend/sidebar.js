@@ -43,12 +43,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-document.documentElement.addEventListener('pointerleave', () => {
-  if (!sidebarInvoke) return;
-  void sidebarInvoke('set_native_sidebar_overlay_visible', { visible: false })
-    .catch(error => console.error('[rozsa-gui][sidebar] failed to hide overlay', error));
-});
-
 function applySidebarSceneSnapshot(snapshot) {
   return window.RozsaGuiShared.applySceneSnapshot(sidebarSceneState, snapshot, renderSidebarScene);
 }

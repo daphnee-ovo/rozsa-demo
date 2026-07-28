@@ -538,6 +538,19 @@ pub fn set_sidebar_overlay_visible(visible: bool) -> Result<(), String> {
     })
 }
 
+/// Read the current overlay width, including the user's last expanded width.
+pub fn sidebar_overlay_width() -> Result<f64, String> {
+    MainThreadMarker::new().ok_or_else(|| {
+        "native sidebar overlay width must be read on the main thread".to_string()
+    })?;
+    HOST.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|host| host.sidebar_overlay_width_constraint.constant())
+            .ok_or_else(|| "native split host is not installed".to_string())
+    })
+}
+
 /// Read the AppKit-owned collapsed state without changing it.
 pub fn is_sidebar_collapsed() -> Result<bool, String> {
     MainThreadMarker::new()

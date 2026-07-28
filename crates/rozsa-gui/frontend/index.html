@@ -2607,13 +2607,21 @@ body.native-split-main.sidebar-collapsed:not(.native-fullscreen) [data-od-id="pa
   flex: 0 0 58px;
   padding-top: 12px;
 }
-#nativeSidebarEdgeTrigger { display: none; }
-body.native-split-main.sidebar-collapsed #nativeSidebarEdgeTrigger {
+/* Scene-independent native interactions must sit above scene overlays. */
+#nativeGuiInteractionLayer { display: none; }
+body.native-split-main.sidebar-collapsed #nativeGuiInteractionLayer {
   position: fixed;
-  z-index: 30;
+  z-index: 120;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+body.native-split-main.sidebar-collapsed #nativeSidebarEdgeTrigger {
+  position: absolute;
   inset: var(--native-titlebar-offset) auto 0 0;
   display: block;
   width: 18px;
+  pointer-events: auto;
 }
 [data-od-id="chat-messages"],
 [data-od-id="chat-input"] {
@@ -2628,8 +2636,6 @@ body.native-split-main .settings-dialog { background: var(--bg); }
 </style>
 </head>
 <body>
-
-<div id="nativeSidebarEdgeTrigger" aria-hidden="true"></div>
 
 <!-- ============ 主体 2:8；窗口 chrome 由 Tauri 原生提供 ============ -->
 <div data-od-id="app-body">
@@ -2909,6 +2915,11 @@ body.native-split-main .settings-dialog { background: var(--bg); }
     </div>
     <button class="settings-close" onclick="closeSettings()">✕</button>
   </div>
+</div>
+
+<!-- ============ Main/Settings 共享的 native 交互层 ============ -->
+<div id="nativeGuiInteractionLayer" aria-hidden="true">
+  <div id="nativeSidebarEdgeTrigger"></div>
 </div>
 
 

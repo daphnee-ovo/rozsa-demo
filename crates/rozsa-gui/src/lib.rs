@@ -94,6 +94,18 @@ fn set_native_sidebar_overlay_visible(visible: bool) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn native_sidebar_overlay_width() -> Result<f64, String> {
+    #[cfg(target_os = "macos")]
+    {
+        native_split_view::sidebar_overlay_width()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(0.0)
+    }
+}
+
 pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_settings = config.settings_manager.resolved().clone();
     // 共享资源（创建新 agent backend 时复用）
@@ -191,6 +203,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::pick_attachment,
             native_sidebar_collapsed,
             set_native_sidebar_overlay_visible,
+            native_sidebar_overlay_width,
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {

@@ -87,6 +87,10 @@ let sidebarCollapsed = false;
 let sidebarAutoCollapsed = false;
 let nativeSplitMode = false;
 let nativeSidebarOverlayVisible = false;
+let nativeSidebarOverlayWidth = 0;
+let nativeSidebarOverlayRequest = 0;
+let nativeSidebarOverlayRevealInFlight = false;
+let nativePointerClientX = null;
 const guiSceneState = { revision: 0, scene: 'main', selectedPane: null };
 const mainThemeState = { revision: 0 };
 let pendingGuiSceneSnapshot = null;
@@ -208,7 +212,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('native-sidebar-state', ev => {
     if (nativeSplitMode) {
       const collapsed = Boolean(ev.payload);
-      if (!collapsed) nativeSidebarOverlayVisible = false;
+      if (!collapsed) {
+        nativeSidebarOverlayRequest += 1;
+        nativeSidebarOverlayRevealInFlight = false;
+        nativeSidebarOverlayVisible = false;
+      }
       setMainSidebarCollapsed(collapsed, false);
     }
   });
@@ -2331,9 +2339,35 @@ function syncChromeBackgroundGeometry() {
   );
 }
 
+function nativeSidebarEdgeTriggerWidth() {
+  const trigger = document.getElementById('nativeSidebarEdgeTrigger');
+  const width = trigger?.getBoundingClientRect().width || 0;
+  return width > 0 ? width : 18;
+}
+
 function handleSidebarEdgeReveal(event) {
   if (nativeSplitMode) {
-    if (nativeSidebarOverlayVisible) hideNativeSidebarOverlay();
+    nativePointerClientX = event.clientX;
+    // Reparenting the sidebar WebView can send one more pointermove through
+    // this WebView. The edge trigger is only a reveal affordance; once the
+    // overlay is visible, keep it alive through its full native width so the
+    // sidebar remains usable.
+    if (
+      (nativeSidebarOverlayVisible || nativeSidebarOverlayRevealInFlight) &&
+      nativeSidebarOverlayWidth > 0 &&
+      event.clientX > nativeSidebarOverlayWidth
+    ) {
+      hideNativeSidebarOverlay();
+    } else if (
+      isSidebarCollapsed() &&
+      !nativeSidebarOverlayVisible &&
+      !nativeSidebarOverlayRevealInFlight &&
+      event.clientX <= nativeSidebarEdgeTriggerWidth()
+    ) {
+      // This is the scene-independent fallback for WebKit/AppKit paths that
+      // deliver pointermove without a pointerenter on the empty edge node.
+      showNativeSidebarOverlay(event);
+    }
     return;
   }
   const collapsed = isSidebarCollapsed();
@@ -2351,14 +2385,43 @@ function handleSidebarEdgeReveal(event) {
   setSidebarEdgeVisible(collapsed && edgeVisible);
 }
 
-function showNativeSidebarOverlay() {
-  if (!nativeSplitMode || !isSidebarCollapsed() || nativeSidebarOverlayVisible) return;
-  invoke('set_native_sidebar_overlay_visible', { visible: true })
-    .then(() => { nativeSidebarOverlayVisible = true; })
-    .catch(error => showError('Failed to reveal sidebar: ' + String(error)));
+function showNativeSidebarOverlay(event) {
+  if (
+    !nativeSplitMode ||
+    !isSidebarCollapsed() ||
+    nativeSidebarOverlayVisible ||
+    nativeSidebarOverlayRevealInFlight
+  ) return;
+  const request = ++nativeSidebarOverlayRequest;
+  nativeSidebarOverlayRevealInFlight = true;
+  const revealPointerX = event?.clientX ?? nativePointerClientX ?? 0;
+  invoke('native_sidebar_overlay_width')
+    .then(width => {
+      if (request !== nativeSidebarOverlayRequest) return null;
+      nativeSidebarOverlayRevealInFlight = false;
+      const normalizedWidth = Number(width);
+      if (!Number.isFinite(normalizedWidth) || normalizedWidth <= 0) {
+        throw new Error('native sidebar overlay width is invalid: ' + String(width));
+      }
+      nativeSidebarOverlayWidth = normalizedWidth;
+      const currentPointerX = nativePointerClientX ?? revealPointerX;
+      if (currentPointerX > normalizedWidth) return null;
+      nativeSidebarOverlayVisible = true;
+      return invoke('set_native_sidebar_overlay_visible', { visible: true });
+    })
+    .catch(error => {
+      if (request === nativeSidebarOverlayRequest) {
+        nativeSidebarOverlayRevealInFlight = false;
+        nativeSidebarOverlayVisible = false;
+        showError('Failed to reveal sidebar: ' + String(error));
+      }
+    });
 }
 
 function hideNativeSidebarOverlay() {
+  nativeSidebarOverlayRequest += 1;
+  nativeSidebarOverlayRevealInFlight = false;
+  if (!nativeSidebarOverlayVisible) return;
   nativeSidebarOverlayVisible = false;
   invoke('set_native_sidebar_overlay_visible', { visible: false })
     .catch(error => showError('Failed to hide sidebar: ' + String(error)));

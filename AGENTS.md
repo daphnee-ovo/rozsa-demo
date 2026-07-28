@@ -41,6 +41,7 @@ Dependency direction is `rozsa-cli` / `rozsa-gui` → `rozsa-app` → `rozsa-cor
 - Use `cargo fmt --all -- --check` for formatting verification.
 - Run `./devtools/sync-codex-model-client-version.sh` to update the models endpoint compatibility version directly from `openai/codex` GitHub tags; use `--check` for verification.
 - Do not use `run.sh` as a verification command; it is a legacy hybrid launcher.
+- When verification requires opening the app, close the test app immediately after testing; do not leave a validation instance running in the user's session.
 - Never commit unless the user asks.
 
 ## Dependencies
