@@ -1486,13 +1486,9 @@ async fn resolve_credentials(model: &Model) -> Result<ResolvedCredentials> {
             headers: None,
         });
     };
-    let Some(home) = dirs_next::home_dir() else {
-        return Ok(ResolvedCredentials {
-            api_key: None,
-            headers: None,
-        });
-    };
-    let auth_path = home.join(".rozsa").join("models").join("auth.json");
+    let auth_path = crate::config_paths::ConfigRoots::global_models_dir()
+        .map_err(|error| anyhow::anyhow!(error))?
+        .join("auth.json");
     if auth_path.exists() {
         let path_str = auth_path.to_string_lossy().to_string();
         if let Some(key) =

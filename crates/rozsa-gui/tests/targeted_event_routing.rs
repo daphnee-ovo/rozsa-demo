@@ -8,8 +8,8 @@ fn runtime_events_have_one_explicit_webview_target() {
     assert!(events.contains("emit_main(\n                                &app,\n                                \"tool-event\""));
     assert!(events.contains("emit_main(&app, \"permission-request\""));
     assert!(events.contains("emit_sidebar(app, \"sidebar-state\", snapshot)"));
-    assert!(commands.contains("publish_theme_state(&app, &snapshot.appearance)"));
-    assert!(commands.contains("publish_theme_state(app, &appearance)"));
+    assert!(commands.contains("publish_theme_state(&state, &app, &snapshot.appearance)"));
+    assert!(commands.contains("publish_theme_state(state, app, &appearance)"));
     assert!(events.contains("emit_both(app, \"theme-state\", snapshot.clone())"));
     assert!(events.contains("apply_native_theme_surface(app, revision, &snapshot)"));
     assert!(!events.contains("app.emit("));

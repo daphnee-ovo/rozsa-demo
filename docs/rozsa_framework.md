@@ -955,7 +955,7 @@ pub struct ExtensionContext {
 /// 加载项目/全局配置资源
 pub struct ResourceLoader {
     cwd: PathBuf,
-    agent_dir: PathBuf,
+    config_dirs: Vec<PathBuf>, // global -> project
 }
 
 impl ResourceLoader {

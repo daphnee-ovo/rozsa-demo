@@ -1,6 +1,7 @@
 //! Integration tests for Skill Registry system.
 //! Tests use explicit paths to avoid HOME environment pollution.
 
+use rozsa_app::config_paths::ConfigRoots;
 use rozsa_app::skills::SkillRegistry;
 use rozsa_app::skills::loader::{SkillScope, load_skills_from_dirs};
 use std::fs;
@@ -37,10 +38,8 @@ fn full_load_from_project_dir() {
 fn priority_override_across_dirs() {
     let tmp = TempDir::new().unwrap();
     let project_dir = tmp.path().join("project");
-    let agents_dir = tmp.path().join("agents");
     let user_dir = tmp.path().join("user");
     fs::create_dir_all(&project_dir).unwrap();
-    fs::create_dir_all(&agents_dir).unwrap();
     fs::create_dir_all(&user_dir).unwrap();
 
     create_skill(
@@ -49,20 +48,14 @@ fn priority_override_across_dirs() {
         "---\nname: deploy\ndescription: User deploy\n---\nUser.",
     );
     create_skill(
-        &agents_dir,
-        "deploy",
-        "---\nname: deploy\ndescription: Agents deploy\n---\nAgents.",
-    );
-    create_skill(
         &project_dir,
         "deploy",
         "---\nname: deploy\ndescription: Project deploy\n---\nProject.",
     );
 
     let result = load_skills_from_dirs(&[
-        (project_dir, SkillScope::Project),
-        (agents_dir, SkillScope::Agents),
         (user_dir, SkillScope::User),
+        (project_dir, SkillScope::Project),
     ]);
     let registry = SkillRegistry::new(result.skills);
 
@@ -78,13 +71,34 @@ fn priority_override_across_dirs() {
 }
 
 #[test]
+fn default_config_roots_load_global_then_project_skills() {
+    let tmp = TempDir::new().unwrap();
+    let global = tmp.path().join("global");
+    let project = tmp.path().join("project");
+    create_skill(
+        &global.join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Global deploy\n---\nGlobal.",
+    );
+    create_skill(
+        &project.join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Project deploy\n---\nProject.",
+    );
+    let roots = ConfigRoots::from_roots(global, project);
+
+    let registry = SkillRegistry::load_from_roots(&roots);
+    let deploy = registry.find_by_name("deploy").unwrap();
+    assert_eq!(deploy.description, "Project deploy");
+    assert_eq!(deploy.scope, SkillScope::Project);
+}
+
+#[test]
 fn format_for_prompt_with_multiple_scopes() {
     let tmp = TempDir::new().unwrap();
     let project_dir = tmp.path().join("project");
-    let agents_dir = tmp.path().join("agents");
     let user_dir = tmp.path().join("user");
     fs::create_dir_all(&project_dir).unwrap();
-    fs::create_dir_all(&agents_dir).unwrap();
     fs::create_dir_all(&user_dir).unwrap();
 
     create_skill(
@@ -93,27 +107,20 @@ fn format_for_prompt_with_multiple_scopes() {
         "---\nname: build\ndescription: Build project\n---\nBuild.",
     );
     create_skill(
-        &agents_dir,
-        "lint",
-        "---\nname: lint\ndescription: Lint code\n---\nLint.",
-    );
-    create_skill(
         &user_dir,
         "helper",
         "---\nname: helper\ndescription: My helper\n---\nHelper.",
     );
 
     let result = load_skills_from_dirs(&[
-        (project_dir, SkillScope::Project),
-        (agents_dir, SkillScope::Agents),
         (user_dir, SkillScope::User),
+        (project_dir, SkillScope::Project),
     ]);
     let registry = SkillRegistry::new(result.skills);
     let prompt = registry.format_for_prompt();
 
     assert!(prompt.contains("## Skills"));
     assert!(prompt.contains("$PROJECT_SKILLS/build/SKILL.md"));
-    assert!(prompt.contains("$AGENTS_SKILLS/lint/SKILL.md"));
     assert!(prompt.contains("$USER_SKILLS/helper/SKILL.md"));
 }
 

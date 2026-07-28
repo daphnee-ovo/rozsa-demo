@@ -26,7 +26,7 @@ TS 参考点: `extensions/loader.ts` -> `discoverAndLoadExtensions()`
 ```text
 Extension 发现路径:
 1. {cwd}/.claude/extensions/  (project extensions)
-2. ~/.rozsa-agent/extensions/  (global extensions)
+2. ROZSA_CONFIG_DIR/extensions/  (global extensions, default ~/.rozsa/extensions/)
 3. explicit paths from settings
 4. builtin extensions (output-filter)
 ```

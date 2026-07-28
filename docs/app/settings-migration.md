@@ -22,9 +22,9 @@ TS 参考点: `settings-manager.ts` -> SettingsManager 构造、merge 逻辑
 ```text
 优先级（高到低）：
 1. Runtime override (code-set, not persisted)
-2. Local settings (~/.claude/settings.local.json)
-3. Project settings (.claude/settings.json)
-4. Global settings (~/.claude/settings.json)
+2. Local settings（调用方显式提供）
+3. Project settings (`ROZSA_PROJECT_CONFIG_DIR/settings.json`)
+4. Global settings (`ROZSA_CONFIG_DIR/settings.json`)
 5. Default values (hardcoded)
 ```
 
@@ -33,10 +33,12 @@ TS 参考点: `settings-manager.ts` -> SettingsManager 构造、merge 逻辑
 ### 文件路径
 
 ```text
-Global:  ~/.rozsa-agent/settings.json     (或 ~/.claude/settings.json 兼容)
-Project: {cwd}/.claude/settings.json
-Local:   ~/.rozsa-agent/settings.local.json
+Global:  ROZSA_CONFIG_DIR/settings.json（默认 ~/.rozsa/settings.json）
+Project: ROZSA_PROJECT_CONFIG_DIR/settings.json（默认 {cwd}/.rozsa/settings.json）
+Local:   仅由调用方显式提供
 ```
+
+不读取旧 `agent/`、`.rozsa-agent` 或 `.claude` 路径。
 
 ### Merge 语义
 

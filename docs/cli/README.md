@@ -47,9 +47,10 @@ rozsa_model::providers::register_builtin_providers();
 ### 4. 确定路径
 
 - **当前工作目录** (`cwd`): 从 `std::env::current_dir()` 获取
-- **agent 根目录** (`agent_dir`): `~/.rozsa/agent/`
-- **全局配置** (`global_settings_path`): `~/.rozsa/agent/settings.json`
-- **项目配置** (`project_settings_path`): `<cwd>/.claude/settings.json`
+- **全局配置根**: `ROZSA_CONFIG_DIR`，默认 `~/.rozsa/`
+- **项目配置根**: `ROZSA_PROJECT_CONFIG_DIR`，默认 `<cwd>/.rozsa/`
+- **全局配置** (`global_settings_path`): `ROZSA_CONFIG_DIR/settings.json`
+- **项目配置** (`project_settings_path`): `ROZSA_PROJECT_CONFIG_DIR/settings.json`
 
 ### 5. 加载配置
 
@@ -61,16 +62,17 @@ let settings_manager = SettingsManager::load(
 )
 ```
 
-**优先级**: CLI 参数 > 项目配置 `.claude/settings.json` > 全局配置 `~/.rozsa/agent/settings.json`
+**优先级**: CLI 参数 > 项目配置 `ROZSA_PROJECT_CONFIG_DIR/settings.json` > 全局配置 `ROZSA_CONFIG_DIR/settings.json`
 
-失败时降级到空配置 (`/dev/null`)，确保不会因配置加载失败而崩溃。
+配置文件语法或内容无效时会直接报告对应路径和错误，不会静默降级。
 
 ### 6. 解析模型 (Model Registry)
 
 ```rust
-let registry = ModelRegistry::from_generated_with_models_json_path(
-    Some(&models_json_path),  // ~/.rozsa/agent/models.json
-)?;
+let registry = ModelRegistry::load_from_dirs(&[
+    &config_roots.model_dirs()[0],
+    &config_roots.model_dirs()[1],
+])?;
 ```
 
 **模型选择逻辑**:
@@ -83,7 +85,8 @@ let registry = ModelRegistry::from_generated_with_models_json_path(
 ### 7. 加载 Resources (CLAUDE.md 等)
 
 ```rust
-let resource_loader = ResourceLoader::new(cwd.clone(), agent_dir.clone());
+let resource_loader =
+    ResourceLoader::new(cwd.clone(), config_roots.resource_dirs().to_vec());
 let resources = resource_loader.load().await.unwrap_or_default();
 let system_prompt = ResourceLoader::build_system_prompt(&resources);
 ```
@@ -91,7 +94,8 @@ let system_prompt = ResourceLoader::build_system_prompt(&resources);
 从以下位置加载：
 
 - `<cwd>/CLAUDE.md` (项目级)
-- `~/.rozsa/agent/CLAUDE.md` (全局级)
+- `ROZSA_CONFIG_DIR/AGENTS.md` 或 `CLAUDE.md`（全局级）
+- `ROZSA_PROJECT_CONFIG_DIR/AGENTS.md` 或 `CLAUDE.md`（项目配置覆盖）
 - 其他自定义 resources
 
 组装成最终的 system prompt。
@@ -99,7 +103,8 @@ let system_prompt = ResourceLoader::build_system_prompt(&resources);
 ### 8. 创建 Session Manager
 
 ```rust
-let session_dir = agent_dir.join("sessions").join(format!("-{cwd_encoded}-"));
+let session_dirs = config_roots.session_dirs(&cwd);
+let session_dir = &session_dirs[1];
 std::fs::create_dir_all(&session_dir)?;
 let session_id = uuid::Uuid::new_v4().to_string();
 let session_path = session_dir.join(format!("{session_id}.jsonl"));
@@ -112,7 +117,7 @@ let session_manager = SessionManager::create_lazy(
 );
 ```
 
-**Session 存储路径**: `~/.rozsa/agent/sessions/<cwd-encoded>/<uuid>.jsonl`
+**Session 存储路径**: 新会话默认写入 `ROZSA_CONFIG_DIR/sessions/<cwd-encoded>/<uuid>.jsonl`；读取时同时合并 `ROZSA_PROJECT_CONFIG_DIR/sessions/<cwd-encoded>/`，同 ID 由项目层覆盖。
 
 其中 `<cwd-encoded>` 是将路径中的 `/` 替换为 `-` 后的结果。
 
@@ -208,16 +213,33 @@ rozsa [OPTIONS] [PROMPT]
 
 1. **CLI 参数** (最高优先级)
    - `--model` 覆盖 settings 中的默认模型
-2. **项目配置** (`<cwd>/.claude/settings.json`)
+2. **项目配置** (`ROZSA_PROJECT_CONFIG_DIR/settings.json`，默认 `<cwd>/.rozsa/settings.json`)
    - 项目级别的 settings、permissions、model defaults
-3. **全局配置** (`~/.rozsa/agent/settings.json`)
+3. **全局配置** (`ROZSA_CONFIG_DIR/settings.json`，默认 `~/.rozsa/settings.json`)
    - 用户级别的默认配置
 4. **环境变量**
    - 通过 `ModelRegistry` 读取 `ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等
 
 ### 加载失败处理
 
-如果配置文件不存在或格式错误，`SettingsManager::load` 会降级到空配置 (`/dev/null`)，**不会阻塞启动**。
+配置文件不存在时使用内置默认值；文件存在但读取、JSON 解析或校验失败时，`SettingsManager::load` 会报告错误并阻止使用错误配置启动。
+
+### 配置根布局
+
+全局根和项目根使用完全一致的相对布局。读取顺序始终为全局后项目，因此项目同名项覆盖全局；不读取旧 `agent/` 层级。
+
+```text
+ROZSA_CONFIG_DIR/                  ROZSA_PROJECT_CONFIG_DIR/
+├── models/                       ├── models/
+├── themes/                       ├── themes/
+├── settings.json                 ├── settings.json
+├── sessions/                     ├── sessions/
+├── skills/                       ├── skills/
+├── AGENTS.md / CLAUDE.md         ├── AGENTS.md / CLAUDE.md
+└── extensions/ ...               └── extensions/ ...
+```
+
+`agent/` 目录保留给未来用途。
 
 ---
 
@@ -324,9 +346,11 @@ No model available. Configure a provider API key (ANTHROPIC_API_KEY, OPENAI_API_
 
 ### 其他环境变量
 
-- `HOME` / `~`: 用于定位 `~/.rozsa/agent/` 目录
+- `ROZSA_CONFIG_DIR`: 覆盖全局配置根，默认通过 `HOME` 定位 `~/.rozsa/`
+- `ROZSA_PROJECT_CONFIG_DIR`: 覆盖项目配置根，默认 `<cwd>/.rozsa/`
+- `HOME` / `~`: 未设置 `ROZSA_CONFIG_DIR` 时用于定位全局配置根
   - 通过 `dirs_next::home_dir()` 获取
-  - 如果无法获取，降级到当前目录 `.`
+  - 如果无法获取且没有显式设置 `ROZSA_CONFIG_DIR`，启动会报告错误
 
 ---
 
@@ -381,21 +405,21 @@ export OPENAI_API_KEY="sk-..."
 
 ### 2. 配置文件加载失败
 
-`rozsa-cli` 会降级到空配置，**不会阻塞启动**。可以通过以下方式检查配置：
+`rozsa-cli` 会报告配置文件路径及失败原因。可以通过以下方式检查配置：
 
 ```bash
-cat ~/.rozsa/agent/settings.json
-cat .claude/settings.json
+cat "${ROZSA_CONFIG_DIR:-$HOME/.rozsa}/settings.json"
+cat "${ROZSA_PROJECT_CONFIG_DIR:-.rozsa}/settings.json"
 ```
 
 ### 3. Session 文件存储位置
 
-Session 历史存储在 `~/.rozsa/agent/sessions/<cwd-encoded>/<uuid>.jsonl`。
+Session 历史从全局与项目 `sessions/<cwd-encoded>/` 合并读取，新会话默认写入全局配置根。
 
 查看当前 session:
 
 ```bash
-ls ~/.rozsa/agent/sessions/
+ls "${ROZSA_CONFIG_DIR:-$HOME/.rozsa}/sessions/"
 ```
 
 ### 4. Permission mode 配置
@@ -474,28 +498,27 @@ async fn main() -> anyhow::Result<()> {
     rozsa_model::providers::register_builtin_providers();
 
     let cwd = std::env::current_dir()?;
-    let agent_dir = dirs_next::home_dir()
-        .unwrap()
-        .join(".rozsa")
-        .join("agent");
+    let config_roots = rozsa_app::config_paths::ConfigRoots::discover(&cwd)?;
+    let [global_settings, project_settings] = config_roots.settings_paths();
 
     let settings_manager = SettingsManager::load(
-        agent_dir.join("settings.json"),
-        None,
+        global_settings,
+        Some(project_settings),
         None,
     )?;
 
-    let registry = ModelRegistry::from_generated_with_models_json_path(
-        Some(&agent_dir.join("models.json")),
-    )?;
+    let [global_models, project_models] = config_roots.model_dirs();
+    let registry = ModelRegistry::load_from_dirs(&[&global_models, &project_models])?;
     let model = registry.first_available().unwrap();
 
-    let resource_loader = ResourceLoader::new(cwd.clone(), agent_dir.clone());
+    let resource_loader =
+        ResourceLoader::new(cwd.clone(), config_roots.resource_dirs().to_vec());
     let resources = resource_loader.load().await.unwrap_or_default();
     let system_prompt = ResourceLoader::build_system_prompt(&resources);
 
+    let session_dir = config_roots.writable_session_dir(&cwd);
     let session_manager = SessionManager::create_lazy(
-        &agent_dir.join("sessions").join("test.jsonl"),
+        &session_dir.join("test.jsonl"),
         "test-session".to_string(),
         cwd.to_string_lossy().to_string(),
         None,

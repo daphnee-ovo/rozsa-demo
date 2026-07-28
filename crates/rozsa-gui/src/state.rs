@@ -293,6 +293,8 @@ pub struct GuiState {
     pub shared: Arc<SharedResources>,
     pub model_registry: Option<Arc<RwLock<ModelRegistry>>>,
     pub session_dir: Option<PathBuf>,
+    pub session_dirs: Vec<PathBuf>,
+    pub config_roots: rozsa_app::config_paths::ConfigRoots,
     pub pending_approvals: Option<PendingApprovals>,
     pub pending_permission_contexts: Arc<DashMap<String, PendingPermissionContext>>,
     pub pending_user_questions: PendingUserQuestions,
@@ -333,11 +335,11 @@ pub struct SidebarSnapshot {
 
 impl GuiState {
     pub async fn sidebar_snapshot(&self) -> Result<SidebarSnapshot, String> {
-        let session_dir = self
-            .session_dir
-            .as_ref()
-            .ok_or("No session directory configured")?;
-        let metas = SessionManager::list_dir(session_dir).map_err(|error| error.to_string())?;
+        if self.session_dirs.is_empty() {
+            return Err("No session directories configured".to_string());
+        }
+        let metas =
+            SessionManager::list_dirs(&self.session_dirs).map_err(|error| error.to_string())?;
         let active_index = *self.active_tab.lock().await;
         let tabs = self.tabs.lock().await;
         let active_session_id = tabs.get(active_index).map(SessionTab::session_id);

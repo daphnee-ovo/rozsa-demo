@@ -119,6 +119,11 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
         shared,
         model_registry: None,
         session_dir: None,
+        session_dirs: vec![],
+        config_roots: rozsa_app::config_paths::ConfigRoots::from_roots(
+            temp.path().join("global"),
+            temp.path().join("project"),
+        ),
         pending_approvals: None,
         pending_permission_contexts: Arc::new(DashMap::new()),
         pending_user_questions: Arc::new(DashMap::new()),

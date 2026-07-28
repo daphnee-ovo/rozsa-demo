@@ -3,6 +3,7 @@ pub mod loader;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::config_paths::ConfigRoots;
 use loader::{LoadedSkill, SkillScope, load_skills_from_dirs};
 
 /// 注册表中的 Skill
@@ -62,32 +63,28 @@ impl SkillRegistry {
     /// 从默认目录加载 skills 并构建注册表
     /// 返回 (registry, diagnostics)
     pub fn load_from_defaults(cwd: &Path) -> Self {
-        let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        let dirs = vec![
-            (cwd.join(".rozsa").join("skills"), SkillScope::Project),
-            (home.join(".agents").join("skills"), SkillScope::Agents),
-            (
-                home.join(".rozsa").join("agent").join("skills"),
-                SkillScope::User,
-            ),
-        ];
-        let result = load_skills_from_dirs(&dirs);
+        let roots = ConfigRoots::discover(cwd)
+            .expect("Rózsa config roots must be available before loading skills");
+        let result = load_skills_from_dirs(&Self::layered_dirs(&roots));
         Self::new(result.skills)
     }
 
     /// 从默认目录加载，同时返回诊断信息
     pub fn load_from_defaults_with_diagnostics(cwd: &Path) -> (Self, Vec<loader::SkillDiagnostic>) {
-        let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        let dirs = vec![
-            (cwd.join(".rozsa").join("skills"), SkillScope::Project),
-            (home.join(".agents").join("skills"), SkillScope::Agents),
-            (
-                home.join(".rozsa").join("agent").join("skills"),
-                SkillScope::User,
-            ),
-        ];
-        let result = load_skills_from_dirs(&dirs);
+        let roots = ConfigRoots::discover(cwd)
+            .expect("Rózsa config roots must be available before loading skills");
+        let result = load_skills_from_dirs(&Self::layered_dirs(&roots));
         (Self::new(result.skills), result.diagnostics)
+    }
+
+    pub fn load_from_roots(roots: &ConfigRoots) -> Self {
+        let result = load_skills_from_dirs(&Self::layered_dirs(roots));
+        Self::new(result.skills)
+    }
+
+    fn layered_dirs(roots: &ConfigRoots) -> Vec<(PathBuf, SkillScope)> {
+        let [global, project] = roots.skill_dirs();
+        vec![(global, SkillScope::User), (project, SkillScope::Project)]
     }
 
     pub fn find_by_name(&self, name: &str) -> Option<&Skill> {
@@ -130,7 +127,6 @@ impl SkillRegistry {
 fn scope_priority(scope: SkillScope) -> u8 {
     match scope {
         SkillScope::Project => 2,
-        SkillScope::Agents => 1,
         SkillScope::User => 0,
     }
 }
@@ -138,7 +134,6 @@ fn scope_priority(scope: SkillScope) -> u8 {
 fn format_skill_var_path(skill: &Skill) -> String {
     let var_name = match skill.scope {
         SkillScope::Project => "$PROJECT_SKILLS",
-        SkillScope::Agents => "$AGENTS_SKILLS",
         SkillScope::User => "$USER_SKILLS",
     };
 

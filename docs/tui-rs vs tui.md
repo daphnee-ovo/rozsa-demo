@@ -193,7 +193,7 @@ TS 提供三个诊断入口：
 
 | 环境变量 | 行为 |
 |----------|------|
-| `ROZSA_DEBUG_REDRAW=1` | 每次全量重绘写日志到 `~/.rozsa/agent/rozsa-debug.log` |
+| `ROZSA_DEBUG_REDRAW=1` | 每次全量重绘写日志到 `ROZSA_CONFIG_DIR/rozsa-debug.log`（默认 `~/.rozsa/rozsa-debug.log`） |
 | `PI_TUI_DEBUG=1` | 每帧将 newLines/previousLines/buffer 写到 `/tmp/tui/` |
 | 渲染行宽溢出 | 写 `rozsa-crash.log`（含所有行宽诊断），清理终端后抛出有意义的 Error |
 

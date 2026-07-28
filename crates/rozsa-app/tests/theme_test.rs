@@ -52,6 +52,36 @@ fn custom_theme_round_trips_and_applies_extra_variables() {
 }
 
 #[test]
+fn project_theme_overrides_global_theme_with_the_same_id() {
+    let temp = tempfile::tempdir().unwrap();
+    let global = temp.path().join("global");
+    let project = temp.path().join("project");
+    let global_store = ThemeStore::new(global.clone());
+    let project_store = ThemeStore::new(project.clone());
+    let mut theme = global_store.load("rozsa", ThemeMode::Light).unwrap();
+    theme.id = "shared".to_string();
+    theme.name = "Global".to_string();
+    global_store.save(&theme).unwrap();
+    theme.name = "Project".to_string();
+    project_store.save(&theme).unwrap();
+
+    let layered = ThemeStore::layered(global, project);
+    assert_eq!(
+        layered.load("shared", ThemeMode::Light).unwrap().name,
+        "Project"
+    );
+    assert_eq!(
+        layered
+            .list()
+            .unwrap()
+            .into_iter()
+            .filter(|item| item.id == "shared")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn invalid_theme_files_and_values_fail_loudly() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("themes");

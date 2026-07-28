@@ -323,27 +323,23 @@ pub fn create_read_tool() -> Box<dyn Tool> {
     Box::new(ReadTool::new())
 }
 
-/// Resolve `$PROJECT_SKILLS`, `$AGENTS_SKILLS`, `$USER_SKILLS` path variables.
+/// Resolve `$PROJECT_SKILLS` and `$USER_SKILLS` path variables.
 /// Returns Some(resolved_path) if a variable was found, None otherwise.
 fn resolve_skill_path_vars(path: &str) -> Option<String> {
     let (var, rest) = if let Some(rest) = path.strip_prefix("$PROJECT_SKILLS") {
         ("$PROJECT_SKILLS", rest)
-    } else if let Some(rest) = path.strip_prefix("$AGENTS_SKILLS") {
-        ("$AGENTS_SKILLS", rest)
-    } else if let Some(rest) = path.strip_prefix("$USER_SKILLS") {
-        ("$USER_SKILLS", rest)
     } else {
-        return None;
+        ("$USER_SKILLS", path.strip_prefix("$USER_SKILLS")?)
     };
 
     let rest = rest.strip_prefix('/').unwrap_or(rest);
-    let home = dirs_next::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().ok()?;
+    let roots = crate::config_paths::ConfigRoots::discover(&cwd).ok()?;
+    let [user_skills, project_skills] = roots.skill_dirs();
 
     let base = match var {
-        "$PROJECT_SKILLS" => cwd.join(".rozsa").join("skills"),
-        "$AGENTS_SKILLS" => home.join(".agents").join("skills"),
-        "$USER_SKILLS" => home.join(".rozsa").join("agent").join("skills"),
+        "$PROJECT_SKILLS" => project_skills,
+        "$USER_SKILLS" => user_skills,
         _ => unreachable!(),
     };
 

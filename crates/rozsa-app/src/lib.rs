@@ -1,5 +1,6 @@
 pub mod agent_session;
 pub mod compaction;
+pub mod config_paths;
 pub mod extensions;
 pub mod messages;
 pub mod model_registry;

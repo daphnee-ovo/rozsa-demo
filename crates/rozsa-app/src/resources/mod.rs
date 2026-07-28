@@ -40,14 +40,14 @@ const BASE_SYSTEM_PROMPT: &str = include_str!("../../../../resource/system-promp
 pub struct ResourceLoader {
     /// 当前工作目录
     cwd: PathBuf,
-    /// 全局配置目录（~/.claude 或等效）
-    agent_dir: PathBuf,
+    /// 配置根目录，按 global -> project 排列。
+    config_dirs: Vec<PathBuf>,
 }
 
 impl ResourceLoader {
     /// 创建新的资源加载器
-    pub fn new(cwd: PathBuf, agent_dir: PathBuf) -> Self {
-        Self { cwd, agent_dir }
+    pub fn new(cwd: PathBuf, config_dirs: Vec<PathBuf>) -> Self {
+        Self { cwd, config_dirs }
     }
 
     /// 加载所有资源
@@ -59,10 +59,16 @@ impl ResourceLoader {
         let mut resources = Vec::new();
         let mut seen_paths = HashSet::new();
 
-        // 1. 加载全局配置目录下的上下文文件
-        if let Some(global_resource) = self.load_context_file_from_dir(&self.agent_dir).await? {
-            seen_paths.insert(global_resource.path.clone());
-            resources.push(global_resource);
+        // 1. 配置根使用覆盖语义：项目文件存在时替代全局文件。
+        let mut configured_resource = None;
+        for dir in &self.config_dirs {
+            if let Some(resource) = self.load_context_file_from_dir(dir).await? {
+                configured_resource = Some(resource);
+            }
+        }
+        if let Some(resource) = configured_resource {
+            seen_paths.insert(resource.path.clone());
+            resources.push(resource);
         }
 
         // 2. 从 cwd 向上遍历到根目录，收集所有上下文文件

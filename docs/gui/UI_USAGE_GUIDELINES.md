@@ -281,7 +281,7 @@ tool call 是 Rózsa GUI 的核心组件，应像对话中的轻量命令行记�
 - 选项保留键盘提示，例如 `Y / T / N / A`。
 - `允许执行` 只放行当前调用，不能创建或扩大 session trust。
 - `本次会话信任` 使用用户在下拉框中选择的范围；已受信任的命令段不重复出现。单段命令从精确命令逐层提供更宽的前缀范围，例如 `dow status set *`、`dow status *`、`dow *`。
-- Trust 只写入 `<project>/.rozsa/agent/settings.json` 的 `permission.allow`，因此同一项目的后续会话复用授权；全局 `~/.rozsa/agent/settings.json` 的 permission 规则只能手动编辑。
+- Trust 只写入 `ROZSA_PROJECT_CONFIG_DIR/settings.json`（默认 `<project>/.rozsa/settings.json`）的 `permission.allow`，因此同一项目的后续会话复用授权；全局 `ROZSA_CONFIG_DIR/settings.json`（默认 `~/.rozsa/settings.json`）的 permission 规则只能手动编辑。
 - 匹配顺序固定为 `deny > ask > allow`。同一调用同时命中 deny 和 allow 时必须拒绝。
 - 同时排队的请求在正式展示前重评估；前一项新增 Trust 后，后续已经被覆盖的请求直接执行，不重复弹窗。
 - 风险标签要具体，例如 Shell 命令、文件写入、网络访问。

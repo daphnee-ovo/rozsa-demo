@@ -9,7 +9,7 @@
 不写入 `settings.json`。重启后丢失。
 
 **Rust 行为：** 所有通过 `/thinking`、`/model`、settings dialog、`Ctrl+T` 修改的
-设置都持久化到 `~/.rozsa/agent/settings.json`。下次启动自动恢复。
+设置持久化到 `ROZSA_CONFIG_DIR/settings.json`（默认 `~/.rozsa/settings.json`），项目覆盖写在 `ROZSA_PROJECT_CONFIG_DIR/settings.json`（默认 `<project>/.rozsa/settings.json`）。下次启动自动恢复。
 
 **动机：** 用户修改设置的意图通常是持久的。TS 的非持久化行为导致用户反复设置，
 是 UX 痛点而非设计意图。

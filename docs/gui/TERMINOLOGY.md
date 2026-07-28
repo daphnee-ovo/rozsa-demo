@@ -40,7 +40,7 @@ macOS pane / 窗口行为           -> native_split_view.rs + native_titlebar.rs
 └─────────────────────────────────────────────────────────────┘
           │                         │
           ▼                         ▼
-     session/*.jsonl          .rozsa/agent/settings.json
+     session/*.jsonl          .rozsa/settings.json
                               ~/.rozsa/themes/*.json
 ```
 
@@ -260,7 +260,7 @@ session trust:  session_approvals[session-A]
                 ├─ 可复用给 session-A 的后续调用
                 └─ 不可泄漏给 session-B
 
-project trust:  <project>/.rozsa/agent/settings.json
+project trust:  <project>/.rozsa/settings.json
                 ├─ 同一项目的新 session 可读取
                 └─ 不能突破 deny 或 workspace boundary
 ```

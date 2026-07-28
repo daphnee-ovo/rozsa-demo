@@ -1,10 +1,10 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
 use dashmap::DashMap;
 
 use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
+use rozsa_app::config_paths::ConfigRoots;
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::{
     PendingApprovals, PermissionController, PermissionMode, PermissionResponse, PolicyVerdict,
@@ -24,19 +24,14 @@ pub async fn run(args: &Args) -> Result<()> {
     let (cwd, prompt) =
         crate::args::resolve_positional_input(args.prompt.as_deref(), &process_cwd, args.print)?;
 
-    let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let agent_dir = home.join(".rozsa").join("agent");
-    let global_settings_path = agent_dir.join("settings.json");
-    let project_settings_path = cwd.join(".rozsa").join("agent").join("settings.json");
+    let config_roots = ConfigRoots::discover(&cwd)?;
+    let [global_settings_path, project_settings_path] = config_roots.settings_paths();
 
     let settings_manager = SettingsManager::load(
         global_settings_path.clone(),
         Some(project_settings_path),
         None,
-    )
-    .unwrap_or_else(|_| {
-        SettingsManager::load(PathBuf::from("/dev/null"), None, None).expect("fallback settings")
-    });
+    )?;
 
     // Spawn non-blocking version check
     if std::env::var("ROZSA_SKIP_VERSION_CHECK").unwrap_or_default() != "1" {
@@ -46,8 +41,7 @@ pub async fn run(args: &Args) -> Result<()> {
     }
 
     // Resolve model from registry: user-level then project-level (project overrides user)
-    let user_models_dir = home.join(".rozsa").join("models");
-    let project_models_dir = cwd.join(".rozsa").join("models");
+    let [user_models_dir, project_models_dir] = config_roots.model_dirs();
     let registry = ModelRegistry::load_from_dirs(&[&user_models_dir, &project_models_dir])?;
 
     let model = if let Some(ref model_arg) = args.model {
@@ -101,8 +95,8 @@ pub async fn run(args: &Args) -> Result<()> {
         }
     };
 
-    let resource_loader = ResourceLoader::new(cwd.clone(), agent_dir.clone());
-    let resources = resource_loader.load().await.unwrap_or_default();
+    let resource_loader = ResourceLoader::new(cwd.clone(), config_roots.resource_dirs().to_vec());
+    let resources = resource_loader.load().await?;
     let system_prompt = if let Some(ref custom_prompt) = args.system_prompt {
         // Use --system-prompt to override
         custom_prompt.clone()
@@ -110,43 +104,30 @@ pub async fn run(args: &Args) -> Result<()> {
         ResourceLoader::build_system_prompt(&resources)
     };
 
-    // Session 存储在 ~/.rozsa/agent/sessions/<cwd-encoded>/
-    let cwd_encoded = cwd
-        .to_string_lossy()
-        .replace('/', "-")
-        .trim_matches('-')
-        .to_string();
-    let session_dir = agent_dir.join("sessions").join(format!("-{cwd_encoded}-"));
+    // Global sessions are writable by default; the project layer can override
+    // matching session ids when both layers are read.
+    let session_dirs = config_roots.session_dirs(&cwd).to_vec();
+    let session_dir = config_roots.writable_session_dir(&cwd);
     std::fs::create_dir_all(&session_dir)?;
 
     // Resolve the parent session path for GUI or direct continuation. The
     // consumer copies the parent's persisted context into the new branch.
     let initial_parent_session = if args.continue_session {
         // Find the most recent session file
-        let mut entries: Vec<_> = std::fs::read_dir(&session_dir)?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s == "jsonl")
-                    .unwrap_or(false)
-            })
-            .collect();
-        entries.sort_by_key(|e| e.metadata().ok().and_then(|m| m.modified().ok()));
-
-        if let Some(last_entry) = entries.last() {
-            let path = last_entry.path();
-            Some(path.to_string_lossy().to_string())
+        let sessions = SessionManager::list_dirs(&session_dirs)?;
+        if let Some(latest) = sessions.first() {
+            Some(latest.path.to_string_lossy().to_string())
         } else {
             anyhow::bail!("No previous session found to continue");
         }
     } else if let Some(ref resume_id) = args.resume {
         // Resume a specific session by ID
-        let existing_path = session_dir.join(format!("{resume_id}.jsonl"));
-        if !existing_path.exists() {
-            anyhow::bail!("Session {} not found", resume_id);
-        }
+        let existing_path = session_dirs
+            .iter()
+            .rev()
+            .map(|dir| dir.join(format!("{resume_id}.jsonl")))
+            .find(|path| path.exists())
+            .ok_or_else(|| anyhow::anyhow!("Session {resume_id} not found"))?;
         Some(existing_path.to_string_lossy().to_string())
     } else {
         None
@@ -321,9 +302,11 @@ pub async fn run(args: &Args) -> Result<()> {
             model,
             thinking_level,
             cwd,
+            config_roots,
             settings_manager,
             model_registry: Some(Arc::new(registry)),
             session_dir,
+            session_dirs,
             global_settings_path: Some(global_settings_path),
             pending_approvals: Some(pending_approvals),
             permission_request_rx: Some(perm_req_rx),

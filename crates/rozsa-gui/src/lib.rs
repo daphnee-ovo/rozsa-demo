@@ -13,6 +13,7 @@
 // ├── struct GuiConfig
 // ├── native_sidebar_collapsed()
 // ├── set_native_sidebar_overlay_visible()
+// ├── native_sidebar_overlay_width()
 // └── run()
 
 // File: lib.rs
@@ -37,6 +38,7 @@ pub use git_diff::read_workspace_diff;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rozsa_app::config_paths::ConfigRoots;
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::PendingApprovals;
 use rozsa_app::settings::SettingsManager;
@@ -55,9 +57,11 @@ pub struct GuiConfig {
     pub model: Model,
     pub thinking_level: ThinkingLevel,
     pub cwd: PathBuf,
+    pub config_roots: ConfigRoots,
     pub settings_manager: SettingsManager,
     pub model_registry: Option<Arc<ModelRegistry>>,
     pub session_dir: PathBuf,
+    pub session_dirs: Vec<PathBuf>,
     pub global_settings_path: Option<PathBuf>,
     pub pending_approvals: Option<PendingApprovals>,
     pub permission_controller: Arc<rozsa_app::permissions::PermissionController>,
@@ -152,6 +156,8 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             .model_registry
             .map(|registry| Arc::new(std::sync::RwLock::new((*registry).clone()))),
         session_dir: Some(config.session_dir),
+        session_dirs: config.session_dirs,
+        config_roots: config.config_roots,
         pending_approvals: config.pending_approvals,
         pending_permission_contexts: Arc::new(dashmap::DashMap::new()),
         pending_user_questions: Arc::new(dashmap::DashMap::new()),

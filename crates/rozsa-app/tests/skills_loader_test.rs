@@ -106,10 +106,10 @@ fn recursive_scan_finds_nested_skills() {
         "---\ndescription: A nested skill\n---\n\nNested.",
     );
 
-    let result = load_skills_from_dirs(&[(tmp.path().to_path_buf(), SkillScope::Agents)]);
+    let result = load_skills_from_dirs(&[(tmp.path().to_path_buf(), SkillScope::User)]);
     assert_eq!(result.skills.len(), 1);
     assert_eq!(result.skills[0].name, "nested-skill");
-    assert_eq!(result.skills[0].scope, SkillScope::Agents);
+    assert_eq!(result.skills[0].scope, SkillScope::User);
 }
 
 #[test]

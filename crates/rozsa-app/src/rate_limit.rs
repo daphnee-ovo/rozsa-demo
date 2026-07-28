@@ -12,10 +12,9 @@ use rozsa_model::rate_limit::{RateLimitError, RateLimitSnapshot};
 
 /// Get rate limits using default auth.json path (~/.rozsa/models/auth.json).
 pub async fn get_rate_limits() -> Result<RateLimitSnapshot, RateLimitError> {
-    let home = dirs_next::home_dir().ok_or_else(|| {
-        RateLimitError::MissingCredentials("Cannot determine home directory".to_string())
-    })?;
-    let auth_path = home.join(".rozsa").join("models").join("auth.json");
+    let auth_path = crate::config_paths::ConfigRoots::global_models_dir()
+        .map_err(|error| RateLimitError::MissingCredentials(error.to_string()))?
+        .join("auth.json");
     let path_str = auth_path.to_string_lossy().to_string();
     rozsa_model::rate_limit::fetch_rate_limits_from_auth(&path_str).await
 }

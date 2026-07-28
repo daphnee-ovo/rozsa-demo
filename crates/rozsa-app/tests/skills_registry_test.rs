@@ -24,17 +24,6 @@ fn dedup_by_priority_project_wins() {
 }
 
 #[test]
-fn dedup_by_priority_agents_over_user() {
-    let skills = vec![
-        make_skill("tool", SkillScope::User),
-        make_skill("tool", SkillScope::Agents),
-    ];
-    let registry = SkillRegistry::new(skills);
-    assert_eq!(registry.list().len(), 1);
-    assert_eq!(registry.list()[0].scope, SkillScope::Agents);
-}
-
-#[test]
 fn no_dedup_for_different_names() {
     let skills = vec![
         make_skill("alpha", SkillScope::User),
@@ -62,13 +51,11 @@ fn format_for_prompt_empty() {
 fn format_for_prompt_includes_var_paths() {
     let skills = vec![
         make_skill("deploy", SkillScope::Project),
-        make_skill("lint", SkillScope::Agents),
         make_skill("helper", SkillScope::User),
     ];
     let registry = SkillRegistry::new(skills);
     let prompt = registry.format_for_prompt();
     assert!(prompt.contains("$PROJECT_SKILLS/deploy/SKILL.md"));
-    assert!(prompt.contains("$AGENTS_SKILLS/lint/SKILL.md"));
     assert!(prompt.contains("$USER_SKILLS/helper/SKILL.md"));
 }
 

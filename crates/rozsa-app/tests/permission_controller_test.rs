@@ -36,7 +36,7 @@ fn allow_session_trust_isolated_by_session_id_and_runtime_mode_updates() {
 #[test]
 fn project_file_trust_persists_and_applies_across_sessions() {
     let workspace = tempfile::tempdir().unwrap();
-    let settings_path = workspace.path().join(".rozsa/agent/settings.json");
+    let settings_path = workspace.path().join(".rozsa/settings.json");
     let settings = SettingsManager::load(
         workspace.path().join("global-settings.json"),
         Some(settings_path.clone()),

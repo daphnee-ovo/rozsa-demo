@@ -205,7 +205,7 @@ Phase 4: 集成 (依赖全部)
 - 实现 atomic write (tmp + rename)
 - 实现 file locking (fd-lock 或 advisory lock)
 - 实现 settings migration (deprecated field rename)
-- 实现 path resolution (~/.rozsa-agent/settings.json, .claude/settings.json)
+- 实现 path resolution（`ROZSA_CONFIG_DIR/settings.json` 与 `ROZSA_PROJECT_CONFIG_DIR/settings.json`）
 
 优化点:
 - atomic write 避免 corruption on crash
@@ -407,7 +407,7 @@ Phase 1 完成后的检查点。
   6. auto-permission -> LLM reviewer (via callback)
   7. on-request -> user prompt (via callback)
 - Session approval persistence (trust keys in project settings)
-- Audit logging (.rozsa-agent/sessions/{id}.jsonl)
+- Audit logging (`ROZSA_CONFIG_DIR/sessions/{id}.jsonl`)
 
 优化点:
 - decision caching for identical requests

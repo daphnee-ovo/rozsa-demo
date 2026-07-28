@@ -3,8 +3,11 @@ fn sidebar_and_settings_keep_compact_titlebar_spacing() {
     let sidebar = include_str!("../frontend/sidebar.html");
     let main = include_str!("../frontend/index.html");
 
-    assert!(sidebar
-        .contains(".sidebar-scene { display: flex; flex-direction: column; padding-top: 24px; }"));
+    assert!(
+        sidebar.contains(
+            ".sidebar-scene { display: flex; flex-direction: column; padding-top: 24px; }"
+        )
+    );
     assert!(sidebar.contains("padding: 8px 14px 6px"));
     assert!(main.contains("--native-titlebar-offset: 32px"));
     assert!(main.contains("padding: 0 clamp(26px, 7vw, 108px) 96px"));
@@ -50,8 +53,11 @@ fn native_main_content_stays_centered_while_resizing() {
     assert!(html.contains(
         "body.native-split-main [data-od-id=\"main-panel\"] {\n  width: 100%;\n  height: 100%;\n  align-items: center;\n}"
     ));
-    assert!(html
-        .contains("body.native-split-main [data-od-id=\"panel-header\"] { align-self: stretch; }"));
+    assert!(
+        html.contains(
+            "body.native-split-main [data-od-id=\"panel-header\"] { align-self: stretch; }"
+        )
+    );
     assert!(html.contains(
         "[data-od-id=\"chat-messages\"],\n[data-od-id=\"chat-input\"] {\n  width: 100%;\n  max-width: var(--main-content-max-width);\n}"
     ));
@@ -143,6 +149,9 @@ fn native_collapsed_sidebar_reveals_at_the_edge_and_avoids_the_titlebar() {
     assert!(split.contains("self.sidebar_pane.addSubview(&self.sidebar_view)"));
     assert!(split.contains("host.sidebar_pane.frame().size.width"));
     assert!(split.contains("sidebar_overlay_width_constraint"));
-    assert!(split
-        .contains(".topAnchor()\n            .constraintEqualToAnchor(&split_root.topAnchor())"));
+    assert!(
+        split.contains(
+            ".topAnchor()\n            .constraintEqualToAnchor(&split_root.topAnchor())"
+        )
+    );
 }

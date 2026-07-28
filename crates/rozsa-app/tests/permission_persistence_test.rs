@@ -23,7 +23,7 @@ fn make_controller(
 fn project_trust_persists_and_deny_precedes_ask_and_allow() {
     let temp = tempfile::tempdir().unwrap();
     let global = temp.path().join("global/settings.json");
-    let project = temp.path().join("project/.rozsa/agent/settings.json");
+    let project = temp.path().join("project/.rozsa/settings.json");
     std::fs::create_dir_all(global.parent().unwrap()).unwrap();
     std::fs::write(
         &global,

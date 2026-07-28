@@ -89,16 +89,27 @@ pub enum ThemeError {
 
 #[derive(Debug, Clone)]
 pub struct ThemeStore {
-    root: PathBuf,
+    roots: Vec<PathBuf>,
+    writable_root: PathBuf,
 }
 
 impl ThemeStore {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            roots: vec![root.clone()],
+            writable_root: root,
+        }
+    }
+
+    pub fn layered(global_root: PathBuf, project_root: PathBuf) -> Self {
+        Self {
+            roots: vec![global_root.clone(), project_root],
+            writable_root: global_root,
+        }
     }
 
     pub fn root(&self) -> &Path {
-        &self.root
+        &self.writable_root
     }
 
     pub fn list(&self) -> Result<Vec<ThemeSummary>, ThemeError> {
@@ -115,40 +126,45 @@ impl ThemeStore {
             },
         ];
 
-        if !self.root.exists() {
-            return Ok(themes);
-        }
-
-        let entries = fs::read_dir(&self.root).map_err(|source| ThemeError::Read {
-            path: self.root.clone(),
-            source,
-        })?;
-        let mut custom = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|source| ThemeError::Read {
-                path: self.root.clone(),
-                source,
-            })?;
-            let path = entry.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
+        let mut custom_by_id = BTreeMap::new();
+        for root in &self.roots {
+            if !root.exists() {
                 continue;
             }
-            let id = path
-                .file_stem()
-                .and_then(|value| value.to_str())
-                .ok_or_else(|| ThemeError::Invalid {
-                    id: path.display().to_string(),
-                    message: "theme filename must be valid UTF-8".to_string(),
-                })?
-                .to_string();
-            let file = self.read_file(&path, &id)?;
-            Self::validate_id(&id)?;
-            custom.push(ThemeSummary {
-                id,
-                name: file.name.unwrap_or_else(|| "Custom Theme".to_string()),
-                mode: file.mode,
-            });
+            let entries = fs::read_dir(root).map_err(|source| ThemeError::Read {
+                path: root.clone(),
+                source,
+            })?;
+            for entry in entries {
+                let entry = entry.map_err(|source| ThemeError::Read {
+                    path: root.clone(),
+                    source,
+                })?;
+                let path = entry.path();
+                if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                    continue;
+                }
+                let id = path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| ThemeError::Invalid {
+                        id: path.display().to_string(),
+                        message: "theme filename must be valid UTF-8".to_string(),
+                    })?
+                    .to_string();
+                let file = self.read_file(&path, &id)?;
+                Self::validate_id(&id)?;
+                custom_by_id.insert(
+                    id.clone(),
+                    ThemeSummary {
+                        id,
+                        name: file.name.unwrap_or_else(|| "Custom Theme".to_string()),
+                        mode: file.mode,
+                    },
+                );
+            }
         }
+        let mut custom = custom_by_id.into_values().collect::<Vec<_>>();
         custom.sort_by(|left, right| left.name.cmp(&right.name));
         themes.extend(custom);
         Ok(themes)
@@ -173,10 +189,13 @@ impl ThemeStore {
                 });
         }
 
-        let path = self.root.join(format!("{id}.json"));
-        if !path.exists() {
-            return Err(ThemeError::NotFound { id: id.to_string() });
-        }
+        let path = self
+            .roots
+            .iter()
+            .rev()
+            .map(|root| root.join(format!("{id}.json")))
+            .find(|path| path.exists())
+            .ok_or_else(|| ThemeError::NotFound { id: id.to_string() })?;
         let file = self.read_file(&path, id)?;
         if file.mode != mode {
             return Err(ThemeError::Invalid {
@@ -200,11 +219,11 @@ impl ThemeStore {
             });
         }
         Self::validate_definition(theme)?;
-        fs::create_dir_all(&self.root).map_err(|source| ThemeError::Read {
-            path: self.root.clone(),
+        fs::create_dir_all(&self.writable_root).map_err(|source| ThemeError::Read {
+            path: self.writable_root.clone(),
             source,
         })?;
-        let path = self.root.join(format!("{}.json", theme.id));
+        let path = self.writable_root.join(format!("{}.json", theme.id));
         let json =
             serde_json::to_string_pretty(&Self::from_definition(theme)).map_err(|source| {
                 ThemeError::Invalid {
@@ -458,10 +477,9 @@ impl ThemeStore {
     }
 }
 
-pub fn user_theme_store() -> Result<ThemeStore, ThemeError> {
-    let home = dirs_next::home_dir().ok_or_else(|| ThemeError::Invalid {
-        id: "~/.rozsa/themes".to_string(),
-        message: "home directory is unavailable".to_string(),
-    })?;
-    Ok(ThemeStore::new(home.join(".rozsa").join("themes")))
+pub fn layered_theme_store(
+    roots: &crate::config_paths::ConfigRoots,
+) -> Result<ThemeStore, ThemeError> {
+    let [global, project] = roots.theme_dirs();
+    Ok(ThemeStore::layered(global, project))
 }

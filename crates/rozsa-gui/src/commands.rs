@@ -108,7 +108,6 @@
 // ├── append_prompt_error()
 // ├── append_prompt_error_for_session()
 // ├── current_timestamp_ms()
-// ├── models_dir()
 // ├── open_url()
 // ├── ensure_codex_oauth_models_config()
 // ├── codex_oauth_model()
@@ -579,7 +578,7 @@ pub async fn dispatch_slash_command(
             return slash_action("refreshModels");
         }
         "logout" => {
-            let message = auth_logout().await?;
+            let message = auth_logout(state).await?;
             emit_info(&app, &message);
             return slash_action("refreshModels");
         }
@@ -998,12 +997,11 @@ pub async fn get_file_diff(
 
 #[tauri::command]
 pub async fn get_sessions(state: State<'_, GuiState>) -> Result<Vec<SessionListEntry>, String> {
-    let session_dir = state
-        .session_dir
-        .as_ref()
-        .ok_or("No session directory configured")?;
+    if state.session_dirs.is_empty() {
+        return Err("No session directories configured".to_string());
+    }
 
-    let metas = SessionManager::list_dir(session_dir).map_err(|e| e.to_string())?;
+    let metas = SessionManager::list_dirs(&state.session_dirs).map_err(|e| e.to_string())?;
 
     Ok(metas
         .into_iter()
@@ -1322,26 +1320,32 @@ pub async fn get_settings(
             is_macos: cfg!(target_os = "macos"),
         },
     };
-    publish_theme_state(&app, &snapshot.appearance)?;
+    publish_theme_state(&state, &app, &snapshot.appearance)?;
     Ok(snapshot)
 }
 
 #[tauri::command]
-pub fn list_themes() -> Result<Vec<ThemeSummary>, String> {
-    theme_store()?.list().map_err(|error| error.to_string())
+pub fn list_themes(state: State<'_, GuiState>) -> Result<Vec<ThemeSummary>, String> {
+    theme_store(&state)?
+        .list()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn get_theme(id: String, mode: String) -> Result<ThemeDefinition, String> {
+pub fn get_theme(
+    state: State<'_, GuiState>,
+    id: String,
+    mode: String,
+) -> Result<ThemeDefinition, String> {
     let mode = parse_theme_mode(&mode)?;
-    theme_store()?
+    theme_store(&state)?
         .load(&id, mode)
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn save_theme(theme: ThemeDefinition) -> Result<(), String> {
-    theme_store()?
+pub fn save_theme(state: State<'_, GuiState>, theme: ThemeDefinition) -> Result<(), String> {
+    theme_store(&state)?
         .save(&theme)
         .map_err(|error| error.to_string())
 }
@@ -1490,7 +1494,7 @@ pub async fn update_setting(
             Ok(())
         }
         "appearance_light_theme" => {
-            theme_store()?
+            theme_store(&state)?
                 .load(&value, ThemeMode::Light)
                 .map_err(|error| error.to_string())?;
             let mut s = state.runtime_settings.lock().await;
@@ -1501,7 +1505,7 @@ pub async fn update_setting(
             Ok(())
         }
         "appearance_dark_theme" => {
-            theme_store()?
+            theme_store(&state)?
                 .load(&value, ThemeMode::Dark)
                 .map_err(|error| error.to_string())?;
             let mut s = state.runtime_settings.lock().await;
@@ -1523,12 +1527,16 @@ fn parse_theme_mode(value: &str) -> Result<ThemeMode, String> {
     }
 }
 
-fn theme_store() -> Result<ThemeStore, String> {
-    themes::user_theme_store().map_err(|error| error.to_string())
+fn theme_store(state: &GuiState) -> Result<ThemeStore, String> {
+    themes::layered_theme_store(&state.config_roots).map_err(|error| error.to_string())
 }
 
-fn publish_theme_state(app: &AppHandle, appearance: &AppearanceSnapshot) -> Result<(), String> {
-    let store = theme_store()?;
+fn publish_theme_state(
+    state: &GuiState,
+    app: &AppHandle,
+    appearance: &AppearanceSnapshot,
+) -> Result<(), String> {
+    let store = theme_store(state)?;
     let light_theme = store
         .load(&appearance.light_theme, ThemeMode::Light)
         .map_err(|error| error.to_string())?;
@@ -1549,7 +1557,7 @@ async fn emit_theme_state(state: &State<'_, GuiState>, app: &AppHandle) -> Resul
         is_macos: cfg!(target_os = "macos"),
     };
     drop(settings);
-    publish_theme_state(app, &appearance)
+    publish_theme_state(state, app, &appearance)
 }
 
 // --- 模型 ---
@@ -1567,7 +1575,7 @@ async fn refresh_codex_oauth_models(
     state: &GuiState,
     force: bool,
 ) -> Result<(), String> {
-    let models_dir = models_dir()?;
+    let [models_dir, project_models_dir] = state.config_roots.model_dirs();
     let auth_path = models_dir.join("auth.json");
     let auth_path_text = auth_path.to_string_lossy();
     let Some(account_id) =
@@ -1597,7 +1605,6 @@ async fn refresh_codex_oauth_models(
         return Ok(());
     }
 
-    let project_models_dir = state.shared.cwd.join(".rozsa").join("models");
     let refreshed_registry = ModelRegistry::load_from_dirs(&[&models_dir, &project_models_dir])
         .map_err(|error| error.to_string())?;
     let Some(shared_registry) = state.model_registry.as_ref() else {
@@ -1729,7 +1736,7 @@ pub async fn auth_login(state: State<'_, GuiState>, app: AppHandle) -> Result<St
 
     match login_handle.await {
         Ok(Ok(credentials)) => {
-            let models_dir = models_dir()?;
+            let models_dir = state.config_roots.model_dirs()[0].clone();
             std::fs::create_dir_all(&models_dir)
                 .map_err(|e| format!("Failed to create models directory: {e}"))?;
             let auth_path = models_dir.join("auth.json");
@@ -1748,8 +1755,8 @@ pub async fn auth_login(state: State<'_, GuiState>, app: AppHandle) -> Result<St
 }
 
 #[tauri::command]
-pub async fn auth_logout() -> Result<String, String> {
-    let auth_path = models_dir()?.join("auth.json");
+pub async fn auth_logout(state: State<'_, GuiState>) -> Result<String, String> {
+    let auth_path = state.config_roots.model_dirs()[0].join("auth.json");
     let removed = rozsa_model::credentials::remove_stored_credentials(
         auth_path.to_str().unwrap_or(""),
         "codex-oauth",
@@ -2878,12 +2885,6 @@ fn current_timestamp_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| Duration::from_millis(0))
         .as_millis() as i64
-}
-
-fn models_dir() -> Result<std::path::PathBuf, String> {
-    dirs::home_dir()
-        .map(|home| home.join(".rozsa").join("models"))
-        .ok_or_else(|| "Cannot determine home directory".to_string())
 }
 
 fn open_url(url: &str) -> bool {

@@ -43,6 +43,7 @@
 // ├── rename()
 // ├── current_name()
 // ├── list_dir()
+// ├── list_dirs()
 // ├── build_session_meta()
 // ├── extract_message_text()
 // └── systemtime_to_rfc3339()
@@ -766,6 +767,20 @@ impl SessionManager {
         }
         // Most recent first.
         metas.sort_by(|a, b| b.modified.cmp(&a.modified));
+        Ok(metas)
+    }
+
+    /// List layered session directories. Later directories override earlier
+    /// directories when the same session id exists in both.
+    pub fn list_dirs(dirs: &[PathBuf]) -> Result<Vec<SessionMeta>> {
+        let mut by_id = HashMap::new();
+        for dir in dirs {
+            for meta in Self::list_dir(dir)? {
+                by_id.insert(meta.id.clone(), meta);
+            }
+        }
+        let mut metas = by_id.into_values().collect::<Vec<_>>();
+        metas.sort_by(|left, right| right.modified.cmp(&left.modified));
         Ok(metas)
     }
 }

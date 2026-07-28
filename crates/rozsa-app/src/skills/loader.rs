@@ -6,9 +6,7 @@ use std::path::{Path, PathBuf};
 pub enum SkillScope {
     /// <cwd>/.rozsa/skills/
     Project,
-    /// ~/.agents/skills/
-    Agents,
-    /// ~/.rozsa/agent/skills/
+    /// ~/.rozsa/skills/
     User,
 }
 
