@@ -30,6 +30,9 @@
 // ├── respond_permission()
 // ├── respond_user_question()
 // ├── prepare_permission()
+// ├── get_key_bindings()
+// ├── update_key_binding()
+// ├── reset_key_binding()
 // ├── get_settings()
 // ├── list_themes()
 // ├── get_theme()
@@ -1285,6 +1288,33 @@ pub async fn prepare_permission(
 }
 
 // --- 设置 ---
+
+#[tauri::command]
+pub fn get_key_bindings(
+    state: State<'_, GuiState>,
+) -> Result<Vec<crate::key_bindings::KeyBindingDefinition>, String> {
+    let path = crate::key_bindings::key_bindings_path(&state.config_roots);
+    crate::key_bindings::load_key_bindings(&path)
+}
+
+#[tauri::command]
+pub fn update_key_binding(
+    state: State<'_, GuiState>,
+    action: crate::key_bindings::KeyBindingAction,
+    binding: String,
+) -> Result<Vec<crate::key_bindings::KeyBindingDefinition>, String> {
+    let path = crate::key_bindings::key_bindings_path(&state.config_roots);
+    crate::key_bindings::update_key_binding(&path, action, &binding)
+}
+
+#[tauri::command]
+pub fn reset_key_binding(
+    state: State<'_, GuiState>,
+    action: crate::key_bindings::KeyBindingAction,
+) -> Result<Vec<crate::key_bindings::KeyBindingDefinition>, String> {
+    let path = crate::key_bindings::key_bindings_path(&state.config_roots);
+    crate::key_bindings::reset_key_binding(&path, action)
+}
 
 #[tauri::command]
 pub async fn get_settings(

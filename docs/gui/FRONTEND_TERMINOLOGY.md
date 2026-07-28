@@ -467,7 +467,7 @@ settings scene
 | `settings workspace` | 设置工作区 | main WebView 内组织 settings content | `.settings-workspace` |
 | `settings navigation` | 设置导航 | sidebar WebView 中的 pane 切换入口 | `#settingsSidebarScene [data-settings-pane]` |
 | `back action` | 返回应用操作 | 请求切回 Main scene | `.settings-back`；`closeSidebarSettings()` |
-| `settings tab` | 设置页签 | 切换 Appearance、General、Models、Permissions、Tools | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
+| `settings tab` | 设置页签 | 切换 Appearance、General、Models、Permissions、Tools、Keyboard shortcuts | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
 | `settings content` | 设置内容区 | 承载当前 pane 的滚动内容 | `.settings-content` |
 | `settings pane` | 设置页面 | 一个完整的 Settings 分类页面 | `.settings-pane`、`#pane-*`；`renderSettingsPane()` |
 | `pane title` | 页面标题 | 当前 pane 的标题 | `.settings-pane-title` |
@@ -518,7 +518,6 @@ settings scene
 | `block images switch` | 阻止图片开关 | 控制 Markdown 图片是否被阻止 | `#settingsBlockImages` |
 | `network settings group` | 网络设置分组 | 承载传输方式配置 | `#pane-general` 的 `Network` group |
 | `transport selector` | 传输方式选择器 | 选择 Auto、SSE 或 WebSocket | `#settingsTransport` |
-| `shortcut row` | 快捷键行 | 展示 Send、New line、Toggle thinking panel 等快捷键 | `#pane-general` 的 `Shortcuts` group |
 | `models pane` | 模型页面 | 查看和切换当前模型、provider、context window | `#pane-models` |
 | `model setting selector` | 模型设置选择器 | 在 Settings 中切换模型 | `#settingsModelSelect`；`onModelChange()` |
 | `small model selector` | 小模型选择器 | 为长输入的 session title 请求选择低成本模型；请求固定使用 Low reasoning，Disabled 时只使用本地短标题和 preview fallback | `#settingsSmallModelSelect`；`saveSetting('small_model', ...)` |
@@ -531,6 +530,17 @@ settings scene
 | `tools pane` | 工具页面 | 展示已注册工具 | `#pane-tools` |
 | `registered tools group` | 已注册工具分组 | 承载工具列表标题和动态内容 | `#settingsToolList` |
 | `tool list item` | 工具列表项 | 展示单个 registered tool 的状态或说明 | `#settingsToolList` 动态子项 |
+
+### 13.4 Keyboard shortcuts pane
+
+| 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
+| --- | --- | --- | --- |
+| `keyboard shortcuts pane` | 快捷键页面 | 查看实际支持的快捷键并编辑稳定动作 | `#pane-keyboard-shortcuts`；`renderKeyBindings()` |
+| `shortcut search` | 快捷键搜索 | 按动作、说明或当前按键筛选 | `#shortcutSearch` |
+| `customizable shortcuts group` | 可自定义快捷键分组 | 展示由 GUI 注册表驱动的当前绑定 | `#keyBindingList` |
+| `shortcut row` | 快捷键行 | 展示动作、说明、当前绑定和重置入口 | `.shortcut-row` |
+| `shortcut binding action` | 快捷键绑定操作 | 进入按键捕获并保存新绑定 | `.shortcut-binding`；`beginKeyBindingCapture()` |
+| `context controls group` | 上下文控制分组 | 只读展示权限、问题和自动补全等固定按键 | `#fixedKeyBindingList` |
 
 ## 14. 术语表的范围与使用规则
 

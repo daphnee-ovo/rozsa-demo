@@ -1,3 +1,22 @@
+// FrameworkTree
+// scene_router.rs
+// ├── enum GuiScene
+// ├── enum SettingsPane
+// ├── enum GuiWebview
+// ├── impl GuiWebview
+// ├── label()
+// ├── from_label()
+// ├── struct GuiSceneSnapshot
+// ├── struct SceneUpdate
+// ├── struct ReadyUpdate
+// ├── struct SceneRouter
+// ├── impl SceneRouter
+// ├── default()
+// ├── impl SceneRouter
+// ├── snapshot()
+// ├── set_scene()
+// └── webview_ready()
+
 // File: scene_router.rs
 //
 // Window scene state machine shared by the persistent main and sidebar WebViews.
@@ -37,6 +56,8 @@ pub enum SettingsPane {
     Models,
     Permissions,
     Tools,
+    #[serde(rename = "keyboard-shortcuts")]
+    KeyboardShortcuts,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]

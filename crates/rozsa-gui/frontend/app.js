@@ -46,6 +46,16 @@ let currentQuestionAnswers = {};
 let questionDisplayInFlight = false;
 let toolCounts = {};
 let currentSettings = null;
+let keyBindingDefinitions = [
+  { action: 'toggleThinking', title: 'Toggle thinking', description: 'Expand or collapse thinking blocks', defaultBinding: 'Ctrl+T', binding: 'Ctrl+T', scope: 'global' },
+  { action: 'openModelPicker', title: 'Choose model', description: 'Open the model picker', defaultBinding: 'Ctrl+P', binding: 'Ctrl+P', scope: 'global' },
+  { action: 'newSession', title: 'New session', description: 'Start a new session', defaultBinding: 'Ctrl+N', binding: 'Ctrl+N', scope: 'global' },
+  { action: 'openSettings', title: 'Open settings', description: 'Open or close Settings', defaultBinding: 'Ctrl+,', binding: 'Ctrl+,', scope: 'global' },
+  { action: 'sendMessage', title: 'Send message', description: 'Send from the focused composer', defaultBinding: 'Enter', binding: 'Enter', scope: 'composer' },
+  { action: 'insertNewline', title: 'Insert new line', description: 'Add a line in the focused composer', defaultBinding: 'Shift+Enter', binding: 'Shift+Enter', scope: 'composer' },
+  { action: 'focusComposer', title: 'Focus composer', description: 'Move focus to the message composer', defaultBinding: '/', binding: '/', scope: 'outsideComposer' },
+];
+let capturingKeyBindingAction = null;
 let availableThemes = [];
 let themeDefinitions = { light: null, dark: null };
 let themeSaveQueues = { light: Promise.resolve(), dark: Promise.resolve() };
@@ -261,6 +271,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   try { models = await invoke('list_models'); renderModelSelector(); } catch (e) { showError('list_models failed: ' + String(e)); }
   loadSettings().catch(() => {});
+  loadKeyBindings().catch(() => {});
   refreshRateLimits(false);
 });
 
@@ -2336,6 +2347,7 @@ function renderNativeMainScene(snapshot) {
   if (settingsVisible) {
     renderSettingsSelection(snapshot.selectedPane || 'appearance');
     loadSettings().catch(() => {});
+    loadKeyBindings().catch(() => {});
   } else if (returningMain) {
     requestAnimationFrame(restoreMainSceneContinuity);
   }
@@ -2634,6 +2646,7 @@ function toggleSettings() {
     panel.classList.toggle('settings-sidebar-collapsed', isSidebarCollapsed());
     syncChromeBackgroundGeometry();
     loadSettings().catch(() => {});
+    loadKeyBindings().catch(() => {});
   }
 }
 
@@ -2699,6 +2712,159 @@ async function loadSettings() {
     availableThemes = [];
     showError('Failed to load appearance settings: ' + String(e));
     throw e;
+  }
+}
+
+const FIXED_KEY_BINDINGS = Object.freeze([
+  { binding: 'Escape', title: 'Dismiss the current panel' },
+  { binding: 'Double Escape', title: 'Abort the active response' },
+  { binding: 'Y / T / N / H', title: 'Choose a permission response' },
+  { binding: 'J / K / ↑ / ↓ / Enter', title: 'Move through permission choices' },
+  { binding: '1–9 / N / D / Enter', title: 'Choose or advance a question or trust option' },
+  { binding: 'Tab / ↑ / ↓ / Enter', title: 'Confirm or navigate autocomplete' },
+]);
+
+async function loadKeyBindings() {
+  try {
+    keyBindingDefinitions = await invoke('get_key_bindings');
+    setKeyBindingError('');
+    renderKeyBindings(document.getElementById('shortcutSearch')?.value || '');
+  } catch (error) {
+    setKeyBindingError(String(error));
+    showError('Failed to load keyboard shortcuts: ' + String(error));
+    throw error;
+  }
+}
+
+function setKeyBindingError(message) {
+  const error = document.getElementById('shortcutError');
+  if (!error) return;
+  error.textContent = message;
+  error.hidden = !message;
+}
+
+function bindingFor(action) {
+  return keyBindingDefinitions.find(definition => definition.action === action)?.binding || '';
+}
+
+function canonicalKeyEvent(event) {
+  if (['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) return '';
+  const parts = [];
+  if (event.ctrlKey) parts.push('Ctrl');
+  if (event.metaKey) parts.push('Meta');
+  if (event.altKey) parts.push('Alt');
+  if (event.shiftKey) parts.push('Shift');
+  let key = event.key;
+  if (key === ' ') key = 'Space';
+  if (key.length === 1 && /[a-z]/i.test(key)) key = key.toUpperCase();
+  parts.push(key);
+  return parts.join('+');
+}
+
+function matchesKeyBinding(event, action) {
+  return canonicalKeyEvent(event).toLowerCase() === bindingFor(action).toLowerCase();
+}
+
+function renderKeyBindings(query = '') {
+  const list = document.getElementById('keyBindingList');
+  const fixedList = document.getElementById('fixedKeyBindingList');
+  if (!list || !fixedList) return;
+  const normalizedQuery = query.trim().toLowerCase();
+  const definitions = keyBindingDefinitions.filter(definition =>
+    !normalizedQuery ||
+    definition.title.toLowerCase().includes(normalizedQuery) ||
+    definition.description.toLowerCase().includes(normalizedQuery) ||
+    definition.binding.toLowerCase().includes(normalizedQuery)
+  );
+  list.replaceChildren();
+  for (const definition of definitions) {
+    const row = document.createElement('div');
+    row.className = 'shortcut-row';
+    const copy = document.createElement('div');
+    copy.className = 'shortcut-copy';
+    copy.innerHTML = `<div class="shortcut-title">${escapeHtml(definition.title)}</div>` +
+      `<div class="shortcut-description">${escapeHtml(definition.description)}</div>`;
+    const actions = document.createElement('div');
+    actions.className = 'shortcut-actions';
+    const binding = document.createElement('button');
+    binding.type = 'button';
+    binding.className = 'shortcut-binding';
+    binding.textContent = capturingKeyBindingAction === definition.action
+      ? 'Press keys…'
+      : definition.binding;
+    binding.classList.toggle('capturing', capturingKeyBindingAction === definition.action);
+    binding.setAttribute('aria-label', `Change ${definition.title} shortcut`);
+    binding.onclick = () => beginKeyBindingCapture(definition.action);
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'shortcut-reset';
+    reset.textContent = '↺';
+    reset.title = 'Restore default';
+    reset.disabled = definition.binding === definition.defaultBinding;
+    reset.onclick = () => resetKeyBinding(definition.action);
+    actions.append(binding, reset);
+    row.append(copy, actions);
+    list.appendChild(row);
+  }
+  if (!definitions.length) {
+    const empty = document.createElement('div');
+    empty.className = 'shortcut-empty';
+    empty.textContent = 'No matching shortcuts';
+    list.appendChild(empty);
+  }
+
+  fixedList.replaceChildren();
+  for (const definition of FIXED_KEY_BINDINGS.filter(definition =>
+    !normalizedQuery ||
+    definition.title.toLowerCase().includes(normalizedQuery) ||
+    definition.binding.toLowerCase().includes(normalizedQuery)
+  )) {
+    const row = document.createElement('div');
+    row.className = 'shortcut-row';
+    row.innerHTML = `<div class="shortcut-copy"><div class="shortcut-title">${escapeHtml(definition.title)}</div></div>` +
+      `<span class="setting-value">${escapeHtml(definition.binding)}</span>`;
+    fixedList.appendChild(row);
+  }
+}
+
+function beginKeyBindingCapture(action) {
+  setKeyBindingError('');
+  capturingKeyBindingAction = action;
+  renderKeyBindings(document.getElementById('shortcutSearch')?.value || '');
+}
+
+async function saveCapturedKeyBinding(event) {
+  if (!capturingKeyBindingAction) return false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (event.key === 'Escape') {
+    capturingKeyBindingAction = null;
+    renderKeyBindings(document.getElementById('shortcutSearch')?.value || '');
+    return true;
+  }
+  const binding = canonicalKeyEvent(event);
+  if (!binding) return true;
+  const action = capturingKeyBindingAction;
+  capturingKeyBindingAction = null;
+  try {
+    keyBindingDefinitions = await invoke('update_key_binding', { action, binding });
+    setKeyBindingError('');
+  } catch (error) {
+    setKeyBindingError(String(error));
+    showError('Failed to update keyboard shortcut: ' + String(error));
+  }
+  renderKeyBindings(document.getElementById('shortcutSearch')?.value || '');
+  return true;
+}
+
+async function resetKeyBinding(action) {
+  try {
+    keyBindingDefinitions = await invoke('reset_key_binding', { action });
+    setKeyBindingError('');
+    renderKeyBindings(document.getElementById('shortcutSearch')?.value || '');
+  } catch (error) {
+    setKeyBindingError(String(error));
+    showError('Failed to reset keyboard shortcut: ' + String(error));
   }
 }
 
@@ -3464,6 +3630,11 @@ function syncInputHighlightScroll() {
 document.addEventListener('keydown', function(e) {
   const input = document.getElementById('msgInput');
 
+  if (capturingKeyBindingAction) {
+    void saveCapturedKeyBinding(e);
+    return;
+  }
+
   // IME owns composition keystrokes. Let the browser keep the preedit text
   // intact; Enter/send, autocomplete, and DOM replacement run after commit.
   if (isInputComposing || e.isComposing || e.keyCode === 229) return;
@@ -3588,25 +3759,25 @@ document.addEventListener('keydown', function(e) {
   }
 
   // Global shortcuts
-  if (e.ctrlKey && e.key === 't') {
+  if (matchesKeyBinding(e, 'toggleThinking')) {
     e.preventDefault();
     document.body.classList.toggle('thinking-expanded');
     return;
   }
 
-  if (e.ctrlKey && e.key === 'p') {
+  if (matchesKeyBinding(e, 'openModelPicker')) {
     e.preventDefault();
     showModelPicker();
     return;
   }
 
-  if (e.ctrlKey && e.key === 'n') {
+  if (matchesKeyBinding(e, 'newSession')) {
     e.preventDefault();
     newSession();
     return;
   }
 
-  if (e.ctrlKey && e.key === ',') {
+  if (matchesKeyBinding(e, 'openSettings')) {
     e.preventDefault();
     toggleSettings();
     return;
@@ -3614,7 +3785,7 @@ document.addEventListener('keydown', function(e) {
 
   // Input field shortcuts
   if (document.activeElement === input) {
-    if (e.key === 'Enter' && e.shiftKey) {
+    if (matchesKeyBinding(e, 'insertNewline')) {
       e.preventDefault();
       insertInputText('\n');
       return;
@@ -3628,7 +3799,7 @@ document.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' && acSelectedIndex >= 0) { e.preventDefault(); confirmAutocomplete(); return; }
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (matchesKeyBinding(e, 'sendMessage')) {
       e.preventDefault();
       if (acVisible && acSelectedIndex >= 0) {
         confirmAutocomplete();
@@ -3641,7 +3812,7 @@ document.addEventListener('keydown', function(e) {
   }
 
   // Focus input with / key when not already focused
-  if (e.key === '/' && document.activeElement !== input && !e.ctrlKey && !e.metaKey) {
+  if (matchesKeyBinding(e, 'focusComposer') && document.activeElement !== input) {
     input.focus();
     // Don't prevent default - let the / character be typed
   }
@@ -3776,13 +3947,14 @@ function showHelp(topic) {
       helpText += '\n';
     }
     helpText += '### Keyboard Shortcuts\n\n' +
-      '- **Enter** — Send message\n' +
-      '- **Shift+Enter** — New line\n' +
+      '- **' + bindingFor('sendMessage') + '** — Send message\n' +
+      '- **' + bindingFor('insertNewline') + '** — New line\n' +
       '- **Double Escape** — Abort streaming\n' +
       '- **Escape** — Close panel\n' +
-      '- **Ctrl+T** — Toggle thinking display\n' +
-      '- **Ctrl+N** — New session\n' +
-      '- **Ctrl+,** — Open settings\n';
+      '- **' + bindingFor('toggleThinking') + '** — Toggle thinking display\n' +
+      '- **' + bindingFor('openModelPicker') + '** — Choose model\n' +
+      '- **' + bindingFor('newSession') + '** — New session\n' +
+      '- **' + bindingFor('openSettings') + '** — Open settings\n';
   }
 
   const container = document.getElementById('chatMessages');
@@ -3796,20 +3968,13 @@ function showHelp(topic) {
 }
 
 function showHotkeys() {
-  const hotkeysText =
-    '## Keyboard Shortcuts\n\n' +
-    '| Key | Action |\n' +
-    '|-----|--------|\n' +
-    '| Enter | Send message |\n' +
-    '| Shift+Enter | New line |\n' +
-    '| Double Escape | Abort streaming |\n' +
-    '| Escape | Close panel |\n' +
-    '| Ctrl+T | Toggle thinking |\n' +
-    '| Ctrl+N | New session |\n' +
-    '| Ctrl+, | Settings |\n' +
-    '| Y/T/N/H | Permission response |\n' +
-    '| Tab | Confirm autocomplete |\n' +
-    '| Up/Down | Navigate autocomplete |\n';
+  let hotkeysText = '## Keyboard Shortcuts\n\n| Key | Action |\n|-----|--------|\n';
+  for (const definition of keyBindingDefinitions) {
+    hotkeysText += `| ${definition.binding} | ${definition.title} |\n`;
+  }
+  for (const definition of FIXED_KEY_BINDINGS) {
+    hotkeysText += `| ${definition.binding} | ${definition.title} |\n`;
+  }
 
   const container = document.getElementById('chatMessages');
   if (!container) return;

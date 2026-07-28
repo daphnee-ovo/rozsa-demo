@@ -5,6 +5,7 @@
 // ├── mod file_refs
 // ├── mod git_diff
 // ├── mod inspector
+// ├── mod key_bindings
 // ├── mod native_split_view
 // ├── mod native_titlebar
 // ├── mod scene_router
@@ -25,6 +26,7 @@ pub mod events;
 pub mod file_refs;
 pub mod git_diff;
 mod inspector;
+pub mod key_bindings;
 #[cfg(target_os = "macos")]
 mod native_split_view;
 #[cfg(target_os = "macos")]
@@ -192,6 +194,9 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::prepare_permission,
             commands::get_settings,
             commands::update_setting,
+            commands::get_key_bindings,
+            commands::update_key_binding,
+            commands::reset_key_binding,
             commands::list_themes,
             commands::get_theme,
             commands::save_theme,

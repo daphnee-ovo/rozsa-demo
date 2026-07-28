@@ -80,6 +80,18 @@ fn snapshots_use_the_exact_ipc_shape() {
 }
 
 #[test]
+fn keyboard_shortcuts_is_a_supported_settings_pane() {
+    let mut router = SceneRouter::default();
+    let update = router
+        .set_scene(GuiScene::Settings, Some(SettingsPane::KeyboardShortcuts), 1)
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(update.snapshot.selected_pane).unwrap(),
+        serde_json::json!("keyboard-shortcuts")
+    );
+}
+
+#[test]
 fn settings_requires_a_selected_pane_and_main_clears_it() {
     let mut router = SceneRouter::default();
     assert!(router.set_scene(GuiScene::Settings, None, 1).is_err());
