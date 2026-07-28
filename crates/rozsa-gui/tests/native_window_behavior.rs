@@ -32,6 +32,16 @@ fn divider_constraints_and_restoration_are_appkit_owned() {
 }
 
 #[test]
+fn native_sidebar_stays_inline_without_covering_main_content() {
+    let split = include_str!("../src/native_split_view.rs");
+
+    assert!(split.contains("NSSplitViewItemSidebarDefaultsToFloatingAppearance"));
+    assert!(split.contains("setBool_forKey"));
+    assert!(split.contains("sidebar_item.setAllowsFullHeightLayout(true)"));
+    assert!(!split.contains("setAutomaticallyAdjustsSafeAreaInsets(true)"));
+}
+
+#[test]
 fn titlebar_installs_after_split_and_uses_the_stable_content_root() {
     let split = include_str!("../src/native_split_view.rs");
     let titlebar = include_str!("../src/native_titlebar.rs");

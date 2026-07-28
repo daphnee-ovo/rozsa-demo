@@ -37,7 +37,7 @@ use objc2_app_kit::{
     NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
     NSWindow,
 };
-use objc2_foundation::{NSArray, NSRect, NSString, ns_string};
+use objc2_foundation::{NSArray, NSRect, NSString, NSUserDefaults, ns_string};
 use tauri::webview::WebviewBuilder;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindow};
 
@@ -196,6 +196,16 @@ fn make_sidebar_material(
     (material, constraints)
 }
 
+/// Keep the two-pane product layout inline on macOS 26's floating-sidebar
+/// design. The preference is written to Rózsa's application domain through
+/// NSUserDefaults; it does not modify the user's global AppKit defaults.
+fn configure_inline_sidebar_appearance() {
+    NSUserDefaults::standardUserDefaults().setBool_forKey(
+        false,
+        ns_string!("NSSplitViewItemSidebarDefaultsToFloatingAppearance"),
+    );
+}
+
 fn make_opaque_backing(
     mtm: MainThreadMarker,
     parent: &NSView,
@@ -272,7 +282,9 @@ fn install_native_split(
     main_controller.setView(&main_pane);
     let main_constraints = pin_to_parent(&main_view, &main_pane);
 
+    configure_inline_sidebar_appearance();
     let sidebar_item = NSSplitViewItem::sidebarWithViewController(&sidebar_controller);
+    sidebar_item.setAllowsFullHeightLayout(true);
     sidebar_item.setMinimumThickness(SIDEBAR_MIN_WIDTH);
     sidebar_item.setMaximumThickness(SIDEBAR_MAX_WIDTH);
     let main_item = NSSplitViewItem::splitViewItemWithViewController(&main_controller);

@@ -107,6 +107,8 @@ NSWindow
 
 两个 split item 和两个 WebView 在 Main/Settings 切换期间保持 identity。`scene_router.rs` 持有窗口级 `GuiScene` 和 revision；前端只切换预创建 root 的 `hidden` / `inert`，不 reload 或重建 stateful roots。pane frame、divider、collapse、fullscreen overlay 和 width persistence 只由 AppKit 管理。
 
+macOS 26 的 AppKit 会为 sidebar behavior 默认采用 floating appearance。Rózsa 在创建 sidebar item 前，通过应用自己的 `NSUserDefaults` domain 将 `NSSplitViewItemSidebarDefaultsToFloatingAppearance` 设为 `false`，保持 sidebar 与 main pane 的 inline 分栏视觉；不要写入全局 `-g` defaults。main item 不启用 `automaticallyAdjustsSafeAreaInsets`，因为两个 WebView 的内容边界由 split pane 直接管理，浮动 overlay 会遮挡 main WebView 的 composer。
+
 窗口配置为初始隐藏。main 与 sidebar WebView 分别完成 `gui_webview_ready` 后，`scene_router.rs` 才允许显示同一个 `NSWindow`，避免启动和原生重挂载期间先暴露单独 pane。非 macOS fallback 没有第二个 WebView，在完成单 WebView setup 后直接显示窗口。
 
 实现锚点：[`native_split_view.rs`](../../crates/rozsa-gui/src/native_split_view.rs)、[`native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs)、[`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js)。验证记录见 [`NATIVE_SPLIT_VALIDATION.md`](./NATIVE_SPLIT_VALIDATION.md)。
