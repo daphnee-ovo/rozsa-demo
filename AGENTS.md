@@ -70,9 +70,9 @@ If rebase conflicts occur:
 - If a conflict is in a file you did not modify, abort and ask the user.
 - Never force push.
 
-## Issues and PRs
+## Issues and Pull Requests
 
-See `CONTRIBUTING.md` for contribution guidelines.
+Treat `CONTRIBUTING.md` as the canonical entry point for contributor prerequisites, development tools, code style, testing, and pull request requirements.
 
 - Do not edit `CHANGELOG.md`; maintainers manage changelog entries.
 - When a commit should close issues, repeat `fixes #<number>` or `closes #<number>` for each issue.

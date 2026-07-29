@@ -14,6 +14,7 @@
 - **GUI packaging and update configuration**（原 TASK-T086）— 暂不处理跨平台安装包、更新配置和签名 endpoint；待发布渠道与平台前置条件明确后再拆任务。
 - **Agent loop async hooks**（原 ISSUE-I033）— 暂不处理同步 hook 改为 async 的接口设计；待明确 compaction、context transform 和 steering queue 的异步需求后再排期。
 - **Package Manager**（原 ISSUE-I057）— 暂不实现扩展/技能安装管理；npm/git 支持范围、包格式、锁文件和离线行为尚未确认。
+- **Auto-approve small-model permission reviewer**（原 TASK-T044，2026-07-30 移入 TODO）— 前后端统一使用 `auto-approve` 命名；当前仍作为未实现模式，选择时必须明确报错且不得持久化。后续实现时，仅对匹配 `ask` 的工具调用交给配置的小模型判断安全性与权限范围；`deny` 和 `allow` 保持现有优先级并绕过 reviewer。Reviewer 的 `approve` 直接放行，`reject` 阻止执行，`uncertain`、模型错误或超时回退到用户审批。传入 reviewer 的工具参数、作用域和 workspace 上下文必须经过敏感信息脱敏，并补齐运行时、失败与超时路径的回归测试。
 
 ## 长线规划（从 TS 差距审计转入）
 

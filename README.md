@@ -46,6 +46,10 @@ tests/           Integration tests
 tmp/             Temporary files (gitignored)
 ```
 
+## Contributing and Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor prerequisites, development tools, code style, testing, and pull request requirements.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
