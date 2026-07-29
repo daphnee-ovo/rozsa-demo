@@ -12,7 +12,7 @@ fn needs_approval(verdict: PolicyVerdict) -> rozsa_app::permissions::ApprovalInf
 
 #[test]
 fn compound_command_requires_every_segment_to_be_trusted() {
-    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let controller = PermissionController::new(PermissionMode::OnRequest);
     let args = json!({"command": "dow status set --phase dev && cargo test"});
 
     let initial = needs_approval(controller.evaluate("session-a", "Bash", &args));
@@ -60,7 +60,7 @@ fn compound_command_requires_every_segment_to_be_trusted() {
 #[test]
 fn file_trust_stays_inside_workspace_and_offers_progressive_scopes() {
     let workspace = std::env::current_dir().unwrap();
-    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let controller = PermissionController::new(PermissionMode::OnRequest);
     let file = workspace.join("src/test.rs");
     let approval =
         needs_approval(controller.evaluate("session-a", "Edit", &json!({"file_path": file})));
@@ -86,7 +86,7 @@ fn file_trust_stays_inside_workspace_and_offers_progressive_scopes() {
 
 #[test]
 fn progressive_trust_exposes_broader_scopes_for_a_new_untrusted_command() {
-    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let controller = PermissionController::new(PermissionMode::OnRequest);
     controller.record_session_approval("session-a", "Bash:dow status set".to_string());
     let args = json!({"command": "dow status show --json"});
 
@@ -104,7 +104,7 @@ fn progressive_trust_exposes_broader_scopes_for_a_new_untrusted_command() {
 
 #[test]
 fn allow_once_does_not_create_session_trust() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
     let args = json!({"command": "cargo test"});
 
     let first = needs_approval(policy.evaluate("Bash", &args));
@@ -119,7 +119,7 @@ fn allow_once_does_not_create_session_trust() {
 
 #[test]
 fn shell_prefixes_respect_word_boundaries() {
-    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let controller = PermissionController::new(PermissionMode::OnRequest);
     controller.record_session_approval("session-a", "Bash:cargo".to_string());
 
     assert!(matches!(

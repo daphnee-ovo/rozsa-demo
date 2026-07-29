@@ -8,9 +8,6 @@ fn make_controller(
     let permission = &settings.resolved().permissions;
     PermissionController::with_project_rules(
         PermissionMode::OnRequest,
-        vec![],
-        vec![],
-        vec![],
         permission.deny.clone(),
         permission.ask.clone(),
         permission.allow.clone(),

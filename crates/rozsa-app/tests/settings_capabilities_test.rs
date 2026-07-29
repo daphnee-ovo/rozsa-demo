@@ -6,7 +6,8 @@ use rozsa_app::agent_session::{AgentSession, AgentSessionConfig, ModelStream};
 use rozsa_app::resources::LoadedResources;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::{
-    CapabilityKind, SettingsManager, SettingsScope, merge::merge_settings, schema::PartialSettings,
+    CapabilityKind, PermissionRuleKind, SettingsManager, SettingsScope, merge::merge_settings,
+    schema::PartialSettings,
 };
 use rozsa_model::event_stream::create_event_stream;
 use rozsa_model::types::{
@@ -72,6 +73,66 @@ fn malformed_capability_shapes_fail_loudly() {
     fs::write(&global, r#"{"tools":[]}"#).unwrap();
 
     assert!(SettingsManager::load(global, None, None).is_err());
+}
+
+#[test]
+fn layered_permission_updates_preserve_settings_and_remove_retired_fields() {
+    let temp = tempdir().unwrap();
+    let global = temp.path().join("global/settings.json");
+    let project = temp.path().join("project/settings.json");
+    fs::create_dir_all(global.parent().unwrap()).unwrap();
+    fs::write(
+        &global,
+        r#"{"transport":"sse","permission":{"mode":"on-request","allow":["Read(*)"],"allowed_tools":["Bash"],"blocked_commands":["rm"],"auto_approve_patterns":[".*"]}}"#,
+    )
+    .unwrap();
+    let mut manager = SettingsManager::load(global.clone(), Some(project.clone()), None).unwrap();
+
+    manager
+        .set_permission_rule_overrides(
+            SettingsScope::Project,
+            PermissionRuleKind::Allow,
+            Some(vec!["Edit(src/*)".to_owned()]),
+        )
+        .unwrap();
+    assert_eq!(
+        manager.resolved().permissions.allow,
+        vec!["Read(*)".to_owned(), "Edit(src/*)".to_owned()]
+    );
+    assert_eq!(manager.resolved().transport, "sse");
+
+    manager
+        .set_permission_mode_override(SettingsScope::Global, Some("yolo".to_owned()))
+        .unwrap();
+    let persisted = fs::read_to_string(global).unwrap();
+    assert!(!persisted.contains("allowed_tools"));
+    assert!(!persisted.contains("blocked_commands"));
+    assert!(!persisted.contains("auto_approve_patterns"));
+
+    manager
+        .set_permission_rule_overrides(SettingsScope::Project, PermissionRuleKind::Allow, None)
+        .unwrap();
+    assert_eq!(
+        manager.resolved().permissions.allow,
+        vec!["Read(*)".to_owned()]
+    );
+}
+
+#[test]
+fn auto_approve_mode_fails_before_persistence() {
+    let temp = tempdir().unwrap();
+    let global = temp.path().join("settings.json");
+    fs::write(&global, r#"{"permission":{"mode":"on-request"}}"#).unwrap();
+    let before = fs::read_to_string(&global).unwrap();
+    let mut manager = SettingsManager::load(global.clone(), None, None).unwrap();
+
+    let error = manager
+        .set_permission_mode_override(SettingsScope::Global, Some("auto-approve".to_owned()))
+        .unwrap_err();
+
+    assert!(error.to_string().contains("not implemented"));
+    assert_eq!(fs::read_to_string(global).unwrap(), before);
+    assert_eq!(manager.resolved().permissions.mode, "on-request");
 }
 
 fn test_model() -> Model {

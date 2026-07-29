@@ -1,13 +1,7 @@
 use rozsa_app::permissions::{PermissionMode, PermissionPolicy, PolicyVerdict};
 
 fn policy_for_workspace(workspace: &std::path::Path) -> PermissionPolicy {
-    PermissionPolicy::with_workspace_root(
-        PermissionMode::OnRequest,
-        vec![],
-        vec![],
-        vec![],
-        workspace.to_path_buf(),
-    )
+    PermissionPolicy::with_workspace_root(PermissionMode::OnRequest, workspace.to_path_buf())
 }
 
 #[test]

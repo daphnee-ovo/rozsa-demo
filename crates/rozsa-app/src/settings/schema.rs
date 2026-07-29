@@ -78,9 +78,6 @@ pub struct PermissionSettings {
     /// Legacy mode retained for settings compatibility. Explicit rules always
     /// take precedence over this fallback.
     pub mode: String,
-    pub auto_approve_patterns: Vec<String>,
-    pub allowed_tools: Vec<String>,
-    pub blocked_commands: Vec<String>,
 }
 
 impl Default for PermissionSettings {
@@ -90,9 +87,6 @@ impl Default for PermissionSettings {
             ask: Vec::new(),
             allow: Vec::new(),
             mode: "on-request".to_string(),
-            auto_approve_patterns: Vec::new(),
-            allowed_tools: Vec::new(),
-            blocked_commands: Vec::new(),
         }
     }
 }
@@ -300,10 +294,4 @@ pub struct PartialPermissionSettings {
     pub allow: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_approve_patterns: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allowed_tools: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub blocked_commands: Option<Vec<String>>,
 }

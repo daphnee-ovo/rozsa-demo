@@ -3,13 +3,7 @@ use std::path::Path;
 use rozsa_app::permissions::{PermissionMode, PermissionPolicy, PolicyVerdict};
 
 fn policy(root: &Path) -> PermissionPolicy {
-    PermissionPolicy::with_workspace_root(
-        PermissionMode::OnRequest,
-        vec![],
-        vec![],
-        vec![],
-        root.to_path_buf(),
-    )
+    PermissionPolicy::with_workspace_root(PermissionMode::OnRequest, root.to_path_buf())
 }
 
 #[test]

@@ -3,7 +3,7 @@ use rozsa_app::settings::SettingsManager;
 
 #[test]
 fn allow_session_trust_isolated_by_session_id_and_runtime_mode_updates() {
-    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let controller = PermissionController::new(PermissionMode::OnRequest);
     let args = serde_json::json!({"file_path":"src/lib.rs","content":"x"});
 
     assert!(matches!(
@@ -20,7 +20,7 @@ fn allow_session_trust_isolated_by_session_id_and_runtime_mode_updates() {
         PolicyVerdict::NeedApproval { .. }
     ));
 
-    controller.update(PermissionMode::Yolo, vec![], vec![], vec![]);
+    controller.update(PermissionMode::Yolo);
     assert!(matches!(
         controller.evaluate("b", "write", &args),
         PolicyVerdict::Allow
@@ -45,9 +45,6 @@ fn project_file_trust_persists_and_applies_across_sessions() {
     .unwrap();
     let controller = PermissionController::with_project_rules(
         PermissionMode::OnRequest,
-        vec![],
-        vec![],
-        vec![],
         vec![],
         vec![],
         vec![],

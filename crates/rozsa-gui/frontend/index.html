@@ -1771,6 +1771,59 @@ body.hide-thinking .thinking-block { display: none; }
   border: 1px solid var(--border);
   border-radius: 11px;
 }
+.capability-controls { display: flex; align-items: center; gap: 10px; }
+.capability-inherited {
+  color: var(--muted);
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 99px;
+  background: var(--code-bg);
+}
+.capability-reset, .permission-rule-delete, .permission-rule-add, .permission-rule-reset {
+  border: 0;
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.capability-reset:hover, .permission-rule-reset:hover { background: var(--code-bg); color: var(--fg); }
+.permission-rule-section { margin-top: 18px; }
+.permission-rule-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.permission-rule-heading-actions { display: flex; gap: 4px; }
+.permission-rule-add { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent); }
+.permission-rule-list { border: 1px solid var(--border); border-radius: 11px; padding: 0 14px; }
+.permission-rule-row { min-height: 52px; display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--border); }
+.permission-rule-row:first-child { border-top: 0; }
+.permission-rule-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.permission-rule-tool { font-size: 13px; font-weight: 550; }
+.permission-rule-target { color: var(--muted); font: 11px var(--font-mono); overflow-wrap: anywhere; }
+.permission-rule-delete { color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
+.permission-rule-empty { padding: 18px 0; color: var(--muted); font-size: 11px; }
+.permission-mode-row { margin-top: 10px; }
+.permission-mode-note { margin: 7px 0 0; color: var(--muted); font-size: 11px; }
+.permission-settings-error {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  color: var(--error);
+  font-size: 11px;
+}
+.permission-settings-error[hidden] { display: none; }
+.permission-rule-editor {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 11px;
+  background: var(--surface);
+}
+.permission-rule-editor[hidden] { display: none; }
+.permission-rule-editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.permission-rule-editor-grid .setting-input { grid-column: 1 / -1; width: 100%; }
+.permission-rule-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.permission-rule-editor-actions button { border: 1px solid var(--border); border-radius: 7px; padding: 6px 11px; background: var(--surface); color: var(--fg); cursor: pointer; }
+.permission-rule-editor-actions .primary { border-color: var(--accent); background: var(--accent); color: white; }
 .empty-settings-state { color: var(--muted); }
 .shortcut-search {
   width: 100%;
@@ -3058,6 +3111,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
       <button class="settings-tab" data-settings-pane="general" onclick="switchSettingsTab('general', this)">General</button>
       <button class="settings-tab" data-settings-pane="appearance" onclick="switchSettingsTab('appearance', this)">Appearance</button>
       <button class="settings-tab" data-settings-pane="keyboard-shortcuts" onclick="switchSettingsTab('keyboard-shortcuts', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M4 6h.01M7 6h.01M10 6h.01M12.5 6h.01M4 9h.01M6.5 9h.01M9 9h3.5M4 11h5"/></svg>Keyboard shortcuts</button>
+      <button class="settings-tab" data-settings-pane="permissions" onclick="switchSettingsTab('permissions', this)">Permissions</button>
     </nav>
     </template>
     <div id="fallbackSettingsNavigationMount" hidden></div>
@@ -3119,16 +3173,6 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="setting-item"><span class="setting-label">Context window</span><span class="setting-value" id="settingsContextWindow">—</span></div>
         </div>
         <div class="settings-group">
-          <div class="settings-group-label">Permissions</div>
-          <div class="setting-item"><span class="setting-label">Permission mode</span><select class="setting-select" id="settingsPermMode" aria-label="Permission mode"><option>auto-approve</option><option>on-request</option><option>yolo</option></select></div>
-          <label class="setting-stack"><span>Auto-approve patterns</span><textarea class="setting-textarea" id="settingsPermissionPatterns"></textarea></label>
-          <label class="setting-stack"><span>Allowed tools</span><textarea class="setting-textarea" id="settingsAllowedTools"></textarea></label>
-          <label class="setting-stack"><span>Blocked commands</span><textarea class="setting-textarea" id="settingsBlockedCommands"></textarea></label>
-          <label class="setting-stack"><span>Deny rules</span><textarea class="setting-textarea" id="settingsPermissionDeny"></textarea></label>
-          <label class="setting-stack"><span>Ask rules</span><textarea class="setting-textarea" id="settingsPermissionAsk"></textarea></label>
-          <label class="setting-stack"><span>Allow rules</span><textarea class="setting-textarea" id="settingsPermissionAllow"></textarea></label>
-        </div>
-        <div class="settings-group">
           <div class="settings-group-label">Network</div>
           <div class="setting-item"><span class="setting-label">Transport</span><select class="setting-select" id="settingsTransport" aria-label="Transport"><option value="auto">Auto</option><option value="sse">SSE</option><option value="websocket">WebSocket</option><option value="websocket-cached">WebSocket (cached)</option></select></div>
           <div class="setting-item"><span class="setting-label">Retry timeout (ms)</span><input class="setting-input" id="settingsRetryTimeout" type="number" min="1" placeholder="Default"></div>
@@ -3165,6 +3209,41 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="shortcut-fixed-list" id="fixedKeyBindingList"></div>
         </div>
         <p class="shortcut-storage-note">Custom shortcuts are stored in <code>~/.rozsa/key_bindings.json</code> by default.</p>
+      </div>
+      <div class="settings-pane" id="pane-permissions">
+        <div class="settings-pane-title">Permissions</div>
+        <div class="capability-scope" id="permissionScope"></div>
+        <div class="settings-group permission-mode-row">
+          <div class="setting-item"><span class="setting-label">Permission mode</span><select class="setting-select" id="settingsPermMode" aria-label="Permission mode"></select></div>
+        </div>
+        <p class="permission-mode-note">Auto approve will use a small model to review ask decisions. That reviewer is not implemented yet, so selecting it currently returns an error.</p>
+        <div class="permission-settings-error" id="permissionSettingsError" role="alert" hidden></div>
+        <section class="permission-rule-section">
+          <div class="permission-rule-heading"><span class="settings-group-label">Deny</span><span class="permission-rule-heading-actions"><button class="permission-rule-reset" id="permissionDenyReset" type="button" onclick="resetPermissionRules('deny')" hidden>Restore inheritance</button><button class="permission-rule-add" type="button" onclick="openPermissionRuleEditor('deny')">Add rule</button></span></div>
+          <div class="permission-rule-list" id="permissionDenyList"></div>
+        </section>
+        <section class="permission-rule-section">
+          <div class="permission-rule-heading"><span class="settings-group-label">Ask</span><span class="permission-rule-heading-actions"><button class="permission-rule-reset" id="permissionAskReset" type="button" onclick="resetPermissionRules('ask')" hidden>Restore inheritance</button><button class="permission-rule-add" type="button" onclick="openPermissionRuleEditor('ask')">Add rule</button></span></div>
+          <div class="permission-rule-list" id="permissionAskList"></div>
+        </section>
+        <section class="permission-rule-section">
+          <div class="permission-rule-heading"><span class="settings-group-label">Allow</span><span class="permission-rule-heading-actions"><button class="permission-rule-reset" id="permissionAllowReset" type="button" onclick="resetPermissionRules('allow')" hidden>Restore inheritance</button><button class="permission-rule-add" type="button" onclick="openPermissionRuleEditor('allow')">Add rule</button></span></div>
+          <div class="permission-rule-list" id="permissionAllowList"></div>
+        </section>
+        <div class="permission-rule-editor" id="permissionRuleEditor" hidden>
+          <div class="settings-group-label">Add permission rule</div>
+          <div class="permission-rule-editor-grid">
+            <select class="setting-select" id="permissionRuleTool" aria-label="Rule tool"></select>
+            <select class="setting-select" id="permissionRuleTargetType" aria-label="Rule target type" onchange="updatePermissionRuleTargetVisibility()">
+              <option value="all">Every invocation</option>
+              <option value="exact">Exact target</option>
+              <option value="prefix">Command prefix</option>
+              <option value="directory">Directory</option>
+            </select>
+            <input class="setting-input" id="permissionRuleTarget" aria-label="Rule target">
+          </div>
+          <div class="permission-rule-editor-actions"><button type="button" onclick="closePermissionRuleEditor()">Cancel</button><button class="primary" type="button" onclick="savePermissionRule()">Add rule</button></div>
+        </div>
       </div>
     </div>
     </div>

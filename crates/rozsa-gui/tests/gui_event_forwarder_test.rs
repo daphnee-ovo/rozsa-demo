@@ -127,12 +127,7 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
         pending_approvals: None,
         pending_permission_contexts: Arc::new(DashMap::new()),
         pending_user_questions: Arc::new(DashMap::new()),
-        permission_controller: Arc::new(PermissionController::new(
-            PermissionMode::OnRequest,
-            vec![],
-            vec![],
-            vec![],
-        )),
+        permission_controller: Arc::new(PermissionController::new(PermissionMode::OnRequest)),
         global_settings_path: None,
         runtime_settings: Arc::new(Mutex::new(settings_manager.resolved().clone())),
         quota_summary: Arc::new(Mutex::new(None)),

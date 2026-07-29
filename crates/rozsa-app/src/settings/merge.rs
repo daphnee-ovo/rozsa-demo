@@ -146,18 +146,6 @@ fn merge_permissions(
             ask: merge_rule_list(&base.ask, o.ask.as_ref()),
             allow: merge_rule_list(&base.allow, o.allow.as_ref()),
             mode: o.mode.clone().unwrap_or_else(|| base.mode.clone()),
-            auto_approve_patterns: o
-                .auto_approve_patterns
-                .clone()
-                .unwrap_or_else(|| base.auto_approve_patterns.clone()),
-            allowed_tools: o
-                .allowed_tools
-                .clone()
-                .unwrap_or_else(|| base.allowed_tools.clone()),
-            blocked_commands: o
-                .blocked_commands
-                .clone()
-                .unwrap_or_else(|| base.blocked_commands.clone()),
         },
     }
 }

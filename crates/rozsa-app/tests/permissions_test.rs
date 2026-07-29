@@ -10,16 +10,17 @@ fn parse_permission_mode() {
         Some(PermissionMode::OnRequest)
     );
     assert_eq!(
-        PermissionMode::parse("auto-permission"),
+        PermissionMode::parse("auto-approve"),
         Some(PermissionMode::AutoApprove)
     );
+    assert_eq!(PermissionMode::parse("auto-permission"), None);
     assert_eq!(PermissionMode::parse("yolo"), Some(PermissionMode::Yolo));
     assert_eq!(PermissionMode::parse("invalid"), None);
 }
 
 #[test]
 fn yolo_allows_non_blocked_commands_only() {
-    let policy = PermissionPolicy::new(PermissionMode::Yolo, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::Yolo);
     let args = serde_json::json!({"command": "git status"});
     assert!(matches!(
         policy.evaluate("Bash", &args),
@@ -39,7 +40,7 @@ fn yolo_allows_non_blocked_commands_only() {
 
 #[test]
 fn read_tools_auto_allow_in_on_request_mode() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     let read_args = serde_json::json!({"file_path": "src/main.rs"});
     assert!(matches!(
@@ -94,7 +95,7 @@ fn read_tools_auto_allow_in_on_request_mode() {
 
 #[test]
 fn blacklist_blocks_dangerous_commands() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     let blocked_commands = vec![
         "rm -rf /home",
@@ -125,7 +126,7 @@ fn blacklist_blocks_dangerous_commands() {
 
 #[test]
 fn blacklist_allows_safe_commands() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     let safe_commands = vec![
         "git status",
@@ -148,7 +149,7 @@ fn blacklist_allows_safe_commands() {
 
 #[test]
 fn blacklist_only_applies_to_bash() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
     let args = serde_json::json!({"command": "sudo rm -rf /"});
     match policy.evaluate("CustomTool", &args) {
         PolicyVerdict::NeedApproval { .. } => {}
@@ -186,7 +187,7 @@ fn split_shell_segments_respects_quotes() {
 
 #[test]
 fn compound_command_blacklist_each_segment() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     // "env | sudo cmd" — sudo in second segment should be blocked
     let args = serde_json::json!({"command": "env | sudo apt install"});
@@ -216,7 +217,7 @@ fn compound_command_blacklist_each_segment() {
 
 #[test]
 fn session_approval_allows_repeat() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
     let args = serde_json::json!({"command": "git status"});
 
     match policy.evaluate("Bash", &args) {
@@ -234,22 +235,17 @@ fn session_approval_allows_repeat() {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-approve patterns
+// Auto-approve reviewer boundary
 // ---------------------------------------------------------------------------
 
 #[test]
-fn auto_approve_pattern_matches() {
-    let policy = PermissionPolicy::new(
-        PermissionMode::AutoApprove,
-        vec!["^Bash:git\\s".to_string()],
-        vec![],
-        vec![],
-    );
+fn auto_approve_does_not_pattern_match_without_the_deferred_reviewer() {
+    let policy = PermissionPolicy::new(PermissionMode::AutoApprove);
 
     let args = serde_json::json!({"command": "git log --oneline"});
     assert!(matches!(
         policy.evaluate("Bash", &args),
-        PolicyVerdict::Allow
+        PolicyVerdict::NeedApproval { .. }
     ));
 
     let args = serde_json::json!({"command": "curl https://example.com"});
@@ -363,7 +359,7 @@ fn generate_trust_levels_file_path() {
 
 #[test]
 fn subcommand_injection_blocked() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     // $(...) containing a blocked command
     let args = serde_json::json!({"command": "echo $(sudo whoami)"});
@@ -382,7 +378,7 @@ fn subcommand_injection_blocked() {
 
 #[test]
 fn sensitive_env_var_leak_blocked() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     let args = serde_json::json!({"command": "echo $ANTHROPIC_API_KEY"});
     match policy.evaluate("Bash", &args) {
@@ -399,7 +395,7 @@ fn sensitive_env_var_leak_blocked() {
 
 #[test]
 fn safe_env_var_usage_not_blocked() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     // Using $HOME is fine (not in sensitive list)
     let args = serde_json::json!({"command": "echo $HOME"});
@@ -411,7 +407,7 @@ fn safe_env_var_usage_not_blocked() {
 
 #[test]
 fn session_approval_prefix_matching() {
-    let policy = PermissionPolicy::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     // Approve "cargo test"
     policy.record_session_approval("Bash:cargo test".to_string());
@@ -436,37 +432,26 @@ fn session_approval_prefix_matching() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn allowed_tools_auto_allow() {
-    let policy = PermissionPolicy::new(
-        PermissionMode::OnRequest,
-        vec![],
-        vec!["CustomTool".to_string(), "AnotherTool".to_string()],
-        vec![],
-    );
-
-    // CustomTool is in allowed_tools → should auto-allow
+fn tool_wildcard_rule_allows_tools_without_target_arguments() {
+    let controller = PermissionController::new(PermissionMode::OnRequest);
+    let mut settings = rozsa_app::settings::schema::PermissionSettings::default();
+    settings.allow = vec!["CustomTool(*)".to_string()];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
     let args = serde_json::json!({"foo": "bar"});
     assert!(matches!(
-        policy.evaluate("CustomTool", &args),
+        controller.evaluate("session-a", "CustomTool", &args),
         PolicyVerdict::Allow
     ));
 
-    // AnotherTool is in allowed_tools → should auto-allow
-    assert!(matches!(
-        policy.evaluate("AnotherTool", &args),
-        PolicyVerdict::Allow
-    ));
-
-    // UnknownTool is NOT in allowed_tools → should need approval
-    match policy.evaluate("UnknownTool", &args) {
+    match controller.evaluate("session-a", "UnknownTool", &args) {
         PolicyVerdict::NeedApproval { .. } => {}
         other => panic!("expected NeedApproval for UnknownTool, got: {other:?}"),
     }
 }
 
 #[test]
-fn ask_user_question_is_in_the_default_allowed_tools_whitelist() {
-    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+fn ask_user_question_is_a_built_in_allowed_tool() {
+    let controller = PermissionController::new(PermissionMode::OnRequest);
 
     assert!(matches!(
         controller.evaluate(
@@ -479,51 +464,39 @@ fn ask_user_question_is_in_the_default_allowed_tools_whitelist() {
 }
 
 #[test]
-fn blocked_commands_auto_block() {
-    let policy = PermissionPolicy::new(
-        PermissionMode::OnRequest,
-        vec![],
-        vec![],
-        vec!["npm publish".to_string(), "git push origin".to_string()],
-    );
-
-    // "npm publish" is in blocked_commands → should block
+fn deny_rules_block_matching_commands() {
+    let controller = PermissionController::new(PermissionMode::OnRequest);
+    let mut settings = rozsa_app::settings::schema::PermissionSettings::default();
+    settings.deny = vec![
+        "Bash(npm publish *)".to_string(),
+        "Bash(git push origin *)".to_string(),
+    ];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
     let args = serde_json::json!({"command": "npm publish --tag latest"});
-    match policy.evaluate("Bash", &args) {
+    match controller.evaluate("session-a", "Bash", &args) {
         PolicyVerdict::Block { reason } => {
-            assert!(reason.contains("npm publish"));
+            assert!(reason.contains("permission.deny"));
         }
         other => panic!("expected Block for npm publish, got: {other:?}"),
     }
 
-    // "git push origin" is in blocked_commands → should block
     let args = serde_json::json!({"command": "git push origin main"});
-    match policy.evaluate("Bash", &args) {
-        PolicyVerdict::Block { reason } => {
-            assert!(reason.contains("git push origin"));
-        }
+    match controller.evaluate("session-a", "Bash", &args) {
+        PolicyVerdict::Block { .. } => {}
         other => panic!("expected Block for git push origin, got: {other:?}"),
     }
 
-    // "git status" is NOT in blocked_commands → should need approval
     let args = serde_json::json!({"command": "git status"});
-    match policy.evaluate("Bash", &args) {
+    match controller.evaluate("session-a", "Bash", &args) {
         PolicyVerdict::NeedApproval { .. } => {}
         other => panic!("expected NeedApproval for git status, got: {other:?}"),
     }
 }
 
 #[test]
-fn allowed_tools_higher_priority_than_read_whitelist() {
-    // allowed_tools check happens before read whitelist check
-    let policy = PermissionPolicy::new(
-        PermissionMode::OnRequest,
-        vec![],
-        vec!["Read".to_string()],
-        vec![],
-    );
-
-    let args = serde_json::json!({"file_path": "/src/main.rs"});
+fn workspace_read_whitelist_remains_available() {
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
+    let args = serde_json::json!({"file_path": "src/main.rs"});
     assert!(matches!(
         policy.evaluate("Read", &args),
         PolicyVerdict::Allow
@@ -531,21 +504,11 @@ fn allowed_tools_higher_priority_than_read_whitelist() {
 }
 
 #[test]
-fn blocked_commands_checked_before_hardcoded_blacklist() {
-    // blocked_commands check happens before hardcoded blacklist
-    let policy = PermissionPolicy::new(
-        PermissionMode::OnRequest,
-        vec![],
-        vec![],
-        vec!["rm ".to_string()],
-    );
-
-    // "rm safe_file.txt" would normally need approval, but blocked_commands blocks it first
+fn hardcoded_blacklist_remains_independent_from_user_rules() {
+    let policy = PermissionPolicy::new(PermissionMode::OnRequest);
     let args = serde_json::json!({"command": "rm safe_file.txt"});
     match policy.evaluate("Bash", &args) {
-        PolicyVerdict::Block { reason } => {
-            assert!(reason.contains("rm "));
-        }
-        other => panic!("expected Block for rm command, got: {other:?}"),
+        PolicyVerdict::NeedApproval { .. } => {}
+        other => panic!("expected NeedApproval for non-recursive rm command, got: {other:?}"),
     }
 }

@@ -169,7 +169,7 @@ core tool 名称。
 
 ### 4.4 Agent question 事件流
 
-`askUserQuestion` 是强制可用的交互工具；它只有在 GUI 注入 question channel 时注册。它仍然经过 `PermissionController`，但在默认 `allowed_tools` 白名单中，因此不会产生 permission request；显式 `permission.deny` / `permission.ask` 规则仍可覆盖默认允许。每个问题在 GUI 中始终附带 `Other` 自定义输入项，agent-facing schema 不提供关闭该项的开关。
+`askUserQuestion` 是强制可用的交互工具；它只有在 GUI 注入 question channel 时注册。它仍然经过 `PermissionController`，但作为内置无副作用工具直接允许，因此不会产生 permission request；这不是用户可配置的 `allowed_tools` 设置，显式 `permission.deny` / `permission.ask` 规则仍可覆盖默认允许。每个问题在 GUI 中始终附带 `Other` 自定义输入项，agent-facing schema 不提供关闭该项的开关。
 
 1. Agent tool 校验 `questions`，为本次调用创建 request ID，并通过 `question_request_tx` 发送问题与 oneshot sender。
 2. `events.rs::spawn_user_question_listener()` 将请求放入按 `session_id + request_id` 隔离的 `PendingUserQuestions`，再向 main WebView 发送 `question-request`。
@@ -307,13 +307,13 @@ Rózsa 支持三种权限模式（配置在 settings.json）：
 | 模式 | 行为 |
 |------|------|
 | `on-request` | 所有敏感操作都需要用户批准 |
-| `auto-approve` | 自动批准所有操作（开发模式） |
-| `free-permission` | 跳过权限检查（无防护模式，仅用于测试） |
+| `auto-approve` | 预留给 small-model reviewer；当前 GUI 拒绝保存并报告未实现 |
+| `yolo` | 跳过普通审批，但保留内置破坏性命令保护 |
 
 ### 7.2 审批流程
 
 1. Agent 调用工具（如 `Bash { command: "rm -rf ..." }`）。
-2. `PermissionGuard` 拦截，检查权限模式和 allowlist。
+2. `PermissionController` 拦截，先检查内置危险命令，再按 `deny > ask > allow` 处理分层规则。
 3. 如果需要审批：
    - 生成 `request_id`（UUID）。
    - 创建 oneshot channel `(tx, rx)`。

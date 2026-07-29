@@ -20,18 +20,19 @@ fn settings_navigation_and_panes_match_the_product_order() {
         "data-settings-pane=\"general\"",
         "data-settings-pane=\"appearance\"",
         "data-settings-pane=\"keyboard-shortcuts\"",
+        "data-settings-pane=\"permissions\"",
     ];
 
     for markup in [index, sidebar] {
         let offsets = ordered_offsets(markup, &panes);
         assert!(offsets.windows(2).all(|pair| pair[0] < pair[1]));
         assert!(!markup.contains("data-settings-pane=\"models\""));
-        assert!(!markup.contains("data-settings-pane=\"permissions\""));
     }
     assert!(index.contains("id=\"pane-skills\""));
     assert!(index.contains("id=\"pane-extensions\""));
     assert!(index.contains("id=\"settingsModelSelect\""));
     assert!(index.contains("id=\"settingsPermMode\""));
+    assert!(index.contains("id=\"pane-permissions\""));
 }
 
 #[test]
@@ -43,7 +44,9 @@ fn capability_controls_use_layer_aware_backend_commands() {
 
     assert!(frontend.contains("invoke('get_capability_settings')"));
     assert!(frontend.contains("invoke('update_capability_setting'"));
-    assert!(frontend.contains("value=\"inherit\""));
+    assert!(frontend.contains("toggle.setAttribute('role', 'switch')"));
+    assert!(frontend.contains("enabled: !item.effective"));
+    assert!(frontend.contains("Restore global inheritance"));
     assert!(index.contains("Run <code>/reload</code>"));
     assert!(commands.contains("set_capability_override(scope, kind, &name, enabled)"));
     assert!(commands.contains(".shared\n        .registered_tool_metadata()"));
@@ -58,12 +61,23 @@ fn general_controls_are_connected_to_real_setting_keys() {
         "settingsCompactionThreshold",
         "settingsCompactionTarget",
         "settingsRetryTimeout",
-        "settingsPermissionPatterns",
-        "settingsAllowedTools",
-        "settingsBlockedCommands",
         "settingsHideThinking",
     ] {
         assert!(index.contains(id), "missing control {id}");
         assert!(frontend.contains(id), "unwired control {id}");
     }
+    for retired in [
+        "settingsPermissionPatterns",
+        "settingsAllowedTools",
+        "settingsBlockedCommands",
+    ] {
+        assert!(!index.contains(retired));
+        assert!(!frontend.contains(retired));
+    }
+    assert!(frontend.contains("invoke('get_permission_settings')"));
+    assert!(frontend.contains("invoke('update_permission_rules'"));
+    assert!(index.contains("Add rule"));
+    assert!(index.contains("id=\"permissionSettingsError\" role=\"alert\""));
+    assert!(frontend.contains("setPermissionSettingsError(String(error))"));
+    assert!(!index.contains("id=\"settingsPermissionDeny\""));
 }

@@ -57,13 +57,13 @@
 // ├── request_trust_key()
 // ├── request_matches_session_approval()
 // ├── command_matches_session_approval()
-// ├── patterns_cover_request()
 // ├── untrusted_trust_levels()
 // ├── untrusted_trust_groups()
 // ├── approval_info()
 // ├── rules_match_any()
 // ├── rules_cover_request()
 // ├── request_targets()
+// ├── validate_permission_rule()
 // ├── rule_matches()
 // ├── normalize_rule_path()
 // ├── trust_key_to_project_rule()
@@ -113,27 +113,16 @@ pub struct PermissionController {
 #[derive(Clone)]
 struct PermissionConfig {
     mode: PermissionMode,
-    auto_approve_patterns: Vec<String>,
-    allowed_tools: Vec<String>,
-    blocked_commands: Vec<String>,
     deny: Vec<String>,
     ask: Vec<String>,
     allow: Vec<String>,
 }
 
 impl PermissionController {
-    pub fn new(
-        mode: PermissionMode,
-        auto_approve_patterns: Vec<String>,
-        allowed_tools: Vec<String>,
-        blocked_commands: Vec<String>,
-    ) -> Self {
+    pub fn new(mode: PermissionMode) -> Self {
         Self {
             config: std::sync::RwLock::new(PermissionConfig {
                 mode,
-                auto_approve_patterns,
-                allowed_tools,
-                blocked_commands,
                 deny: Vec::new(),
                 ask: Vec::new(),
                 allow: Vec::new(),
@@ -146,9 +135,6 @@ impl PermissionController {
 
     pub fn with_project_rules(
         mode: PermissionMode,
-        auto_approve_patterns: Vec<String>,
-        allowed_tools: Vec<String>,
-        blocked_commands: Vec<String>,
         deny: Vec<String>,
         ask: Vec<String>,
         allow: Vec<String>,
@@ -158,9 +144,6 @@ impl PermissionController {
         Self {
             config: std::sync::RwLock::new(PermissionConfig {
                 mode,
-                auto_approve_patterns,
-                allowed_tools,
-                blocked_commands,
                 deny,
                 ask,
                 allow,
@@ -171,18 +154,9 @@ impl PermissionController {
         }
     }
 
-    pub fn update(
-        &self,
-        mode: PermissionMode,
-        auto_approve_patterns: Vec<String>,
-        allowed_tools: Vec<String>,
-        blocked_commands: Vec<String>,
-    ) {
+    pub fn update(&self, mode: PermissionMode) {
         let mut config = self.config.write().unwrap();
         config.mode = mode;
-        config.auto_approve_patterns = auto_approve_patterns;
-        config.allowed_tools = allowed_tools;
-        config.blocked_commands = blocked_commands;
     }
 
     pub fn update_from_settings(
@@ -192,9 +166,6 @@ impl PermissionController {
     ) {
         let mut config = self.config.write().unwrap();
         config.mode = mode;
-        config.auto_approve_patterns = settings.auto_approve_patterns.clone();
-        config.allowed_tools = settings.allowed_tools.clone();
-        config.blocked_commands = settings.blocked_commands.clone();
         config.deny = settings.deny.clone();
         config.ask = settings.ask.clone();
         config.allow = settings.allow.clone();
@@ -202,13 +173,8 @@ impl PermissionController {
 
     pub fn evaluate(&self, session_id: &str, tool_name: &str, args: &Value) -> PolicyVerdict {
         let config = self.config.read().unwrap().clone();
-        let policy = PermissionPolicy::with_workspace_root(
-            config.mode,
-            config.auto_approve_patterns,
-            config.allowed_tools,
-            config.blocked_commands,
-            self.workspace_root.clone(),
-        );
+        let policy =
+            PermissionPolicy::with_workspace_root(config.mode, self.workspace_root.clone());
         let verdict = policy.evaluate(tool_name, args);
         if matches!(verdict, PolicyVerdict::Block { .. }) {
             return verdict;
@@ -300,7 +266,8 @@ impl PermissionController {
 pub enum PermissionMode {
     /// 每次工具调用都需要用户审批。
     OnRequest,
-    /// 匹配 auto-approve 模式的工具调用自动通过，其余需要审批。
+    /// Reserved for the small-model reviewer. Until implemented, ask rules
+    /// follow the same user-review path as on-request.
     AutoApprove,
     /// 所有调用直接通过，不做任何检查（仅限受信环境）。
     Yolo,
@@ -311,8 +278,8 @@ impl PermissionMode {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "on-request" => Some(Self::OnRequest),
-            "auto-permission" => Some(Self::AutoApprove),
-            "yolo" | "free-permission" => Some(Self::Yolo),
+            "auto-approve" => Some(Self::AutoApprove),
+            "yolo" => Some(Self::Yolo),
             _ => None,
         }
     }
@@ -462,9 +429,6 @@ pub type OnApprovalCallback = Box<dyn Fn(&str) + Send + Sync>;
 pub struct PermissionPolicy {
     mode: PermissionMode,
     blacklist: Vec<(Regex, &'static str)>,
-    auto_approve_patterns: Vec<Regex>,
-    allowed_tools: Vec<String>,
-    blocked_commands: Vec<String>,
     workspace_root: PathBuf,
     session_approvals: Mutex<HashSet<String>>,
     on_approval: Option<OnApprovalCallback>,
@@ -473,55 +437,20 @@ pub struct PermissionPolicy {
 impl PermissionPolicy {
     /// 创建新的权限策略实例。
     ///
-    /// `auto_approve_patterns` 中的字符串会编译为正则，匹配 trust_key。
-    /// `allowed_tools` 是工具名称列表，匹配的工具直接放行（例如 ["read", "grep"]）。
-    /// `blocked_commands` 是命令前缀列表，匹配的命令直接拒绝（例如 ["rm -rf", "git push --force"]）。
-    pub fn new(
-        mode: PermissionMode,
-        auto_approve_patterns: Vec<String>,
-        allowed_tools: Vec<String>,
-        blocked_commands: Vec<String>,
-    ) -> Self {
+    pub fn new(mode: PermissionMode) -> Self {
         Self::with_workspace_root(
             mode,
-            auto_approve_patterns,
-            allowed_tools,
-            blocked_commands,
             std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         )
     }
 
     /// Create a policy with an explicit project root for path-scoped approvals.
-    pub fn with_workspace_root(
-        mode: PermissionMode,
-        auto_approve_patterns: Vec<String>,
-        allowed_tools: Vec<String>,
-        blocked_commands: Vec<String>,
-        workspace_root: PathBuf,
-    ) -> Self {
+    pub fn with_workspace_root(mode: PermissionMode, workspace_root: PathBuf) -> Self {
         let blacklist = build_hardcoded_blacklist();
-
-        let mut allowed_tools = allowed_tools;
-        for tool_name in DEFAULT_ALLOWED_TOOLS {
-            if !allowed_tools
-                .iter()
-                .any(|configured| configured == tool_name)
-            {
-                allowed_tools.push((*tool_name).to_string());
-            }
-        }
-
-        let auto_approve_patterns = auto_approve_patterns
-            .iter()
-            .filter_map(|p| Regex::new(p).ok())
-            .collect();
 
         Self {
             mode,
             blacklist,
-            auto_approve_patterns,
-            allowed_tools,
-            blocked_commands,
             workspace_root,
             session_approvals: Mutex::new(HashSet::new()),
             on_approval: None,
@@ -536,19 +465,6 @@ impl PermissionPolicy {
 
     /// 评估一次工具调用是否允许执行。
     pub fn evaluate(&self, tool_name: &str, args: &Value) -> PolicyVerdict {
-        // blocked_commands 检查：对 Bash/bash 工具检查命令前缀。
-        if tool_name == "Bash" || tool_name == "bash" {
-            if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
-                for blocked_prefix in &self.blocked_commands {
-                    if cmd.trim_start().starts_with(blocked_prefix.as_str()) {
-                        return PolicyVerdict::Block {
-                            reason: format!("blocked by blocked_commands: {}", blocked_prefix),
-                        };
-                    }
-                }
-            }
-        }
-
         // 黑名单检查（仅对 Bash/bash 工具的 command 参数）。
         if (tool_name == "Bash" || tool_name == "bash")
             && let Some(cmd) = args.get("command").and_then(|v| v.as_str())
@@ -559,10 +475,8 @@ impl PermissionPolicy {
             };
         }
 
-        // Yolo 与 allowed_tools 不得绕过硬编码或用户配置的拦截。
-        if self.mode == PermissionMode::Yolo
-            || self.allowed_tools.iter().any(|name| name == tool_name)
-        {
+        // Yolo cannot bypass the hardcoded destructive-command block.
+        if self.mode == PermissionMode::Yolo || DEFAULT_ALLOWED_TOOLS.contains(&tool_name) {
             return PolicyVerdict::Allow;
         }
 
@@ -584,13 +498,6 @@ impl PermissionPolicy {
             if request_matches_session_approval(&approvals, tool_name, args) {
                 return PolicyVerdict::Allow;
             }
-        }
-
-        // AutoApprove 的规则也必须覆盖每个 shell 段。
-        if self.mode == PermissionMode::AutoApprove
-            && patterns_cover_request(&self.auto_approve_patterns, tool_name, args)
-        {
-            return PolicyVerdict::Allow;
         }
 
         // 其余情况需要审批。
@@ -1441,28 +1348,6 @@ fn command_matches_session_approval(
     })
 }
 
-fn patterns_cover_request(patterns: &[Regex], tool_name: &str, args: &Value) -> bool {
-    if !matches!(tool_name, "Bash" | "bash") {
-        return patterns
-            .iter()
-            .any(|pattern| pattern.is_match(&request_trust_key(tool_name, args)));
-    }
-    let Some(command) = args.get("command").and_then(|value| value.as_str()) else {
-        return false;
-    };
-    let command = first_effective_line(command);
-    let segments = split_shell_segments(command);
-    let targets = if segments.len() > 1 {
-        segments
-    } else {
-        vec![command]
-    };
-    targets.into_iter().all(|segment| {
-        let key = format!("{tool_name}:{}", segment.trim());
-        patterns.iter().any(|pattern| pattern.is_match(&key))
-    })
-}
-
 fn untrusted_trust_levels(
     approvals: &HashSet<String>,
     tool_name: &str,
@@ -1552,7 +1437,13 @@ fn approval_info(tool_name: &str, args: &Value, trust_levels: Vec<TrustLevel>) -
 }
 
 fn rules_match_any(rules: &[String], tool_name: &str, args: &Value, workspace_root: &Path) -> bool {
-    request_targets(tool_name, args).iter().any(|target| {
+    let targets = request_targets(tool_name, args);
+    if targets.is_empty() {
+        return rules
+            .iter()
+            .any(|rule| rule_matches(rule, tool_name, "", workspace_root));
+    }
+    targets.iter().any(|target| {
         rules
             .iter()
             .any(|rule| rule_matches(rule, tool_name, target, workspace_root))
@@ -1566,12 +1457,16 @@ fn rules_cover_request(
     workspace_root: &Path,
 ) -> bool {
     let targets = request_targets(tool_name, args);
-    !targets.is_empty()
-        && targets.iter().all(|target| {
-            rules
-                .iter()
-                .any(|rule| rule_matches(rule, tool_name, target, workspace_root))
-        })
+    if targets.is_empty() {
+        return rules
+            .iter()
+            .any(|rule| rule_matches(rule, tool_name, "", workspace_root));
+    }
+    targets.iter().all(|target| {
+        rules
+            .iter()
+            .any(|rule| rule_matches(rule, tool_name, target, workspace_root))
+    })
 }
 
 fn request_targets(tool_name: &str, args: &Value) -> Vec<String> {
@@ -1590,7 +1485,24 @@ fn request_targets(tool_name: &str, args: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Validate the persisted `Tool(pattern)` permission rule syntax.
+pub fn validate_permission_rule(rule: &str) -> Result<(), String> {
+    let Some((tool, pattern)) = rule.split_once('(') else {
+        return Err("permission rule must use Tool(pattern) syntax".to_owned());
+    };
+    let Some(pattern) = pattern.strip_suffix(')') else {
+        return Err("permission rule must end with ')'".to_owned());
+    };
+    if tool.trim().is_empty() || pattern.trim().is_empty() || pattern.contains('(') {
+        return Err("permission rule tool and target cannot be empty".to_owned());
+    }
+    Ok(())
+}
+
 fn rule_matches(rule: &str, tool_name: &str, target: &str, workspace_root: &Path) -> bool {
+    if validate_permission_rule(rule).is_err() {
+        return false;
+    }
     let Some((tool, pattern)) = rule.split_once('(') else {
         return false;
     };
@@ -1599,6 +1511,9 @@ fn rule_matches(rule: &str, tool_name: &str, target: &str, workspace_root: &Path
     };
     if tool != "*" && !tool.eq_ignore_ascii_case(tool_name) {
         return false;
+    }
+    if pattern.trim() == "*" {
+        return true;
     }
     if matches!(tool_name, "Bash" | "bash") {
         let prefix = pattern.trim_end().strip_suffix('*').map(str::trim_end);

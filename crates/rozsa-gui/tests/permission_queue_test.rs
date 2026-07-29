@@ -2,7 +2,7 @@ use rozsa_app::permissions::{PermissionController, PermissionMode, PolicyVerdict
 
 #[test]
 fn queued_request_is_re_evaluated_after_an_earlier_trust() {
-    let controller = PermissionController::new(PermissionMode::OnRequest, vec![], vec![], vec![]);
+    let controller = PermissionController::new(PermissionMode::OnRequest);
     let first = serde_json::json!({"command": "cargo test test1"});
     let queued = serde_json::json!({"command": "cargo test test2"});
 

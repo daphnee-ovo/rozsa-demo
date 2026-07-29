@@ -1,3 +1,8 @@
+// FrameworkTree
+// run.rs
+// ├── run()
+// └── check_version()
+
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -155,29 +160,8 @@ pub async fn run(args: &Args) -> Result<()> {
     let permission_mode = PermissionMode::parse(&settings_manager.resolved().permissions.mode)
         .unwrap_or(PermissionMode::OnRequest);
 
-    let auto_approve_patterns = settings_manager
-        .resolved()
-        .permissions
-        .auto_approve_patterns
-        .clone();
-
-    let allowed_tools = settings_manager
-        .resolved()
-        .permissions
-        .allowed_tools
-        .clone();
-
-    let blocked_commands = settings_manager
-        .resolved()
-        .permissions
-        .blocked_commands
-        .clone();
-
     let permission_controller = Arc::new(PermissionController::with_project_rules(
         permission_mode,
-        auto_approve_patterns,
-        allowed_tools,
-        blocked_commands,
         settings_manager.resolved().permissions.deny.clone(),
         settings_manager.resolved().permissions.ask.clone(),
         settings_manager.resolved().permissions.allow.clone(),

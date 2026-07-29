@@ -3,6 +3,7 @@
 // ├── enum SettingsError
 // ├── enum SettingsScope
 // ├── enum CapabilityKind
+// ├── enum PermissionRuleKind
 // ├── struct SettingsManager
 // ├── impl SettingsManager
 // ├── load()
@@ -27,12 +28,16 @@
 // ├── capability_enabled()
 // ├── capability_overrides()
 // ├── set_capability_override()
+// ├── permission_rule_overrides()
+// ├── set_permission_rule_overrides()
+// ├── permission_mode_override()
+// ├── set_permission_mode_override()
 // ├── global_path()
 // ├── path_for_scope()
-// ├── add_trusted_pattern()
 // ├── add_project_permission_allow()
 // ├── save_global()
 // ├── read_json_object_or_empty()
+// ├── remove_retired_permission_fields()
 // └── write_json()
 
 use super::merge::merge_settings;
@@ -71,6 +76,14 @@ pub enum SettingsScope {
 pub enum CapabilityKind {
     Tools,
     Skills,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionRuleKind {
+    Deny,
+    Ask,
+    Allow,
 }
 
 /// Settings manager: loads, merges, and provides access to settings
@@ -310,6 +323,137 @@ impl SettingsManager {
         self.reload()
     }
 
+    pub fn permission_rule_overrides(
+        &self,
+        scope: SettingsScope,
+        kind: PermissionRuleKind,
+    ) -> Result<Option<Vec<String>>, SettingsError> {
+        let path = self.path_for_scope(scope)?;
+        if !path.exists() {
+            return Ok(None);
+        }
+        let partial = Self::read_partial(path)?;
+        let Some(permission) = partial.permissions else {
+            return Ok(None);
+        };
+        Ok(match kind {
+            PermissionRuleKind::Deny => permission.deny,
+            PermissionRuleKind::Ask => permission.ask,
+            PermissionRuleKind::Allow => permission.allow,
+        })
+    }
+
+    pub fn set_permission_rule_overrides(
+        &mut self,
+        scope: SettingsScope,
+        kind: PermissionRuleKind,
+        rules: Option<Vec<String>>,
+    ) -> Result<(), SettingsError> {
+        let path = self.path_for_scope(scope)?.to_path_buf();
+        let mut value = read_json_object_or_empty(&path)?;
+        let root = value
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: format!("settings root must be an object: {}", path.display()),
+            })?;
+        let permission = root
+            .entry("permission".to_owned())
+            .or_insert_with(|| serde_json::json!({}));
+        let permission = permission
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: "settings.permission must be an object".to_owned(),
+            })?;
+        remove_retired_permission_fields(permission);
+        let field = match kind {
+            PermissionRuleKind::Deny => "deny",
+            PermissionRuleKind::Ask => "ask",
+            PermissionRuleKind::Allow => "allow",
+        };
+        match rules {
+            Some(rules) => {
+                permission.insert(
+                    field.to_owned(),
+                    serde_json::Value::Array(
+                        rules.into_iter().map(serde_json::Value::String).collect(),
+                    ),
+                );
+            }
+            None => {
+                permission.remove(field);
+            }
+        }
+        if permission.is_empty() {
+            root.remove("permission");
+        }
+        write_json(&path, &value)?;
+        self.reload()
+    }
+
+    pub fn permission_mode_override(
+        &self,
+        scope: SettingsScope,
+    ) -> Result<Option<String>, SettingsError> {
+        let path = self.path_for_scope(scope)?;
+        if !path.exists() {
+            return Ok(None);
+        }
+        Ok(Self::read_partial(path)?
+            .permissions
+            .and_then(|permission| permission.mode))
+    }
+
+    pub fn set_permission_mode_override(
+        &mut self,
+        scope: SettingsScope,
+        mode: Option<String>,
+    ) -> Result<(), SettingsError> {
+        if mode.as_deref() == Some("auto-approve") {
+            return Err(SettingsError::Invalid {
+                message:
+                    "auto-approve is not implemented yet; the current permission mode was not changed"
+                        .to_owned(),
+            });
+        }
+        if mode
+            .as_deref()
+            .is_some_and(|mode| !matches!(mode, "on-request" | "yolo"))
+        {
+            return Err(SettingsError::Invalid {
+                message: format!("unsupported permission mode: {}", mode.unwrap()),
+            });
+        }
+        let path = self.path_for_scope(scope)?.to_path_buf();
+        let mut value = read_json_object_or_empty(&path)?;
+        let root = value
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: format!("settings root must be an object: {}", path.display()),
+            })?;
+        let permission = root
+            .entry("permission".to_owned())
+            .or_insert_with(|| serde_json::json!({}));
+        let permission = permission
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: "settings.permission must be an object".to_owned(),
+            })?;
+        remove_retired_permission_fields(permission);
+        match mode {
+            Some(mode) => {
+                permission.insert("mode".to_owned(), serde_json::Value::String(mode));
+            }
+            None => {
+                permission.remove("mode");
+            }
+        }
+        if permission.is_empty() {
+            root.remove("permission");
+        }
+        write_json(&path, &value)?;
+        self.reload()
+    }
+
     pub fn global_path(&self) -> &Path {
         &self.global_path
     }
@@ -324,24 +468,6 @@ impl SettingsManager {
                         message: "project settings path is unavailable".to_owned(),
                     })
             }
-        }
-    }
-
-    /// Add a trust_key as an auto-approve pattern and persist to settings.
-    /// Converts the trust_key into a regex pattern (exact prefix match).
-    pub fn add_trusted_pattern(&mut self, trust_key: &str) {
-        let pattern = format!("^{}", regex::escape(trust_key));
-        if !self
-            .resolved
-            .permissions
-            .auto_approve_patterns
-            .contains(&pattern)
-        {
-            self.resolved
-                .permissions
-                .auto_approve_patterns
-                .push(pattern);
-            let _ = self.save_global();
         }
     }
 
@@ -443,6 +569,12 @@ fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value, SettingsE
         });
     }
     Ok(value)
+}
+
+fn remove_retired_permission_fields(permission: &mut serde_json::Map<String, serde_json::Value>) {
+    permission.remove("allowed_tools");
+    permission.remove("blocked_commands");
+    permission.remove("auto_approve_patterns");
 }
 
 fn write_json(path: &Path, value: &serde_json::Value) -> Result<(), SettingsError> {

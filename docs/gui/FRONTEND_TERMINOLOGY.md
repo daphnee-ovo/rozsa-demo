@@ -529,10 +529,12 @@ group 只展示已经接到 `update_setting` 的控件。
 | `small model selector` | 小模型选择器 | 为长输入的 session title 请求选择低成本模型；请求固定使用 Low reasoning，Disabled 时只使用本地短标题和 preview fallback | `#settingsSmallModelSelect`；`saveSetting('small_model', ...)` |
 | `provider value` | Provider 值 | 展示当前模型提供方 | `#settingsProvider` |
 | `context window value` | 上下文窗口值 | 展示当前模型的 context window | `#settingsContextWindow` |
-| `permissions settings group` | 权限设置分组 | 配置 permission mode 和规则列表 | `#pane-general` |
-| `permission mode selector` | 权限模式选择器 | 选择 auto-approve、on-request 或 yolo | `#settingsPermMode` |
+| `permissions pane` | 权限页面 | 分 Global/Project 配置 permission mode 与 deny/ask/allow 规则 | `#pane-permissions`；`renderPermissionSettings()` |
+| `permission mode selector` | 权限模式选择器 | 选择 auto-approve、on-request 或 yolo；auto-approve 尚未实现时显示错误且不保存 | `#settingsPermMode` |
+| `permission rule row` | 权限规则行 | 展示工具、目标、继承状态与删除操作 | `.permission-rule-row` |
+| `permission rule editor` | 权限规则添加器 | 通过工具、目标类型和目标值生成规则，不编辑原始语法 | `#permissionRuleEditor` |
 | `capability scope` | 能力配置层 | 切换 Global 或 Project | `.capability-scope` |
-| `capability override` | 能力覆盖状态 | 选择 inherit、enabled 或 disabled | `.capability-row .setting-select` |
+| `capability switch` | 能力开关 | 切换生效状态；同时显示 Default/Inherited 和恢复继承操作 | `.capability-row .setting-toggle` |
 | `skills pane` | Skills 页面 | 展示分层发现的 skills | `#pane-skills`；`#settingsSkillList` |
 | `tools pane` | Tools 页面 | 展示实际 registered tools | `#pane-tools`；`#settingsToolList` |
 | `extensions pane` | Extensions 预留页 | 明确说明尚未实现 | `#pane-extensions` |

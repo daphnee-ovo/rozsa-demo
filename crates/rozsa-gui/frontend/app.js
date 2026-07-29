@@ -47,7 +47,10 @@ let questionDisplayInFlight = false;
 let toolCounts = {};
 let currentSettings = null;
 let capabilitySettings = null;
+let permissionSettings = null;
 const capabilityScope = { skills: 'global', tools: 'global' };
+let permissionScope = 'global';
+let pendingPermissionRuleKind = 'allow';
 let keyBindingDefinitions = [
   { action: 'toggleThinking', title: 'Toggle thinking', description: 'Expand or collapse thinking blocks', defaultBinding: 'Ctrl+T', binding: 'Ctrl+T', scope: 'global' },
   { action: 'openModelPicker', title: 'Choose model', description: 'Open the model picker', defaultBinding: 'Ctrl+P', binding: 'Ctrl+P', scope: 'global' },
@@ -2704,19 +2707,22 @@ function wireSettingSwitch(id, onChange) {
 
 async function loadSettings() {
   try {
-    [currentSettings, availableThemes, capabilitySettings] = await Promise.all([
+    [currentSettings, availableThemes, capabilitySettings, permissionSettings] = await Promise.all([
       invoke('get_settings'),
       invoke('list_themes'),
       invoke('get_capability_settings'),
+      invoke('get_permission_settings'),
     ]);
     renderSettingsPane(currentSettings);
     renderCapabilitySettings();
+    renderPermissionSettings();
     await applySelectedTheme();
   } catch (e) {
     console.warn('settings:', e);
     currentSettings = {};
     availableThemes = [];
     capabilitySettings = null;
+    permissionSettings = null;
     showError('Failed to load settings: ' + String(e));
     throw e;
   }
@@ -2773,20 +2779,42 @@ function renderCapabilityPane(kind, items) {
     copy.className = 'capability-copy';
     copy.innerHTML = `<div class="capability-name">${escapeHtml(item.label)}</div>` +
       `<div class="capability-description">${escapeHtml(item.description || item.name)}</div>`;
-    const select = document.createElement('select');
-    select.className = 'setting-select';
-    select.setAttribute('aria-label', `${item.label} ${scope} override`);
-    const inherited = scope === 'project' ? 'Inherit from global' : 'Use default (enabled)';
-    select.innerHTML = `<option value="inherit">${inherited}</option>` +
-      '<option value="true">Enabled</option><option value="false">Disabled</option>';
     const override = scope === 'global' ? item.globalOverride : item.projectOverride;
-    select.value = override == null ? 'inherit' : String(override);
-    select.title = `Effective: ${item.effective ? 'enabled' : 'disabled'}`;
-    select.onchange = async () => {
-      const enabled = select.value === 'inherit' ? null : select.value === 'true';
+    const controls = document.createElement('div');
+    controls.className = 'capability-controls';
+    if (override == null) {
+      const inherited = document.createElement('span');
+      inherited.className = 'capability-inherited';
+      inherited.textContent = scope === 'project' ? 'Inherited' : 'Default';
+      controls.appendChild(inherited);
+    } else {
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'capability-reset';
+      reset.textContent = 'Reset';
+      reset.title = scope === 'project' ? 'Restore global inheritance' : 'Restore default';
+      reset.onclick = async () => {
+        try {
+          capabilitySettings = await invoke('update_capability_setting', {
+            kind, scope, name: item.name, enabled: null,
+          });
+          renderCapabilitySettings();
+        } catch (error) {
+          showError(`Failed to update ${kind}: ${String(error)}`);
+        }
+      };
+      controls.appendChild(reset);
+    }
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'setting-toggle';
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('aria-label', `${item.label} ${scope}`);
+    setSettingSwitch(toggle, item.effective);
+    toggle.onclick = async () => {
       try {
         capabilitySettings = await invoke('update_capability_setting', {
-          kind, scope, name: item.name, enabled,
+          kind, scope, name: item.name, enabled: !item.effective,
         });
         renderCapabilitySettings();
       } catch (error) {
@@ -2794,8 +2822,209 @@ function renderCapabilityPane(kind, items) {
         renderCapabilitySettings();
       }
     };
-    row.append(copy, select);
+    controls.appendChild(toggle);
+    row.append(copy, controls);
     list.appendChild(row);
+  }
+}
+
+function permissionLayerRules(kind) {
+  if (!permissionSettings) return null;
+  return permissionSettings[`${permissionScope}${kind[0].toUpperCase()}${kind.slice(1)}`];
+}
+
+function effectivePermissionRules(kind) {
+  return permissionSettings?.[`effective${kind[0].toUpperCase()}${kind.slice(1)}`] || [];
+}
+
+function renderPermissionSettings() {
+  if (!permissionSettings) return;
+  const scopeHost = document.getElementById('permissionScope');
+  if (scopeHost) {
+    scopeHost.replaceChildren();
+    for (const candidate of ['global', 'project']) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = candidate === 'global' ? 'Global' : 'Project';
+      button.classList.toggle('active', permissionScope === candidate);
+      button.onclick = () => {
+        permissionScope = candidate;
+        renderPermissionSettings();
+      };
+      scopeHost.appendChild(button);
+    }
+  }
+
+  const mode = document.getElementById('settingsPermMode');
+  if (mode) {
+    const localMode = permissionScope === 'global'
+      ? permissionSettings.globalMode
+      : permissionSettings.projectMode;
+    mode.innerHTML = permissionScope === 'project'
+      ? '<option value="inherit">Inherit from global</option>'
+      : '<option value="inherit">Use default (on-request)</option>';
+    mode.insertAdjacentHTML('beforeend',
+      '<option value="on-request">On request</option>' +
+      '<option value="auto-approve">Auto approve (not implemented)</option>' +
+      '<option value="yolo">Yolo</option>');
+    mode.value = localMode == null ? 'inherit' : localMode;
+    mode.title = `Effective: ${permissionSettings.effectiveMode}`;
+    mode.onchange = async () => {
+      const requested = mode.value === 'inherit' ? null : mode.value;
+      try {
+        permissionSettings = await invoke('update_permission_mode', {
+          scope: permissionScope, mode: requested,
+        });
+        setPermissionSettingsError('');
+      } catch (error) {
+        setPermissionSettingsError(String(error));
+      }
+      renderPermissionSettings();
+    };
+  }
+
+  for (const kind of ['deny', 'ask', 'allow']) renderPermissionRuleList(kind);
+}
+
+function setPermissionSettingsError(message) {
+  const error = document.getElementById('permissionSettingsError');
+  if (!error) return;
+  error.textContent = message;
+  error.hidden = !message;
+}
+
+function renderPermissionRuleList(kind) {
+  const host = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}List`);
+  if (!host) return;
+  host.replaceChildren();
+  const localRules = permissionLayerRules(kind);
+  const localSet = new Set(localRules || []);
+  const effectiveRules = effectivePermissionRules(kind);
+  const rows = permissionScope === 'project'
+    ? effectiveRules.map(rule => ({ rule, inherited: !localSet.has(rule) }))
+    : (localRules || []).map(rule => ({ rule, inherited: false }));
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'permission-rule-empty';
+    empty.textContent = 'No rules configured';
+    host.appendChild(empty);
+  }
+  for (const { rule, inherited } of rows) {
+    const row = document.createElement('div');
+    row.className = 'permission-rule-row';
+    const copy = document.createElement('div');
+    copy.className = 'permission-rule-copy';
+    copy.innerHTML = `<span class="permission-rule-tool">${escapeHtml(ruleTool(rule))}</span>` +
+      `<span class="permission-rule-target">${escapeHtml(ruleTarget(rule))}</span>`;
+    row.appendChild(copy);
+    if (inherited) {
+      const badge = document.createElement('span');
+      badge.className = 'capability-inherited';
+      badge.textContent = 'Inherited';
+      row.appendChild(badge);
+    } else {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'permission-rule-delete';
+      remove.setAttribute('aria-label', `Delete ${rule}`);
+      remove.textContent = 'Delete';
+      remove.onclick = () => removePermissionRule(kind, rule);
+      row.appendChild(remove);
+    }
+    host.appendChild(row);
+  }
+  const reset = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}Reset`);
+  if (reset) reset.hidden = permissionScope !== 'project' || localRules == null;
+}
+
+function ruleTool(rule) {
+  return rule.slice(0, rule.indexOf('(')) || rule;
+}
+
+function ruleTarget(rule) {
+  const start = rule.indexOf('(');
+  return start < 0 ? '' : rule.slice(start + 1, -1);
+}
+
+function openPermissionRuleEditor(kind) {
+  pendingPermissionRuleKind = kind;
+  const editor = document.getElementById('permissionRuleEditor');
+  const tool = document.getElementById('permissionRuleTool');
+  if (!editor || !tool) return;
+  const tools = capabilitySettings?.tools || [];
+  tool.replaceChildren();
+  const all = document.createElement('option');
+  all.value = '*';
+  all.textContent = 'All tools';
+  tool.appendChild(all);
+  for (const item of tools) {
+    const option = document.createElement('option');
+    option.value = item.name;
+    option.textContent = item.label;
+    tool.appendChild(option);
+  }
+  document.getElementById('permissionRuleTargetType').value = 'all';
+  document.getElementById('permissionRuleTarget').value = '';
+  editor.hidden = false;
+  updatePermissionRuleTargetVisibility();
+}
+
+function closePermissionRuleEditor() {
+  const editor = document.getElementById('permissionRuleEditor');
+  if (editor) editor.hidden = true;
+}
+
+function updatePermissionRuleTargetVisibility() {
+  const type = document.getElementById('permissionRuleTargetType')?.value;
+  const input = document.getElementById('permissionRuleTarget');
+  if (!input) return;
+  input.hidden = type === 'all';
+  input.placeholder = type === 'directory'
+    ? 'Directory, for example src'
+    : type === 'prefix'
+      ? 'Command prefix, for example cargo test'
+      : 'Exact command or path';
+}
+
+async function savePermissionRule() {
+  const tool = document.getElementById('permissionRuleTool')?.value;
+  const type = document.getElementById('permissionRuleTargetType')?.value;
+  const rawTarget = document.getElementById('permissionRuleTarget')?.value.trim() || '';
+  if (!tool || (type !== 'all' && !rawTarget)) {
+    showError('Choose a tool and target before adding the rule.');
+    return;
+  }
+  let target = type === 'all' ? '*' : rawTarget;
+  if (type === 'prefix') target = `${rawTarget} *`;
+  if (type === 'directory') target = `${rawTarget.replace(/\/$/, '')}/*`;
+  const rule = `${tool}(${target})`;
+  const local = permissionLayerRules(pendingPermissionRuleKind) || [];
+  if (local.includes(rule)) {
+    closePermissionRuleEditor();
+    return;
+  }
+  await replacePermissionRules(pendingPermissionRuleKind, [...local, rule]);
+  closePermissionRuleEditor();
+}
+
+async function removePermissionRule(kind, rule) {
+  const local = permissionLayerRules(kind) || [];
+  await replacePermissionRules(kind, local.filter(candidate => candidate !== rule));
+}
+
+async function resetPermissionRules(kind) {
+  await replacePermissionRules(kind, null);
+}
+
+async function replacePermissionRules(kind, rules) {
+  try {
+    permissionSettings = await invoke('update_permission_rules', {
+      scope: permissionScope, kind, rules,
+    });
+    setPermissionSettingsError('');
+    renderPermissionSettings();
+  } catch (error) {
+    setPermissionSettingsError(`Failed to update permission rules: ${String(error)}`);
   }
 }
 
@@ -2962,27 +3191,6 @@ function renderSettingsPane(settings) {
     thinkingSel.value = settings.thinking_level.toLowerCase();
   }
 
-  // Permission mode
-  const permSel = document.getElementById('settingsPermMode');
-  if (permSel && settings.permissions && settings.permissions.mode) {
-    permSel.value = settings.permissions.mode;
-  }
-
-  // Auto-approve patterns
-  const autoApproveEl = document.getElementById('settingsAutoApprove');
-  if (autoApproveEl && settings.permissions && settings.permissions.autoApprovePatterns) {
-    const patterns = settings.permissions.autoApprovePatterns;
-    let html = '<div class="settings-group-label">Auto-Approve Patterns</div>';
-    if (patterns.length === 0) {
-      html += '<div style="font-size:11px;color:var(--muted);padding:4px 0">No patterns configured</div>';
-    } else {
-      for (const p of patterns) {
-        html += '<div class="setting-item"><span class="setting-label" style="font-family:var(--font-mono);font-size:11px">' +
-          escapeHtml(p) + '</span></div>';
-      }
-    }
-    autoApproveEl.innerHTML = html;
-  }
 
   // Model selector in settings
   const modelSel = document.getElementById('settingsModelSelect');
@@ -3393,21 +3601,6 @@ function renderGeneralSettings(settings) {
   wireOptionalNumberSetting('settingsRetryMax', settings.retry_max_retries, 'retry_max_retries');
   wireOptionalNumberSetting('settingsRetryDelay', settings.retry_max_delay_ms, 'retry_max_delay_ms');
 
-  // Permission mode
-  const permSel = document.getElementById('settingsPermMode');
-  if (permSel) {
-    if (settings.permission_mode) permSel.value = settings.permission_mode;
-    permSel.onchange = () => saveSetting('permission_mode', permSel.value);
-  }
-
-  wireLinesSetting('settingsPermissionPatterns', settings.auto_approve_patterns,
-    'permission_auto_approve_patterns');
-  wireLinesSetting('settingsAllowedTools', settings.allowed_tools, 'permission_allowed_tools');
-  wireLinesSetting('settingsBlockedCommands', settings.blocked_commands,
-    'permission_blocked_commands');
-  wireLinesSetting('settingsPermissionDeny', settings.permission_deny, 'permission_deny');
-  wireLinesSetting('settingsPermissionAsk', settings.permission_ask, 'permission_ask');
-  wireLinesSetting('settingsPermissionAllow', settings.permission_allow, 'permission_allow');
 }
 
 function wireNumberSetting(id, value, key) {

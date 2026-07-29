@@ -58,6 +58,7 @@ pub enum SettingsPane {
     Appearance,
     #[serde(rename = "keyboard-shortcuts")]
     KeyboardShortcuts,
+    Permissions,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]

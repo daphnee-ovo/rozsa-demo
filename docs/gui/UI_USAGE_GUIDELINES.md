@@ -287,7 +287,8 @@ tool call 是 Rózsa GUI 的核心组件，应像对话中的轻量命令行记�
 - 同时排队的请求在正式展示前重评估；前一项新增 Trust 后，后续已经被覆盖的请求直接执行，不重复弹窗。
 - 风险标签要具体，例如 Shell 命令、文件写入、网络访问。
 - 文案要说明实际影响，不使用恐吓式警告。
-- on-request、auto-approve、free-permission 三种模式必须在设置中可见。
+- on-request、auto-approve、yolo 三种模式必须在设置中可见。auto-approve 的
+  small-model reviewer 完成前，选择它必须显示未实现错误且不得改写现有模式。
 
 ### 设置面板
 
@@ -295,9 +296,13 @@ tool call 是 Rózsa GUI 的核心组件，应像对话中的轻量命令行记�
 
 结构：
 
-- 左侧或顶部 tabs：通用、模型、权限、工具。
+- 左侧 tabs 依次包含 Skills、Tools、Extensions、General、Appearance、
+  Keyboard shortcuts、Permissions。
 - 内容区按 group 分组。
 - 下拉框、输入框、开关和列表保持一致高度和间距。
+- Skills 与 Tools 使用 switch；Project 层必须明确标识继承状态并可恢复继承。
+- Permissions 使用 Global/Project 子 tab，`deny`、`ask`、`allow` 以可添加和删除的
+  选项式规则行展示，不暴露原始多行文本编辑器。
 
 规则：
 

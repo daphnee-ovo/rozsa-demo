@@ -12,4 +12,4 @@ pub use schema::{
     AppearanceSettings, CompactionSettings, PartialSettings, PermissionSettings, RetrySettings,
     Settings,
 };
-pub use storage::{CapabilityKind, SettingsManager, SettingsScope};
+pub use storage::{CapabilityKind, PermissionRuleKind, SettingsManager, SettingsScope};

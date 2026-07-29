@@ -36,6 +36,11 @@
 // ├── get_capability_settings()
 // ├── update_capability_setting()
 // ├── capability_settings_snapshot()
+// ├── get_permission_settings()
+// ├── update_permission_mode()
+// ├── update_permission_rules()
+// ├── apply_resolved_permissions()
+// ├── permission_settings_snapshot()
 // ├── get_settings()
 // ├── list_themes()
 // ├── get_theme()
@@ -114,7 +119,6 @@
 // ├── parse_positive_u64()
 // ├── parse_optional_u64()
 // ├── parse_optional_u32()
-// ├── parse_setting_lines()
 // ├── append_prompt_error()
 // ├── append_prompt_error_for_session()
 // ├── current_timestamp_ms()
@@ -127,6 +131,7 @@
 // ├── struct SessionListEntry
 // ├── struct ModelListEntry
 // ├── struct SettingsSnapshot
+// ├── struct PermissionSettingsSnapshot
 // ├── struct CapabilitySettingsSnapshot
 // ├── struct CapabilityItemSnapshot
 // └── struct AppearanceSnapshot
@@ -145,9 +150,9 @@ use tauri::{AppHandle, Manager, State};
 
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::model_registry::ModelRegistry;
-use rozsa_app::permissions::PermissionResponse;
+use rozsa_app::permissions::{PermissionMode, PermissionResponse, validate_permission_rule};
 use rozsa_app::session::manager::SessionManager;
-use rozsa_app::settings::{CapabilityKind, SettingsScope};
+use rozsa_app::settings::{CapabilityKind, PermissionRuleKind, SettingsScope};
 use rozsa_app::skills::SkillRegistry;
 use rozsa_app::skills::loader::{SkillScope, load_skills_from_dirs};
 use rozsa_app::themes::{self, ThemeDefinition, ThemeMode, ThemeStore, ThemeSummary};
@@ -1434,6 +1439,112 @@ async fn capability_settings_snapshot(
 }
 
 #[tauri::command]
+pub async fn get_permission_settings(
+    state: State<'_, GuiState>,
+) -> Result<PermissionSettingsSnapshot, String> {
+    permission_settings_snapshot(&state).await
+}
+
+#[tauri::command]
+pub async fn update_permission_mode(
+    state: State<'_, GuiState>,
+    scope: SettingsScope,
+    mode: Option<String>,
+) -> Result<PermissionSettingsSnapshot, String> {
+    if mode.as_deref() == Some("auto-approve") {
+        return Err(
+            "Auto-approve is not implemented yet; the current permission mode was not changed."
+                .to_owned(),
+        );
+    }
+    if let Some(mode) = mode.as_deref()
+        && PermissionMode::parse(mode).is_none()
+    {
+        return Err(format!("Invalid permission mode: {mode}"));
+    }
+    let mut manager = state.shared.settings_manager.clone();
+    manager.reload().map_err(|error| error.to_string())?;
+    manager
+        .set_permission_mode_override(scope, mode)
+        .map_err(|error| error.to_string())?;
+    apply_resolved_permissions(&state, &manager).await?;
+    permission_settings_snapshot(&state).await
+}
+
+#[tauri::command]
+pub async fn update_permission_rules(
+    state: State<'_, GuiState>,
+    scope: SettingsScope,
+    kind: PermissionRuleKind,
+    rules: Option<Vec<String>>,
+) -> Result<PermissionSettingsSnapshot, String> {
+    if let Some(rules) = rules.as_ref() {
+        for rule in rules {
+            validate_permission_rule(rule)?;
+        }
+    }
+    let mut manager = state.shared.settings_manager.clone();
+    manager.reload().map_err(|error| error.to_string())?;
+    manager
+        .set_permission_rule_overrides(scope, kind, rules)
+        .map_err(|error| error.to_string())?;
+    apply_resolved_permissions(&state, &manager).await?;
+    permission_settings_snapshot(&state).await
+}
+
+async fn apply_resolved_permissions(
+    state: &State<'_, GuiState>,
+    manager: &rozsa_app::settings::SettingsManager,
+) -> Result<(), String> {
+    let permissions = manager.resolved().permissions.clone();
+    let mode = PermissionMode::parse(&permissions.mode)
+        .ok_or_else(|| format!("Invalid permission mode: {}", permissions.mode))?;
+    state
+        .permission_controller
+        .update_from_settings(mode, &permissions);
+    state.runtime_settings.lock().await.permissions = permissions;
+    Ok(())
+}
+
+async fn permission_settings_snapshot(
+    state: &State<'_, GuiState>,
+) -> Result<PermissionSettingsSnapshot, String> {
+    let mut manager = state.shared.settings_manager.clone();
+    manager.reload().map_err(|error| error.to_string())?;
+    let permissions = manager.resolved().permissions.clone();
+    Ok(PermissionSettingsSnapshot {
+        effective_mode: permissions.mode,
+        global_mode: manager
+            .permission_mode_override(SettingsScope::Global)
+            .map_err(|error| error.to_string())?,
+        project_mode: manager
+            .permission_mode_override(SettingsScope::Project)
+            .map_err(|error| error.to_string())?,
+        effective_deny: permissions.deny,
+        effective_ask: permissions.ask,
+        effective_allow: permissions.allow,
+        global_deny: manager
+            .permission_rule_overrides(SettingsScope::Global, PermissionRuleKind::Deny)
+            .map_err(|error| error.to_string())?,
+        global_ask: manager
+            .permission_rule_overrides(SettingsScope::Global, PermissionRuleKind::Ask)
+            .map_err(|error| error.to_string())?,
+        global_allow: manager
+            .permission_rule_overrides(SettingsScope::Global, PermissionRuleKind::Allow)
+            .map_err(|error| error.to_string())?,
+        project_deny: manager
+            .permission_rule_overrides(SettingsScope::Project, PermissionRuleKind::Deny)
+            .map_err(|error| error.to_string())?,
+        project_ask: manager
+            .permission_rule_overrides(SettingsScope::Project, PermissionRuleKind::Ask)
+            .map_err(|error| error.to_string())?,
+        project_allow: manager
+            .permission_rule_overrides(SettingsScope::Project, PermissionRuleKind::Allow)
+            .map_err(|error| error.to_string())?,
+    })
+}
+
+#[tauri::command]
 pub async fn get_settings(
     state: State<'_, GuiState>,
     app: AppHandle,
@@ -1443,17 +1554,10 @@ pub async fn get_settings(
     let thinking = state.shared.thinking_level.lock().await;
 
     let snapshot = SettingsSnapshot {
-        permission_mode: rt.permissions.mode.clone(),
         thinking_level: format!("{:?}", *thinking).to_lowercase(),
         model_id: model.id.clone(),
         model_name: model.name.clone(),
         model_provider: model.provider.as_str().to_string(),
-        auto_approve_patterns: rt.permissions.auto_approve_patterns.clone(),
-        allowed_tools: rt.permissions.allowed_tools.clone(),
-        blocked_commands: rt.permissions.blocked_commands.clone(),
-        permission_deny: rt.permissions.deny.clone(),
-        permission_ask: rt.permissions.ask.clone(),
-        permission_allow: rt.permissions.allow.clone(),
         block_images: rt.block_images,
         hide_thinking: rt.hide_thinking,
         transport: rt.transport.clone(),
@@ -1538,18 +1642,6 @@ pub async fn update_setting(
                 let mut s = state.runtime_settings.lock().await;
                 s.default_thinking_level = Some(level);
             }
-            persist_settings(&state).await?;
-            Ok(())
-        }
-        "permission_mode" => {
-            let mode = rozsa_app::permissions::PermissionMode::parse(&value)
-                .ok_or_else(|| format!("Invalid permission mode: {value}"))?;
-            let mut s = state.runtime_settings.lock().await;
-            s.permissions.mode = value;
-            state
-                .permission_controller
-                .update_from_settings(mode, &s.permissions);
-            drop(s);
             persist_settings(&state).await?;
             Ok(())
         }
@@ -1659,34 +1751,6 @@ pub async fn update_setting(
         }
         "hide_thinking" => {
             state.runtime_settings.lock().await.hide_thinking = value == "true";
-            persist_settings(&state).await?;
-            Ok(())
-        }
-        "permission_deny"
-        | "permission_ask"
-        | "permission_allow"
-        | "permission_auto_approve_patterns"
-        | "permission_allowed_tools"
-        | "permission_blocked_commands" => {
-            let entries = parse_setting_lines(&value);
-            let mut settings = state.runtime_settings.lock().await;
-            match key.as_str() {
-                "permission_deny" => settings.permissions.deny = entries,
-                "permission_ask" => settings.permissions.ask = entries,
-                "permission_allow" => settings.permissions.allow = entries,
-                "permission_auto_approve_patterns" => {
-                    settings.permissions.auto_approve_patterns = entries
-                }
-                "permission_allowed_tools" => settings.permissions.allowed_tools = entries,
-                "permission_blocked_commands" => settings.permissions.blocked_commands = entries,
-                _ => unreachable!(),
-            }
-            let mode = rozsa_app::permissions::PermissionMode::parse(&settings.permissions.mode)
-                .ok_or_else(|| format!("Invalid permission mode: {}", settings.permissions.mode))?;
-            state
-                .permission_controller
-                .update_from_settings(mode, &settings.permissions);
-            drop(settings);
             persist_settings(&state).await?;
             Ok(())
         }
@@ -3089,15 +3153,6 @@ fn parse_optional_u32(label: &str, value: &str) -> Result<Option<u32>, String> {
         .map_err(|_| format!("Invalid {label}: {value}"))
 }
 
-fn parse_setting_lines(value: &str) -> Vec<String> {
-    value
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
 async fn append_prompt_error(
     tab_idx: usize,
     agent: &rozsa_app::agent_session::AgentSession,
@@ -3284,17 +3339,10 @@ pub struct ModelListEntry {
 
 #[derive(serde::Serialize)]
 pub struct SettingsSnapshot {
-    pub permission_mode: String,
     pub thinking_level: String,
     pub model_id: String,
     pub model_name: String,
     pub model_provider: String,
-    pub auto_approve_patterns: Vec<String>,
-    pub allowed_tools: Vec<String>,
-    pub blocked_commands: Vec<String>,
-    pub permission_deny: Vec<String>,
-    pub permission_ask: Vec<String>,
-    pub permission_allow: Vec<String>,
     pub block_images: bool,
     pub hide_thinking: bool,
     pub transport: String,
@@ -3310,6 +3358,23 @@ pub struct SettingsSnapshot {
     pub follow_up_mode: String,
     pub running_send_mode: String,
     pub appearance: AppearanceSnapshot,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionSettingsSnapshot {
+    pub effective_mode: String,
+    pub global_mode: Option<String>,
+    pub project_mode: Option<String>,
+    pub effective_deny: Vec<String>,
+    pub effective_ask: Vec<String>,
+    pub effective_allow: Vec<String>,
+    pub global_deny: Option<Vec<String>>,
+    pub global_ask: Option<Vec<String>>,
+    pub global_allow: Option<Vec<String>>,
+    pub project_deny: Option<Vec<String>>,
+    pub project_ask: Option<Vec<String>>,
+    pub project_allow: Option<Vec<String>>,
 }
 
 #[derive(serde::Serialize)]
