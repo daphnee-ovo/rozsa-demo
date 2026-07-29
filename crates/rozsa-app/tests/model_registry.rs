@@ -271,7 +271,7 @@ fn models_json_allows_line_comments_and_trailing_commas() {
         .apply_models_config_json(
             r#"{
                 "providers": {
-                    // Existing TypeScript registry accepts comments.
+                    // The supported config format accepts comments.
                     "openai": {
                         "baseUrl": "https://proxy.example.com/v1",
                         "models": [

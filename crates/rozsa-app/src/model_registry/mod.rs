@@ -68,7 +68,7 @@ impl Default for RegistryModelCost {
     }
 }
 
-/// Model metadata shape shared with the TypeScript registry (deserialization intermediate).
+/// Serialized model metadata shape used while reading configured registries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct RegistryModel {
     pub id: String,
@@ -167,7 +167,7 @@ impl RegistryModel {
     }
 }
 
-/// Image model metadata shape shared with the TypeScript image registry.
+/// Serialized image-model metadata shape used while reading configured registries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegistryImageModel {
     pub id: String,

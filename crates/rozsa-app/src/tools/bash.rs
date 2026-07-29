@@ -407,7 +407,7 @@ impl Tool for BashTool {
             }
             Err(error_msg) => {
                 // Return error as tool result content (not ToolError)
-                // This matches the TypeScript behavior of returning errors as text
+                // Preserve the tool contract: command failures are returned as text.
                 let timed_out = error_msg.contains("Command timed out after ");
                 Ok(ToolResult {
                     content: vec![ContentBlock::Text {
