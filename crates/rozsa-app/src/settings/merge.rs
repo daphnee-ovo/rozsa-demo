@@ -5,8 +5,7 @@
 // ├── merge_appearance()
 // ├── merge_compaction()
 // ├── merge_retry()
-// ├── merge_permissions()
-// └── merge_rule_list()
+// └── merge_permissions()
 
 use super::schema::{
     AppearanceSettings, CompactionSettings, PartialAppearanceSettings, PartialCompactionSettings,
@@ -142,22 +141,10 @@ fn merge_permissions(
     match overlay {
         None => base.clone(),
         Some(o) => PermissionSettings {
-            deny: merge_rule_list(&base.deny, o.deny.as_ref()),
-            ask: merge_rule_list(&base.ask, o.ask.as_ref()),
-            allow: merge_rule_list(&base.allow, o.allow.as_ref()),
+            deny: o.deny.clone().unwrap_or_else(|| base.deny.clone()),
+            ask: o.ask.clone().unwrap_or_else(|| base.ask.clone()),
+            allow: o.allow.clone().unwrap_or_else(|| base.allow.clone()),
             mode: o.mode.clone().unwrap_or_else(|| base.mode.clone()),
         },
     }
-}
-
-fn merge_rule_list(base: &[String], overlay: Option<&Vec<String>>) -> Vec<String> {
-    let mut merged = base.to_vec();
-    if let Some(overlay) = overlay {
-        for rule in overlay {
-            if !merged.contains(rule) {
-                merged.push(rule.clone());
-            }
-        }
-    }
-    merged
 }

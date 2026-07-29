@@ -438,7 +438,7 @@ message editor                                  #msgInput.rich-input
 ## 13. Settings 控件全量术语
 
 Settings pane 的固定顺序是 Skills、Tools、Extensions、General、Appearance、Keyboard
-shortcuts。Models 与 Permissions 是 General 内的 settings group，不再是独立 pane。
+shortcuts、Permissions。Models 在 General 中；Permissions 是独立 pane。
 
 ```text
 settings scene
@@ -468,7 +468,7 @@ settings scene
 | `settings workspace` | 设置工作区 | main WebView 内组织 settings content | `.settings-workspace` |
 | `settings navigation` | 设置导航 | sidebar WebView 中的 pane 切换入口 | `#settingsSidebarScene [data-settings-pane]` |
 | `back action` | 返回应用操作 | 请求切回 Main scene | `.settings-back`；`closeSidebarSettings()` |
-| `settings tab` | 设置页签 | 按固定顺序切换 Skills、Tools、Extensions、General、Appearance、Keyboard shortcuts | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
+| `settings tab` | 设置页签 | 按固定顺序切换 Skills、Tools、Extensions、General、Appearance、Keyboard shortcuts、Permissions | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
 | `settings content` | 设置内容区 | 承载当前 pane 的滚动内容 | `.settings-content` |
 | `settings pane` | 设置页面 | 一个完整的 Settings 分类页面 | `.settings-pane`、`#pane-*`；`renderSettingsPane()` |
 | `pane title` | 页面标题 | 当前 pane 的标题 | `.settings-pane-title` |
@@ -480,7 +480,7 @@ settings scene
 | `setting value` | 设置值 | 只读的 provider、context 或 shortcut 值 | `.setting-value` |
 | `close action` | 关闭操作 | 请求切回 Main scene | `.settings-close`；`closeSettings()` |
 
-Skills 与 Tools pane 中的 `capability scope` 是 Global/Project 子页；
+Skills、Tools 与 Permissions pane 中的 `capability scope` 是 Global/Project 子页；
 `capability override` 有 inherit/enabled/disabled 三态。Extensions pane 只使用
 `empty settings state` 说明功能预留。General 的 Models、Permissions、AI 和 Network
 group 只展示已经接到 `update_setting` 的控件。
@@ -531,8 +531,9 @@ group 只展示已经接到 `update_setting` 的控件。
 | `context window value` | 上下文窗口值 | 展示当前模型的 context window | `#settingsContextWindow` |
 | `permissions pane` | 权限页面 | 分 Global/Project 配置 permission mode 与 deny/ask/allow 规则 | `#pane-permissions`；`renderPermissionSettings()` |
 | `permission mode selector` | 权限模式选择器 | 选择 auto-approve、on-request 或 yolo；auto-approve 尚未实现时显示错误且不保存 | `#settingsPermMode` |
-| `permission rule row` | 权限规则行 | 展示工具、目标、继承状态与删除操作 | `.permission-rule-row` |
-| `permission rule editor` | 权限规则添加器 | 通过工具、目标类型和目标值生成规则，不编辑原始语法 | `#permissionRuleEditor` |
+| `permission rule row` | 权限规则行 | 单行展示 `ToolName(pattern)`、继承状态与删除操作；可在 deny/ask/allow 间 pointer 拖拽 | `.permission-rule-row`；`wirePermissionRulePointerDrag()` |
+| `permission rule editor` | 权限规则添加器 | 在对应规则容器内部组合可输入/Tab 补全/下拉单选的 tool combobox、rich pattern input 与 RegExp switch | `#permissionRuleEditor`；`#permissionRuleEditorTemplate` |
+| `permission rule pattern` | 权限规则 pattern | 输入 glob 或 RegExp，并高亮 `*`/正则元字符 | `#permissionRuleTarget.permission-rule-pattern`；`renderRichInputHighlights()` |
 | `capability scope` | 能力配置层 | 切换 Global 或 Project | `.capability-scope` |
 | `capability switch` | 能力开关 | 切换生效状态；同时显示 Default/Inherited 和恢复继承操作 | `.capability-row .setting-toggle` |
 | `skills pane` | Skills 页面 | 展示分层发现的 skills | `#pane-skills`；`#settingsSkillList` |

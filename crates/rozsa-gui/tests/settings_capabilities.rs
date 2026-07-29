@@ -76,8 +76,24 @@ fn general_controls_are_connected_to_real_setting_keys() {
     }
     assert!(frontend.contains("invoke('get_permission_settings')"));
     assert!(frontend.contains("invoke('update_permission_rules'"));
+    assert!(frontend.contains("invoke('update_permission_rule_set'"));
     assert!(index.contains("Add rule"));
+    assert!(index.contains("id=\"permissionRuleEditorTemplate\""));
+    assert!(index.contains("id=\"permissionRuleRegexp\""));
+    assert!(index.contains("role=\"combobox\""));
     assert!(index.contains("id=\"permissionSettingsError\" role=\"alert\""));
     assert!(frontend.contains("setPermissionSettingsError(String(error))"));
+    assert!(frontend.contains("wirePermissionRulePointerDrag(row, kind, rule)"));
+    assert!(frontend.contains("event.key === 'Tab'"));
+    assert!(frontend.contains("input.onfocus = () => renderPermissionToolOptions(true, true)"));
+    assert!(
+        frontend.contains("if (list?.hidden) {\n      renderPermissionToolOptions(true, true);")
+    );
+    assert!(frontend.contains("combobox.onfocusout = event =>"));
+    assert!(frontend.contains("copy.textContent = rule"));
+    assert!(frontend.contains("target = `$HOME/${target"));
+    assert!(!frontend.contains("All tools"));
+    assert!(!frontend.contains("Inherit from global"));
+    assert!(!frontend.contains("Use default (on-request)"));
     assert!(!index.contains("id=\"settingsPermissionDeny\""));
 }

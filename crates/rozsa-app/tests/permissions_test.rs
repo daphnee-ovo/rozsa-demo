@@ -1,6 +1,7 @@
 use rozsa_app::permissions::{
     PermissionController, PermissionMode, PermissionPolicy, PolicyVerdict, RiskLevel,
     build_trust_key, classify_risk, generate_trust_levels, infer_risk_level, split_shell_segments,
+    validate_permission_rule, validate_permission_rule_for_scope,
 };
 
 #[test]
@@ -35,11 +36,11 @@ fn yolo_allows_non_blocked_commands_only() {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace read tools auto-allow (I036)
+// Workspace Read auto-allow
 // ---------------------------------------------------------------------------
 
 #[test]
-fn read_tools_auto_allow_in_on_request_mode() {
+fn only_workspace_scoped_read_is_intrinsically_allowed() {
     let policy = PermissionPolicy::new(PermissionMode::OnRequest);
 
     let read_args = serde_json::json!({"file_path": "src/main.rs"});
@@ -61,31 +62,19 @@ fn read_tools_auto_allow_in_on_request_mode() {
     let grep_args = serde_json::json!({"pattern": "TODO", "path": "/src"});
     assert!(matches!(
         policy.evaluate("Grep", &grep_args),
-        PolicyVerdict::Allow
-    ));
-    assert!(matches!(
-        policy.evaluate("grep", &grep_args),
-        PolicyVerdict::Allow
+        PolicyVerdict::NeedApproval { .. }
     ));
 
     let ls_args = serde_json::json!({"path": "/src"});
     assert!(matches!(
         policy.evaluate("Ls", &ls_args),
-        PolicyVerdict::Allow
-    ));
-    assert!(matches!(
-        policy.evaluate("ls", &ls_args),
-        PolicyVerdict::Allow
+        PolicyVerdict::NeedApproval { .. }
     ));
 
     let find_args = serde_json::json!({"pattern": "*.rs"});
     assert!(matches!(
         policy.evaluate("Find", &find_args),
-        PolicyVerdict::Allow
-    ));
-    assert!(matches!(
-        policy.evaluate("find", &find_args),
-        PolicyVerdict::Allow
+        PolicyVerdict::NeedApproval { .. }
     ));
 }
 
@@ -450,16 +439,171 @@ fn tool_wildcard_rule_allows_tools_without_target_arguments() {
 }
 
 #[test]
-fn ask_user_question_is_a_built_in_allowed_tool() {
+fn default_visible_rules_allow_standard_tools() {
     let controller = PermissionController::new(PermissionMode::OnRequest);
+    controller.update_from_settings(
+        PermissionMode::OnRequest,
+        &rozsa_app::settings::schema::PermissionSettings::default(),
+    );
+
+    for tool in ["ls", "grep", "find", "subagent", "askUserQuestion"] {
+        assert!(
+            matches!(
+                controller.evaluate("session-a", tool, &serde_json::json!({})),
+                PolicyVerdict::Allow
+            ),
+            "default rule did not allow {tool}"
+        );
+    }
+}
+
+#[test]
+fn universal_tool_wildcard_rule_is_rejected() {
+    let error = validate_permission_rule("*(*)").unwrap_err();
+    assert!(error.contains("yolo"));
+    assert!(validate_permission_rule("Bash(*)").is_ok());
+}
+
+#[test]
+fn scoped_path_rules_require_a_safe_home_prefix_globally() {
+    assert!(validate_permission_rule_for_scope("Edit(src/**/*.rs)", false).is_ok());
+    assert!(validate_permission_rule_for_scope("Edit(src/**/*.rs)", true).is_err());
+    assert!(validate_permission_rule_for_scope("Edit($HOME/Projects/**/*.rs)", true).is_ok());
+    assert!(validate_permission_rule_for_scope("Edit($HOME/../secret)", true).is_err());
+    assert!(validate_permission_rule_for_scope("Edit($HOME/**/*.rs)", false).is_err());
+}
+
+#[test]
+fn invalid_regular_expressions_are_rejected_before_persistence() {
+    assert!(validate_permission_rule("Bash(regex:^cargo (test|check)$)").is_ok());
+    assert!(validate_permission_rule("Bash(regex:[)").is_err());
+}
+
+#[test]
+fn path_globs_distinguish_direct_and_recursive_matches() {
+    let controller = PermissionController::new(PermissionMode::OnRequest);
+    let mut settings = rozsa_app::settings::schema::PermissionSettings::default();
+    settings.deny = vec!["Edit(docs/*.md)".to_owned()];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
 
     assert!(matches!(
         controller.evaluate(
             "session-a",
-            "askUserQuestion",
-            &serde_json::json!({"questions": []}),
+            "Edit",
+            &serde_json::json!({"file_path": "docs/guide.md"}),
         ),
-        PolicyVerdict::Allow
+        PolicyVerdict::Block { .. }
+    ));
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Edit",
+            &serde_json::json!({"file_path": "docs/nested/guide.md"}),
+        ),
+        PolicyVerdict::NeedApproval { .. }
+    ));
+
+    settings.deny = vec!["Edit(docs/**/*.md)".to_owned()];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Edit",
+            &serde_json::json!({"file_path": "docs/nested/guide.md"}),
+        ),
+        PolicyVerdict::Block { .. }
+    ));
+
+    settings.deny = vec!["Edit(*.md)".to_owned()];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Edit",
+            &serde_json::json!({"file_path": "README.md"}),
+        ),
+        PolicyVerdict::Block { .. }
+    ));
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Edit",
+            &serde_json::json!({"file_path": "docs/README.md"}),
+        ),
+        PolicyVerdict::NeedApproval { .. }
+    ));
+
+    settings.deny = vec!["Edit(**/*.md)".to_owned()];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
+    for path in ["README.md", "docs/nested/guide.md"] {
+        assert!(matches!(
+            controller.evaluate("session-a", "Edit", &serde_json::json!({"file_path": path}),),
+            PolicyVerdict::Block { .. }
+        ));
+    }
+
+    settings.deny = vec!["Edit(docs/**)".to_owned()];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Edit",
+            &serde_json::json!({"file_path": "docs/assets/icon.png"}),
+        ),
+        PolicyVerdict::Block { .. }
+    ));
+}
+
+#[test]
+fn global_home_globs_match_only_home_relative_targets() {
+    let Some(home) = dirs_next::home_dir() else {
+        return;
+    };
+    let controller = PermissionController::new(PermissionMode::OnRequest);
+    let mut settings = rozsa_app::settings::schema::PermissionSettings::default();
+    settings.deny = vec!["Edit($HOME/*.md)".to_owned()];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
+
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Edit",
+            &serde_json::json!({"file_path": home.join("notes.md")}),
+        ),
+        PolicyVerdict::Block { .. }
+    ));
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Edit",
+            &serde_json::json!({"file_path": home.join("nested/notes.md")}),
+        ),
+        PolicyVerdict::NeedApproval { .. }
+    ));
+}
+
+#[test]
+fn regular_expressions_use_full_match_on_each_shell_segment() {
+    let controller = PermissionController::new(PermissionMode::OnRequest);
+    let mut settings = rozsa_app::settings::schema::PermissionSettings::default();
+    settings.deny = vec!["Bash(regex:cargo (test|check))".to_owned()];
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
+
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Bash",
+            &serde_json::json!({"command": "pwd && cargo test"}),
+        ),
+        PolicyVerdict::Block { .. }
+    ));
+    assert!(matches!(
+        controller.evaluate(
+            "session-a",
+            "Bash",
+            &serde_json::json!({"command": "cargo test --release"}),
+        ),
+        PolicyVerdict::NeedApproval { .. }
     ));
 }
 

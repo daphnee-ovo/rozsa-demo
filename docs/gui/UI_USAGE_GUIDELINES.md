@@ -302,7 +302,11 @@ tool call 是 Rózsa GUI 的核心组件，应像对话中的轻量命令行记�
 - 下拉框、输入框、开关和列表保持一致高度和间距。
 - Skills 与 Tools 使用 switch；Project 层必须明确标识继承状态并可恢复继承。
 - Permissions 使用 Global/Project 子 tab，`deny`、`ask`、`allow` 以可添加和删除的
-  选项式规则行展示，不暴露原始多行文本编辑器。
+  选项式规则行展示，不暴露原始多行文本编辑器。规则以单行 `ToolName(pattern)`
+  展示，可在三个容器之间拖拽迁移，添加器必须展开在目标容器内部。
+- Tool 使用可编辑单选 combobox：输入前缀过滤，Tab 补全，也可展开列表选择。
+- Permission mode 在两个 scope 都直接展示当前生效的 on-request、auto-approve 或
+  yolo，不显示 “Use default” 或 “Inherit” 作为第四种伪模式。
 
 规则：
 
@@ -409,14 +413,21 @@ Extensions 是明确的预留页面，不得显示尚未实现的开关。
 ```json
 {
   "permission": {
-    "deny": ["Bash(git push *)", "Edit(./.env)"],
+    "deny": ["Bash(git push *)", "Edit(.env)"],
     "ask": ["Bash(npm publish *)"],
-    "allow": ["Bash(cargo test *)", "Edit(./src/)"]
+    "allow": ["Bash(cargo test *)", "Edit(src/**)"]
   }
 }
 ```
 
-`*` 表示命令或路径前缀；未带 `*` 的 Bash 规则精确匹配。`deny`、`ask`、`allow` 分别适用于 Bash 与文件工具，顺序不可调整。
+普通 pattern 使用 glob：路径中的 `*` 只匹配一层，`**` 递归匹配；命令中的 `*`
+匹配任意文本。RegExp 开关将 pattern 存为 `regex:` 形式，并采用完整匹配而不是
+substring 匹配；Bash 对拆分后的每个命令段分别匹配。项目路径相对项目根，全局路径
+持久化时必须以字面量 `$HOME/` 开头，UI 将该前缀固定在输入框外，用户只输入
+Home 相对 pattern；规范化后不得逃逸 Home。`*` 与正则元字符复用 composer
+的 input highlight 显示。禁止 `*(*)`；需要全部放行时使用 yolo。默认全局 allow
+规则为 `ls(*)`、`grep(*)`、`find(*)`、`subagent(*)` 和
+`askUserQuestion(*)`。
 
 - 主要区域和可调元素应保留稳定的 `data-od-id`，便于检查和后续精修。
 - 组件样式优先复用现有 token，不在组件内新增散乱色值。

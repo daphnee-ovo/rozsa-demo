@@ -64,7 +64,15 @@
 // ├── rules_cover_request()
 // ├── request_targets()
 // ├── validate_permission_rule()
+// ├── validate_permission_rule_for_scope()
+// ├── rule_pattern()
+// ├── is_path_rule_tool()
 // ├── rule_matches()
+// ├── glob_regex()
+// ├── path_rule_matches()
+// ├── resolve_absolute_glob_pattern()
+// ├── relative_normalized_path()
+// ├── resolved_rule_path()
 // ├── normalize_rule_path()
 // ├── trust_key_to_project_rule()
 // ├── summarize_args()
@@ -405,11 +413,9 @@ pub fn safer_alternative_hint(tool_name: &str, args: &Value) -> String {
 pub type PendingApprovals = Arc<DashMap<String, oneshot::Sender<PermissionResponse>>>;
 
 // ---------------------------------------------------------------------------
-// Read-only tool whitelist (auto-allow without prompting)
+// Shell commands that are intrinsically read-only
 // ---------------------------------------------------------------------------
 
-const WORKSPACE_READ_TOOLS: &[&str] = &["Grep", "Ls", "Find", "grep", "ls", "find"];
-const DEFAULT_ALLOWED_TOOLS: &[&str] = &["askUserQuestion"];
 const SAFE_SHELL_COMMANDS: &[&str] = &[
     "head", "tail", "cat", "grep", "sort", "pwd", "ls", "basename", "dirname", "realpath",
     "readlink", "stat", "file", "wc", "diff", "cmp", "comm", "cut", "tr", "uniq", "strings", "od",
@@ -476,14 +482,13 @@ impl PermissionPolicy {
         }
 
         // Yolo cannot bypass the hardcoded destructive-command block.
-        if self.mode == PermissionMode::Yolo || DEFAULT_ALLOWED_TOOLS.contains(&tool_name) {
+        if self.mode == PermissionMode::Yolo {
             return PolicyVerdict::Allow;
         }
 
-        // 工作区只读工具自动放行（不需要用户审批）。Read 还必须留在项目目录内。
-        if Self::is_workspace_read_request(tool_name, args, &self.workspace_root)
-            || WORKSPACE_READ_TOOLS.contains(&tool_name)
-        {
+        // Read remains intrinsically safe only when the requested path stays in
+        // the workspace. Other tool defaults are expressed as visible rules.
+        if Self::is_workspace_read_request(tool_name, args, &self.workspace_root) {
             return PolicyVerdict::Allow;
         }
 
@@ -1487,63 +1492,184 @@ fn request_targets(tool_name: &str, args: &Value) -> Vec<String> {
 
 /// Validate the persisted `Tool(pattern)` permission rule syntax.
 pub fn validate_permission_rule(rule: &str) -> Result<(), String> {
-    let Some((tool, pattern)) = rule.split_once('(') else {
-        return Err("permission rule must use Tool(pattern) syntax".to_owned());
-    };
-    let Some(pattern) = pattern.strip_suffix(')') else {
-        return Err("permission rule must end with ')'".to_owned());
-    };
-    if tool.trim().is_empty() || pattern.trim().is_empty() || pattern.contains('(') {
-        return Err("permission rule tool and target cannot be empty".to_owned());
+    let (tool, pattern) = rule_pattern(rule)?;
+    if tool == "*" && pattern == "*" {
+        return Err("*(*) is not allowed; use yolo mode to allow every tool".to_owned());
+    }
+    let regex_pattern = pattern
+        .strip_prefix("regex:")
+        .or_else(|| pattern.strip_prefix("$HOME/regex:"));
+    if let Some(regex_pattern) = regex_pattern {
+        if regex_pattern.is_empty() {
+            return Err("regular expression cannot be empty".to_owned());
+        }
+        Regex::new(&format!("^(?:{regex_pattern})$"))
+            .map_err(|error| format!("invalid permission rule regular expression: {error}"))?;
     }
     Ok(())
+}
+
+/// Validate scope-specific permission invariants before persistence.
+pub fn validate_permission_rule_for_scope(rule: &str, global: bool) -> Result<(), String> {
+    validate_permission_rule(rule)?;
+    let (tool, pattern) = rule_pattern(rule)?;
+    if global && (is_path_rule_tool(tool) || tool == "*") && !pattern.starts_with("$HOME/") {
+        return Err("global path rules must start with $HOME/".to_owned());
+    }
+    if let Some(home_relative) = pattern.strip_prefix("$HOME/") {
+        if !global {
+            return Err("$HOME/ path rules are only valid in global settings".to_owned());
+        }
+        if home_relative.split('/').any(|component| component == "..") {
+            return Err("global path rules cannot escape $HOME/ with '..'".to_owned());
+        }
+    }
+    Ok(())
+}
+
+fn rule_pattern(rule: &str) -> Result<(&str, &str), String> {
+    let Some(open) = rule.find('(') else {
+        return Err("permission rule must use Tool(pattern) syntax".to_owned());
+    };
+    let Some(pattern) = rule
+        .get(open + 1..)
+        .and_then(|value| value.strip_suffix(')'))
+    else {
+        return Err("permission rule must end with ')'".to_owned());
+    };
+    let tool = rule[..open].trim();
+    let pattern = pattern.trim();
+    if tool.is_empty() || pattern.is_empty() {
+        return Err("permission rule tool and target cannot be empty".to_owned());
+    }
+    Ok((tool, pattern))
+}
+
+fn is_path_rule_tool(tool: &str) -> bool {
+    matches!(
+        tool.to_ascii_lowercase().as_str(),
+        "read" | "write" | "edit"
+    )
 }
 
 fn rule_matches(rule: &str, tool_name: &str, target: &str, workspace_root: &Path) -> bool {
     if validate_permission_rule(rule).is_err() {
         return false;
     }
-    let Some((tool, pattern)) = rule.split_once('(') else {
-        return false;
-    };
-    let Some(pattern) = pattern.strip_suffix(')') else {
+    let Ok((tool, pattern)) = rule_pattern(rule) else {
         return false;
     };
     if tool != "*" && !tool.eq_ignore_ascii_case(tool_name) {
         return false;
     }
-    if pattern.trim() == "*" {
+    if pattern == "*" {
         return true;
     }
     if matches!(tool_name, "Bash" | "bash") {
-        let prefix = pattern.trim_end().strip_suffix('*').map(str::trim_end);
-        return prefix.map_or_else(
-            || target.trim() == pattern.trim(),
-            |prefix| {
-                target.trim() == prefix
-                    || target
-                        .trim()
-                        .strip_prefix(prefix)
-                        .and_then(|suffix| suffix.chars().next())
-                        .is_some_and(char::is_whitespace)
-            },
-        );
+        if let Some(pattern) = pattern.strip_prefix("regex:") {
+            return Regex::new(&format!("^(?:{pattern})$"))
+                .is_ok_and(|regex| regex.is_match(target.trim()));
+        }
+        return glob_regex(pattern, false).is_ok_and(|regex| regex.is_match(target.trim()));
     }
 
-    let target = normalize_rule_path(target, workspace_root);
-    let pattern = pattern.trim();
-    if let Some(extension) = pattern.rsplit_once("/*.") {
-        let parent = normalize_rule_path(extension.0, workspace_root);
-        let target_path = Path::new(&target);
-        return target_path.parent().is_some_and(|value| {
-            normalize_rule_path(&value.to_string_lossy(), workspace_root) == parent
-        }) && target_path.extension().and_then(|value| value.to_str()) == Some(extension.1);
+    if is_path_rule_tool(tool_name) {
+        return path_rule_matches(pattern, target, workspace_root);
     }
-    if let Some(parent) = pattern.strip_suffix("/*") {
-        let parent = normalize_rule_path(parent, workspace_root);
-        return target.starts_with(&format!("{}/", parent.trim_end_matches('/')));
+    if let Some(pattern) = pattern.strip_prefix("regex:") {
+        return Regex::new(&format!("^(?:{pattern})$"))
+            .is_ok_and(|regex| regex.is_match(target.trim()));
     }
-    target == normalize_rule_path(pattern, workspace_root)
+    glob_regex(pattern, false).is_ok_and(|regex| regex.is_match(target.trim()))
+}
+
+fn glob_regex(pattern: &str, path_aware: bool) -> Result<Regex, regex::Error> {
+    let mut output = String::from("^");
+    let characters: Vec<char> = pattern.chars().collect();
+    let mut index = 0;
+    while index < characters.len() {
+        match characters[index] {
+            '*' if characters.get(index + 1) == Some(&'*') => {
+                index += 1;
+                if path_aware && characters.get(index + 1) == Some(&'/') {
+                    index += 1;
+                    output.push_str("(?:.*/)?");
+                } else {
+                    output.push_str(".*");
+                }
+            }
+            '*' => output.push_str(if path_aware { "[^/]*" } else { ".*" }),
+            '?' => output.push_str(if path_aware { "[^/]" } else { "." }),
+            character => output.push_str(&regex::escape(&character.to_string())),
+        }
+        index += 1;
+    }
+    output.push('$');
+    Regex::new(&output)
+}
+
+fn path_rule_matches(pattern: &str, target: &str, workspace_root: &Path) -> bool {
+    let normalized_target = resolved_rule_path(target, workspace_root);
+    let (pattern, candidate) = if let Some(home_pattern) = pattern.strip_prefix("$HOME/") {
+        let Some(home) = dirs_next::home_dir() else {
+            return false;
+        };
+        let Some(relative) = relative_normalized_path(&normalized_target, &home) else {
+            return false;
+        };
+        (home_pattern.to_owned(), relative)
+    } else if Path::new(pattern).is_absolute() {
+        (
+            resolve_absolute_glob_pattern(pattern, workspace_root),
+            normalized_target,
+        )
+    } else {
+        let Some(relative) = relative_normalized_path(&normalized_target, workspace_root) else {
+            return false;
+        };
+        (pattern.to_owned(), relative)
+    };
+    if let Some(pattern) = pattern.strip_prefix("regex:") {
+        return Regex::new(&format!("^(?:{pattern})$"))
+            .is_ok_and(|regex| regex.is_match(&candidate));
+    }
+    glob_regex(&pattern, true).is_ok_and(|regex| regex.is_match(&candidate))
+}
+
+fn resolve_absolute_glob_pattern(pattern: &str, workspace_root: &Path) -> String {
+    let wildcard = pattern
+        .char_indices()
+        .find_map(|(index, character)| matches!(character, '*' | '?').then_some(index));
+    let Some(wildcard) = wildcard else {
+        return resolved_rule_path(pattern, workspace_root);
+    };
+    let boundary = pattern[..wildcard].rfind('/').map_or(0, |index| index + 1);
+    let prefix = &pattern[..boundary];
+    let suffix = &pattern[boundary..];
+    format!(
+        "{}/{}",
+        resolved_rule_path(prefix, workspace_root).trim_end_matches('/'),
+        suffix
+    )
+}
+
+fn relative_normalized_path(target: &str, base: &Path) -> Option<String> {
+    let base = resolved_rule_path(&base.to_string_lossy(), base);
+    let target = target.trim_end_matches('/');
+    let base = base.trim_end_matches('/');
+    if target == base {
+        return Some(String::new());
+    }
+    target
+        .strip_prefix(base)
+        .and_then(|suffix| suffix.strip_prefix('/'))
+        .map(str::to_owned)
+}
+
+fn resolved_rule_path(path: &str, workspace_root: &Path) -> String {
+    PermissionPolicy::resolve_scoped_path(path, workspace_root)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 fn normalize_rule_path(path: &str, workspace_root: &Path) -> String {

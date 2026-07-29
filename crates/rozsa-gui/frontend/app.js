@@ -51,6 +51,8 @@ let permissionSettings = null;
 const capabilityScope = { skills: 'global', tools: 'global' };
 let permissionScope = 'global';
 let pendingPermissionRuleKind = 'allow';
+let permissionToolOptions = [];
+let permissionToolActiveIndex = -1;
 let keyBindingDefinitions = [
   { action: 'toggleThinking', title: 'Toggle thinking', description: 'Expand or collapse thinking blocks', defaultBinding: 'Ctrl+T', binding: 'Ctrl+T', scope: 'global' },
   { action: 'openModelPicker', title: 'Choose model', description: 'Open the model picker', defaultBinding: 'Ctrl+P', binding: 'Ctrl+P', scope: 'global' },
@@ -2837,6 +2839,18 @@ function effectivePermissionRules(kind) {
   return permissionSettings?.[`effective${kind[0].toUpperCase()}${kind.slice(1)}`] || [];
 }
 
+function defaultPermissionRules(kind) {
+  return permissionSettings?.[`default${kind[0].toUpperCase()}${kind.slice(1)}`] || [];
+}
+
+function displayedPermissionRules(kind) {
+  const local = permissionLayerRules(kind);
+  if (local != null) return [...local];
+  return permissionScope === 'global'
+    ? [...defaultPermissionRules(kind)]
+    : [...effectivePermissionRules(kind)];
+}
+
 function renderPermissionSettings() {
   if (!permissionSettings) return;
   const scopeHost = document.getElementById('permissionScope');
@@ -2857,23 +2871,18 @@ function renderPermissionSettings() {
 
   const mode = document.getElementById('settingsPermMode');
   if (mode) {
-    const localMode = permissionScope === 'global'
-      ? permissionSettings.globalMode
-      : permissionSettings.projectMode;
-    mode.innerHTML = permissionScope === 'project'
-      ? '<option value="inherit">Inherit from global</option>'
-      : '<option value="inherit">Use default (on-request)</option>';
-    mode.insertAdjacentHTML('beforeend',
+    mode.innerHTML =
       '<option value="on-request">On request</option>' +
       '<option value="auto-approve">Auto approve (not implemented)</option>' +
-      '<option value="yolo">Yolo</option>');
-    mode.value = localMode == null ? 'inherit' : localMode;
+      '<option value="yolo">Yolo</option>';
+    mode.value = permissionScope === 'global'
+      ? permissionSettings.globalEffectiveMode
+      : permissionSettings.effectiveMode;
     mode.title = `Effective: ${permissionSettings.effectiveMode}`;
     mode.onchange = async () => {
-      const requested = mode.value === 'inherit' ? null : mode.value;
       try {
         permissionSettings = await invoke('update_permission_mode', {
-          scope: permissionScope, mode: requested,
+          scope: permissionScope, mode: mode.value,
         });
         setPermissionSettingsError('');
       } catch (error) {
@@ -2897,108 +2906,295 @@ function renderPermissionRuleList(kind) {
   const host = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}List`);
   if (!host) return;
   host.replaceChildren();
+  host.dataset.permissionKind = kind;
   const localRules = permissionLayerRules(kind);
-  const localSet = new Set(localRules || []);
-  const effectiveRules = effectivePermissionRules(kind);
-  const rows = permissionScope === 'project'
-    ? effectiveRules.map(rule => ({ rule, inherited: !localSet.has(rule) }))
-    : (localRules || []).map(rule => ({ rule, inherited: false }));
+  const inherited = localRules == null;
+  const rows = displayedPermissionRules(kind);
   if (!rows.length) {
     const empty = document.createElement('div');
     empty.className = 'permission-rule-empty';
     empty.textContent = 'No rules configured';
     host.appendChild(empty);
   }
-  for (const { rule, inherited } of rows) {
+  for (const rule of rows) {
     const row = document.createElement('div');
     row.className = 'permission-rule-row';
+    wirePermissionRulePointerDrag(row, kind, rule);
     const copy = document.createElement('div');
     copy.className = 'permission-rule-copy';
-    copy.innerHTML = `<span class="permission-rule-tool">${escapeHtml(ruleTool(rule))}</span>` +
-      `<span class="permission-rule-target">${escapeHtml(ruleTarget(rule))}</span>`;
+    copy.textContent = rule;
     row.appendChild(copy);
     if (inherited) {
       const badge = document.createElement('span');
       badge.className = 'capability-inherited';
-      badge.textContent = 'Inherited';
+      badge.textContent = permissionScope === 'global' ? 'Default' : 'Inherited';
       row.appendChild(badge);
-    } else {
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'permission-rule-delete';
-      remove.setAttribute('aria-label', `Delete ${rule}`);
-      remove.textContent = 'Delete';
-      remove.onclick = () => removePermissionRule(kind, rule);
-      row.appendChild(remove);
     }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'permission-rule-delete';
+    remove.setAttribute('aria-label', `Delete ${rule}`);
+    remove.textContent = 'Delete';
+    remove.onclick = () => removePermissionRule(kind, rule);
+    row.appendChild(remove);
     host.appendChild(row);
   }
   const reset = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}Reset`);
-  if (reset) reset.hidden = permissionScope !== 'project' || localRules == null;
+  if (reset) {
+    reset.hidden = localRules == null;
+    reset.textContent = permissionScope === 'global' ? 'Restore defaults' : 'Restore inheritance';
+  }
 }
 
-function ruleTool(rule) {
-  return rule.slice(0, rule.indexOf('(')) || rule;
-}
-
-function ruleTarget(rule) {
-  const start = rule.indexOf('(');
-  return start < 0 ? '' : rule.slice(start + 1, -1);
+function wirePermissionRulePointerDrag(row, kind, rule) {
+  let origin = null;
+  let dragging = false;
+  row.onpointerdown = event => {
+    if (event.button !== 0 || event.target.closest('button')) return;
+    event.preventDefault();
+    origin = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    row.setPointerCapture(event.pointerId);
+  };
+  row.onpointermove = event => {
+    if (!origin || origin.pointerId !== event.pointerId) return;
+    if (!dragging && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 5) return;
+    dragging = true;
+    row.classList.add('permission-rule-dragging');
+    document.querySelectorAll('.permission-rule-drop-target')
+      .forEach(element => element.classList.remove('permission-rule-drop-target'));
+    const target = document.elementFromPoint(event.clientX, event.clientY)
+      ?.closest('.permission-rule-list');
+    if (target && target !== row.parentElement) target.classList.add('permission-rule-drop-target');
+  };
+  const finish = event => {
+    if (!origin || origin.pointerId !== event.pointerId) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)
+      ?.closest('.permission-rule-list');
+    const targetKind = target?.dataset.permissionKind;
+    if (dragging && targetKind && targetKind !== kind) {
+      void movePermissionRule(kind, targetKind, rule);
+    }
+    origin = null;
+    dragging = false;
+    row.classList.remove('permission-rule-dragging');
+    document.querySelectorAll('.permission-rule-drop-target')
+      .forEach(element => element.classList.remove('permission-rule-drop-target'));
+  };
+  row.onpointerup = finish;
+  row.onpointercancel = finish;
 }
 
 function openPermissionRuleEditor(kind) {
+  closePermissionRuleEditor();
   pendingPermissionRuleKind = kind;
-  const editor = document.getElementById('permissionRuleEditor');
+  const host = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}List`);
+  const template = document.getElementById('permissionRuleEditorTemplate');
+  if (!host || !template) return;
+  host.appendChild(template.content.cloneNode(true));
   const tool = document.getElementById('permissionRuleTool');
-  if (!editor || !tool) return;
-  const tools = capabilitySettings?.tools || [];
-  tool.replaceChildren();
-  const all = document.createElement('option');
-  all.value = '*';
-  all.textContent = 'All tools';
-  tool.appendChild(all);
-  for (const item of tools) {
-    const option = document.createElement('option');
-    option.value = item.name;
-    option.textContent = item.label;
-    tool.appendChild(option);
-  }
-  document.getElementById('permissionRuleTargetType').value = 'all';
-  document.getElementById('permissionRuleTarget').value = '';
-  editor.hidden = false;
-  updatePermissionRuleTargetVisibility();
+  if (!tool) return;
+  setupPermissionToolCombobox(capabilitySettings?.tools || []);
+  const regexp = document.getElementById('permissionRuleRegexp');
+  setSettingSwitch(regexp, false);
+  regexp.onclick = () => {
+    setSettingSwitch(regexp, !isSettingSwitchOn(regexp));
+    highlightPermissionRulePattern();
+    updatePermissionRuleHint();
+  };
+  const input = document.getElementById('permissionRuleTarget');
+  input.oninput = highlightPermissionRulePattern;
+  input.onkeydown = event => {
+    if (event.key === 'Enter') event.preventDefault();
+  };
+  input.onpaste = event => {
+    event.preventDefault();
+    document.execCommand('insertText', false, event.clipboardData.getData('text/plain').replace(/[\r\n]+/g, ' '));
+  };
+  updatePermissionRuleHint();
+  tool.focus();
 }
 
 function closePermissionRuleEditor() {
   const editor = document.getElementById('permissionRuleEditor');
-  if (editor) editor.hidden = true;
+  if (editor) editor.remove();
 }
 
-function updatePermissionRuleTargetVisibility() {
-  const type = document.getElementById('permissionRuleTargetType')?.value;
+function isPathPermissionTool(tool) {
+  return ['read', 'write', 'edit'].includes(String(tool || '').toLowerCase());
+}
+
+function setupPermissionToolCombobox(tools) {
+  const input = document.getElementById('permissionRuleTool');
+  const button = document.getElementById('permissionRuleToolButton');
+  const combobox = input?.closest('.permission-tool-combobox');
+  if (!input || !button || !combobox) return;
+  permissionToolOptions = tools.map(item => ({ name: item.name, label: item.label }));
+  permissionToolActiveIndex = -1;
+  input.oninput = () => {
+    renderPermissionToolOptions(true);
+    updatePermissionRuleHint();
+  };
+  input.onfocus = () => renderPermissionToolOptions(true, true);
+  input.onclick = () => renderPermissionToolOptions(true);
+  input.onkeydown = event => {
+    const matches = matchingPermissionTools();
+    if (event.key === 'Tab' && input.value && matches.length) {
+      event.preventDefault();
+      selectPermissionTool(matches[0]);
+      document.getElementById('permissionRuleTarget')?.focus();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!matches.length) return;
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      permissionToolActiveIndex =
+        (permissionToolActiveIndex + direction + matches.length) % matches.length;
+      renderPermissionToolOptions(true);
+      return;
+    }
+    if (event.key === 'Enter' && permissionToolActiveIndex >= 0 && matches[permissionToolActiveIndex]) {
+      event.preventDefault();
+      selectPermissionTool(matches[permissionToolActiveIndex]);
+      document.getElementById('permissionRuleTarget')?.focus();
+      return;
+    }
+    if (event.key === 'Escape') closePermissionToolOptions();
+  };
+  button.onclick = () => {
+    const list = document.getElementById('permissionRuleToolList');
+    if (list?.hidden) {
+      renderPermissionToolOptions(true, true);
+    } else {
+      closePermissionToolOptions();
+    }
+  };
+  combobox.onfocusout = event => {
+    if (!combobox.contains(event.relatedTarget)) {
+      setTimeout(closePermissionToolOptions, 100);
+    }
+  };
+  renderPermissionToolOptions(false, true);
+}
+
+function matchingPermissionTools(showAll = false) {
+  const query = document.getElementById('permissionRuleTool')?.value.trim().toLowerCase() || '';
+  if (showAll || !query) return permissionToolOptions;
+  return permissionToolOptions.filter(item =>
+    item.name.toLowerCase().startsWith(query) || item.label.toLowerCase().startsWith(query)
+  );
+}
+
+function renderPermissionToolOptions(open, showAll = false) {
+  const input = document.getElementById('permissionRuleTool');
+  const list = document.getElementById('permissionRuleToolList');
+  if (!input || !list) return;
+  const matches = matchingPermissionTools(showAll);
+  if (permissionToolActiveIndex >= matches.length) permissionToolActiveIndex = -1;
+  list.replaceChildren();
+  matches.forEach((item, index) => {
+    const option = document.createElement('div');
+    option.className = 'permission-tool-option';
+    option.classList.toggle('active', index === permissionToolActiveIndex);
+    option.setAttribute('role', 'option');
+    option.textContent = item.label;
+    option.onmousedown = event => {
+      event.preventDefault();
+      selectPermissionTool(item);
+    };
+    list.appendChild(option);
+  });
+  list.hidden = !open || matches.length === 0;
+  input.setAttribute('aria-expanded', String(!list.hidden));
+}
+
+function closePermissionToolOptions() {
+  const input = document.getElementById('permissionRuleTool');
+  const list = document.getElementById('permissionRuleToolList');
+  if (list) list.hidden = true;
+  if (input) input.setAttribute('aria-expanded', 'false');
+  permissionToolActiveIndex = -1;
+}
+
+function selectPermissionTool(item) {
+  const input = document.getElementById('permissionRuleTool');
+  if (!input) return;
+  input.value = item.label;
+  closePermissionToolOptions();
+  updatePermissionRuleHint();
+}
+
+function updatePermissionRuleHint() {
+  const tool = document.getElementById('permissionRuleTool')?.value || '';
+  const input = document.getElementById('permissionRuleTarget');
+  const hint = document.getElementById('permissionRuleHint');
+  const prefix = document.getElementById('permissionRulePathPrefix');
+  const regexp = isSettingSwitchOn(document.getElementById('permissionRuleRegexp'));
+  if (!input || !hint) return;
+  if (prefix) prefix.hidden = permissionScope !== 'global' || !isPathPermissionTool(tool);
+  if (isPathPermissionTool(tool)) {
+    input.dataset.placeholder = permissionScope === 'global'
+      ? 'path/**/*.md'
+      : 'docs/**/*.md';
+    hint.textContent = permissionScope === 'global'
+      ? `$HOME/ is fixed. ${regexp ? 'The regular expression applies only to the Home-relative suffix and must match it fully.' : '* matches one path segment; ** matches recursively.'}`
+      : `${regexp ? 'The regular expression must fully match the normalized project-relative path.' : '* matches one path segment; ** matches recursively.'}`;
+  } else {
+    input.dataset.placeholder = regexp ? '^cargo (test|check)( .*)?$' : '*';
+    hint.textContent = regexp
+      ? 'The regular expression must fully match each command segment or tool target.'
+      : 'Use * for every invocation, or include * inside a command pattern.';
+  }
+}
+
+function highlightPermissionRulePattern() {
   const input = document.getElementById('permissionRuleTarget');
   if (!input) return;
-  input.hidden = type === 'all';
-  input.placeholder = type === 'directory'
-    ? 'Directory, for example src'
-    : type === 'prefix'
-      ? 'Command prefix, for example cargo test'
-      : 'Exact command or path';
+  const text = getInputText(input);
+  const regexp = isSettingSwitchOn(document.getElementById('permissionRuleRegexp'));
+  const special = regexp ? /[\\^$.*+?()[\]{}|]/g : /\*/g;
+  const ranges = [];
+  for (const match of text.matchAll(special)) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  renderRichInputHighlights(input, ranges);
 }
 
 async function savePermissionRule() {
-  const tool = document.getElementById('permissionRuleTool')?.value;
-  const type = document.getElementById('permissionRuleTargetType')?.value;
-  const rawTarget = document.getElementById('permissionRuleTarget')?.value.trim() || '';
-  if (!tool || (type !== 'all' && !rawTarget)) {
-    showError('Choose a tool and target before adding the rule.');
+  const toolInput = document.getElementById('permissionRuleTool')?.value.trim() || '';
+  const matchedTool = permissionToolOptions.find(item =>
+    item.name.toLowerCase() === toolInput.toLowerCase()
+      || item.label.toLowerCase() === toolInput.toLowerCase()
+  );
+  const tool = matchedTool?.name;
+  const input = document.getElementById('permissionRuleTarget');
+  const rawTarget = input ? getInputText(input).trim() : '';
+  const regexp = isSettingSwitchOn(document.getElementById('permissionRuleRegexp'));
+  if (!tool) {
+    setPermissionSettingsError('Choose a tool from the suggestions before adding the rule.');
     return;
   }
-  let target = type === 'all' ? '*' : rawTarget;
-  if (type === 'prefix') target = `${rawTarget} *`;
-  if (type === 'directory') target = `${rawTarget.replace(/\/$/, '')}/*`;
+  let target = rawTarget || '*';
+  if (!regexp && permissionScope === 'global' && isPathPermissionTool(tool)) {
+    target = `$HOME/${target.replace(/^\/+/, '')}`;
+  }
+  if (regexp) {
+    if (!rawTarget) {
+      setPermissionSettingsError('Enter a regular expression before adding the rule.');
+      return;
+    }
+    if (permissionScope === 'global' && isPathPermissionTool(tool)) {
+      target = `$HOME/regex:${rawTarget.replace(/^\/+/, '')}`;
+    } else {
+      target = `regex:${rawTarget}`;
+    }
+  }
   const rule = `${tool}(${target})`;
-  const local = permissionLayerRules(pendingPermissionRuleKind) || [];
+  if (rule === '*(*)') {
+    setPermissionSettingsError('*(*) is not allowed. Use yolo mode to allow every tool.');
+    return;
+  }
+  const local = displayedPermissionRules(pendingPermissionRuleKind);
   if (local.includes(rule)) {
     closePermissionRuleEditor();
     return;
@@ -3008,7 +3204,7 @@ async function savePermissionRule() {
 }
 
 async function removePermissionRule(kind, rule) {
-  const local = permissionLayerRules(kind) || [];
+  const local = displayedPermissionRules(kind);
   await replacePermissionRules(kind, local.filter(candidate => candidate !== rule));
 }
 
@@ -3025,6 +3221,27 @@ async function replacePermissionRules(kind, rules) {
     renderPermissionSettings();
   } catch (error) {
     setPermissionSettingsError(`Failed to update permission rules: ${String(error)}`);
+  }
+}
+
+async function movePermissionRule(fromKind, toKind, rule) {
+  if (fromKind === toKind) return;
+  const ruleSet = Object.fromEntries(
+    ['deny', 'ask', 'allow'].map(kind => [kind, displayedPermissionRules(kind)])
+  );
+  ruleSet[fromKind] = ruleSet[fromKind].filter(candidate => candidate !== rule);
+  if (!ruleSet[toKind].includes(rule)) ruleSet[toKind].push(rule);
+  try {
+    permissionSettings = await invoke('update_permission_rule_set', {
+      scope: permissionScope,
+      deny: ruleSet.deny,
+      ask: ruleSet.ask,
+      allow: ruleSet.allow,
+    });
+    setPermissionSettingsError('');
+    renderPermissionSettings();
+  } catch (error) {
+    setPermissionSettingsError(`Failed to move permission rule: ${String(error)}`);
   }
 }
 
@@ -3914,18 +4131,22 @@ function updateInputHighlight(ranges) {
   inputHighlightRanges = Array.isArray(ranges) ? ranges : [];
   const input = document.getElementById('msgInput');
   if (!input || isInputComposing) return;
+  renderRichInputHighlights(input, inputHighlightRanges, true);
+}
+
+function renderRichInputHighlights(input, ranges, resize = false) {
   const text = getInputText(input);
   const selection = getInputSelection(input);
-  if (inputHighlightRanges.length === 0) {
+  if (!Array.isArray(ranges) || ranges.length === 0) {
     setInputText(input, text);
     setInputSelection(input, selection.start, selection.end);
-    autoResize(input);
+    if (resize) autoResize(input);
     return;
   }
   const chars = Array.from(text);
   const fragment = document.createDocumentFragment();
   let cursor = 0;
-  const normalized = inputHighlightRanges
+  const normalized = ranges
     .map(range => ({
       start: Math.max(0, Math.min(chars.length, Number(range.start || 0))),
       end: Math.max(0, Math.min(chars.length, Number(range.end || 0))),
@@ -3944,7 +4165,7 @@ function updateInputHighlight(ranges) {
   fragment.appendChild(document.createTextNode(chars.slice(cursor).join('')));
   input.replaceChildren(fragment);
   setInputSelection(input, selection.start, selection.end);
-  autoResize(input);
+  if (resize) autoResize(input);
 }
 
 function syncInputHighlightScroll() {

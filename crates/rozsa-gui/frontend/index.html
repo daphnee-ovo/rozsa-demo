@@ -1792,12 +1792,13 @@ body.hide-thinking .thinking-block { display: none; }
 .permission-rule-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
 .permission-rule-heading-actions { display: flex; gap: 4px; }
 .permission-rule-add { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent); }
-.permission-rule-list { border: 1px solid var(--border); border-radius: 11px; padding: 0 14px; }
+.permission-rule-list { border: 1px solid var(--border); border-radius: 11px; padding: 0 14px; transition: border-color 0.14s, background 0.14s; }
+.permission-rule-list.permission-rule-drop-target { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
 .permission-rule-row { min-height: 52px; display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--border); }
 .permission-rule-row:first-child { border-top: 0; }
-.permission-rule-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.permission-rule-tool { font-size: 13px; font-weight: 550; }
-.permission-rule-target { color: var(--muted); font: 11px var(--font-mono); overflow-wrap: anywhere; }
+.permission-rule-row { cursor: grab; user-select: none; }
+.permission-rule-row.permission-rule-dragging { opacity: 0.45; }
+.permission-rule-copy { min-width: 0; flex: 1; color: var(--fg); font: 12px var(--font-mono); overflow-wrap: anywhere; }
 .permission-rule-delete { color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
 .permission-rule-empty { padding: 18px 0; color: var(--muted); font-size: 11px; }
 .permission-mode-row { margin-top: 10px; }
@@ -1812,15 +1813,77 @@ body.hide-thinking .thinking-block { display: none; }
 }
 .permission-settings-error[hidden] { display: none; }
 .permission-rule-editor {
-  margin-top: 18px;
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-  border-radius: 11px;
-  background: var(--surface);
+  margin: 0 -14px;
+  padding: 13px 14px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--code-bg) 42%, var(--surface));
 }
 .permission-rule-editor[hidden] { display: none; }
-.permission-rule-editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.permission-rule-editor-grid .setting-input { grid-column: 1 / -1; width: 100%; }
+.permission-rule-editor-grid { display: grid; grid-template-columns: minmax(130px, .72fr) minmax(220px, 1.5fr) auto; gap: 10px; align-items: center; }
+.permission-tool-combobox { position: relative; display: flex; min-width: 0; }
+.permission-tool-combobox .setting-input { width: 100%; padding-right: 30px; }
+.permission-tool-combobox-button {
+  position: absolute;
+  inset: 1px 1px 1px auto;
+  width: 28px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.permission-tool-options {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 7px 24px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.permission-tool-options[hidden] { display: none; }
+.permission-tool-option { padding: 6px 7px; border-radius: 5px; color: var(--fg); font-size: 11px; cursor: pointer; }
+.permission-tool-option.active, .permission-tool-option:hover { background: var(--accent-bg); color: var(--accent); }
+.permission-rule-pattern-wrap {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.permission-rule-pattern-wrap:focus-within { border-color: var(--accent); }
+.permission-rule-path-prefix {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 9px;
+  color: var(--muted);
+  font: 12px var(--font-mono);
+  user-select: none;
+}
+.permission-rule-path-prefix[hidden] { display: none; }
+.permission-rule-pattern {
+  min-width: 0;
+  flex: 1;
+  padding: 7px 9px;
+  color: var(--fg);
+  font: 12px/1.45 var(--font-mono);
+  white-space: pre;
+  overflow-x: auto;
+}
+.permission-rule-pattern:focus { outline: none; }
+.permission-rule-pattern:empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; }
+.permission-regexp-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.permission-regexp-toggle .setting-toggle { transform: scale(.86); transform-origin: right center; }
+.permission-rule-editor-hint { margin-top: 8px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
 .permission-rule-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .permission-rule-editor-actions button { border: 1px solid var(--border); border-radius: 7px; padding: 6px 11px; background: var(--surface); color: var(--fg); cursor: pointer; }
 .permission-rule-editor-actions .primary { border-color: var(--accent); background: var(--accent); color: white; }
@@ -3230,20 +3293,22 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="permission-rule-heading"><span class="settings-group-label">Allow</span><span class="permission-rule-heading-actions"><button class="permission-rule-reset" id="permissionAllowReset" type="button" onclick="resetPermissionRules('allow')" hidden>Restore inheritance</button><button class="permission-rule-add" type="button" onclick="openPermissionRuleEditor('allow')">Add rule</button></span></div>
           <div class="permission-rule-list" id="permissionAllowList"></div>
         </section>
-        <div class="permission-rule-editor" id="permissionRuleEditor" hidden>
+        <template id="permissionRuleEditorTemplate">
+        <div class="permission-rule-editor" id="permissionRuleEditor">
           <div class="settings-group-label">Add permission rule</div>
           <div class="permission-rule-editor-grid">
-            <select class="setting-select" id="permissionRuleTool" aria-label="Rule tool"></select>
-            <select class="setting-select" id="permissionRuleTargetType" aria-label="Rule target type" onchange="updatePermissionRuleTargetVisibility()">
-              <option value="all">Every invocation</option>
-              <option value="exact">Exact target</option>
-              <option value="prefix">Command prefix</option>
-              <option value="directory">Directory</option>
-            </select>
-            <input class="setting-input" id="permissionRuleTarget" aria-label="Rule target">
+            <div class="permission-tool-combobox">
+              <input class="setting-input" id="permissionRuleTool" role="combobox" aria-label="Rule tool" aria-autocomplete="list" aria-expanded="false" aria-controls="permissionRuleToolList" autocomplete="off">
+              <button class="permission-tool-combobox-button" id="permissionRuleToolButton" type="button" aria-label="Show tools">⌄</button>
+              <div class="permission-tool-options" id="permissionRuleToolList" role="listbox" hidden></div>
+            </div>
+            <div class="permission-rule-pattern-wrap"><span class="permission-rule-path-prefix" id="permissionRulePathPrefix" hidden>$HOME/</span><div class="permission-rule-pattern" id="permissionRuleTarget" contenteditable="true" role="textbox" aria-label="Rule pattern" aria-multiline="false" data-placeholder="Pattern; * matches any text"></div></div>
+            <label class="permission-regexp-toggle">RegExp <button class="setting-toggle" id="permissionRuleRegexp" type="button" role="switch" aria-checked="false" aria-label="Use regular expression"></button></label>
           </div>
+          <div class="permission-rule-editor-hint" id="permissionRuleHint"></div>
           <div class="permission-rule-editor-actions"><button type="button" onclick="closePermissionRuleEditor()">Cancel</button><button class="primary" type="button" onclick="savePermissionRule()">Add rule</button></div>
         </div>
+        </template>
       </div>
     </div>
     </div>

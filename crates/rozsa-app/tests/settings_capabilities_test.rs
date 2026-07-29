@@ -97,7 +97,7 @@ fn layered_permission_updates_preserve_settings_and_remove_retired_fields() {
         .unwrap();
     assert_eq!(
         manager.resolved().permissions.allow,
-        vec!["Read(*)".to_owned(), "Edit(src/*)".to_owned()]
+        vec!["Edit(src/*)".to_owned()]
     );
     assert_eq!(manager.resolved().transport, "sse");
 
@@ -116,6 +116,67 @@ fn layered_permission_updates_preserve_settings_and_remove_retired_fields() {
         manager.resolved().permissions.allow,
         vec!["Read(*)".to_owned()]
     );
+}
+
+#[test]
+fn permission_rule_set_moves_are_written_atomically() {
+    let temp = tempdir().unwrap();
+    let global = temp.path().join("settings.json");
+    let mut manager = SettingsManager::load(global.clone(), None, None).unwrap();
+
+    manager
+        .set_permission_rule_set(
+            SettingsScope::Global,
+            vec!["Bash(cargo publish *)".to_owned()],
+            vec![],
+            vec!["ls(*)".to_owned()],
+        )
+        .unwrap();
+
+    let persisted: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(global).unwrap()).unwrap();
+    assert_eq!(
+        persisted["permission"]["deny"],
+        serde_json::json!(["Bash(cargo publish *)"])
+    );
+    assert_eq!(persisted["permission"]["ask"], serde_json::json!([]));
+    assert_eq!(
+        persisted["permission"]["allow"],
+        serde_json::json!(["ls(*)"])
+    );
+    assert_eq!(
+        manager.resolved().permissions.allow,
+        vec!["ls(*)".to_owned()]
+    );
+}
+
+#[test]
+fn global_path_and_universal_rules_fail_without_changing_the_file() {
+    let temp = tempdir().unwrap();
+    let global = temp.path().join("settings.json");
+    fs::write(&global, r#"{"transport":"sse"}"#).unwrap();
+    let before = fs::read_to_string(&global).unwrap();
+    let mut manager = SettingsManager::load(global.clone(), None, None).unwrap();
+
+    assert!(
+        manager
+            .set_permission_rule_overrides(
+                SettingsScope::Global,
+                PermissionRuleKind::Allow,
+                Some(vec!["Edit(src/**)".to_owned()]),
+            )
+            .is_err()
+    );
+    assert!(
+        manager
+            .set_permission_rule_overrides(
+                SettingsScope::Global,
+                PermissionRuleKind::Allow,
+                Some(vec!["*(*)".to_owned()]),
+            )
+            .is_err()
+    );
+    assert_eq!(fs::read_to_string(global).unwrap(), before);
 }
 
 #[test]

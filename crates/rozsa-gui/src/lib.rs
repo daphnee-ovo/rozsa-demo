@@ -199,6 +199,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::get_permission_settings,
             commands::update_permission_mode,
             commands::update_permission_rules,
+            commands::update_permission_rule_set,
             commands::get_key_bindings,
             commands::update_key_binding,
             commands::reset_key_binding,

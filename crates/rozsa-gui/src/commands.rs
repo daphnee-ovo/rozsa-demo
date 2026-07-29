@@ -39,6 +39,7 @@
 // ├── get_permission_settings()
 // ├── update_permission_mode()
 // ├── update_permission_rules()
+// ├── update_permission_rule_set()
 // ├── apply_resolved_permissions()
 // ├── permission_settings_snapshot()
 // ├── get_settings()
@@ -150,7 +151,7 @@ use tauri::{AppHandle, Manager, State};
 
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::model_registry::ModelRegistry;
-use rozsa_app::permissions::{PermissionMode, PermissionResponse, validate_permission_rule};
+use rozsa_app::permissions::{PermissionMode, PermissionResponse};
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::{CapabilityKind, PermissionRuleKind, SettingsScope};
 use rozsa_app::skills::SkillRegistry;
@@ -1478,15 +1479,27 @@ pub async fn update_permission_rules(
     kind: PermissionRuleKind,
     rules: Option<Vec<String>>,
 ) -> Result<PermissionSettingsSnapshot, String> {
-    if let Some(rules) = rules.as_ref() {
-        for rule in rules {
-            validate_permission_rule(rule)?;
-        }
-    }
     let mut manager = state.shared.settings_manager.clone();
     manager.reload().map_err(|error| error.to_string())?;
     manager
         .set_permission_rule_overrides(scope, kind, rules)
+        .map_err(|error| error.to_string())?;
+    apply_resolved_permissions(&state, &manager).await?;
+    permission_settings_snapshot(&state).await
+}
+
+#[tauri::command]
+pub async fn update_permission_rule_set(
+    state: State<'_, GuiState>,
+    scope: SettingsScope,
+    deny: Vec<String>,
+    ask: Vec<String>,
+    allow: Vec<String>,
+) -> Result<PermissionSettingsSnapshot, String> {
+    let mut manager = state.shared.settings_manager.clone();
+    manager.reload().map_err(|error| error.to_string())?;
+    manager
+        .set_permission_rule_set(scope, deny, ask, allow)
         .map_err(|error| error.to_string())?;
     apply_resolved_permissions(&state, &manager).await?;
     permission_settings_snapshot(&state).await
@@ -1512,17 +1525,23 @@ async fn permission_settings_snapshot(
     let mut manager = state.shared.settings_manager.clone();
     manager.reload().map_err(|error| error.to_string())?;
     let permissions = manager.resolved().permissions.clone();
+    let defaults = rozsa_app::settings::schema::PermissionSettings::default();
+    let global_mode = manager
+        .permission_mode_override(SettingsScope::Global)
+        .map_err(|error| error.to_string())?;
     Ok(PermissionSettingsSnapshot {
         effective_mode: permissions.mode,
-        global_mode: manager
-            .permission_mode_override(SettingsScope::Global)
-            .map_err(|error| error.to_string())?,
+        global_effective_mode: global_mode.clone().unwrap_or_else(|| defaults.mode.clone()),
+        global_mode,
         project_mode: manager
             .permission_mode_override(SettingsScope::Project)
             .map_err(|error| error.to_string())?,
         effective_deny: permissions.deny,
         effective_ask: permissions.ask,
         effective_allow: permissions.allow,
+        default_deny: defaults.deny,
+        default_ask: defaults.ask,
+        default_allow: defaults.allow,
         global_deny: manager
             .permission_rule_overrides(SettingsScope::Global, PermissionRuleKind::Deny)
             .map_err(|error| error.to_string())?,
@@ -3364,11 +3383,15 @@ pub struct SettingsSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct PermissionSettingsSnapshot {
     pub effective_mode: String,
+    pub global_effective_mode: String,
     pub global_mode: Option<String>,
     pub project_mode: Option<String>,
     pub effective_deny: Vec<String>,
     pub effective_ask: Vec<String>,
     pub effective_allow: Vec<String>,
+    pub default_deny: Vec<String>,
+    pub default_ask: Vec<String>,
+    pub default_allow: Vec<String>,
     pub global_deny: Option<Vec<String>>,
     pub global_ask: Option<Vec<String>>,
     pub global_allow: Option<Vec<String>>,

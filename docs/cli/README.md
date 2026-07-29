@@ -442,7 +442,13 @@ ls "${ROZSA_CONFIG_DIR:-$HOME/.rozsa}/sessions/"
 
 权限规则只使用 `deny`、`ask`、`allow` 三组 `Tool(target)` 条目。
 `Tool(*)` 覆盖该工具的每一次调用，即使调用参数没有命令或文件路径。
-项目层规则与全局层合并，模式和同名普通设置仍由项目层覆盖。
+禁止 `*(*)`；需要让所有工具跳过普通审批时使用 `yolo`。
+
+规则列表按层覆盖：项目层声明某一列表时替换该全局列表，未声明时继承全局。
+默认全局 allow 为 `ls(*)`、`grep(*)`、`find(*)`、`subagent(*)` 和
+`askUserQuestion(*)`。普通 pattern 使用 glob；路径 `*` 匹配一层而 `**` 递归匹配。
+项目路径相对项目根，全局文件路径规则必须以 `$HOME/` 开头且不能通过 `..` 逃逸。
+`regex:` pattern 使用完整 RegExp 匹配；Bash 对每个拆分后的命令段匹配。
 
 `tools` 与 `skills` 是按名称合并的布尔映射：项目
 `ROZSA_PROJECT_CONFIG_DIR/settings.json` 只覆盖它声明的名称，未声明项继承全局层，

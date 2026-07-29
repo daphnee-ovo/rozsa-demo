@@ -85,7 +85,13 @@ impl Default for PermissionSettings {
         Self {
             deny: Vec::new(),
             ask: Vec::new(),
-            allow: Vec::new(),
+            allow: vec![
+                "ls(*)".to_string(),
+                "grep(*)".to_string(),
+                "find(*)".to_string(),
+                "subagent(*)".to_string(),
+                "askUserQuestion(*)".to_string(),
+            ],
             mode: "on-request".to_string(),
         }
     }

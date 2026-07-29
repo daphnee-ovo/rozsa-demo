@@ -30,6 +30,7 @@
 // ├── set_capability_override()
 // ├── permission_rule_overrides()
 // ├── set_permission_rule_overrides()
+// ├── set_permission_rule_set()
 // ├── permission_mode_override()
 // ├── set_permission_mode_override()
 // ├── global_path()
@@ -349,6 +350,15 @@ impl SettingsManager {
         kind: PermissionRuleKind,
         rules: Option<Vec<String>>,
     ) -> Result<(), SettingsError> {
+        if let Some(rules) = rules.as_ref() {
+            for rule in rules {
+                crate::permissions::validate_permission_rule_for_scope(
+                    rule,
+                    scope == SettingsScope::Global,
+                )
+                .map_err(|message| SettingsError::Invalid { message })?;
+            }
+        }
         let path = self.path_for_scope(scope)?.to_path_buf();
         let mut value = read_json_object_or_empty(&path)?;
         let root = value
@@ -385,6 +395,52 @@ impl SettingsManager {
         }
         if permission.is_empty() {
             root.remove("permission");
+        }
+        write_json(&path, &value)?;
+        self.reload()
+    }
+
+    /// Replace all three rule lists in one settings-file write. This is used
+    /// for cross-list moves so a rule is never duplicated or temporarily lost.
+    pub fn set_permission_rule_set(
+        &mut self,
+        scope: SettingsScope,
+        deny: Vec<String>,
+        ask: Vec<String>,
+        allow: Vec<String>,
+    ) -> Result<(), SettingsError> {
+        for rules in [&deny, &ask, &allow] {
+            for rule in rules {
+                crate::permissions::validate_permission_rule_for_scope(
+                    rule,
+                    scope == SettingsScope::Global,
+                )
+                .map_err(|message| SettingsError::Invalid { message })?;
+            }
+        }
+        let path = self.path_for_scope(scope)?.to_path_buf();
+        let mut value = read_json_object_or_empty(&path)?;
+        let root = value
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: format!("settings root must be an object: {}", path.display()),
+            })?;
+        let permission = root
+            .entry("permission".to_owned())
+            .or_insert_with(|| serde_json::json!({}));
+        let permission = permission
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: "settings.permission must be an object".to_owned(),
+            })?;
+        remove_retired_permission_fields(permission);
+        for (field, rules) in [("deny", deny), ("ask", ask), ("allow", allow)] {
+            permission.insert(
+                field.to_owned(),
+                serde_json::Value::Array(
+                    rules.into_iter().map(serde_json::Value::String).collect(),
+                ),
+            );
         }
         write_json(&path, &value)?;
         self.reload()

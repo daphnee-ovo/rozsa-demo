@@ -134,6 +134,8 @@ macOS 26 的 AppKit 会为 sidebar behavior 默认采用 floating appearance。R
 | `update_setting` | `{ key: string, value: string }` | `()` | 更新 General / Appearance 中有运行时消费者的设置 |
 | `get_capability_settings` | - | `CapabilitySettingsSnapshot` | 从实际注册 tools 和分层 skill 目录构建全局/项目能力清单 |
 | `update_capability_setting` | `{ kind, scope, name, enabled }` | `CapabilitySettingsSnapshot` | 写入对应 `settings.json` 层；`enabled: null` 删除覆盖并恢复继承 |
+| `update_permission_rules` | `{ scope, kind, rules }` | `PermissionSettingsSnapshot` | 替换一个 scope 的 deny/ask/allow 列表并校验 glob/RegExp 与路径边界 |
+| `update_permission_rule_set` | `{ scope, deny, ask, allow }` | `PermissionSettingsSnapshot` | 单次写入三个规则列表，供跨容器拖拽原子迁移 |
 
 `SettingsManager` 在 app 层负责 `settings.json` 的全局+项目逐项合并。
 `AgentSession` 创建时读取合并结果；`/reload` 会重新加载 settings、过滤 skill registry，
@@ -169,7 +171,11 @@ core tool 名称。
 
 ### 4.4 Agent question 事件流
 
-`askUserQuestion` 是强制可用的交互工具；它只有在 GUI 注入 question channel 时注册。它仍然经过 `PermissionController`，但作为内置无副作用工具直接允许，因此不会产生 permission request；这不是用户可配置的 `allowed_tools` 设置，显式 `permission.deny` / `permission.ask` 规则仍可覆盖默认允许。每个问题在 GUI 中始终附带 `Other` 自定义输入项，agent-facing schema 不提供关闭该项的开关。
+`askUserQuestion` 是强制可用的交互工具；它只有在 GUI 注入 question channel 时注册。
+它仍然经过 `PermissionController`。默认全局 `permission.allow` 中的
+`askUserQuestion(*)` 使其默认不产生 permission request；该规则在设置页可见、可删除，
+并可被显式 `permission.deny` / `permission.ask` 覆盖。每个问题在 GUI 中始终附带
+`Other` 自定义输入项，agent-facing schema 不提供关闭该项的开关。
 
 1. Agent tool 校验 `questions`，为本次调用创建 request ID，并通过 `question_request_tx` 发送问题与 oneshot sender。
 2. `events.rs::spawn_user_question_listener()` 将请求放入按 `session_id + request_id` 隔离的 `PendingUserQuestions`，再向 main WebView 发送 `question-request`。
@@ -314,6 +320,8 @@ Rózsa 支持三种权限模式（配置在 settings.json）：
 
 1. Agent 调用工具（如 `Bash { command: "rm -rf ..." }`）。
 2. `PermissionController` 拦截，先检查内置危险命令，再按 `deny > ask > allow` 处理分层规则。
+   默认全局 allow 显式包含 `ls(*)`、`grep(*)`、`find(*)`、`subagent(*)` 与
+   `askUserQuestion(*)`；这些不是隐藏白名单。
 3. 如果需要审批：
    - 生成 `request_id`（UUID）。
    - 创建 oneshot channel `(tx, rx)`。
