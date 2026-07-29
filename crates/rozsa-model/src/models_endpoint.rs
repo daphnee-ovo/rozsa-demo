@@ -208,7 +208,7 @@ mod tests {
             remote_model("gpt-5.5", Some("list"), true),
             remote_model("codex-auto-review", Some("hide"), true),
             remote_model("internal-disabled", Some("list"), false),
-            remote_model("legacy-visible", None, true),
+            remote_model("unclassified-visible", None, true),
         ]);
 
         let models = config
@@ -228,6 +228,6 @@ mod tests {
             .collect();
 
         assert_eq!(base_url, Some("https://chatgpt.com/backend-api/codex"));
-        assert_eq!(ids, vec!["gpt-5.5", "legacy-visible"]);
+        assert_eq!(ids, vec!["gpt-5.5", "unclassified-visible"]);
     }
 }
