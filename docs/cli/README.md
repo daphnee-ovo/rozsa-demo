@@ -11,7 +11,7 @@
 - 构建 `AgentSession`
 - 启动 GUI 或执行单次 prompt
 
-`rozsa-cli` 是应用程序的引导层，将 `rozsa-app`、`rozsa-core`、`rozsa-model` 和 `rozsa-gui` 组装成可运行的 CLI 工具。原生 TUI 已移至 `legacy/`，`--tui` 会明确报错。
+`rozsa-cli` 是应用程序的引导层，将 `rozsa-app`、`rozsa-core`、`rozsa-model` 和 `rozsa-gui` 组装成可运行的 CLI 工具。
 
 ---
 
@@ -170,13 +170,13 @@ if let Some(ref prompt) = args.prompt {
 }
 ```
 
-**交互模式** (未提供 prompt 且未指定 `--tui`):
+**交互模式** (未提供 prompt):
 
 ```rust
 rozsa_gui::run(rozsa_gui::GuiConfig { /* GUI runtime resources */ }).await
 ```
 
-启动 GUI。`--tui` 仅保留为迁移期错误提示，不再加载 legacy TUI。
+启动 GUI。
 
 ---
 
@@ -194,7 +194,7 @@ rozsa [OPTIONS] [PROMPT]
 |---|---|---|
 | `[PROMPT]` | 初始 prompt (非交互模式) | 否 |
 
-当提供 prompt 时，执行单次对话并打印响应后退出；未提供时启动交互式 TUI。
+当提供 prompt 时，执行单次对话并打印响应后退出；未提供时启动交互式 GUI。
 
 ### 可选参数
 
@@ -247,7 +247,7 @@ crates/rozsa-cli/
 ├── src/
 │   ├── main.rs         # 入口：解析参数，创建 tokio runtime，调用 run()
 │   ├── args.rs         # 命令行参数定义 (clap::Parser)
-│   └── run.rs          # 核心启动逻辑：加载配置、组装 AgentSession、启动 TUI
+│   └── run.rs          # 核心启动逻辑：加载配置、组装 AgentSession、启动 GUI 或执行 prompt
 └── Cargo.toml          # 依赖声明
 ```
 
@@ -356,10 +356,10 @@ No model available. Configure a provider API key (ANTHROPIC_API_KEY, OPENAI_API_
 ### 交互模式
 
 ```bash
-# 使用默认模型启动 TUI
+# 使用默认模型启动 GUI
 rozsa
 
-# 指定模型启动 TUI
+# 指定模型启动 GUI
 rozsa --model claude-opus-4-8
 ```
 
@@ -495,10 +495,10 @@ let hook: Box<dyn Fn(PreToolUseContext) -> ...> = Box::new(move |ctx| {
 
 ## 相关文档
 
-- [rozsa-app API 文档](../rozsa-app/README.md) — `AgentSession`、`PermissionPolicy` 等核心组件
-- [rozsa-model API 文档](../rozsa-model/README.md) — `ModelRegistry`、Provider 注册
+- [rozsa-app API 文档](../app/README.md) — `AgentSession`、`PermissionPolicy` 等核心组件
+- [rozsa-model API 文档](../model/README.md) — `ModelRegistry`、Provider 注册
 - [GUI 使用文档](../gui/UI_USAGE_GUIDELINES.md) — GUI 交互约定
-- [rozsa-core API 文档](../rozsa-core/README.md) — Agent Loop、事件流
+- [rozsa-core API 文档](../core/README.md) — Agent Loop、事件流
 
 ---
 
@@ -576,6 +576,6 @@ async fn main() -> anyhow::Result<()> {
 3. ✅ 初始化 model registry
 4. ✅ 组装 `AgentSession`
 5. ✅ 设置 permission system
-6. ✅ 根据模式启动 TUI 或执行单次 prompt
+6. ✅ 根据模式启动 GUI 或执行单次 prompt
 
 所有核心逻辑下沉到 `rozsa-app`、`rozsa-core`、`rozsa-model`，`rozsa-cli` 只负责**组装**与**启动**。

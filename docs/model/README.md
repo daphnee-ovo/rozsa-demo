@@ -482,24 +482,20 @@ pub async fn resolve_request_options(
 ## 与其他 crate 的关系
 
 ```
-rozsa-cli
-   ↓
-rozsa-tui
-   ↓
-rozsa-app ──→ rozsa-model ──→ (HTTP/SSE 网络层)
-   ↓              ↓
-rozsa-core ←──────┘
+rozsa-gui / rozsa-cli
+          ↓
+      rozsa-app ──→ rozsa-core ──→ rozsa-model ──→ (HTTP/SSE 网络层)
 ```
 
 - **`rozsa-core`** 依赖 `rozsa-model` 的 `types` 和 `event_stream`（Agent 运行时消费 `StreamEvent`）
 - **`rozsa-app`** 依赖 `rozsa-model` 的 `registry` 和 `credentials`（初始化 providers、解析凭证）
-- **`rozsa-tui` / `rozsa-cli`** 间接通过 `rozsa-app` 使用 `rozsa-model`
+- **`rozsa-gui` / `rozsa-cli`** 通过 `rozsa-app` 间接使用 `rozsa-model`
 
 职责边界：
-- `rozsa-model` — 纯 LLM API 交互层（不涉及 agent 逻辑、TUI 渲染、CLI 参数解析）
+- `rozsa-model` — 纯 LLM API 交互层（不涉及 agent 逻辑、GUI 渲染、CLI 参数解析）
 - `rozsa-core` — Agent 循环、工具调用、上下文管理
 - `rozsa-app` — Session 管理、权限控制、技能加载
-- `rozsa-tui` / `rozsa-cli` — 用户界面
+- `rozsa-gui` — 交互式用户界面；`rozsa-cli` — 一次性 prompt 和 GUI 启动入口
 
 ---
 
@@ -724,4 +720,4 @@ pub fn register_builtin_providers() {
 
 - **源码**：`crates/rozsa-model/src/`
 - **测试**：`crates/rozsa-model/tests/`
-- **Rust 迁移决策**：`docs/RUST_DIFF_DECISIONS.md`
+- **残留审计**：`docs/MIGRATION_RESIDUE_AUDIT.md`

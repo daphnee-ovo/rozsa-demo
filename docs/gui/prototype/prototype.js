@@ -3,7 +3,7 @@ const sessions = [
   { name: '重构 agent_loop.rs', state: 'running', time: '2h' },
   { name: '修复权限面板布局', state: 'unread', time: '1d' },
   { name: '添加 subagent 工具支持', state: 'approval', time: '3d' },
-  { name: 'models.json 迁移', state: 'unread', time: '7d' }
+  { name: '更新模型配置', state: 'unread', time: '7d' }
 ];
 
 // 切换会话
@@ -555,7 +555,7 @@ const mentions = [
   { name: '@rozsa-core', desc: 'Agent loop engine crate' },
   { name: '@rozsa-app', desc: 'Application runtime crate' },
   { name: '@rozsa-model', desc: 'LLM abstraction layer' },
-  { name: '@rozsa-tui', desc: 'Terminal frontend (ratatui)' },
+  { name: '@rozsa-gui', desc: 'Native Tauri frontend' },
   { name: '@rozsa-cli', desc: 'Binary entry point (clap)' }
 ];
 

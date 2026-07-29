@@ -12,16 +12,16 @@ AI coding agent — Rust + Tauri 实现。
 
 ### Crate 分层
 
-`rozsa-model` → `rozsa-core` → `rozsa-app` → `rozsa-gui` / `rozsa-tui` / `rozsa-cli`
+`rozsa-model` → `rozsa-core` → `rozsa-app` → `rozsa-gui` / `rozsa-cli`
 
 - model：无状态，只定义 types + provider streaming
 - core：agent loop + events + tool trait，不知道 session/settings
-- app：AgentSession 编排层（session、permissions、model registry、settings）——GUI 和 TUI 共用
-- gui/tui：前端层，互不依赖，各自独立实现 UI
+- app：AgentSession 编排层（session、permissions、model registry、settings），供 GUI 和 CLI 使用
+- gui：唯一的交互式前端；cli：一次性 prompt 和 GUI 启动入口
 
 ### AgentSession 单实例限制
 
-`AgentSession` 内部的 `session_manager` 是共享 mutable 的。`switch_session()` 直接替换 session_manager 指向。**如果 agent loop 还在跑，`persist_new_messages` 会写到新 session 的文件**。GUI 通过多实例回避；TUI 不切换（一个窗口一个 session）。
+`AgentSession` 内部的 `session_manager` 是共享 mutable 的。`switch_session()` 直接替换 session_manager 指向。**如果 agent loop 还在跑，`persist_new_messages` 会写到新 session 的文件**。GUI 通过每个 session tab 使用独立实例来避免这个问题。
 
 ### AgentEvent 累积模型
 
@@ -51,21 +51,15 @@ JSONL 格式。SessionManager 管理读写。`entries()` 返回历史消息。�
 - tokio runtime 内不能 `blocking_lock()`，用 `try_lock()` 或 async
 - icon.png 必须是 RGBA PNG
 
-## Rust 迁移差异
-
-[`docs/RUST_DIFF_DECISIONS.md`](docs/RUST_DIFF_DECISIONS.md) 记录有意差异。已记录的不要求复现 TS 行为。
-
 ## 关键文档
 
 | 文档 | 用途 |
 |------|------|
 | `AGENTS.md` | 开发规则、Git 规范、核心原则 |
 | `docs/TODO.md` | 长线开发规划 |
-| `docs/RUST_DIFF_DECISIONS.md` | Rust 版有意行为差异（已记录的不要求复现 TS） |
-| `docs/UNIMPLEMENTED_AUDIT.md` | 未实现功能审计 |
 | `docs/gui/UI_USAGE_GUIDELINES.md` | GUI 设计规范（色板、组件、交互规则） |
 | `docs/gui/ARCHITECTURE.md` | GUI 技术架构（IPC 协议、状态模型） |
 | `docs/model/models-config.md` | 模型配置格式（providers JSON schema） |
 | `docs/model/supported-providers.md` | 支持的 LLM 提供商列表 |
 | `docs/model/oauth-architecture.md` | OAuth 登录流程设计 |
-| `docs/rozsa_framework.md` | 整体框架设计 |
+| `docs/MIGRATION_RESIDUE_AUDIT.md` | 已移除迁移残留及受控保留项的审计记录 |

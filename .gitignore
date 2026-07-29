@@ -3,9 +3,6 @@ dist/
 *.log
 .DS_Store
 *.tsbuildinfo
-legacy-ts/packages/*/dist/
-legacy-ts/packages/*/dist-chrome/
-legacy-ts/packages/*/dist-firefox/
 *.cpuprofile
 
 # Environment
@@ -26,7 +23,6 @@ legacy-ts/packages/*/dist-firefox/
 coverage/
 .nyc_output/
 .rozsa_config/
-tui-debug.log
 compaction-results/
 .opencode/
 .rozsa-agent/
@@ -34,8 +30,6 @@ syntax.jsonl
 out.jsonl
 rozsa-*.html
 out.html
-legacy-ts/packages/coding-agent/binaries/
-legacy-ts/packages/tui-rs/target/
 target/
 todo.md
 plans/

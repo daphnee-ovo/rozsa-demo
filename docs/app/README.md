@@ -2,7 +2,7 @@
 
 ## 概述
 
-`rozsa-app` 是 Rózsa 的应用层 crate，以 `AgentSession` 为核心，连接 `rozsa-core` 的 agent loop 和 `rozsa-tui` 的前端。它封装了会话管理、工具注册、权限控制、skill 扩展、subagent 编排、运行时状态跟踪等应用层逻辑。
+`rozsa-app` 是 Rózsa 的应用层 crate，以 `AgentSession` 为核心，连接 `rozsa-core` 的 agent loop 与 GUI/CLI 调用方。它封装了会话管理、工具注册、权限控制、skill 扩展、subagent 编排、运行时状态跟踪等应用层逻辑。
 
 **核心职责**：
 - 提供 `AgentSession`，管理对话历史、工具调用、取消令牌、事件流
@@ -50,7 +50,7 @@ rozsa-app/src/
 
 ### AgentSession
 
-**职责**：应用层 orchestrator，连接 core agent loop 与 TUI backend。管理工具、权限、扩展、compaction、runtime state、消息历史、取消令牌、事件广播。
+**职责**：应用层 orchestrator，连接 core agent loop 与 GUI/CLI 调用方。管理工具、权限、扩展、compaction、runtime state、消息历史、取消令牌、事件广播。
 
 **关键字段**：
 - `static_config: StaticConfig` — 不变配置（system prompt / cwd / settings / resources）
@@ -58,7 +58,7 @@ rozsa-app/src/
 - `session_manager: Mutex<SessionManager>` — JSONL 持久化管理器
 - `tools: Arc<Mutex<Vec<Arc<dyn Tool>>>>` — 注册的工具列表
 - `messages: Mutex<Vec<AgentMessage>>` — 内存中的对话历史
-- `event_tx: broadcast::Sender<AgentEvent>` — 事件广播通道（TUI 订阅）
+- `event_tx: broadcast::Sender<AgentEvent>` — 事件广播通道（GUI 等调用方订阅）
 - `cancel_token: Mutex<Option<CancellationToken>>` — 当前运行的取消令牌
 - `is_running: AtomicBool` — 是否正在执行 agent loop
 - `is_compacting: AtomicBool` — 是否正在压缩历史
@@ -176,7 +176,7 @@ pub async fn wait(&self, id: &str) -> Result<(), String>
 pub async fn abort(&self, id: &str) -> Result<(), String>
 
 pub async fn list(&self) -> Vec<SubagentInfo>
-pub fn list_sync(&self) -> Vec<SubagentInfo>  // TUI 渲染用（不阻塞）
+pub fn list_sync(&self) -> Vec<SubagentInfo>  // UI 查询用（不阻塞）
 pub async fn get_messages(&self, id: &str) -> Option<Vec<AgentMessage>>
 pub async fn snapshot(&self, id: &str) -> Option<SubagentSnapshot>
 ```
@@ -288,7 +288,7 @@ impl RuntimeState {
 }
 ```
 
-**RuntimeStateSnapshot**（可序列化，供 TUI 使用）：
+**RuntimeStateSnapshot**（可序列化，供 UI 使用）：
 ```rust
 pub struct RuntimeStateSnapshot {
     pub edit_mode: EditMode,
@@ -493,15 +493,10 @@ pub enum PermissionResponse {
 - **关系**：`AgentSession` 持有 `Model`，调用 `rozsa_model::stream::stream_simple` 生成 LLM 流。`SessionManager` 序列化 `Message` 到 JSONL。
 - **边界**：model 提供 LLM provider 抽象和事件流，app 负责模型元数据注册、会话生命周期。
 
-### rozsa-tui → rozsa-app
-- **依赖**：`NativeBackend` 持有 `AgentSession`，订阅 `AgentEvent`，驱动 `prompt` / `abort` / `cycle_edit_mode` / `subagent_manager`。
-- **关系**：TUI 是 app 的消费者和驱动者，通过 `AgentSession` API 与 app 层交互。
-- **边界**：app 提供应用逻辑和状态，TUI 负责 UI 渲染、用户输入、权限审批弹窗。
-
-### rozsa-cli → rozsa-app
-- **依赖**：CLI 初始化 `AgentSessionConfig`，创建 `AgentSession`，注入到 `NativeBackend`。
-- **关系**：CLI 是应用入口，负责启动 TUI + backend + agent session。
-- **边界**：CLI 处理命令行参数和初始化流程，app 和 TUI 分别处理应用逻辑和 UI。
+### rozsa-gui / rozsa-cli → rozsa-app
+- **依赖**：GUI 的 Tauri commands 与 CLI 均初始化 `AgentSessionConfig` 并创建 `AgentSession`。
+- **关系**：GUI 订阅 `AgentEvent`、呈现状态并提交用户输入；CLI 负责命令行参数、一次性 prompt 和 GUI 启动。
+- **边界**：app 提供应用逻辑和状态，调用方负责各自的输入输出与生命周期。
 
 ## 使用示例
 
@@ -711,18 +706,15 @@ match policy.evaluate("Bash", &args) {
 
 ## 相关文档
 
-- [rozsa-core API](../rozsa-core/README.md)
-- [rozsa-model API](../rozsa-model/README.md)
-- [rozsa-tui API](../rozsa-tui/README.md)
-- [Session 文件格式](../specs/session-format.md)
-- [Compaction 设计](../specs/compaction.md)
-- [Native TUI Gap Audit](../NATIVE_TUI_GAP_AUDIT.md)
+- [rozsa-core API](../core/README.md)
+- [rozsa-model API](../model/README.md)
+- [GUI 架构](../gui/ARCHITECTURE.md)
 
 ## 设计原则
 
-1. **Separation of concerns**：agent loop logic（core）、应用状态（app）、UI（tui）清晰分离
+1. **Separation of concerns**：agent loop logic（core）、应用状态（app）、GUI/CLI 输入输出清晰分离
 2. **Async-first**：所有 I/O 和状态访问都是 async，锁粒度小（Mutex 只保护必要的共享状态）
-3. **Event-driven**：通过 `broadcast::channel` 向 TUI 推送 `AgentEvent`，解耦 session 和 UI
+3. **Event-driven**：通过 `broadcast::channel` 向 GUI 推送 `AgentEvent`，解耦 session 和 UI
 4. **Append-only persistence**：JSONL session file 永不修改历史，只追加（tree structure via parent_id）
 5. **Scope isolation**：subagent 通过 `SubagentScope` 限制工具访问，防止逃逸
 6. **Lazy materialization**：session file 在首次 append 时才创建（`create_lazy`），减少空会话文件

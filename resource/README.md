@@ -1,6 +1,6 @@
 # Resource Templates
 
-Text templates loaded by `packages/coding-agent/src/core/system-prompt.ts`.
+Text templates compiled into `rozsa-app` by `crates/rozsa-app/src/resources/mod.rs`.
 
 ## Files
 
@@ -18,5 +18,5 @@ Current placeholders:
 
 ## Build notes
 
-- Runtime loading prefers `./resource/system-prompt.md`.
-- Binary packaging copies `../../resource/*.md` into `dist/resource/`.
+- `include_str!` embeds the built-in system prompt in the Rust binary.
+- Project and user instruction files are loaded by `ResourceLoader` at runtime.

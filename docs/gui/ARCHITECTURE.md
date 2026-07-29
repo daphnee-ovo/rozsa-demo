@@ -1,6 +1,6 @@
 # Rózsa GUI 架构文档
 
-本文档描述 Rózsa 桌面 GUI 的技术架构、目录结构、IPC 协议、状态管理、流式响应机制和权限系统集成。GUI 替代之前的 ratatui TUI 作为默认交互界面，CLI 通过 `--tui` 标志保留 TUI 回退。
+本文档描述 Rózsa 桌面 GUI 的技术架构、目录结构、IPC 协议、状态管理、流式响应机制和权限系统集成。GUI 是唯一受支持的交互式前端；CLI 用于执行单次 prompt 或启动 GUI。
 
 ## 1. 概述
 
@@ -405,8 +405,6 @@ if matches.get_flag("gui") {
         permission_request_rx: Some(permission_rx),
     };
     rozsa_gui::run(gui_config).await?;
-} else if matches.get_flag("tui") {
-    // 启动 TUI
 } else {
     // 默认 GUI
 }

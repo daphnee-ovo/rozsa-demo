@@ -26,7 +26,7 @@ Dependency direction: `cli` / `gui` → `app` → `core` → `model`
 
 ## Status
 
-Rózsa is under active development, migrating from a TypeScript monorepo. Retired terminal frontends are preserved under `legacy/`; the supported interactive entry point is the GUI.
+Rózsa is under active development. The native Tauri GUI is the supported interactive frontend; the CLI runs one-shot prompts or launches that GUI.
 
 ## Build
 
@@ -39,7 +39,6 @@ cargo build
 
 ```
 crates/          Rust workspace crates
-packages/        Legacy TypeScript packages (migration source)
 docs/            Documentation
 devtools/        Build and check scripts
 tests/           Integration tests

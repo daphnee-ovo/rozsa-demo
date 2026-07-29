@@ -14,7 +14,7 @@ Rózsa is a Rust 2024 Cargo workspace. The supported interactive frontend is the
 
 Dependency direction is `rozsa-cli` / `rozsa-gui` → `rozsa-app` → `rozsa-core` → `rozsa-model`. Preserve these boundaries.
 
-`legacy/` and `packages/` contain retired or migration-reference implementations. Do not modify them unless the task explicitly targets legacy code. Consult `docs/RUST_DIFF_DECISIONS.md` before copying old TypeScript behavior; documented Rust differences are intentional.
+The active product is implemented entirely in the five Rust crates above. Do not introduce dependencies on retired terminal, TypeScript, or process-bridge implementations.
 
 ## Documentation
 
@@ -40,7 +40,6 @@ Dependency direction is `rozsa-cli` / `rozsa-gui` → `rozsa-app` → `rozsa-cor
 - Full project verification is `cargo build`, `cargo clippy`, and `cargo test` from the repository root.
 - Use `cargo fmt --all -- --check` for formatting verification.
 - Run `./devtools/sync-codex-model-client-version.sh` to update the models endpoint compatibility version directly from `openai/codex` GitHub tags; use `--check` for verification.
-- Do not use `run.sh` as a verification command; it is a legacy hybrid launcher.
 - When verification requires opening the app, close the test app immediately after testing; do not leave a validation instance running in the user's session.
 - Never commit unless the user asks.
 
@@ -48,7 +47,6 @@ Dependency direction is `rozsa-cli` / `rozsa-gui` → `rozsa-app` → `rozsa-cor
 
 - Treat `Cargo.toml` and `Cargo.lock` changes as reviewed code.
 - Use workspace dependencies for versions shared across crates.
-- Do not modify legacy npm metadata unless the task explicitly targets `legacy/` or `packages/`.
 
 ## Git
 
