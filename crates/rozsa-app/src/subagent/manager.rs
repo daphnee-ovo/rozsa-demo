@@ -405,7 +405,7 @@ impl SubagentManager {
     }
 
     /// Synchronous best-effort listing — skips runtimes whose lock is currently held.
-    /// Used by the TUI render path which must not block.
+    /// Used by UI rendering paths that must not block.
     pub fn list_sync(&self) -> Vec<SubagentInfo> {
         let mut out = Vec::with_capacity(self.runtimes.len());
         for rt in self.runtimes.values() {

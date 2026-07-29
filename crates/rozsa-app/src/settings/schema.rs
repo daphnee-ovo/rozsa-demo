@@ -75,8 +75,8 @@ pub struct PermissionSettings {
     pub ask: Vec<String>,
     #[serde(default)]
     pub allow: Vec<String>,
-    /// Legacy mode retained for settings compatibility. Explicit rules always
-    /// take precedence over this fallback.
+    /// Fallback mode used when no explicit rule applies. Explicit rules always
+    /// take precedence.
     pub mode: String,
 }
 

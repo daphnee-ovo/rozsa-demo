@@ -10,7 +10,6 @@
 //!
 //! Related Docs:
 //! - [Supported Providers](../../../../docs/model/supported-providers.md)
-//! - [Migration Plan](../../../../docs/model/rozsa-model-migration.md)
 
 pub mod payload;
 pub mod stream;

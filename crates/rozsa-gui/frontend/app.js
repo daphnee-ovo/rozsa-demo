@@ -1,7 +1,7 @@
 "use strict";
 
 // ===================================================================
-// Rozsa GUI — Tauri IPC Frontend (Full TUI Feature Parity)
+// Rozsa GUI — Tauri IPC frontend
 //
 // Internal Framework:
 // app.js

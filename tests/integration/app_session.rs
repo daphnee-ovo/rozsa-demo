@@ -118,11 +118,11 @@ async fn session_list_dir_extracts_first_message() {
 }
 
 #[tokio::test]
-async fn session_list_dir_parses_ts_format_file() {
+async fn session_list_dir_parses_jsonl_session_file() {
     let tmp_dir = tempfile::tempdir().unwrap();
-    let session_path = tmp_dir.path().join("ts-session.jsonl");
+    let session_path = tmp_dir.path().join("session.jsonl");
 
-    // TS 版产生的真实 session 文件格式
+    // Existing JSONL session format.
     let content = r#"{"type":"session","version":3,"id":"019ef3e4","timestamp":"2026-06-23T09:51:39.256Z","cwd":"/home/test"}
 {"type":"message","id":"218c7a06","parentId":null,"timestamp":"2026-06-23T09:51:42.193Z","message":{"role":"user","content":[{"type":"text","text":"hello world"}],"timestamp":1782208302191}}
 {"type":"message","id":"281bb95c","parentId":"218c7a06","timestamp":"2026-06-23T09:51:45.785Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}],"model":"claude-3","api":"anthropic-messages","provider":"anthropic","stopReason":"stop","timestamp":1782208302226,"usage":{"input":3,"output":10,"cacheRead":0,"cacheWrite":0,"totalTokens":13,"cost":{"input":0.0,"output":0.0,"cacheRead":0.0,"cacheWrite":0.0,"total":0.0}}}}

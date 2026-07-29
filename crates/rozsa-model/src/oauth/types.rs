@@ -12,7 +12,7 @@ pub struct OAuthCredentials {
 }
 
 /// Callback events emitted during an OAuth login flow.
-/// These are sent from the login implementation to the bridge event channel.
+/// These are sent from the login implementation to the caller's event channel.
 #[derive(Debug, Clone)]
 pub enum OAuthFlowEvent {
     /// Show an authorization URL for the user to open in their browser.

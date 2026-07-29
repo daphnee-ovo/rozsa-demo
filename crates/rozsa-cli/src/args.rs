@@ -1,3 +1,10 @@
+// FrameworkTree
+// args.rs
+// ├── enum OutputFormat
+// ├── struct Args
+// ├── parse()
+// └── resolve_positional_input()
+
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
@@ -45,10 +52,6 @@ pub struct Args {
     /// Set thinking level (off/minimal/low/medium/high/xhigh)
     #[arg(long)]
     pub thinking: Option<String>,
-
-    /// Native TUI has moved to legacy and is no longer available.
-    #[arg(long)]
-    pub tui: bool,
 }
 
 pub fn parse() -> Args {

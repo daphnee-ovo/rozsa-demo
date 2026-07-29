@@ -6,9 +6,6 @@
 // ├── ToolCallStats            # per-tool call/error counters
 // ├── RuntimeState             # mutable session state
 // └── RuntimeStateSnapshot     # serializable UI snapshot
-//
-// Related Docs:
-// - [Gap Audit](../../docs/NATIVE_TUI_GAP_AUDIT.md)
 
 use std::collections::HashMap;
 use std::fmt;
@@ -144,7 +141,7 @@ impl RuntimeState {
         }
     }
 
-    /// Produce a serializable snapshot for the TUI layer.
+    /// Produce a serializable snapshot for the UI layer.
     pub fn snapshot(&self) -> RuntimeStateSnapshot {
         RuntimeStateSnapshot {
             edit_mode: self.edit_mode,

@@ -92,7 +92,6 @@
 // └── split_shell_segments()   # pipe/&&/|| command splitting
 //
 // Related Docs:
-// - [Gap Audit](../../../docs/NATIVE_TUI_GAP_AUDIT.md)
 // - [Settings Schema](./settings/schema.rs)
 
 pub mod audit;

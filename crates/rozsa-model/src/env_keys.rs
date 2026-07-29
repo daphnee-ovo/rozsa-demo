@@ -1,6 +1,6 @@
 //! Environment-variable credential lookup for built-in providers.
 //!
-//! 对齐 TS packages/ai/src/env-api-keys.ts 的 getEnvApiKey + Bedrock/Vertex 多源检测。
+//! Resolve provider API keys, including Bedrock and Vertex multi-source detection.
 
 use crate::types::Provider;
 

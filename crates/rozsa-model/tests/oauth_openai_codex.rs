@@ -79,16 +79,6 @@ fn test_extract_account_id_from_id_token_jwt() {
 }
 
 #[test]
-fn test_extract_account_id_from_legacy_access_token_jwt() {
-    let payload = r#"{"https://api.openai.com/auth.chatgpt_account_id":"test-account-123"}"#;
-    let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
-    let token = format!("header.{}.signature", payload_b64);
-
-    let account_id = extract_account_id_from_jwt(&token);
-    assert_eq!(account_id, Some("test-account-123".to_string()));
-}
-
-#[test]
 fn test_extract_account_id_missing_field() {
     let payload = r#"{"sub":"user123"}"#;
     let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());

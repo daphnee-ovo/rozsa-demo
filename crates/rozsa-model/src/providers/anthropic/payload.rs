@@ -10,7 +10,6 @@
 //! └── normalize_tool_call_id()    — 64-char limit + char filter
 //!
 //! Related Docs:
-//! - [Migration Plan](../../../../docs/model/rozsa-model-migration.md)
 
 use std::collections::HashMap;
 

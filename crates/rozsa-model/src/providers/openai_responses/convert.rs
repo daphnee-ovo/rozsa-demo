@@ -12,7 +12,6 @@
 // └── content_to_string()            — Vec<ContentBlock> → plain text
 //
 // Reference:
-// - pi/packages/ai/src/api/openai-responses-shared.ts (convertResponsesMessages)
 // - codex-rs codex-api/src/sse/responses.rs (SSE event handling)
 //
 // Related Docs:

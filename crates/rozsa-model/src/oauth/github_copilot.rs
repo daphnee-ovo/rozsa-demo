@@ -53,7 +53,7 @@ pub async fn login(
     // 3. Request device code
     let device_code_response = request_device_code(&domain).await?;
 
-    // 4. Send device code event to TS (show user_code + verification_uri)
+    // 4. Send the device code for the caller to present.
     event_tx
         .send(OAuthFlowEvent::DeviceCode {
             user_code: device_code_response.user_code.clone(),

@@ -1,8 +1,8 @@
 //! Rust model metadata registry.
 //!
 //! This module owns generated model metadata and `models.json` metadata merging.
-//! Credential resolution, OAuth, and shell-command key expansion intentionally remain outside this
-//! first migration slice.
+//! Credential resolution, OAuth, and shell-command key expansion intentionally
+//! remain outside this module.
 //!
 //! Related docs: `docs/model/supported-providers.md`.
 
@@ -211,7 +211,7 @@ impl ImageModelRegistry {
         &self.models
     }
 
-    /// Return all image model metadata as JSON (for bridge).
+    /// Return all image model metadata as JSON for frontend IPC.
     pub fn all_json(&self) -> serde_json::Value {
         serde_json::json!(&self.models)
     }
@@ -310,7 +310,7 @@ impl ModelRegistry {
         self.models.iter().map(|rm| rm.to_model()).collect()
     }
 
-    /// Return all models serializable as JSON (TS bridge compatibility).
+    /// Return all models serializable as JSON for frontend IPC.
     pub fn all_json(&self) -> serde_json::Value {
         serde_json::json!(&self.models)
     }

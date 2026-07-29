@@ -13,13 +13,11 @@
 // │   └── complete()               # text + cursor → Vec<AutocompleteItem>
 // └── parse_slash_prefix()         # 内部：把光标处的 / 前缀切出来
 //
-// 迁移自 packages/coding-agent/src/core/slash-commands.ts，保持名称、描述与
-// 用法一致以避免用户体验断层。autocomplete 引擎是新写的：原 TS 版本的补全
-// 散落在 input/keys.ts，这里集中到一处供 NativeBackend 调用。
+// Defines the shared command metadata and autocomplete behavior used by the
+// current application. Command execution remains owned by application handlers.
 //
 // Related Docs:
 // - [SPEC](../../../dev-doc/main/SPEC.md)
-// - 旧实现：packages/coding-agent/src/core/slash-commands.ts
 
 /// Static metadata for a built-in slash command.
 #[derive(Debug, Clone)]
@@ -59,8 +57,7 @@ pub struct AutocompleteItem {
     pub description: Option<String>,
 }
 
-/// Built-in slash commands. Mirrors `BUILTIN_SLASH_COMMANDS` from
-/// `packages/coding-agent/src/core/slash-commands.ts`.
+/// Built-in slash commands exposed by the application.
 pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
     BuiltinSlashCommand {
         name: "settings",

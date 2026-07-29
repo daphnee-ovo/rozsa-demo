@@ -280,7 +280,7 @@ pub async fn run(args: &Args) -> Result<()> {
         anyhow::bail!("--print requires a prompt argument");
     }
 
-    if prompt.is_none() && !args.tui {
+    if prompt.is_none() {
         return rozsa_gui::run(rozsa_gui::GuiConfig {
             initial_parent_session,
             model,
@@ -365,10 +365,6 @@ pub async fn run(args: &Args) -> Result<()> {
         }
 
         return Ok(());
-    }
-
-    if args.tui {
-        anyhow::bail!("Native TUI has moved to legacy; use the GUI without --tui.");
     }
 
     anyhow::bail!("No interactive frontend selected")

@@ -15,7 +15,7 @@ const REDIRECT_URI: &str = "http://127.0.0.1:53692/callback";
 const SCOPE: &str = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
 
 /// Execute the Anthropic OAuth login flow.
-/// Emits OAuthFlowEvents through `event_tx` for the bridge to forward to TS.
+/// Emits OAuthFlowEvents through `event_tx` for the caller to present.
 /// Receives user input (e.g., manual code paste) through `response_rx`.
 pub async fn login(
     event_tx: mpsc::UnboundedSender<OAuthFlowEvent>,
@@ -32,7 +32,7 @@ pub async fn login(
     // 3. Build authorization URL
     let auth_url = build_auth_url(&challenge, &state);
 
-    // 4. Send auth_url event to TS (so it opens the browser)
+    // 4. Send the authorization URL for the caller to open in a browser.
     let _ = event_tx.send(OAuthFlowEvent::AuthUrl {
         url: auth_url,
         instructions: Some(

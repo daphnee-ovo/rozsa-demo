@@ -21,8 +21,8 @@
 //! GUI-owned keyboard shortcut registry and persistence.
 //!
 //! The file stores only user overrides. Loading always overlays those values on
-//! the typed defaults below, so adding a future action does not require a file
-//! migration.
+//! the typed defaults below, so adding a future action does not require users
+//! to rewrite their override file.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

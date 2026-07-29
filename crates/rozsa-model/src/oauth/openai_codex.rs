@@ -1,3 +1,15 @@
+// FrameworkTree
+// openai_codex.rs
+// ├── login()
+// ├── build_auth_url()
+// ├── url_encode_component()
+// ├── generate_random_state()
+// ├── parse_authorization_input()
+// ├── parse_query_string()
+// ├── exchange_code()
+// ├── extract_account_id_from_jwt()
+// └── struct TokenResponse
+
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::Rng;
@@ -18,7 +30,7 @@ const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const SCOPE: &str = "openid profile email offline_access api.connectors.read api.connectors.invoke";
 
 /// Execute the OpenAI Codex OAuth login flow.
-/// Emits OAuthFlowEvents through `event_tx` for the bridge to forward to TS.
+/// Emits OAuthFlowEvents through `event_tx` for the caller to present.
 /// Receives user input (e.g., manual code paste) through `response_rx`.
 pub async fn login(
     event_tx: mpsc::UnboundedSender<OAuthFlowEvent>,
@@ -35,7 +47,7 @@ pub async fn login(
     // 3. Build authorization URL
     let auth_url = build_auth_url(&challenge, &state);
 
-    // 4. Send auth_url event to TS (so it opens the browser)
+    // 4. Send the authorization URL for the caller to open in a browser.
     let _ = event_tx.send(OAuthFlowEvent::AuthUrl {
         url: auth_url,
         instructions: Some(
@@ -258,10 +270,8 @@ async fn exchange_code(code: &str, verifier: &str) -> Result<OAuthCredentials, O
     })
 }
 
-/// Extract accountId from a Codex JWT without verification.
-/// Official Codex derives it from id_token payload
-/// `https://api.openai.com/auth.chatgpt_account_id`; old Rozsa builds attempted
-/// the flat access-token claim `https://api.openai.com/auth.chatgpt_account_id`.
+/// Extract accountId from the nested `https://api.openai.com/auth` JWT claim
+/// without verification.
 #[doc(hidden)]
 pub fn extract_account_id_from_jwt(token: &str) -> Option<String> {
     // JWT format: header.payload.signature
@@ -278,7 +288,6 @@ pub fn extract_account_id_from_jwt(token: &str) -> Option<String> {
         .get("https://api.openai.com/auth")
         .and_then(|v| v.as_object())
         .and_then(|auth| auth.get("chatgpt_account_id"))
-        .or_else(|| payload.get("https://api.openai.com/auth.chatgpt_account_id"))
         .and_then(|v| v.as_str())
         .map(String::from)
 }

@@ -3,7 +3,7 @@
 // Internal Framework:
 // rate_limit.rs (app layer)
 // ├── get_rate_limits()           — main entry: resolve auth path → fetch
-// └── format_rate_limit_display() — format for TUI display
+// └── format_rate_limit_display() — format for UI display
 //
 // Related Docs:
 // - [Rate Limit module](../../rozsa-model/src/rate_limit.rs)
@@ -19,7 +19,7 @@ pub async fn get_rate_limits() -> Result<RateLimitSnapshot, RateLimitError> {
     rozsa_model::rate_limit::fetch_rate_limits_from_auth(&path_str).await
 }
 
-/// Format rate limit snapshot for display in TUI status bar or notification.
+/// Format a rate limit snapshot for a UI status bar or notification.
 pub fn format_rate_limit_display(snapshot: &RateLimitSnapshot) -> String {
     let mut parts = Vec::new();
 

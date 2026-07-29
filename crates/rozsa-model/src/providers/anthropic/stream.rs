@@ -7,7 +7,6 @@
 //! └── map_stop_reason()          — Anthropic stop_reason → StopReason
 //!
 //! Related Docs:
-//! - [Migration Plan](../../../../docs/model/rozsa-model-migration.md)
 
 use futures_util::StreamExt;
 use serde::Deserialize;
