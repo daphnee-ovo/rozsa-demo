@@ -28,8 +28,6 @@ clap = { version = "4", features = ["derive"] }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-bedrockruntime = "1"
 aws-smithy-types = "1"
-ratatui = "0.30"
-crossterm = { version = "0.29", features = ["bracketed-paste", "event-stream"] }
 sha2 = "0.10"
 base64 = "0.22"
 rand = "0.9"
