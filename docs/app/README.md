@@ -7,7 +7,7 @@
 **核心职责**：
 - 提供 `AgentSession`，管理对话历史、工具调用、取消令牌、事件流
 - 通过 `SessionManager` 实现 JSONL 持久化（append-only tree structure）
-- 通过 `ModelRegistry` 管理模型元数据、凭据发现、models.json 合并
+- 通过 `ModelRegistry` 管理模型元数据、凭据发现、models.json 合并，以及已学习的 provider thinking effort 映射
 - 通过 `SkillRegistry` 加载和注册 skill（project / user scope）
 - 通过 `SubagentManager` 派生子 agent，实现 scope 隔离和并发编排
 - 通过 `RuntimeState` 跟踪 edit mode、tool stats、permission mode
@@ -54,7 +54,7 @@ rozsa-app/src/
 
 **关键字段**：
 - `static_config: StaticConfig` — 不变配置（system prompt / cwd / settings / resources）
-- `runtime: Mutex<RuntimeParams>` — 运行时参数（model / thinking_level），可在 turn 之间更新
+- `runtime: Mutex<RuntimeParams>` — 运行时参数（model / thinking_effort），可在 turn 之间更新
 - `session_manager: Mutex<SessionManager>` — JSONL 持久化管理器
 - `tools: Arc<Mutex<Vec<Arc<dyn Tool>>>>` — 注册的工具列表
 - `messages: Mutex<Vec<AgentMessage>>` — 内存中的对话历史
@@ -100,8 +100,8 @@ pub async fn switch_session(&self, path: impl AsRef<Path>) -> Result<String>
 // 模型和配置
 pub async fn model(&self) -> Model
 pub async fn set_model(&self, model: Model)
-pub async fn thinking_level(&self) -> ThinkingLevel
-pub async fn set_thinking_level(&self, level: ThinkingLevel)
+pub async fn thinking_effort(&self) -> ThinkingEffort
+pub async fn set_thinking_effort(&self, effort: ThinkingEffort)
 pub fn cwd(&self) -> &Path
 pub fn settings_manager(&self) -> &SettingsManager
 
@@ -142,7 +142,7 @@ pub async fn execute_bash(&self, command: &str) -> Result<String>
 ```rust
 pub struct AgentSessionConfig {
     pub model: Model,
-    pub thinking_level: ThinkingLevel,
+    pub thinking_effort: ThinkingEffort,
     pub system_prompt: String,
     pub cwd: PathBuf,
     pub session_manager: SessionManager,
@@ -160,7 +160,7 @@ pub struct AgentSessionConfig {
 - `model_stream: Arc<ModelStreamFn>` — 模型流工厂
 - `convert_to_llm: Arc<ConvertToLlmFn>` — AgentMessage → Message 转换
 - `main_tools: Arc<Mutex<Vec<Arc<dyn Tool>>>>` — 主 session 的工具列表（subagent 过滤使用）
-- `main_model / main_thinking_level` — 主 session 的模型和推理级别（默认继承）
+- `main_model / main_thinking_effort` — 主 session 的模型和思考强度（默认继承）
 - `cwd: PathBuf` — 工作目录
 - `session_dir: Option<PathBuf>` — subagent session 文件目录（`<session_dir>/<main_uuid>/subagent-N.jsonl`）
 - `main_session_uuid / main_session_file` — 主 session 的 UUID 和路径（写入 header parentSession）
@@ -187,7 +187,7 @@ pub struct SpawnConfig {
     pub name: Option<String>,
     pub system_prompt: String,
     pub model: Option<Model>,
-    pub thinking_level: Option<ThinkingLevel>,
+    pub thinking_effort: Option<ThinkingEffort>,
     pub scope: SubagentScope,
 }
 ```
@@ -249,7 +249,7 @@ pub struct SubagentInfo {
     pub status: SubagentStatus,
     pub model_id: String,
     pub model_provider: String,
-    pub thinking_level: ThinkingLevel,
+    pub thinking_effort: ThinkingEffort,
     pub created_at: i64,
     pub last_activity_at: i64,
     pub last_error: Option<String>,
@@ -299,13 +299,13 @@ pub struct RuntimeStateSnapshot {
 
 ### SessionManager
 
-**职责**：管理 JSONL 会话文件的 append-only tree structure。每个 session 有一个 header + N 个 entry（message / compaction / model_change / thinking_level_change / custom / label / session_info）。
+**职责**：管理 JSONL 会话文件的 append-only tree structure。每个 session 有一个 header + N 个 entry（message / compaction / model_change / thinking_effort_change / custom / label / session_info）。
 
 **Entry 类型**：
 - `SessionEntry::Message` — 用户或助手消息
 - `SessionEntry::Compaction` — compaction 摘要（记录被删除的消息、tokens_before、first_kept_entry_id）
 - `SessionEntry::ModelChange` — 模型切换
-- `SessionEntry::ThinkingLevelChange` — 推理级别切换
+- `SessionEntry::ThinkingEffortChange` — 思考强度切换
 - `SessionEntry::Custom` — 扩展自定义数据
 - `SessionEntry::Label` — 为某个 entry 打标签
 - `SessionEntry::SessionInfo` — 记录会话名称（最新的 session_info name 胜出）
@@ -321,7 +321,7 @@ pub fn open(path: impl AsRef<Path>) -> Result<Self>
 pub fn append_message(&mut self, message: Message) -> Result<String>
 pub fn append_compaction(&mut self, ...) -> Result<String>
 pub fn append_model_change(&mut self, provider, model_id) -> Result<String>
-pub fn append_thinking_level_change(&mut self, level) -> Result<String>
+pub fn append_thinking_effort_change(&mut self, effort) -> Result<String>
 pub fn append_custom(&mut self, custom_type, payload) -> Result<String>
 pub fn append_label(&mut self, target_id, label) -> Result<String>
 pub fn append_session_info(&mut self, name: Option<String>) -> Result<String>
@@ -507,7 +507,7 @@ use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
 use rozsa_app::resources::LoadedResources;
-use rozsa_model::types::{Model, ThinkingLevel};
+use rozsa_model::types::{Model, ThinkingEffort};
 
 // 1. 创建 session file
 let session_manager = SessionManager::create(
@@ -524,7 +524,7 @@ let resources = LoadedResources::load_from_cwd(&cwd)?;
 // 3. 构造 config
 let config = AgentSessionConfig {
     model: Model::default(),  // 或从 ModelRegistry 获取
-    thinking_level: ThinkingLevel::Normal,
+    thinking_effort: ThinkingEffort::Medium,
     system_prompt: resources.system_prompt(),
     cwd: cwd.clone(),
     session_manager,
@@ -570,7 +570,7 @@ let config = SpawnConfig {
     name: Some("readonly-search".to_string()),
     system_prompt: "You are a read-only search agent.".to_string(),
     model: None,  // 继承主 session 的 model
-    thinking_level: None,
+    thinking_effort: None,
     scope: SubagentScope::readonly(),
 };
 

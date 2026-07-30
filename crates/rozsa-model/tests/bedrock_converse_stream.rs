@@ -13,7 +13,7 @@ use rozsa_model::providers::bedrock::payload::{
 use rozsa_model::registry::ApiProvider;
 use rozsa_model::types::{
     Api, CacheRetention, ContentBlock, Context, InputModality, Message, Model, ModelCost, Provider,
-    SimpleStreamOptions, StreamOptions, ThinkingLevel, ToolCall, ToolSchema, Transport,
+    SimpleStreamOptions, StreamOptions, ThinkingEffort, ToolCall, ToolSchema, Transport,
     UserContent, UserMessage,
 };
 
@@ -34,7 +34,7 @@ fn bedrock_model(id: &str, name: &str, reasoning: bool) -> Model {
         },
         context_window: 200_000,
         max_tokens: 8192,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -56,7 +56,7 @@ fn test_options() -> SimpleStreamOptions {
             metadata: None,
         },
         reasoning: None,
-        thinking_budgets: None,
+        thinking_effort_budgets: None,
         tool_choice: None,
     }
 }
@@ -197,7 +197,7 @@ fn payload_thinking_adaptive_for_opus_4() {
     let model = bedrock_model("anthropic.claude-opus-4-6-v1:0", "Claude Opus 4.6", true);
     let context = basic_context();
     let mut options = test_options();
-    options.reasoning = Some(ThinkingLevel::High);
+    options.reasoning = Some(ThinkingEffort::High);
 
     let input = build_converse_stream_input(&model, &context, &options).unwrap();
 
@@ -216,7 +216,7 @@ fn payload_thinking_budget_for_older_claude() {
     );
     let context = basic_context();
     let mut options = test_options();
-    options.reasoning = Some(ThinkingLevel::Medium);
+    options.reasoning = Some(ThinkingEffort::Medium);
 
     let input = build_converse_stream_input(&model, &context, &options).unwrap();
 
@@ -246,7 +246,7 @@ fn payload_no_thinking_for_non_reasoning_model() {
     );
     let context = basic_context();
     let mut options = test_options();
-    options.reasoning = Some(ThinkingLevel::High);
+    options.reasoning = Some(ThinkingEffort::High);
 
     let input = build_converse_stream_input(&model, &context, &options).unwrap();
 

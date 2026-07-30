@@ -29,9 +29,9 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
             .small_model
             .clone()
             .or_else(|| base.small_model.clone()),
-        default_thinking_level: overlay
-            .default_thinking_level
-            .or(base.default_thinking_level),
+        default_thinking_effort: overlay
+            .default_thinking_effort
+            .or(base.default_thinking_effort),
         compaction: merge_compaction(&base.compaction, overlay.compaction.as_ref()),
         retry: merge_retry(&base.retry, overlay.retry.as_ref()),
         transport: overlay

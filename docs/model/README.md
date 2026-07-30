@@ -62,7 +62,7 @@ pub struct Model {
     pub cost: ModelCost,               // 每百万 token 成本
     pub context_window: usize,         // 上下文窗口大小
     pub max_tokens: usize,             // 最大输出 tokens
-    pub thinking_level_map: Option<HashMap<ThinkingLevel, Option<String>>>,  // 推理级别映射
+    pub thinking_effort_map: Option<HashMap<ThinkingEffort, Option<String>>>,  // 思考强度映射
     pub headers: Option<HashMap<String, String>>,  // 自定义 HTTP headers
     pub compat: Option<serde_json::Value>,  // Provider 兼容性选项
 }
@@ -231,11 +231,11 @@ pub enum StreamEvent {
 
 ---
 
-### ThinkingLevel / StopReason
+### ThinkingEffort / StopReason
 
 ```rust
-pub enum ThinkingLevel {
-    Off, Minimal, Low, Medium, High, XHigh,
+pub enum ThinkingEffort {
+    Off, Low, Medium, High, XHigh, Max,
 }
 
 pub enum StopReason {
@@ -310,8 +310,8 @@ pub struct StreamOptions {
 pub struct SimpleStreamOptions {
     #[serde(flatten)]
     pub base: StreamOptions,
-    pub reasoning: Option<ThinkingLevel>,           // 统一推理控制
-    pub thinking_budgets: Option<ThinkingBudgets>,  // 推理 token 预算
+    pub reasoning: Option<ThinkingEffort>,                  // 统一思考强度
+    pub thinking_effort_budgets: Option<ThinkingEffortBudgets>, // token 预算
     pub tool_choice: Option<serde_json::Value>,
 }
 
@@ -531,7 +531,7 @@ async fn main() {
         cost: ModelCost { input: 15.0, output: 75.0, cache_read: 1.5, cache_write: 18.75 },
         context_window: 200_000,
         max_tokens: 16_384,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     };
@@ -560,8 +560,8 @@ async fn main() {
             max_retry_delay_ms: None,
             metadata: None,
         },
-        reasoning: Some(ThinkingLevel::Low),
-        thinking_budgets: None,
+        reasoning: Some(ThinkingEffort::Low),
+        thinking_effort_budgets: None,
         tool_choice: None,
     };
 

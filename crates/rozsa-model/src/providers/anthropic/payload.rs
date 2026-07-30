@@ -1,3 +1,31 @@
+// FrameworkTree
+// payload.rs
+// ├── struct AnthropicCompat
+// ├── resolve_compat()
+// ├── build_messages_payload()
+// ├── build_anthropic_headers()
+// ├── is_oauth_token()
+// ├── to_claude_code_name()
+// ├── from_claude_code_name()
+// ├── normalize_tool_call_id()
+// ├── convert_messages()
+// ├── convert_user_blocks()
+// ├── convert_assistant_blocks()
+// ├── build_tool_result_block()
+// ├── convert_tool_result_content()
+// ├── convert_tools()
+// ├── build_system_prompt()
+// ├── build_thinking_config()
+// ├── should_enable_thinking()
+// ├── resolve_thinking_budget()
+// ├── map_thinking_effort_to_effort()
+// ├── should_use_fine_grained_tool_streaming()
+// ├── build_cache_control()
+// ├── resolve_cache_retention()
+// ├── compat_bool()
+// ├── provider_str()
+// └── sanitize()
+
 //! Anthropic Messages API payload construction.
 //!
 //! Internal Framework:
@@ -17,7 +45,7 @@ use serde_json::{Value, json};
 
 use crate::types::{
     CacheRetention, ContentBlock, Context, InputModality, Message, Model, Provider,
-    SimpleStreamOptions, StreamOptions, ThinkingLevel, ToolCall, ToolSchema,
+    SimpleStreamOptions, StreamOptions, ThinkingEffort, ToolCall, ToolSchema,
 };
 
 const NON_VISION_USER_IMAGE_PLACEHOLDER: &str = "(image omitted: model does not support images)";
@@ -529,7 +557,7 @@ fn build_thinking_config(
     if enabled {
         if compat.force_adaptive_thinking {
             payload["thinking"] = json!({ "type": "adaptive", "display": "summarized" });
-            if let Some(effort) = map_thinking_level_to_effort(model, options.reasoning) {
+            if let Some(effort) = map_thinking_effort_to_effort(model, options.reasoning) {
                 payload["output_config"] = json!({ "effort": effort });
             }
         } else {
@@ -538,22 +566,27 @@ fn build_thinking_config(
                 "type": "enabled", "budget_tokens": budget, "display": "summarized",
             });
         }
-    } else if options.reasoning == Some(ThinkingLevel::Off) {
+    } else if options.reasoning == Some(ThinkingEffort::Off) {
         payload["thinking"] = json!({ "type": "disabled" });
     }
 }
 
 fn should_enable_thinking(model: &Model, options: &SimpleStreamOptions) -> bool {
-    model.reasoning && matches!(options.reasoning, Some(level) if level != ThinkingLevel::Off)
+    model.reasoning && matches!(options.reasoning, Some(effort) if effort != ThinkingEffort::Off)
 }
 
 fn resolve_thinking_budget(options: &SimpleStreamOptions) -> u64 {
-    if let Some(budgets) = &options.thinking_budgets {
+    if let Some(budgets) = &options.thinking_effort_budgets {
         match options.reasoning {
-            Some(ThinkingLevel::Minimal) => budgets.minimal.unwrap_or(1024),
-            Some(ThinkingLevel::Low) => budgets.low.unwrap_or(1024),
-            Some(ThinkingLevel::Medium) => budgets.medium.unwrap_or(1024),
-            Some(ThinkingLevel::High) => budgets.high.unwrap_or(1024),
+            Some(ThinkingEffort::Low) => budgets.low.unwrap_or(1024),
+            Some(ThinkingEffort::Medium) => budgets.medium.unwrap_or(1024),
+            Some(ThinkingEffort::High) => budgets.high.unwrap_or(1024),
+            Some(ThinkingEffort::XHigh) => budgets.xhigh.or(budgets.high).unwrap_or(1024),
+            Some(ThinkingEffort::Max) => budgets
+                .max
+                .or(budgets.xhigh)
+                .or(budgets.high)
+                .unwrap_or(1024),
             _ => 1024,
         }
     } else {
@@ -561,19 +594,21 @@ fn resolve_thinking_budget(options: &SimpleStreamOptions) -> u64 {
     }
 }
 
-fn map_thinking_level_to_effort(model: &Model, level: Option<ThinkingLevel>) -> Option<&str> {
-    if let Some(level) = level {
-        if let Some(map) = &model.thinking_level_map {
-            if let Some(Some(mapped)) = map.get(&level) {
-                return Some(Box::leak(mapped.clone().into_boxed_str()));
+fn map_thinking_effort_to_effort(model: &Model, effort: Option<ThinkingEffort>) -> Option<String> {
+    if let Some(effort) = effort {
+        if let Some(map) = &model.thinking_effort_map {
+            if let Some(mapped) = map.get(&effort) {
+                return mapped.clone();
             }
         }
     }
-    match level {
-        Some(ThinkingLevel::Minimal | ThinkingLevel::Low) => Some("low"),
-        Some(ThinkingLevel::Medium) => Some("medium"),
-        Some(ThinkingLevel::High | ThinkingLevel::XHigh) => Some("high"),
-        _ => Some("high"),
+    match effort {
+        Some(ThinkingEffort::Low) => Some("low".to_string()),
+        Some(ThinkingEffort::Medium) => Some("medium".to_string()),
+        Some(ThinkingEffort::High) => Some("high".to_string()),
+        Some(ThinkingEffort::XHigh) => Some("xhigh".to_string()),
+        Some(ThinkingEffort::Max) => Some("max".to_string()),
+        _ => None,
     }
 }
 

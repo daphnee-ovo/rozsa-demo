@@ -11,8 +11,8 @@
 // ├── read_partial()
 // ├── default_provider()
 // ├── default_model()
-// ├── default_thinking_level()
-// ├── default_thinking_level_parsed()
+// ├── default_thinking_effort()
+// ├── default_thinking_effort_parsed()
 // ├── compaction()
 // ├── retry()
 // ├── transport()
@@ -192,14 +192,14 @@ impl SettingsManager {
         self.resolved.default_model.as_deref()
     }
 
-    pub fn default_thinking_level(&self) -> rozsa_model::types::ThinkingLevel {
+    pub fn default_thinking_effort(&self) -> rozsa_model::types::ThinkingEffort {
         self.resolved
-            .default_thinking_level
-            .unwrap_or(rozsa_model::types::ThinkingLevel::Off)
+            .default_thinking_effort
+            .unwrap_or(rozsa_model::types::ThinkingEffort::Off)
     }
 
-    pub fn default_thinking_level_parsed(&self) -> rozsa_model::types::ThinkingLevel {
-        self.default_thinking_level()
+    pub fn default_thinking_effort_parsed(&self) -> rozsa_model::types::ThinkingEffort {
+        self.default_thinking_effort()
     }
 
     pub fn compaction(&self) -> &super::schema::CompactionSettings {

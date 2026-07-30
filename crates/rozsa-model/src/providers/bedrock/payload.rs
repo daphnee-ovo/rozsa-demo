@@ -1,3 +1,23 @@
+// FrameworkTree
+// payload.rs
+// ├── struct ConverseStreamInput
+// ├── build_converse_stream_input()
+// ├── convert_messages()
+// ├── build_system_prompt()
+// ├── build_inference_config()
+// ├── convert_tool_config()
+// ├── build_additional_model_request_fields()
+// ├── supports_adaptive_thinking()
+// ├── is_govcloud_model()
+// ├── map_thinking_effort_to_effort()
+// ├── resolve_thinking_budget()
+// ├── resolve_cache_retention()
+// ├── supports_prompt_caching()
+// ├── build_cache_point()
+// ├── is_anthropic_claude_model()
+// ├── model_match_candidates()
+// └── json_value_to_document()
+
 //! Bedrock ConverseStream payload construction.
 //!
 //! Converts Context + SimpleStreamOptions into the SDK input structure.
@@ -309,7 +329,7 @@ fn build_additional_model_request_fields(
     let candidates = model_match_candidates(&model.id, &model.name);
 
     if supports_adaptive_thinking(&candidates) {
-        let effort = map_thinking_level_to_effort(model, reasoning);
+        let effort = map_thinking_effort_to_effort(model, reasoning);
         let display = if is_govcloud_model(model) {
             None
         } else {
@@ -374,59 +394,50 @@ fn is_govcloud_model(model: &Model) -> bool {
     id.starts_with("us-gov.") || id.starts_with("arn:aws-us-gov:")
 }
 
-fn map_thinking_level_to_effort(
-    model: &Model,
-    level: &crate::types::ThinkingLevel,
-) -> &'static str {
-    use crate::types::ThinkingLevel;
+fn map_thinking_effort_to_effort(model: &Model, effort: &crate::types::ThinkingEffort) -> String {
+    use crate::types::ThinkingEffort;
 
     // Check model-specific mapping first.
-    if let Some(map) = &model.thinking_level_map {
-        if let Some(Some(mapped)) = map.get(level) {
-            return match mapped.as_str() {
-                "low" => "low",
-                "medium" => "medium",
-                "high" => "high",
-                "xhigh" => "xhigh",
-                "max" => "max",
-                _ => "high",
-            };
+    if let Some(map) = &model.thinking_effort_map {
+        if let Some(Some(mapped)) = map.get(effort) {
+            return mapped.clone();
         }
     }
 
-    match level {
-        ThinkingLevel::Off => "low",
-        ThinkingLevel::Minimal | ThinkingLevel::Low => "low",
-        ThinkingLevel::Medium => "medium",
-        ThinkingLevel::High => "high",
-        ThinkingLevel::XHigh => {
+    match effort {
+        ThinkingEffort::Off | ThinkingEffort::Low => "low".to_string(),
+        ThinkingEffort::Medium => "medium".to_string(),
+        ThinkingEffort::High => "high".to_string(),
+        ThinkingEffort::XHigh => {
             let candidates = model_match_candidates(&model.id, &model.name);
             if candidates
                 .iter()
                 .any(|s| s.contains("opus-4-7") || s.contains("opus-4-8"))
             {
-                "xhigh"
+                "xhigh".to_string()
             } else {
-                "high"
+                "high".to_string()
             }
         }
+        ThinkingEffort::Max => "max".to_string(),
     }
 }
 
 fn resolve_thinking_budget(
-    level: &crate::types::ThinkingLevel,
+    effort: &crate::types::ThinkingEffort,
     options: &SimpleStreamOptions,
 ) -> u64 {
-    use crate::types::ThinkingLevel;
+    use crate::types::ThinkingEffort;
 
     // Check custom budgets from options.
-    if let Some(budgets) = &options.thinking_budgets {
-        let budget = match level {
-            ThinkingLevel::Minimal => budgets.minimal,
-            ThinkingLevel::Low => budgets.low,
-            ThinkingLevel::Medium => budgets.medium,
-            ThinkingLevel::High | ThinkingLevel::XHigh => budgets.high,
-            ThinkingLevel::Off => None,
+    if let Some(budgets) = &options.thinking_effort_budgets {
+        let budget = match effort {
+            ThinkingEffort::Low => budgets.low,
+            ThinkingEffort::Medium => budgets.medium,
+            ThinkingEffort::High => budgets.high,
+            ThinkingEffort::XHigh => budgets.xhigh.or(budgets.high),
+            ThinkingEffort::Max => budgets.max.or(budgets.xhigh).or(budgets.high),
+            ThinkingEffort::Off => None,
         };
         if let Some(b) = budget {
             return b;
@@ -434,12 +445,11 @@ fn resolve_thinking_budget(
     }
 
     // Default budgets.
-    match level {
-        ThinkingLevel::Off => 1024,
-        ThinkingLevel::Minimal => 1024,
-        ThinkingLevel::Low => 2048,
-        ThinkingLevel::Medium => 8192,
-        ThinkingLevel::High | ThinkingLevel::XHigh => 16384,
+    match effort {
+        ThinkingEffort::Off => 1024,
+        ThinkingEffort::Low => 2048,
+        ThinkingEffort::Medium => 8192,
+        ThinkingEffort::High | ThinkingEffort::XHigh | ThinkingEffort::Max => 16384,
     }
 }
 

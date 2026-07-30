@@ -1,3 +1,22 @@
+// FrameworkTree
+// common.rs
+// ├── enum ProviderError
+// ├── is_explicit_unsupported_thinking_effort()
+// ├── is_explicit_unsupported_thinking_effort_error()
+// ├── unix_timestamp_ms()
+// ├── build_http_client()
+// ├── resolve_api_key()
+// ├── merge_headers()
+// ├── to_header_map()
+// ├── join_url()
+// ├── create_output()
+// ├── empty_usage()
+// ├── calculate_cost()
+// ├── emit_error()
+// ├── map_finish_reason()
+// ├── provider_id()
+// └── resolve_cache_retention()
+
 //! Shared provider helpers for credentials, HTTP requests, usage, and errors.
 
 use std::collections::HashMap;
@@ -30,6 +49,44 @@ pub enum ProviderError {
 
 /// Convenient result alias for provider helper functions.
 pub type ProviderResult<T> = Result<T, ProviderError>;
+
+/// Return whether a provider explicitly rejected the requested thinking effort.
+///
+/// This deliberately excludes authentication, quota, transport, model, and
+/// context failures: callers may only probe a fallback value after a 400/422
+/// response names the thinking/reasoning effort and says it is unsupported.
+pub fn is_explicit_unsupported_thinking_effort(status: reqwest::StatusCode, body: &str) -> bool {
+    if !matches!(status.as_u16(), 400 | 422) {
+        return false;
+    }
+    let body = body.to_ascii_lowercase();
+    let names_effort = body.contains("reasoning_effort")
+        || body.contains("thinking effort")
+        || body.contains("reasoning effort")
+        || (body.contains("reasoning") && body.contains("effort"));
+    let explicitly_unsupported = body.contains("unsupported")
+        || body.contains("not supported")
+        || body.contains("does not support")
+        || body.contains("invalid effort");
+    names_effort && explicitly_unsupported
+}
+
+/// Classify the normalized display form of a provider HTTP error.
+pub fn is_explicit_unsupported_thinking_effort_error(message: &str) -> bool {
+    let Some(details) = message.strip_prefix("Provider HTTP error (") else {
+        return false;
+    };
+    let Some((status, body)) = details.split_once("): ") else {
+        return false;
+    };
+    let Ok(status) = status.parse::<u16>() else {
+        return false;
+    };
+    let Ok(status) = reqwest::StatusCode::from_u16(status) else {
+        return false;
+    };
+    is_explicit_unsupported_thinking_effort(status, body)
+}
 
 /// Return the current Unix timestamp in milliseconds for message metadata.
 pub fn unix_timestamp_ms() -> i64 {

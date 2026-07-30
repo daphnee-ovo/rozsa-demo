@@ -99,8 +99,8 @@
 // ├── active_session_summary()
 // ├── create_new_session()
 // ├── switch_model_reference()
-// ├── parse_thinking_level()
-// ├── set_thinking_level()
+// ├── parse_thinking_effort()
+// ├── set_thinking_effort()
 // ├── compact_active_session()
 // ├── last_assistant_text()
 // ├── search_messages()
@@ -160,7 +160,7 @@ use rozsa_app::themes::{self, ThemeDefinition, ThemeMode, ThemeStore, ThemeSumma
 use rozsa_app::tools::AskUserQuestionAnswer;
 use rozsa_core::messages::AgentMessage;
 use rozsa_model::types::{
-    AssistantMessage, ContentBlock, Message, Provider, StopReason, ThinkingLevel, Usage,
+    AssistantMessage, ContentBlock, Message, Provider, StopReason, ThinkingEffort, Usage,
 };
 
 use crate::state::{
@@ -585,11 +585,11 @@ pub async fn dispatch_slash_command(
             emit_info(&app, "Compaction started");
         }
         "thinking" => {
-            let level = parse_thinking_level(&args)?;
-            set_thinking_level(&state, level).await?;
+            let effort = parse_thinking_effort(&args)?;
+            set_thinking_effort(&state, effort).await?;
             emit_info(
                 &app,
-                &format!("Thinking: {}", format!("{level:?}").to_lowercase()),
+                &format!("Thinking effort: {}", format!("{effort:?}").to_lowercase()),
             );
         }
         "login" => {
@@ -1570,10 +1570,10 @@ pub async fn get_settings(
 ) -> Result<SettingsSnapshot, String> {
     let rt = state.runtime_settings.lock().await;
     let model = state.shared.model.lock().await;
-    let thinking = state.shared.thinking_level.lock().await;
+    let thinking = state.shared.thinking_effort.lock().await;
 
     let snapshot = SettingsSnapshot {
-        thinking_level: format!("{:?}", *thinking).to_lowercase(),
+        thinking_effort: format!("{:?}", *thinking).to_lowercase(),
         model_id: model.id.clone(),
         model_name: model.name.clone(),
         model_provider: model.provider.as_str().to_string(),
@@ -1643,28 +1643,28 @@ pub async fn update_setting(
 ) -> Result<(), String> {
     match key.as_str() {
         "thinking" => {
-            use rozsa_model::types::ThinkingLevel;
-            let level = match value.as_str() {
-                "off" => ThinkingLevel::Off,
-                "minimal" => ThinkingLevel::Minimal,
-                "low" => ThinkingLevel::Low,
-                "medium" => ThinkingLevel::Medium,
-                "high" => ThinkingLevel::High,
-                "xhigh" => ThinkingLevel::XHigh,
-                _ => return Err(format!("Invalid thinking level: {value}")),
+            use rozsa_model::types::ThinkingEffort;
+            let effort = match value.as_str() {
+                "off" => ThinkingEffort::Off,
+                "low" | "light" | "minimal" => ThinkingEffort::Low,
+                "medium" => ThinkingEffort::Medium,
+                "high" => ThinkingEffort::High,
+                "xhigh" => ThinkingEffort::XHigh,
+                "max" => ThinkingEffort::Max,
+                _ => return Err(format!("Invalid thinking effort: {value}")),
             };
-            *state.shared.thinking_level.lock().await = level;
+            *state.shared.thinking_effort.lock().await = effort;
             // 同步到所有 active sessions
             let tabs = state.tabs.lock().await;
             for tab in tabs.iter() {
                 if let SessionTab::Active { agent, .. } = tab {
-                    agent.set_thinking_level(level).await;
+                    agent.set_thinking_effort(effort).await;
                 }
             }
             drop(tabs);
             {
                 let mut s = state.runtime_settings.lock().await;
-                s.default_thinking_level = Some(level);
+                s.default_thinking_effort = Some(effort);
             }
             persist_settings(&state).await?;
             Ok(())
@@ -2020,6 +2020,7 @@ pub async fn list_models(state: State<'_, GuiState>) -> Result<Vec<ModelListEntr
             name: m.name.clone(),
             provider: m.provider.display_name(),
             reasoning: m.reasoning,
+            thinking_effort_map: m.thinking_effort_map.clone(),
         })
         .collect())
 }
@@ -2786,35 +2787,35 @@ async fn switch_model_reference(
     Ok(())
 }
 
-fn parse_thinking_level(value: &str) -> Result<ThinkingLevel, String> {
+fn parse_thinking_effort(value: &str) -> Result<ThinkingEffort, String> {
     match value.to_ascii_lowercase().as_str() {
-        "" | "off" => Ok(ThinkingLevel::Off),
-        "minimal" | "min" => Ok(ThinkingLevel::Minimal),
-        "low" | "l" => Ok(ThinkingLevel::Low),
-        "medium" | "med" | "m" => Ok(ThinkingLevel::Medium),
-        "high" | "h" => Ok(ThinkingLevel::High),
-        "xhigh" | "x" => Ok(ThinkingLevel::XHigh),
+        "" | "off" => Ok(ThinkingEffort::Off),
+        "low" | "light" | "minimal" | "min" | "l" => Ok(ThinkingEffort::Low),
+        "medium" | "med" | "m" => Ok(ThinkingEffort::Medium),
+        "high" | "h" => Ok(ThinkingEffort::High),
+        "xhigh" | "x" => Ok(ThinkingEffort::XHigh),
+        "max" => Ok(ThinkingEffort::Max),
         other => Err(format!(
-            "Unknown thinking level: {other}. Use: off/minimal/low/medium/high/xhigh"
+            "Unknown thinking effort: {other}. Use: off/low/medium/high/xhigh/max"
         )),
     }
 }
 
-async fn set_thinking_level(
+async fn set_thinking_effort(
     state: &State<'_, GuiState>,
-    level: ThinkingLevel,
+    effort: ThinkingEffort,
 ) -> Result<(), String> {
-    *state.shared.thinking_level.lock().await = level;
+    *state.shared.thinking_effort.lock().await = effort;
     let tabs = state.tabs.lock().await;
     for tab in tabs.iter() {
         if let SessionTab::Active { agent, .. } = tab {
-            agent.set_thinking_level(level).await;
+            agent.set_thinking_effort(effort).await;
         }
     }
     drop(tabs);
     {
         let mut settings = state.runtime_settings.lock().await;
-        settings.default_thinking_level = Some(level);
+        settings.default_thinking_effort = Some(effort);
     }
     persist_settings(state).await
 }
@@ -3056,8 +3057,8 @@ fn session_entry_summary(entry: &rozsa_app::session::manager::SessionEntry) -> S
         rozsa_app::session::manager::SessionEntry::Message(message_entry) => {
             message_summary(&message_entry.message)
         }
-        rozsa_app::session::manager::SessionEntry::ThinkingLevelChange(entry) => {
-            format!("thinking_change {}", entry.thinking_level)
+        rozsa_app::session::manager::SessionEntry::ThinkingEffortChange(entry) => {
+            format!("thinking_effort_change {}", entry.thinking_effort)
         }
         rozsa_app::session::manager::SessionEntry::ModelChange(entry) => {
             format!("model_change {}/{}", entry.provider, entry.model_id)
@@ -3421,11 +3422,14 @@ pub struct ModelListEntry {
     pub name: String,
     pub provider: String,
     pub reasoning: bool,
+    #[serde(rename = "thinkingEffortMap")]
+    pub thinking_effort_map: Option<std::collections::HashMap<ThinkingEffort, Option<String>>>,
 }
 
 #[derive(serde::Serialize)]
 pub struct SettingsSnapshot {
-    pub thinking_level: String,
+    #[serde(rename = "thinkingEffort")]
+    pub thinking_effort: String,
     pub model_id: String,
     pub model_name: String,
     pub model_provider: String,

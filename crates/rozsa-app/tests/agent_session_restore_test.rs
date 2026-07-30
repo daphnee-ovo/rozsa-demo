@@ -7,7 +7,7 @@ use rozsa_app::settings::SettingsManager;
 use rozsa_model::event_stream::create_event_stream;
 use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Message, Model, ModelCost, Provider, StopReason,
-    StreamEvent, ThinkingLevel, ToolResultMessage, Usage, UserContent, UserMessage,
+    StreamEvent, ThinkingEffort, ToolResultMessage, Usage, UserContent, UserMessage,
 };
 
 fn test_model() -> Model {
@@ -27,7 +27,7 @@ fn test_model() -> Model {
         },
         context_window: 8_192,
         max_tokens: 1_024,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -114,7 +114,7 @@ async fn restored_session_messages_are_sent_to_the_next_model_request() {
     });
     let session = AgentSession::new(AgentSessionConfig {
         model: test_model(),
-        thinking_level: ThinkingLevel::Off,
+        thinking_effort: ThinkingEffort::Off,
         system_prompt: String::new(),
         cwd: temp.path().to_path_buf(),
         session_manager: SessionManager::open(&session_path).unwrap(),

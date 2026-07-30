@@ -9,7 +9,7 @@ use rozsa_gui::state::{
     PreToolUseHook, PreToolUseHookFactory, SharedResources, deny_pending_approvals,
     permission_pending_key,
 };
-use rozsa_model::types::{Api, Model, ModelCost, Provider, ThinkingLevel};
+use rozsa_model::types::{Api, Model, ModelCost, Provider, ThinkingEffort};
 use tokio::sync::Mutex;
 
 fn test_model() -> Model {
@@ -29,7 +29,7 @@ fn test_model() -> Model {
         },
         context_window: 8_192,
         max_tokens: 1_024,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -42,7 +42,7 @@ fn shared_resources(cwd: &Path, factory: PreToolUseHookFactory) -> SharedResourc
         resources: rozsa_app::resources::LoadedResources::default(),
         system_prompt: "test system prompt".to_string(),
         model: Mutex::new(test_model()),
-        thinking_level: Mutex::new(ThinkingLevel::Off),
+        thinking_effort: Mutex::new(ThinkingEffort::Off),
         pre_tool_use_factory: Some(factory),
         question_request_tx: None,
         model_stream: None,

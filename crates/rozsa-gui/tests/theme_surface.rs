@@ -18,7 +18,7 @@ fn native_host_owns_translucent_and_opaque_backings() {
     assert!(native.contains("NSVisualEffectState::FollowsWindowActiveState"));
     assert!(native.contains("NSBoxType::Custom"));
     assert!(native.contains("sidebar_opaque_backing.setFillColor"));
-    assert!(native.contains("if variant.translucent"));
+    assert!(native.contains("if surface.translucent_sidebar"));
     assert!(native.contains("parse_oklch_color"));
     assert!(native.contains("parse_rgb_color"));
     assert!(native.contains("parse_hex_color"));

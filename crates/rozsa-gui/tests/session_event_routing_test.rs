@@ -13,7 +13,7 @@ fn all_gui_event_payloads_preserve_the_origin_session_id() {
         messages: vec![],
         is_streaming: false,
         model: None,
-        thinking_level: "off".to_string(),
+        thinking_effort: "off".to_string(),
         session_name: None,
         cwd: "/workspace".to_string(),
         git: None,

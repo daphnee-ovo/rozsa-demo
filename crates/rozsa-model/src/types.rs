@@ -9,8 +9,8 @@
 // ├── display_name()
 // ├── enum InputModality
 // ├── struct ModelCost
-// ├── enum ThinkingLevel
-// ├── struct ThinkingBudgets
+// ├── enum ThinkingEffort
+// ├── struct ThinkingEffortBudgets
 // ├── struct Model
 // ├── enum Transport
 // ├── enum CacheRetention
@@ -207,26 +207,27 @@ pub struct ModelCost {
     pub cache_write: f64,
 }
 
-/// Unified reasoning control exposed to callers.
+/// Unified reasoning effort exposed to callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ThinkingLevel {
+pub enum ThinkingEffort {
     Off,
-    Minimal,
     Low,
     Medium,
     High,
     #[serde(rename = "xhigh")]
     XHigh,
+    Max,
 }
 
-/// Optional token budgets for provider-specific reasoning levels.
+/// Optional token budgets for provider-specific thinking efforts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThinkingBudgets {
-    pub minimal: Option<u64>,
+pub struct ThinkingEffortBudgets {
     pub low: Option<u64>,
     pub medium: Option<u64>,
     pub high: Option<u64>,
+    pub xhigh: Option<u64>,
+    pub max: Option<u64>,
 }
 
 /// Model metadata required to route and price a request.
@@ -242,7 +243,7 @@ pub struct Model {
     pub cost: ModelCost,
     pub context_window: usize,
     pub max_tokens: usize,
-    pub thinking_level_map: Option<HashMap<ThinkingLevel, Option<String>>>,
+    pub thinking_effort_map: Option<HashMap<ThinkingEffort, Option<String>>>,
     pub headers: Option<HashMap<String, String>>,
     #[serde(default)]
     pub compat: Option<serde_json::Value>,
@@ -286,8 +287,8 @@ pub struct StreamOptions {
 pub struct SimpleStreamOptions {
     #[serde(flatten)]
     pub base: StreamOptions,
-    pub reasoning: Option<ThinkingLevel>,
-    pub thinking_budgets: Option<ThinkingBudgets>,
+    pub reasoning: Option<ThinkingEffort>,
+    pub thinking_effort_budgets: Option<ThinkingEffortBudgets>,
     pub tool_choice: Option<serde_json::Value>,
 }
 

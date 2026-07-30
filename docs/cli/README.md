@@ -143,7 +143,7 @@ let policy = Arc::new(PermissionPolicy::new(permission_mode));
 ```rust
 let config = AgentSessionConfig {
     model,
-    thinking_level,
+    thinking_effort,
     system_prompt,
     cwd: cwd.clone(),
     session_manager,
@@ -546,7 +546,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config = AgentSessionConfig {
         model,
-        thinking_level: None,
+        thinking_effort: None,
         system_prompt,
         cwd: cwd.clone(),
         session_manager,

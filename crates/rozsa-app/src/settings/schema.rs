@@ -106,7 +106,8 @@ pub struct Settings {
     pub default_model: Option<String>,
     /// Optional low-cost model used by bounded auxiliary requests.
     pub small_model: Option<String>,
-    pub default_thinking_level: Option<rozsa_model::types::ThinkingLevel>,
+    #[serde(alias = "default_thinking_level")]
+    pub default_thinking_effort: Option<rozsa_model::types::ThinkingEffort>,
     pub compaction: CompactionSettings,
     pub retry: RetrySettings,
     pub transport: String,
@@ -137,7 +138,7 @@ impl Default for Settings {
             default_provider: None,
             default_model: None,
             small_model: None,
-            default_thinking_level: None,
+            default_thinking_effort: None,
             compaction: CompactionSettings::default(),
             retry: RetrySettings::default(),
             transport: "auto".to_string(),
@@ -241,7 +242,8 @@ pub struct PartialSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub small_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_thinking_level: Option<rozsa_model::types::ThinkingLevel>,
+    #[serde(alias = "default_thinking_level")]
+    pub default_thinking_effort: Option<rozsa_model::types::ThinkingEffort>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compaction: Option<PartialCompactionSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]

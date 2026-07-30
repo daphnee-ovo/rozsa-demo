@@ -1,8 +1,19 @@
+// FrameworkTree
+// config.rs
+// ├── struct AgentContext
+// ├── struct AgentLoopConfig
+// ├── struct ShouldStopContext
+// ├── struct TurnUpdate
+// ├── struct PreToolUseContext
+// ├── struct PreToolUseResult
+// ├── struct PostToolUseContext
+// └── struct PostToolUseResult
+
 use crate::messages::AgentMessage;
 use crate::tool::{Tool, ToolExecutionMode};
 use rozsa_model::event_stream::EventStream;
 use rozsa_model::types::{
-    Context as ModelContext, Message, Model, SimpleStreamOptions, StreamEvent, ThinkingLevel,
+    Context as ModelContext, Message, Model, SimpleStreamOptions, StreamEvent, ThinkingEffort,
     ToolSchema,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +33,7 @@ pub struct AgentContext {
 
 pub struct AgentLoopConfig {
     pub model: Model,
-    pub reasoning: Option<ThinkingLevel>,
+    pub reasoning: Option<ThinkingEffort>,
     pub stream_options: SimpleStreamOptions,
     pub model_stream: ModelStreamFn,
     pub convert_to_llm: Box<dyn Fn(&[AgentMessage]) -> Vec<Message> + Send + Sync>,
@@ -62,7 +73,7 @@ pub struct ShouldStopContext<'a> {
 pub struct TurnUpdate {
     pub context: Option<AgentContext>,
     pub model: Option<Model>,
-    pub thinking_level: Option<ThinkingLevel>,
+    pub thinking_effort: Option<ThinkingEffort>,
 }
 
 #[derive(Debug, Clone)]

@@ -80,7 +80,7 @@ composer = 用户组织并提交消息的整个底部区域
    ├─ shortcut hint
    ├─ context meter
    ├─ model selector
-   ├─ thinking level indicator
+   ├─ thinking effort indicator
    └─ submit control: Send
 
 tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
@@ -164,7 +164,7 @@ tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
 | 辅助文本 | `shortcut hint` | 快捷键提示 | `.input-hint` |
 | 指示器 | `context meter` | 上下文用量指示器 | `.context-ring` + `#contextTokens` |
 | 控件 | `model selector` | 模型选择器 | `#modelSelector.model-selector` |
-| 指示器 | `thinking level indicator` | 思考级别指示器 | `#thinkingLevel`，紧跟 model selector |
+| 指示器 | `thinking effort indicator` | 思考强度指示器 | `#thinkingEffort`，紧跟 model selector |
 | 控件 | `submit control` / `send button` | 提交控件/发送按钮 | `.send-btn`，文字为 `Send` |
 
 ### 6.2 Composer 结构图
@@ -515,7 +515,7 @@ group 只展示已经接到 `update_setting` 的控件。
 | 推荐英文名 | 中文约定 | 职责 | 当前 DOM/CSS/JS 锚点 |
 | --- | --- | --- | --- |
 | `AI settings group` | AI 设置分组 | Thinking、compact、steering 和 follow-up 设置 | `#pane-general .settings-group`；`renderGeneralSettings()` |
-| `thinking level selector` | 思考级别选择器 | 选择 Off/Low/Medium/High | `#settingsThinking` |
+| `thinking effort selector` | 思考强度选择器 | 选择 Off/Low/Medium/High/Xhigh/Max | `#settingsThinkingEffort` |
 | `auto compact switch` | 自动压缩开关 | 控制上下文自动 compact | `#settingsAutoCompact`；`wireSettingSwitch()` |
 | `auto session naming switch` | 自动会话命名开关 | 控制首次真实用户 turn 的并发命名；短输入本地直用，长输入调用 small model | `#settingsAutoSessionNaming`；`wireSettingSwitch()` |
 | `steering mode selector` | Steering 模式选择器 | 选择一次处理一条或全部 steering 消息 | `#settingsSteeringMode` |

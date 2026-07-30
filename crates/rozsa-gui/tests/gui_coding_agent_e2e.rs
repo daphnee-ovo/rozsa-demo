@@ -15,7 +15,7 @@ use rozsa_gui::state::{
 use rozsa_model::event_stream::create_event_stream;
 use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Model, ModelCost, Provider, StopReason, StreamEvent,
-    ThinkingLevel, ToolCall, Usage,
+    ThinkingEffort, ToolCall, Usage,
 };
 use tokio::sync::{Mutex, mpsc, oneshot};
 
@@ -36,7 +36,7 @@ fn test_model() -> Model {
         },
         context_window: 8_192,
         max_tokens: 1_024,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -186,7 +186,7 @@ async fn gui_runtime_completes_scripted_coding_turn_with_session_bound_approval(
         resources: rozsa_app::resources::LoadedResources::default(),
         system_prompt: "test".to_string(),
         model: Mutex::new(test_model()),
-        thinking_level: Mutex::new(ThinkingLevel::Off),
+        thinking_effort: Mutex::new(ThinkingEffort::Off),
         pre_tool_use_factory: Some(approval_factory(pending.clone(), request_tx)),
         question_request_tx: None,
         model_stream: Some(scripted_model(source_path.to_string_lossy().to_string())),

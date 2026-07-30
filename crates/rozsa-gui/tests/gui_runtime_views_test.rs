@@ -1,5 +1,5 @@
 use rozsa_app::subagent::{SubagentInfo, SubagentStatus};
-use rozsa_model::types::ThinkingLevel;
+use rozsa_model::types::ThinkingEffort;
 
 #[test]
 fn subagent_view_payload_keeps_runtime_identity_and_status() {
@@ -9,7 +9,7 @@ fn subagent_view_payload_keeps_runtime_identity_and_status() {
         status: SubagentStatus::Running,
         model_id: "test-model".to_string(),
         model_provider: "test".to_string(),
-        thinking_level: ThinkingLevel::Off,
+        thinking_effort: ThinkingEffort::Off,
         created_at: 1,
         last_activity_at: 2,
         last_error: None,

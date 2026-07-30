@@ -1,3 +1,21 @@
+// FrameworkTree
+// subagent.rs
+// ├── struct SubagentTool
+// ├── impl SubagentTool
+// ├── new()
+// ├── parse_scope()
+// ├── format_summary()
+// ├── extract_last_assistant_text()
+// ├── info_details()
+// ├── impl SubagentTool
+// ├── name()
+// ├── description()
+// ├── label()
+// ├── parameters_schema()
+// ├── execution_mode()
+// ├── execute()
+// └── create_subagent_tool()
+
 // File: tools/subagent.rs
 //
 // Subagent tool — exposes SubagentManager to the model via the Tool trait.
@@ -120,7 +138,7 @@ impl SubagentTool {
             format!("{} ({})", info.id, info.name),
             format!("status: {:?}", info.status),
             format!("model: {}/{}", info.model_provider, info.model_id),
-            format!("thinking_level: {:?}", info.thinking_level),
+            format!("thinking_effort: {:?}", info.thinking_effort),
             format!("messages: {}", messages.len()),
         ];
 
@@ -168,7 +186,7 @@ impl SubagentTool {
             "status": format!("{:?}", info.status).to_lowercase(),
             "model_id": info.model_id,
             "model_provider": info.model_provider,
-            "thinking_level": format!("{:?}", info.thinking_level).to_lowercase(),
+            "thinking_effort": format!("{:?}", info.thinking_effort).to_lowercase(),
         })
     }
 }
@@ -275,7 +293,7 @@ impl Tool for SubagentTool {
                     name,
                     system_prompt,
                     model: None,
-                    thinking_level: None,
+                    thinking_effort: None,
                     scope,
                 };
 
@@ -456,7 +474,7 @@ impl Tool for SubagentTool {
                         "status": format!("{:?}", info.status).to_lowercase(),
                         "model_id": info.model_id,
                         "model_provider": info.model_provider,
-                        "thinking_level": format!("{:?}", info.thinking_level).to_lowercase(),
+                        "thinking_effort": format!("{:?}", info.thinking_effort).to_lowercase(),
                     })).collect::<Vec<_>>(),
                 });
 

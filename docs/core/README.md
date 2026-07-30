@@ -69,7 +69,7 @@ agent loop 的输入上下文。`messages` 是完整对话历史，`tools` 是�
 ```rust
 pub struct AgentLoopConfig {
     pub model: Model,
-    pub reasoning: Option<ThinkingLevel>,
+    pub reasoning: Option<ThinkingEffort>,
     pub stream_options: SimpleStreamOptions,
     pub model_stream: ModelStreamFn,
     pub convert_to_llm: Box<dyn Fn(&[AgentMessage]) -> Vec<Message> + Send + Sync>,
@@ -145,11 +145,11 @@ pub struct PostToolUseResult {
 pub struct TurnUpdate {
     pub context: Option<AgentContext>,
     pub model: Option<Model>,
-    pub thinking_level: Option<ThinkingLevel>,
+    pub thinking_effort: Option<ThinkingEffort>,
 }
 ```
 
-`prepare_next_turn` 返回的更新 — 可在轮间切换 model 或调整 thinking level。
+`prepare_next_turn` 返回的更新 — 可在轮间切换 model 或调整 thinking effort。
 
 ## Tool trait
 
@@ -286,7 +286,7 @@ let context = AgentContext {
 // 构建配置
 let config = AgentLoopConfig {
     model: my_model,
-    reasoning: Some(ThinkingLevel::Medium),
+    reasoning: Some(ThinkingEffort::Medium),
     stream_options: SimpleStreamOptions::default(),
     model_stream: Box::new(|model, ctx, opts| { /* 调用 provider */ }),
     convert_to_llm: Box::new(|msgs| { /* AgentMessage → Message */ }),

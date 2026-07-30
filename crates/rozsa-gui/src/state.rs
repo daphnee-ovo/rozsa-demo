@@ -420,7 +420,7 @@ pub struct SharedResources {
     pub resources: rozsa_app::resources::LoadedResources,
     pub system_prompt: String,
     pub model: Mutex<rozsa_model::types::Model>,
-    pub thinking_level: Mutex<rozsa_model::types::ThinkingLevel>,
+    pub thinking_effort: Mutex<rozsa_model::types::ThinkingEffort>,
     pub pre_tool_use_factory: Option<PreToolUseHookFactory>,
     pub question_request_tx: Option<AskUserQuestionRequestSender>,
     pub model_stream: Option<rozsa_app::agent_session::ModelStream>,
@@ -499,7 +499,7 @@ impl SharedResources {
         let session_id = session_manager.session_id().to_string();
         let session_cwd = PathBuf::from(session_manager.cwd());
         let model = self.model.lock().await.clone();
-        let thinking_level = *self.thinking_level.lock().await;
+        let thinking_effort = *self.thinking_effort.lock().await;
         let pre_tool_use = self.pre_tool_use_factory.as_ref().map(|factory| {
             let hook = factory(session_id.clone());
             Box::new(move |context| hook(context)) as _
@@ -511,7 +511,7 @@ impl SharedResources {
             .map_err(|error| error.to_string())?;
         let session = AgentSession::new(AgentSessionConfig {
             model,
-            thinking_level,
+            thinking_effort,
             system_prompt: self.system_prompt.clone(),
             cwd: session_cwd,
             session_manager,
@@ -708,7 +708,7 @@ pub struct UiSnapshot {
     pub messages: Vec<serde_json::Value>,
     pub is_streaming: bool,
     pub model: Option<ModelInfo>,
-    pub thinking_level: String,
+    pub thinking_effort: String,
     pub session_name: Option<String>,
     pub cwd: String,
     pub git: Option<GitStatus>,
@@ -795,7 +795,7 @@ impl UiSnapshot {
         drop(model_guard);
 
         let thinking = shared
-            .thinking_level
+            .thinking_effort
             .try_lock()
             .unwrap_or_else(|_| unreachable!());
         let thinking_str = format!("{:?}", *thinking).to_lowercase();
@@ -812,7 +812,7 @@ impl UiSnapshot {
             messages,
             is_streaming: tab.is_streaming(),
             model: Some(model_info),
-            thinking_level: thinking_str,
+            thinking_effort: thinking_str,
             // Stream updates retain the existing header. Full snapshots resolve
             // the latest persisted name, then fall back to the first user turn.
             session_name: (!stream_update).then(|| session_display_name(tab)),

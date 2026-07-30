@@ -34,10 +34,10 @@
 // ├── settings_manager()
 // ├── cwd()
 // ├── current_cwd()
-// ├── thinking_level()
+// ├── thinking_effort()
 // ├── model()
 // ├── set_model()
-// ├── set_thinking_level()
+// ├── set_thinking_effort()
 // ├── show_images()
 // ├── hide_thinking()
 // ├── is_initial_session_name_candidate()
@@ -67,6 +67,13 @@
 // ├── should_stop_for_compaction()
 // ├── usage_context_tokens()
 // ├── default_model_stream()
+// ├── model_stream_with_thinking_effort_fallback()
+// ├── forward_model_stream()
+// ├── thinking_effort_attempt_values()
+// ├── remember_thinking_effort()
+// ├── persist_thinking_effort()
+// ├── thinking_effort_unavailable_event()
+// ├── unsupported_effort_message()
 // ├── struct ResolvedCredentials
 // ├── resolve_credentials()
 // ├── oauth_auth_provider_id()
@@ -106,7 +113,7 @@
 // - [Tools](./tools/mod.rs)
 // - [Core Agent Loop](../../rozsa-core/src/agent_loop.rs)
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -120,12 +127,13 @@ use rozsa_core::config::{AgentContext, AgentLoopConfig, ShouldStopContext};
 use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 use rozsa_core::tool::{Tool, ToolExecutionMode, ToolMetadata, tool_metadata};
-use rozsa_model::event_stream::EventStream;
+use rozsa_model::event_stream::{EventStream, create_event_stream};
 use rozsa_model::types::{
     CacheRetention, ContentBlock, Message, Model, SimpleStreamOptions, StreamOptions,
-    ThinkingLevel, ToolSchema, Transport, Usage, UserContent, UserMessage,
+    ThinkingEffort, ToolSchema, Transport, Usage, UserContent, UserMessage,
 };
 
+use crate::model_registry::ModelRegistry;
 use crate::resources::LoadedResources;
 use crate::session::manager::SessionManager;
 use crate::settings::SettingsManager;
@@ -143,7 +151,7 @@ pub struct AgentSessionConfig {
     /// Model to use for LLM requests.
     pub model: Model,
     /// Thinking/reasoning level for the model.
-    pub thinking_level: ThinkingLevel,
+    pub thinking_effort: ThinkingEffort,
     /// System prompt text (assembled from resources).
     pub system_prompt: String,
     /// Working directory for tool execution.
@@ -201,7 +209,7 @@ struct StaticConfig {
 /// Mutable runtime parameters: model and reasoning level can change between turns.
 struct RuntimeParams {
     model: Model,
-    thinking_level: ThinkingLevel,
+    thinking_effort: ThinkingEffort,
 }
 
 /// Top-level orchestrator that wires together the agent loop, tools,
@@ -264,7 +272,7 @@ impl AgentSession {
         let (event_tx, _) = broadcast::channel(2048);
         let AgentSessionConfig {
             model,
-            thinking_level,
+            thinking_effort,
             system_prompt,
             cwd,
             session_manager,
@@ -315,14 +323,15 @@ impl AgentSession {
             >,
         > = pre_tool_use.map(|f| Arc::from(f) as _);
 
-        let model_stream = model_stream.unwrap_or_else(default_model_stream);
+        let global_models_dir = config_roots.global().join("models");
+        let model_stream = model_stream.unwrap_or_else(|| default_model_stream(global_models_dir));
         let shared = crate::subagent::SharedResources {
             model_stream: model_stream.clone(),
             convert_to_llm: Arc::new(convert_to_llm),
             main_tools: tools_arc.clone(),
             tool_settings: tool_settings.clone(),
             main_model: model.clone(),
-            main_thinking_level: thinking_level,
+            main_thinking_effort: thinking_effort,
             cwd: cwd.clone(),
             session_dir,
             main_session_uuid,
@@ -342,7 +351,7 @@ impl AgentSession {
             },
             runtime: Mutex::new(RuntimeParams {
                 model,
-                thinking_level,
+                thinking_effort,
             }),
             session_manager,
             current_cwd,
@@ -750,9 +759,9 @@ impl AgentSession {
         self.current_cwd.lock().await.clone()
     }
 
-    /// Get the current thinking level.
-    pub async fn thinking_level(&self) -> ThinkingLevel {
-        self.runtime.lock().await.thinking_level
+    /// Get the current thinking effort.
+    pub async fn thinking_effort(&self) -> ThinkingEffort {
+        self.runtime.lock().await.thinking_effort
     }
 
     /// Get the current model (cloned snapshot).
@@ -765,9 +774,9 @@ impl AgentSession {
         self.runtime.lock().await.model = model;
     }
 
-    /// Update the thinking level for subsequent turns.
-    pub async fn set_thinking_level(&self, level: ThinkingLevel) {
-        self.runtime.lock().await.thinking_level = level;
+    /// Update the thinking effort for subsequent turns.
+    pub async fn set_thinking_effort(&self, effort: ThinkingEffort) {
+        self.runtime.lock().await.thinking_effort = effort;
     }
 
     // --- Phase A: State accessors ---
@@ -785,7 +794,7 @@ impl AgentSession {
 
     /// Get hide_thinking flag (true when thinking is off).
     pub async fn hide_thinking(&self) -> bool {
-        self.runtime.lock().await.thinking_level == ThinkingLevel::Off
+        self.runtime.lock().await.thinking_effort == ThinkingEffort::Off
     }
 
     /// Return whether the next real user turn is eligible to name this session.
@@ -861,8 +870,8 @@ impl AgentSession {
                 max_retry_delay_ms: retry.max_retry_delay_ms,
                 metadata: None,
             },
-            reasoning: Some(ThinkingLevel::Low),
-            thinking_budgets: None,
+            reasoning: Some(ThinkingEffort::Low),
+            thinking_effort_budgets: None,
             tool_choice: None,
         };
         let mut stream = (self.model_stream)(&model, &context, &options);
@@ -951,7 +960,7 @@ impl AgentSession {
         // Build summarize function using the current model
         let runtime = self.runtime.lock().await;
         let model = runtime.model.clone();
-        let thinking_level = runtime.thinking_level;
+        let thinking_effort = runtime.thinking_effort;
         drop(runtime);
 
         let credentials = resolve_credentials(&model).await?;
@@ -978,8 +987,8 @@ impl AgentSession {
                     })],
                     tools: vec![],
                 };
-                let reasoning = match thinking_level {
-                    ThinkingLevel::Off => None,
+                let reasoning = match thinking_effort {
+                    ThinkingEffort::Off => None,
                     level => Some(level),
                 };
                 let options = SimpleStreamOptions {
@@ -997,7 +1006,7 @@ impl AgentSession {
                         metadata: None,
                     },
                     reasoning,
-                    thinking_budgets: None,
+                    thinking_effort_budgets: None,
                     tool_choice: None,
                 };
                 let mut stream = model_stream(&model, &context, &options);
@@ -1250,7 +1259,7 @@ impl AgentSession {
     async fn build_loop_config(&self) -> Result<AgentLoopConfig> {
         let runtime = self.runtime.lock().await;
         let model = runtime.model.clone();
-        let thinking_level = runtime.thinking_level;
+        let thinking_effort = runtime.thinking_effort;
         drop(runtime);
         let settings = self
             .static_config
@@ -1261,8 +1270,8 @@ impl AgentSession {
             .clone();
 
         // Build stream options from settings
-        let reasoning = match thinking_level {
-            ThinkingLevel::Off => None,
+        let reasoning = match thinking_effort {
+            ThinkingEffort::Off => None,
             level => Some(level),
         };
 
@@ -1283,7 +1292,7 @@ impl AgentSession {
                 metadata: None,
             },
             reasoning,
-            thinking_budgets: None,
+            thinking_effort_budgets: None,
             tool_choice: None,
         };
 
@@ -1526,12 +1535,220 @@ fn usage_context_tokens(usage: &Usage) -> u64 {
 }
 
 /// Build the default model stream that delegates to rozsa_model's provider registry.
-fn default_model_stream() -> ModelStream {
-    Arc::new(
-        |model: &Model, context: &rozsa_model::types::Context, options: &SimpleStreamOptions| {
+fn default_model_stream(global_models_dir: PathBuf) -> ModelStream {
+    model_stream_with_thinking_effort_fallback(
+        global_models_dir,
+        Arc::new(|model, context, options| {
             rozsa_model::stream::stream_simple(model, context, options)
+        }),
+    )
+}
+
+/// Wrap a provider stream with learned, safe thinking effort fallbacks.
+pub fn model_stream_with_thinking_effort_fallback(
+    global_models_dir: PathBuf,
+    attempt_stream: ModelStream,
+) -> ModelStream {
+    let learned_efforts = Arc::new(std::sync::Mutex::new(HashMap::new()));
+    Arc::new(
+        move |model: &Model,
+              context: &rozsa_model::types::Context,
+              options: &SimpleStreamOptions| {
+            let (sender, stream) = create_event_stream();
+            let model = model.clone();
+            let context = context.clone();
+            let options = options.clone();
+            let global_models_dir = global_models_dir.clone();
+            let learned_efforts = learned_efforts.clone();
+            let attempt_stream = attempt_stream.clone();
+            tokio::spawn(async move {
+                let Some(effort) = options.reasoning else {
+                    forward_model_stream(&sender, &attempt_stream, &model, &context, &options)
+                        .await;
+                    return;
+                };
+                if effort == ThinkingEffort::Off {
+                    forward_model_stream(&sender, &attempt_stream, &model, &context, &options)
+                        .await;
+                    return;
+                }
+
+                let model_key = format!("{}/{}", model.provider.as_str(), model.id);
+                let mut effective_model = model.clone();
+                if let Some(learned) = learned_efforts
+                    .lock()
+                    .expect("learned thinking effort lock must not be poisoned")
+                    .get(&model_key)
+                    .cloned()
+                {
+                    let mut map = effective_model
+                        .thinking_effort_map
+                        .take()
+                        .unwrap_or_default();
+                    map.extend(learned);
+                    effective_model.thinking_effort_map = Some(map);
+                }
+                let candidates = thinking_effort_attempt_values(&effective_model, effort);
+                if candidates.is_empty() {
+                    sender.push(thinking_effort_unavailable_event(&model, effort));
+                    return;
+                }
+
+                for (attempt, value) in candidates.iter().enumerate() {
+                    let mut attempt_model = effective_model.clone();
+                    let mut map = attempt_model.thinking_effort_map.take().unwrap_or_default();
+                    map.insert(effort, Some(value.clone()));
+                    attempt_model.thinking_effort_map = Some(map);
+
+                    let mut inner = attempt_stream(&attempt_model, &context, &options);
+                    let mut retry = false;
+                    let mut emitted_response = false;
+                    let mut succeeded = false;
+                    while let Some(event) = inner.next().await {
+                        if let rozsa_model::types::StreamEvent::Error { error, .. } = &event {
+                            let message = error.error_message.as_deref().unwrap_or_default();
+                            if !emitted_response && unsupported_effort_message(message) {
+                                if attempt + 1 < candidates.len() {
+                                    retry = true;
+                                    break;
+                                }
+                                remember_thinking_effort(
+                                    &learned_efforts,
+                                    &model_key,
+                                    effort,
+                                    None,
+                                );
+                                if let Err(error) = persist_thinking_effort(
+                                    &global_models_dir,
+                                    &model,
+                                    effort,
+                                    None,
+                                ) {
+                                    tracing::warn!(%error, provider = %model.provider, model = %model.id, "failed to persist unsupported thinking effort");
+                                }
+                            }
+                        } else {
+                            emitted_response = true;
+                            succeeded |=
+                                matches!(event, rozsa_model::types::StreamEvent::Done { .. });
+                        }
+                        sender.push(event);
+                    }
+                    if retry {
+                        continue;
+                    }
+                    if succeeded {
+                        remember_thinking_effort(
+                            &learned_efforts,
+                            &model_key,
+                            effort,
+                            Some(value.clone()),
+                        );
+                        if let Err(error) =
+                            persist_thinking_effort(&global_models_dir, &model, effort, Some(value))
+                        {
+                            tracing::warn!(%error, provider = %model.provider, model = %model.id, "failed to persist learned thinking effort");
+                        }
+                    }
+                    break;
+                }
+            });
+            stream
         },
     )
+}
+
+async fn forward_model_stream(
+    sender: &rozsa_model::event_stream::EventStreamSender<rozsa_model::types::StreamEvent>,
+    attempt_stream: &ModelStream,
+    model: &Model,
+    context: &rozsa_model::types::Context,
+    options: &SimpleStreamOptions,
+) {
+    let mut inner = attempt_stream(model, context, options);
+    while let Some(event) = inner.next().await {
+        sender.push(event);
+    }
+}
+
+/// Return provider-facing values to try for one logical thinking effort.
+pub fn thinking_effort_attempt_values(model: &Model, effort: ThinkingEffort) -> Vec<String> {
+    let mut candidates = match effort {
+        ThinkingEffort::Low => vec!["low", "light", "minimal"],
+        ThinkingEffort::Medium => vec!["medium"],
+        ThinkingEffort::High => vec!["high"],
+        ThinkingEffort::XHigh => vec!["xhigh"],
+        ThinkingEffort::Max => vec!["max"],
+        ThinkingEffort::Off => Vec::new(),
+    }
+    .into_iter()
+    .map(str::to_string)
+    .collect::<Vec<_>>();
+    match model
+        .thinking_effort_map
+        .as_ref()
+        .and_then(|map| map.get(&effort))
+    {
+        Some(Some(mapped)) => {
+            if effort != ThinkingEffort::Low {
+                return vec![mapped.clone()];
+            }
+            candidates.retain(|candidate| candidate != mapped);
+            candidates.insert(0, mapped.clone());
+            candidates
+        }
+        Some(None) => Vec::new(),
+        None => candidates,
+    }
+}
+
+fn remember_thinking_effort(
+    learned_efforts: &std::sync::Mutex<HashMap<String, HashMap<ThinkingEffort, Option<String>>>>,
+    model_key: &str,
+    effort: ThinkingEffort,
+    value: Option<String>,
+) {
+    learned_efforts
+        .lock()
+        .expect("learned thinking effort lock must not be poisoned")
+        .entry(model_key.to_string())
+        .or_default()
+        .insert(effort, value);
+}
+
+fn persist_thinking_effort(
+    global_models_dir: &Path,
+    model: &Model,
+    effort: ThinkingEffort,
+    value: Option<&str>,
+) -> Result<()> {
+    ModelRegistry::load_from_dir(global_models_dir)?.persist_thinking_effort(
+        model.provider.as_str(),
+        &model.id,
+        effort,
+        value,
+    )?;
+    Ok(())
+}
+
+fn thinking_effort_unavailable_event(
+    model: &Model,
+    effort: ThinkingEffort,
+) -> rozsa_model::types::StreamEvent {
+    let mut error = rozsa_model::providers::common::create_output(model, model.api.clone());
+    error.stop_reason = rozsa_model::types::StopReason::Error;
+    error.error_message = Some(format!(
+        "Thinking effort {effort:?} is disabled for {}/{} after the provider explicitly rejected it.",
+        model.provider, model.id
+    ));
+    rozsa_model::types::StreamEvent::Error {
+        reason: rozsa_model::types::StopReason::Error,
+        error,
+    }
+}
+
+fn unsupported_effort_message(message: &str) -> bool {
+    rozsa_model::providers::common::is_explicit_unsupported_thinking_effort_error(message)
 }
 
 struct ResolvedCredentials {

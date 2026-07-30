@@ -1,3 +1,71 @@
+// FrameworkTree
+// mod.rs
+// ├── struct ProviderAvailable
+// ├── enum ModelRegistryError
+// ├── struct RegistryModelCost
+// ├── impl RegistryModelCost
+// ├── default()
+// ├── struct RegistryModel
+// ├── impl RegistryModel
+// ├── to_model()
+// ├── struct RegistryImageModel
+// ├── struct ModelRegistry
+// ├── struct ImageModelRegistry
+// ├── impl ImageModelRegistry
+// ├── from_generated_json()
+// ├── all()
+// ├── all_json()
+// ├── find()
+// ├── provider_available()
+// ├── provider_ids()
+// ├── impl ModelRegistry
+// ├── load_from_dirs()
+// ├── load_from_dir()
+// ├── apply_dir()
+// ├── from_generated_json()
+// ├── all()
+// ├── all_json()
+// ├── find()
+// ├── resolve()
+// ├── find_by_id()
+// ├── first_available()
+// ├── is_user_configured()
+// ├── model_config_path()
+// ├── persist_thinking_effort()
+// ├── apply_models_config_json()
+// ├── apply_models_config_file()
+// ├── merge_nvidia_models_if_configured()
+// ├── merge_openai_compatible_discovered_models()
+// ├── apply_models_config()
+// ├── apply_models_config_with_source()
+// ├── validate_config()
+// ├── provider_ids()
+// ├── apply_provider_overrides()
+// ├── apply_model_overrides()
+// ├── merge_models()
+// ├── provider_available()
+// ├── struct ModelsConfig
+// ├── struct ProviderConfig
+// ├── struct ModelDefinition
+// ├── struct ModelOverride
+// ├── struct PartialModelCost
+// ├── struct ProviderOverride
+// ├── flatten_generated_models()
+// ├── flatten_generated_image_models()
+// ├── model_from_definition()
+// ├── apply_model_override()
+// ├── merge_compat()
+// ├── merge_json_objects()
+// ├── merge_nested_object()
+// ├── nvidia_openai_compat()
+// ├── provider_from_str()
+// ├── is_models_config_path()
+// ├── model_key()
+// ├── strip_json_comments()
+// ├── strip_trailing_commas()
+// ├── mod tests
+// └── models_config_scan_ignores_auth_json()
+
 //! Rust model metadata registry.
 //!
 //! This module owns generated model metadata and `models.json` metadata merging.
@@ -8,7 +76,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use rozsa_model::env_keys::get_env_api_key;
 use rozsa_model::providers::openai_completions::{
@@ -78,8 +147,12 @@ pub(crate) struct RegistryModel {
     #[serde(rename = "baseUrl")]
     pub base_url: String,
     pub reasoning: bool,
-    #[serde(rename = "thinkingLevelMap", skip_serializing_if = "Option::is_none")]
-    pub thinking_level_map: Option<Value>,
+    #[serde(
+        rename = "thinkingEffortMap",
+        alias = "thinkingLevelMap",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub thinking_effort_map: Option<Value>,
     pub input: Vec<String>,
     pub cost: RegistryModelCost,
     #[serde(rename = "contextWindow")]
@@ -160,7 +233,10 @@ impl RegistryModel {
             },
             context_window: self.context_window,
             max_tokens: self.max_tokens,
-            thinking_level_map: None,
+            thinking_effort_map: self
+                .thinking_effort_map
+                .clone()
+                .and_then(|map| serde_json::from_value(map).ok()),
             headers: self.headers.clone(),
             compat: self.compat.clone(),
         }
@@ -188,6 +264,7 @@ pub struct RegistryImageModel {
 pub struct ModelRegistry {
     models: Vec<RegistryModel>,
     user_configured_model_keys: HashSet<String>,
+    model_config_paths: HashMap<String, PathBuf>,
     /// Provider-level apiKey from models.json (raw value, not resolved).
     provider_api_keys: HashMap<String, String>,
 }
@@ -256,6 +333,7 @@ impl ModelRegistry {
         let mut registry = Self {
             models: Vec::new(),
             user_configured_model_keys: HashSet::new(),
+            model_config_paths: HashMap::new(),
             provider_api_keys: HashMap::new(),
         };
 
@@ -301,6 +379,7 @@ impl ModelRegistry {
         Ok(Self {
             models: flatten_generated_models(input)?,
             user_configured_model_keys: HashSet::new(),
+            model_config_paths: HashMap::new(),
             provider_api_keys: HashMap::new(),
         })
     }
@@ -351,12 +430,104 @@ impl ModelRegistry {
             .contains(&model_key(provider, model_id))
     }
 
+    /// Return the configuration file that defined or overrode this model.
+    pub fn model_config_path(&self, provider: &str, model_id: &str) -> Option<&Path> {
+        self.model_config_paths
+            .get(&model_key(provider, model_id))
+            .map(PathBuf::as_path)
+    }
+
+    /// Atomically persist one learned provider-facing thinking effort value.
+    pub fn persist_thinking_effort(
+        &self,
+        provider: &str,
+        model_id: &str,
+        effort: rozsa_model::types::ThinkingEffort,
+        value: Option<&str>,
+    ) -> Result<(), ModelRegistryError> {
+        static WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _write_lock = WRITE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("thinking effort configuration write lock must not be poisoned");
+        let path = self.model_config_path(provider, model_id).ok_or_else(|| {
+            ModelRegistryError::InvalidModelsJson(format!(
+                "No user models configuration owns {provider}/{model_id}"
+            ))
+        })?;
+        let input =
+            fs::read_to_string(path).map_err(|error| ModelRegistryError::ModelsJsonRead {
+                path: path.display().to_string(),
+                message: error.to_string(),
+            })?;
+        let mut document: Value = serde_json::from_str(&strip_json_comments(&input))
+            .map_err(ModelRegistryError::ModelsJsonParse)?;
+        let provider_config = document
+            .get_mut("providers")
+            .and_then(Value::as_object_mut)
+            .and_then(|providers| providers.get_mut(provider))
+            .and_then(Value::as_object_mut)
+            .ok_or_else(|| {
+                ModelRegistryError::InvalidModelsJson(format!("Missing provider {provider}"))
+            })?;
+        let effort_key = serde_json::to_value(effort)
+            .expect("ThinkingEffort serialization is infallible")
+            .as_str()
+            .expect("ThinkingEffort serializes to a string")
+            .to_owned();
+        let updated = if let Some(model) = provider_config
+            .get_mut("models")
+            .and_then(Value::as_array_mut)
+            .and_then(|models| {
+                models
+                    .iter_mut()
+                    .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+            }) {
+            model.as_object_mut()
+        } else {
+            provider_config
+                .get_mut("modelOverrides")
+                .and_then(Value::as_object_mut)
+                .and_then(|overrides| overrides.get_mut(model_id))
+                .and_then(Value::as_object_mut)
+        }
+        .ok_or_else(|| {
+            ModelRegistryError::InvalidModelsJson(format!("Missing model {provider}/{model_id}"))
+        })?;
+        let map = updated
+            .entry("thinkingEffortMap")
+            .or_insert_with(|| Value::Object(Map::new()))
+            .as_object_mut()
+            .ok_or_else(|| {
+                ModelRegistryError::InvalidModelsJson(
+                    "thinkingEffortMap must be an object".to_string(),
+                )
+            })?;
+        map.insert(
+            effort_key,
+            value.map_or(Value::Null, |value| Value::String(value.to_string())),
+        );
+        let temporary = path.with_extension("json.tmp");
+        fs::write(
+            &temporary,
+            serde_json::to_string_pretty(&document).expect("JSON value serializes"),
+        )
+        .map_err(|error| ModelRegistryError::ModelsJsonRead {
+            path: temporary.display().to_string(),
+            message: error.to_string(),
+        })?;
+        fs::rename(&temporary, path).map_err(|error| ModelRegistryError::ModelsJsonRead {
+            path: path.display().to_string(),
+            message: error.to_string(),
+        })
+    }
+
     /// Merge a `models.json` document into this registry.
     pub fn apply_models_config_json(&mut self, input: &str) -> Result<(), ModelRegistryError> {
         let input = strip_json_comments(input);
         let config: ModelsConfig =
             serde_json::from_str(&input).map_err(ModelRegistryError::ModelsJsonParse)?;
-        self.apply_models_config(config)
+        self.apply_models_config_with_source(config, None)
     }
 
     /// Merge a `models.json` file into this registry.
@@ -366,7 +537,10 @@ impl ModelRegistry {
                 path: path.display().to_string(),
                 message: error.to_string(),
             })?;
-        self.apply_models_config_json(&input)
+        let input = strip_json_comments(&input);
+        let config: ModelsConfig =
+            serde_json::from_str(&input).map_err(ModelRegistryError::ModelsJsonParse)?;
+        self.apply_models_config_with_source(config, Some(path))
     }
 
     /// Discover NVIDIA models when `NVIDIA_API_KEY` is configured and merge them into the registry.
@@ -415,7 +589,7 @@ impl ModelRegistry {
                 provider: provider.to_string(),
                 base_url: base_url.to_string(),
                 reasoning: false,
-                thinking_level_map: None,
+                thinking_effort_map: None,
                 input: vec!["text".to_string()],
                 cost: RegistryModelCost::default(),
                 context_window: model.context_window,
@@ -498,6 +672,40 @@ impl ModelRegistry {
         self.apply_provider_overrides(provider_overrides);
         self.apply_model_overrides(model_overrides);
         self.merge_models(custom_models);
+        Ok(())
+    }
+
+    fn apply_models_config_with_source(
+        &mut self,
+        config: ModelsConfig,
+        source: Option<&Path>,
+    ) -> Result<(), ModelRegistryError> {
+        let configured_keys = config
+            .providers
+            .iter()
+            .flat_map(|(provider, config)| {
+                config
+                    .models
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(move |model| model_key(provider, &model.id))
+                    .chain(
+                        config
+                            .model_overrides
+                            .as_ref()
+                            .into_iter()
+                            .flat_map(move |overrides| overrides.keys())
+                            .map(move |model_id| model_key(provider, model_id)),
+                    )
+            })
+            .collect::<Vec<_>>();
+        self.apply_models_config(config)?;
+        if let Some(source) = source {
+            for key in configured_keys {
+                self.model_config_paths.insert(key, source.to_path_buf());
+            }
+        }
         Ok(())
     }
 
@@ -701,8 +909,8 @@ struct ModelDefinition {
     #[serde(rename = "baseUrl")]
     base_url: Option<String>,
     reasoning: Option<bool>,
-    #[serde(rename = "thinkingLevelMap")]
-    thinking_level_map: Option<Value>,
+    #[serde(rename = "thinkingEffortMap", alias = "thinkingLevelMap")]
+    thinking_effort_map: Option<Value>,
     input: Option<Vec<String>>,
     cost: Option<RegistryModelCost>,
     #[serde(rename = "contextWindow")]
@@ -719,8 +927,8 @@ struct ModelDefinition {
 struct ModelOverride {
     name: Option<String>,
     reasoning: Option<bool>,
-    #[serde(rename = "thinkingLevelMap")]
-    thinking_level_map: Option<Value>,
+    #[serde(rename = "thinkingEffortMap", alias = "thinkingLevelMap")]
+    thinking_effort_map: Option<Value>,
     input: Option<Vec<String>>,
     cost: Option<PartialModelCost>,
     #[serde(rename = "contextWindow")]
@@ -785,7 +993,7 @@ fn model_from_definition(
         provider: provider_name.to_string(),
         base_url,
         reasoning: model_def.reasoning.unwrap_or(false),
-        thinking_level_map: model_def.thinking_level_map,
+        thinking_effort_map: model_def.thinking_effort_map,
         input: model_def.input.unwrap_or_else(|| vec!["text".to_string()]),
         cost: model_def.cost.unwrap_or_default(),
         context_window: model_def.context_window.unwrap_or(DEFAULT_CONTEXT_WINDOW),
@@ -803,10 +1011,10 @@ fn apply_model_override(model: &mut RegistryModel, model_override: &ModelOverrid
     if let Some(reasoning) = model_override.reasoning {
         model.reasoning = reasoning;
     }
-    if let Some(thinking_level_map) = &model_override.thinking_level_map {
-        model.thinking_level_map = Some(merge_json_objects(
-            model.thinking_level_map.clone(),
-            Some(thinking_level_map.clone()),
+    if let Some(thinking_effort_map) = &model_override.thinking_effort_map {
+        model.thinking_effort_map = Some(merge_json_objects(
+            model.thinking_effort_map.clone(),
+            Some(thinking_effort_map.clone()),
         ));
     }
     if let Some(input) = &model_override.input {

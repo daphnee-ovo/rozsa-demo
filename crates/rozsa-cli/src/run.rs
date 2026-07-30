@@ -93,7 +93,7 @@ pub async fn run(args: &Args) -> Result<()> {
                 },
                 context_window: 128000,
                 max_tokens: 16384,
-                thinking_level_map: None,
+                thinking_effort_map: None,
                 headers: None,
                 compat: None,
             }
@@ -138,22 +138,22 @@ pub async fn run(args: &Args) -> Result<()> {
         None
     };
 
-    let thinking_level = if let Some(ref thinking_arg) = args.thinking {
+    let thinking_effort = if let Some(ref thinking_arg) = args.thinking {
         // Parse --thinking argument
         match thinking_arg.to_lowercase().as_str() {
-            "off" => rozsa_model::types::ThinkingLevel::Off,
-            "minimal" => rozsa_model::types::ThinkingLevel::Minimal,
-            "low" => rozsa_model::types::ThinkingLevel::Low,
-            "medium" => rozsa_model::types::ThinkingLevel::Medium,
-            "high" => rozsa_model::types::ThinkingLevel::High,
-            "xhigh" => rozsa_model::types::ThinkingLevel::XHigh,
+            "off" => rozsa_model::types::ThinkingEffort::Off,
+            "low" | "light" | "minimal" => rozsa_model::types::ThinkingEffort::Low,
+            "medium" => rozsa_model::types::ThinkingEffort::Medium,
+            "high" => rozsa_model::types::ThinkingEffort::High,
+            "xhigh" => rozsa_model::types::ThinkingEffort::XHigh,
+            "max" => rozsa_model::types::ThinkingEffort::Max,
             _ => anyhow::bail!(
-                "Invalid thinking level: {}. Valid values: off, minimal, low, medium, high, xhigh",
+                "Invalid thinking effort: {}. Valid values: off, low, medium, high, xhigh, max",
                 thinking_arg
             ),
         }
     } else {
-        settings_manager.default_thinking_level_parsed()
+        settings_manager.default_thinking_effort_parsed()
     };
 
     // Permission system setup
@@ -284,7 +284,7 @@ pub async fn run(args: &Args) -> Result<()> {
         return rozsa_gui::run(rozsa_gui::GuiConfig {
             initial_parent_session,
             model,
-            thinking_level,
+            thinking_effort,
             cwd,
             config_roots,
             settings_manager,
@@ -320,7 +320,7 @@ pub async fn run(args: &Args) -> Result<()> {
 
     let config = AgentSessionConfig {
         model,
-        thinking_level,
+        thinking_effort,
         system_prompt,
         cwd: cwd.clone(),
         session_manager,

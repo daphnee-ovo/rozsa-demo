@@ -94,7 +94,7 @@ fn model() -> rozsa_model::types::Model {
         },
         context_window: 8192,
         max_tokens: 2048,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -116,7 +116,7 @@ fn stream_options() -> SimpleStreamOptions {
             metadata: None,
         },
         reasoning: None,
-        thinking_budgets: None,
+        thinking_effort_budgets: None,
         tool_choice: None,
     }
 }
@@ -521,7 +521,7 @@ async fn prepare_next_turn_updates_model() {
                 Some(TurnUpdate {
                     context: None,
                     model: Some(new_model),
-                    thinking_level: None,
+                    thinking_effort: None,
                 })
             } else {
                 None

@@ -1,3 +1,30 @@
+// FrameworkTree
+// messages.rs
+// ├── struct CompactionMessage
+// ├── struct ModelChangeMessage
+// ├── struct ModelInfo
+// ├── struct ThinkingEffortChangeMessage
+// ├── struct SystemPromptMessage
+// ├── struct StatusMessage
+// ├── enum AppMessage
+// ├── impl AppMessage
+// ├── compaction()
+// ├── model_change()
+// ├── thinking_effort_change()
+// ├── system_prompt()
+// ├── status()
+// ├── message_type()
+// ├── impl AgentMessage
+// ├── from()
+// ├── struct BashExecutionMessage
+// ├── impl BashExecutionMessage
+// ├── new()
+// ├── to_agent_message()
+// ├── struct BranchSummaryMessage
+// ├── impl BranchSummaryMessage
+// ├── new()
+// └── to_agent_message()
+
 //! Product-level custom message types for rozsa-app.
 //!
 //! These message types extend the base AgentMessage from rozsa-core with
@@ -27,9 +54,9 @@ pub struct ModelInfo {
     pub id: String,
 }
 
-/// Thinking level change notification
+/// Thinking effort change notification
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThinkingLevelChangeMessage {
+pub struct ThinkingEffortChangeMessage {
     pub level: String,
 }
 
@@ -52,7 +79,7 @@ pub struct StatusMessage {
 pub enum AppMessage {
     Compaction(CompactionMessage),
     ModelChange(ModelChangeMessage),
-    ThinkingLevelChange(ThinkingLevelChangeMessage),
+    ThinkingEffortChange(ThinkingEffortChangeMessage),
     SystemPrompt(SystemPromptMessage),
     Status(StatusMessage),
 }
@@ -78,10 +105,10 @@ impl AppMessage {
         })
     }
 
-    /// Create a thinking level change message
-    pub fn thinking_level_change(level: impl Into<String>) -> Self {
-        Self::ThinkingLevelChange(ThinkingLevelChangeMessage {
-            level: level.into(),
+    /// Create a thinking effort change message
+    pub fn thinking_effort_change(effort: impl Into<String>) -> Self {
+        Self::ThinkingEffortChange(ThinkingEffortChangeMessage {
+            level: effort.into(),
         })
     }
 
@@ -105,7 +132,7 @@ impl AppMessage {
         match self {
             Self::Compaction(_) => "compaction",
             Self::ModelChange(_) => "model_change",
-            Self::ThinkingLevelChange(_) => "thinking_level_change",
+            Self::ThinkingEffortChange(_) => "thinking_effort_change",
             Self::SystemPrompt(_) => "system_prompt",
             Self::Status(_) => "status",
         }

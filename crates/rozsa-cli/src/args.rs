@@ -49,7 +49,7 @@ pub struct Args {
     #[arg(long)]
     pub system_prompt: Option<String>,
 
-    /// Set thinking level (off/minimal/low/medium/high/xhigh)
+    /// Set thinking effort (off/low/medium/high/xhigh/max)
     #[arg(long)]
     pub thinking: Option<String>,
 }

@@ -19,6 +19,10 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
           "contextWindow": 128000,
           "maxTokens": 16384,
           "reasoning": false,
+          "thinkingEffortMap": {
+            "low": "light",
+            "high": null
+          },
           "input": ["text", "image"]
         }
       ]
@@ -50,12 +54,30 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
 | `api` | 否 | 继承 provider 级 |
 | `baseUrl` | 否 | 继承 provider 级 |
 | `reasoning` | 否 | false |
+| `thinkingEffortMap` | 否 | 模型的逻辑思考强度到 provider 请求值的映射；`null` 表示该档不可用 |
 | `input` | 否 | ["text"] |
 | `contextWindow` | 否 | 128000 |
 | `maxTokens` | 否 | 16384 |
 | `cost` | 否 | 全 0 |
 | `headers` | 否 | — |
 | `compat` | 否 | — |
+
+### 思考强度与自动学习
+
+界面与配置使用统一名称 **thinking effort**。逻辑档位固定为：`off`、`low`、`medium`、`high`、`xhigh`、`max`。未配置 `thinkingEffortMap` 的模型默认可选择全部六档。
+
+`low` 的 provider 请求值依次尝试 `low`、`light`、`minimal`；其他非关闭档只尝试其同名值。只有 provider 明确以 HTTP 400 或 422 表示该思考强度不受支持时，Rózsa 才会进行上述重试。认证、配额、网络、模型不存在等错误不会触发重试，也不会改写配置。
+
+若请求成功，实际成功的值会写回用户级 `~/.rozsa/models/*.json` 对应模型的 `thinkingEffortMap`。若某一逻辑档位的全部候选值均被明确拒绝，则写入 `null`，之后不会再向 API 发送该档请求。例如：
+
+```json
+"thinkingEffortMap": {
+  "low": "light",
+  "high": null
+}
+```
+
+这里 `low` 发送给 provider 的值为 `light`，而 `high` 不可用。旧配置键 `thinkingLevelMap` 会在读取时兼容，但新写入一律使用 `thinkingEffortMap`。
 
 ### 协议类型 (`api`)
 

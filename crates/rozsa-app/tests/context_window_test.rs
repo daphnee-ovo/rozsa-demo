@@ -8,7 +8,7 @@ use rozsa_app::settings::SettingsManager;
 use rozsa_model::event_stream::create_event_stream;
 use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Message, Model, ModelCost, Provider, StopReason,
-    StreamEvent, ThinkingLevel, Usage, UserContent, UserMessage,
+    StreamEvent, ThinkingEffort, Usage, UserContent, UserMessage,
 };
 
 fn user_entry(id: usize, text: &str) -> SessionEntry {
@@ -91,7 +91,7 @@ async fn agent_session_auto_compacts_after_provider_reports_threshold_usage() {
         },
         context_window: 128,
         max_tokens: 64,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     };
@@ -131,7 +131,7 @@ async fn agent_session_auto_compacts_after_provider_reports_threshold_usage() {
     .unwrap();
     let session = AgentSession::new(AgentSessionConfig {
         model,
-        thinking_level: ThinkingLevel::Off,
+        thinking_effort: ThinkingEffort::Off,
         system_prompt: String::new(),
         cwd: temp.path().to_path_buf(),
         session_manager,

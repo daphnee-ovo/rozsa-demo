@@ -3,7 +3,7 @@
 // ├── struct SessionHeader
 // ├── struct SessionEntryBase
 // ├── struct SessionMessageEntry
-// ├── struct ThinkingLevelChangeEntry
+// ├── struct ThinkingEffortChangeEntry
 // ├── struct ModelChangeEntry
 // ├── struct CompactionEntry
 // ├── struct CustomEntry
@@ -26,7 +26,7 @@
 // ├── append_message()
 // ├── append_compaction()
 // ├── append_model_change()
-// ├── append_thinking_level_change()
+// ├── append_thinking_effort_change()
 // ├── append_custom()
 // ├── append_label()
 // ├── leaf_id()
@@ -90,13 +90,13 @@ pub struct SessionMessageEntry {
     pub message: Message,
 }
 
-/// Thinking level change entry.
+/// Thinking effort change entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThinkingLevelChangeEntry {
+pub struct ThinkingEffortChangeEntry {
     #[serde(flatten)]
     pub base: SessionEntryBase,
-    #[serde(rename = "thinkingLevel")]
-    pub thinking_level: String,
+    #[serde(rename = "thinkingEffort", alias = "thinkingLevel")]
+    pub thinking_effort: String,
 }
 
 /// Model change entry.
@@ -164,8 +164,8 @@ pub struct SessionInfoEntry {
 pub enum SessionEntry {
     #[serde(rename = "message")]
     Message(SessionMessageEntry),
-    #[serde(rename = "thinking_level_change")]
-    ThinkingLevelChange(ThinkingLevelChangeEntry),
+    #[serde(rename = "thinking_effort_change", alias = "thinking_level_change")]
+    ThinkingEffortChange(ThinkingEffortChangeEntry),
     #[serde(rename = "model_change")]
     ModelChange(ModelChangeEntry),
     #[serde(rename = "compaction")]
@@ -182,7 +182,7 @@ impl SessionEntry {
     pub fn id(&self) -> &str {
         match self {
             SessionEntry::Message(e) => &e.base.id,
-            SessionEntry::ThinkingLevelChange(e) => &e.base.id,
+            SessionEntry::ThinkingEffortChange(e) => &e.base.id,
             SessionEntry::ModelChange(e) => &e.base.id,
             SessionEntry::Compaction(e) => &e.base.id,
             SessionEntry::Custom(e) => &e.base.id,
@@ -194,7 +194,7 @@ impl SessionEntry {
     fn parent_id(&self) -> Option<&str> {
         match self {
             SessionEntry::Message(e) => e.base.parent_id.as_deref(),
-            SessionEntry::ThinkingLevelChange(e) => e.base.parent_id.as_deref(),
+            SessionEntry::ThinkingEffortChange(e) => e.base.parent_id.as_deref(),
             SessionEntry::ModelChange(e) => e.base.parent_id.as_deref(),
             SessionEntry::Compaction(e) => e.base.parent_id.as_deref(),
             SessionEntry::Custom(e) => e.base.parent_id.as_deref(),
@@ -503,19 +503,19 @@ impl SessionManager {
         self.append_entry(entry)
     }
 
-    /// Append a thinking level change as child of current leaf.
+    /// Append a thinking effort change as child of current leaf.
     ///
     /// # Returns
     /// The ID of the newly created entry.
-    pub fn append_thinking_level_change(&mut self, level: String) -> Result<String> {
+    pub fn append_thinking_effort_change(&mut self, effort: String) -> Result<String> {
         let id = self.generate_id();
-        let entry = SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
+        let entry = SessionEntry::ThinkingEffortChange(ThinkingEffortChangeEntry {
             base: SessionEntryBase {
                 id,
                 parent_id: self.leaf_id.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
             },
-            thinking_level: level,
+            thinking_effort: effort,
         });
         self.append_entry(entry)
     }
@@ -821,7 +821,7 @@ fn build_session_meta(path: &Path) -> Result<SessionMeta> {
         // Track latest activity timestamp via base timestamp.
         let ts = match &entry {
             SessionEntry::Message(e) => &e.base.timestamp,
-            SessionEntry::ThinkingLevelChange(e) => &e.base.timestamp,
+            SessionEntry::ThinkingEffortChange(e) => &e.base.timestamp,
             SessionEntry::ModelChange(e) => &e.base.timestamp,
             SessionEntry::Compaction(e) => &e.base.timestamp,
             SessionEntry::Custom(e) => &e.base.timestamp,

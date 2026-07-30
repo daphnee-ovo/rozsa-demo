@@ -9,7 +9,7 @@ use rozsa_app::settings::SettingsManager;
 use rozsa_model::event_stream::create_event_stream;
 use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Model, ModelCost, Provider, StopReason, StreamEvent,
-    ThinkingLevel, Usage,
+    ThinkingEffort, Usage,
 };
 
 fn test_model() -> Model {
@@ -29,7 +29,7 @@ fn test_model() -> Model {
         },
         context_window: 8_192,
         max_tokens: 1_024,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -86,7 +86,7 @@ fn test_session(temp: &tempfile::TempDir, model_stream: ModelStream) -> AgentSes
     .unwrap();
     AgentSession::new(AgentSessionConfig {
         model: test_model(),
-        thinking_level: ThinkingLevel::Off,
+        thinking_effort: ThinkingEffort::Off,
         system_prompt: String::new(),
         cwd: temp.path().to_path_buf(),
         session_manager,
@@ -143,7 +143,7 @@ async fn generated_name_is_isolated_cleaned_and_persisted() {
     assert_eq!(generated.as_deref(), Some("Fix startup crash"));
     let observed = observation.lock().unwrap().clone().unwrap();
     assert_eq!(observed.0, "scripted");
-    assert_eq!(observed.1, Some(ThinkingLevel::Low));
+    assert_eq!(observed.1, Some(ThinkingEffort::Low));
     assert_eq!(observed.2, Some(32));
     assert_eq!(observed.3, 1);
     assert_eq!(observed.4, 0);
@@ -230,7 +230,7 @@ async fn reasoning_model_uses_fixed_low_for_the_title_request() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(
         *observed_reasoning.lock().unwrap(),
-        Some(ThinkingLevel::Low)
+        Some(ThinkingEffort::Low)
     );
 }
 

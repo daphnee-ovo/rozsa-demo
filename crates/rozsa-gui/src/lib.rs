@@ -45,7 +45,7 @@ use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::PendingApprovals;
 use rozsa_app::settings::SettingsManager;
 use rozsa_app::tools::{AskUserQuestionRequest, AskUserQuestionRequestSender};
-use rozsa_model::types::{Model, ThinkingLevel};
+use rozsa_model::types::{Model, ThinkingEffort};
 use tauri::{Emitter, Manager};
 
 use state::{
@@ -57,7 +57,7 @@ pub struct GuiConfig {
     /// Bootstrap data only. GUI owns all AgentSession construction.
     pub initial_parent_session: Option<String>,
     pub model: Model,
-    pub thinking_level: ThinkingLevel,
+    pub thinking_effort: ThinkingEffort,
     pub cwd: PathBuf,
     pub config_roots: ConfigRoots,
     pub settings_manager: SettingsManager,
@@ -121,7 +121,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         resources: config.resources,
         system_prompt: config.system_prompt,
         model: tokio::sync::Mutex::new(config.model),
-        thinking_level: tokio::sync::Mutex::new(config.thinking_level),
+        thinking_effort: tokio::sync::Mutex::new(config.thinking_effort),
         pre_tool_use_factory: config.pre_tool_use_factory,
         question_request_tx: config.question_request_tx,
         model_stream: None,

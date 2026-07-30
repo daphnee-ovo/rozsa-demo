@@ -31,7 +31,7 @@ fn test_model(base_url: &str) -> Model {
         },
         context_window: 128_000,
         max_tokens: 16_384,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -53,7 +53,7 @@ fn test_options() -> SimpleStreamOptions {
             metadata: None,
         },
         reasoning: None,
-        thinking_budgets: None,
+        thinking_effort_budgets: None,
         tool_choice: None,
     }
 }

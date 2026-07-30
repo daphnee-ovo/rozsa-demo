@@ -1,3 +1,17 @@
+// FrameworkTree
+// provider.rs
+// ├── struct OpenAIResponsesProvider
+// ├── impl OpenAIResponsesProvider
+// ├── new()
+// ├── impl OpenAIResponsesProvider
+// ├── default()
+// ├── impl OpenAIResponsesProvider
+// ├── api()
+// ├── stream()
+// ├── stream_simple()
+// ├── thinking_effort_to_effort()
+// └── stream_responses()
+
 // Provider for OpenAI Responses API (POST /v1/responses).
 //
 // Internal Framework:
@@ -26,7 +40,7 @@ use crate::providers::common::{
 use crate::registry::ApiProvider;
 use crate::types::{
     Api, AssistantMessage, Context, Model, SimpleStreamOptions, StreamEvent, StreamOptions,
-    ThinkingLevel,
+    ThinkingEffort,
 };
 
 use super::convert::{ResponseStreamNormalizer, convert_messages, convert_tools};
@@ -66,7 +80,7 @@ impl ApiProvider for OpenAIResponsesProvider {
         let simple_options = SimpleStreamOptions {
             base: options.clone(),
             reasoning: None,
-            thinking_budgets: None,
+            thinking_effort_budgets: None,
             tool_choice: None,
         };
         self.stream_simple(model, context, &simple_options)
@@ -95,16 +109,29 @@ impl ApiProvider for OpenAIResponsesProvider {
     }
 }
 
-/// Map ThinkingLevel to the Responses API reasoning effort string.
-fn thinking_level_to_effort(level: &ThinkingLevel) -> &'static str {
-    match level {
-        ThinkingLevel::Off => "low",
-        ThinkingLevel::Minimal => "low",
-        ThinkingLevel::Low => "low",
-        ThinkingLevel::Medium => "medium",
-        ThinkingLevel::High => "high",
-        ThinkingLevel::XHigh => "high",
+/// Map a unified thinking effort to the Responses API reasoning effort string.
+fn thinking_effort_to_effort(model: &Model, effort: &ThinkingEffort) -> Option<String> {
+    if *effort == ThinkingEffort::Off {
+        return None;
     }
+    if let Some(mapped) = model
+        .thinking_effort_map
+        .as_ref()
+        .and_then(|map| map.get(effort))
+    {
+        return mapped.clone();
+    }
+    use ThinkingEffort::*;
+    Some(
+        match effort {
+            Off | Low => "low",
+            Medium => "medium",
+            High => "high",
+            XHigh => "xhigh",
+            Max => "max",
+        }
+        .to_string(),
+    )
 }
 
 /// Core streaming logic: build request, send HTTP POST, parse SSE, normalize events.
@@ -132,9 +159,11 @@ async fn stream_responses(
     };
 
     // 从 options 构建 reasoning 配置
-    let reasoning = options.reasoning.as_ref().map(|level| Reasoning {
-        effort: Some(thinking_level_to_effort(level).to_string()),
-        summary: Some("auto".to_string()),
+    let reasoning = options.reasoning.as_ref().and_then(|level| {
+        thinking_effort_to_effort(model, level).map(|effort| Reasoning {
+            effort: Some(effort),
+            summary: Some("auto".to_string()),
+        })
     });
 
     let request = ResponsesApiRequest {

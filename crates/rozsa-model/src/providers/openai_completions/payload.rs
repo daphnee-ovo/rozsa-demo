@@ -1,10 +1,41 @@
+// FrameworkTree
+// payload.rs
+// ├── struct OpenAICompletionsCompat
+// ├── enum MaxTokensField
+// ├── enum ThinkingFormat
+// ├── enum CacheControlFormat
+// ├── impl OpenAICompletionsCompat
+// ├── default()
+// ├── build_chat_completions_payload()
+// ├── resolve_compat()
+// ├── convert_messages()
+// ├── convert_tools()
+// ├── has_tool_history()
+// ├── detect_compat()
+// ├── convert_user_message()
+// ├── convert_assistant_message()
+// ├── text_from_block()
+// ├── thinking_from_block()
+// ├── tool_call_from_block()
+// ├── resolve_reasoning()
+// ├── apply_reasoning_options()
+// ├── apply_prompt_cache_options()
+// ├── apply_provider_routing()
+// ├── apply_anthropic_cache_control()
+// ├── add_cache_control_to_system_prompt()
+// ├── add_cache_control_to_last_tool()
+// ├── add_cache_control_to_last_conversation_message()
+// ├── add_cache_control_to_text_content()
+// ├── thinking_effort_value()
+// └── thinking_effort_value_optional()
+
 //! Payload construction for OpenAI-compatible Chat Completions providers.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::types::{
-    ContentBlock, Context, InputModality, Message, Model, SimpleStreamOptions, ThinkingLevel,
+    ContentBlock, Context, InputModality, Message, Model, SimpleStreamOptions, ThinkingEffort,
     ToolCall, ToolSchema, UserContent,
 };
 
@@ -524,18 +555,18 @@ fn tool_call_from_block(block: &ContentBlock) -> Option<Value> {
 }
 
 /// Resolve requested reasoning to an enabled reasoning level for this model.
-fn resolve_reasoning(model: &Model, requested: Option<ThinkingLevel>) -> Option<ThinkingLevel> {
+fn resolve_reasoning(model: &Model, requested: Option<ThinkingEffort>) -> Option<ThinkingEffort> {
     if !model.reasoning {
         return None;
     }
-    requested.filter(|level| *level != ThinkingLevel::Off)
+    requested.filter(|effort| *effort != ThinkingEffort::Off)
 }
 
 /// Add provider-specific reasoning fields to a chat completion payload.
 fn apply_reasoning_options(
     model: &Model,
     compat: &OpenAICompletionsCompat,
-    reasoning: Option<ThinkingLevel>,
+    reasoning: Option<ThinkingEffort>,
     payload: &mut Value,
 ) {
     match compat.thinking_format {
@@ -554,14 +585,14 @@ fn apply_reasoning_options(
                     json!({ "type": if reasoning.is_some() { "enabled" } else { "disabled" } });
             }
             if let Some(reasoning) = reasoning.filter(|_| compat.supports_reasoning_effort) {
-                payload["reasoning_effort"] = json!(thinking_level_value(model, reasoning));
+                payload["reasoning_effort"] = json!(thinking_effort_value(model, reasoning));
             }
         }
         ThinkingFormat::OpenRouter => {
             if let Some(reasoning) = reasoning {
-                payload["reasoning"] = json!({ "effort": thinking_level_value(model, reasoning) });
+                payload["reasoning"] = json!({ "effort": thinking_effort_value(model, reasoning) });
             } else if model.reasoning {
-                if let Some(value) = thinking_level_value_optional(model, ThinkingLevel::Off) {
+                if let Some(value) = thinking_effort_value_optional(model, ThinkingEffort::Off) {
                     payload["reasoning"] = json!({ "effort": value });
                 }
             }
@@ -571,14 +602,14 @@ fn apply_reasoning_options(
                 payload["reasoning"] = json!({ "enabled": reasoning.is_some() });
             }
             if let Some(reasoning) = reasoning.filter(|_| compat.supports_reasoning_effort) {
-                payload["reasoning_effort"] = json!(thinking_level_value(model, reasoning));
+                payload["reasoning_effort"] = json!(thinking_effort_value(model, reasoning));
             }
         }
         ThinkingFormat::OpenAI => {
             if let Some(reasoning) = reasoning.filter(|_| compat.supports_reasoning_effort) {
-                payload["reasoning_effort"] = json!(thinking_level_value(model, reasoning));
+                payload["reasoning_effort"] = json!(thinking_effort_value(model, reasoning));
             } else if model.reasoning && compat.supports_reasoning_effort {
-                if let Some(value) = thinking_level_value_optional(model, ThinkingLevel::Off) {
+                if let Some(value) = thinking_effort_value_optional(model, ThinkingEffort::Off) {
                     payload["reasoning_effort"] = json!(value);
                 }
             }
@@ -713,45 +744,45 @@ fn add_cache_control_to_text_content(message: &mut Value, cache_control: &Value)
     false
 }
 
-/// Convert a unified thinking level into the provider-facing value.
-fn thinking_level_value(model: &Model, level: ThinkingLevel) -> String {
-    thinking_level_value_optional(model, level).unwrap_or_else(|| {
-        match level {
-            ThinkingLevel::Off => "off",
-            ThinkingLevel::Minimal => "minimal",
-            ThinkingLevel::Low => "low",
-            ThinkingLevel::Medium => "medium",
-            ThinkingLevel::High => "high",
-            ThinkingLevel::XHigh => "xhigh",
+/// Convert a unified thinking effort into the provider-facing value.
+fn thinking_effort_value(model: &Model, effort: ThinkingEffort) -> String {
+    thinking_effort_value_optional(model, effort).unwrap_or_else(|| {
+        match effort {
+            ThinkingEffort::Off => "off",
+            ThinkingEffort::Low => "low",
+            ThinkingEffort::Medium => "medium",
+            ThinkingEffort::High => "high",
+            ThinkingEffort::XHigh => "xhigh",
+            ThinkingEffort::Max => "max",
         }
         .to_string()
     })
 }
 
-/// Return a provider-facing thinking value when this level is supported.
-fn thinking_level_value_optional(model: &Model, level: ThinkingLevel) -> Option<String> {
+/// Return a provider-facing thinking value when this effort is supported.
+fn thinking_effort_value_optional(model: &Model, effort: ThinkingEffort) -> Option<String> {
     model
-        .thinking_level_map
+        .thinking_effort_map
         .as_ref()
-        .and_then(|map| map.get(&level))
+        .and_then(|map| map.get(&effort))
         .and_then(|value| value.clone())
         .or_else(|| {
             if model
-                .thinking_level_map
+                .thinking_effort_map
                 .as_ref()
-                .and_then(|map| map.get(&level))
+                .and_then(|map| map.get(&effort))
                 .is_some()
             {
                 None
             } else {
                 Some(
-                    match level {
-                        ThinkingLevel::Off => "off",
-                        ThinkingLevel::Minimal => "minimal",
-                        ThinkingLevel::Low => "low",
-                        ThinkingLevel::Medium => "medium",
-                        ThinkingLevel::High => "high",
-                        ThinkingLevel::XHigh => "xhigh",
+                    match effort {
+                        ThinkingEffort::Off => "off",
+                        ThinkingEffort::Low => "low",
+                        ThinkingEffort::Medium => "medium",
+                        ThinkingEffort::High => "high",
+                        ThinkingEffort::XHigh => "xhigh",
+                        ThinkingEffort::Max => "max",
                     }
                     .to_string(),
                 )

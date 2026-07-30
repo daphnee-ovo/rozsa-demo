@@ -56,11 +56,11 @@ fn selected_session_uses_name_then_preview_then_untitled() {
 }
 
 #[test]
-fn frontend_places_thinking_level_next_to_model_and_reserves_brand_for_no_session() {
+fn frontend_places_thinking_effort_next_to_model_and_reserves_brand_for_no_session() {
     let html = include_str!("../frontend/index.html");
     let app = include_str!("../frontend/app.js");
     let model = html.find("id=\"modelSelector\"").unwrap();
-    let thinking = html.find("id=\"thinkingLevel\"").unwrap();
+    let thinking = html.find("id=\"thinkingEffort\"").unwrap();
 
     assert!(thinking > model);
     assert!(app.contains("snap.sessionName || 'Rózsa'"));
@@ -68,24 +68,24 @@ fn frontend_places_thinking_level_next_to_model_and_reserves_brand_for_no_sessio
 }
 
 #[test]
-fn composer_thinking_level_opens_a_model_aware_persisted_slider() {
+fn composer_thinking_effort_offers_six_model_aware_persisted_choices() {
     let html = include_str!("../frontend/index.html");
     let app = include_str!("../frontend/app.js");
 
-    assert!(html.contains("id=\"thinkingLevel\""));
+    assert!(html.contains("id=\"thinkingEffort\""));
     assert!(html.contains("aria-haspopup=\"dialog\""));
-    assert!(html.contains("id=\"thinkingLevelSlider\""));
+    assert!(html.contains("id=\"thinkingEffortSlider\""));
     assert!(html.contains("type=\"range\""));
-    assert!(html.contains("aria-label=\"Thinking level\""));
-    assert!(app.contains("const THINKING_LEVEL_OPTIONS = Object.freeze("));
-    assert!(app.contains("'off', 'minimal', 'low', 'medium', 'high', 'xhigh'"));
-    assert!(app.contains("model && model.reasoning ? THINKING_LEVEL_OPTIONS"));
+    assert!(html.contains("aria-label=\"Thinking effort\""));
+    assert!(app.contains("const THINKING_EFFORT_OPTIONS = Object.freeze("));
+    assert!(app.contains("'off', 'low', 'medium', 'high', 'xhigh', 'max'"));
+    assert!(app.contains("unavailable[option.value] !== null"));
     assert!(app.contains("await saveSetting('thinking', option.value)"));
     assert!(app.contains("await saveSetting('thinking', 'off')"));
 }
 
 #[test]
-fn thinking_slider_popover_is_not_clipped_by_the_composer_frame() {
+fn thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame() {
     let html = include_str!("../frontend/index.html");
     let app = include_str!("../frontend/app.js");
     let settings_start = html
@@ -95,7 +95,7 @@ fn thinking_slider_popover_is_not_clipped_by_the_composer_frame() {
         .rfind("</main>")
         .expect("main content boundary must exist");
     let popover = html
-        .find("id=\"thinkingLevelPopover\"")
+        .find("id=\"thinkingEffortPopover\"")
         .expect("thinking popover must exist");
 
     assert!(
@@ -103,8 +103,10 @@ fn thinking_slider_popover_is_not_clipped_by_the_composer_frame() {
         "popover must live outside the clipped composer"
     );
     assert!(html.contains(".thinking-level-popover {\n  position: fixed;"));
-    assert!(app.contains("function positionThinkingLevelPopover()"));
-    assert!(app.contains("popover.style.left ="));
+    assert!(app.contains("function positionThinkingEffortPopover()"));
+    assert!(app.contains("popover.style.top = 'auto';"));
+    assert!(app.contains("popover.style.right = Math.round(Math.max(margin, window.innerWidth - triggerRect.right)) + 'px';"));
+    assert!(app.contains("popover.style.bottom = Math.round(Math.max(margin, window.innerHeight - triggerRect.top + gap)) + 'px';"));
     assert!(app.contains("popover.style.top ="));
 }
 
@@ -113,6 +115,8 @@ fn thinking_slider_uses_compact_composer_scale() {
     let html = include_str!("../frontend/index.html");
 
     assert!(html.contains("width: min(320px, calc(100vw - 32px));"));
+    assert!(html.contains("max-height: calc(100vh - 32px);"));
+    assert!(html.contains("overflow: auto;"));
     assert!(
         html.contains(".thinking-level-slider::-webkit-slider-runnable-track {\n  height: 28px;")
     );

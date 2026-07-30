@@ -75,7 +75,7 @@ fn make_model() -> Model {
         },
         context_window: 8192,
         max_tokens: 2048,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -134,7 +134,7 @@ async fn parallel_null_arguments_normalized_to_empty_object() {
                 metadata: None,
             },
             reasoning: None,
-            thinking_budgets: None,
+            thinking_effort_budgets: None,
             tool_choice: None,
         };
 

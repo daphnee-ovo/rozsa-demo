@@ -1,3 +1,9 @@
+// FrameworkTree
+// runtime.rs
+// ├── enum SubagentStatus
+// ├── struct SubagentInfo
+// └── struct SubagentRuntime
+
 // File: subagent/runtime.rs
 //
 // Subagent runtime state — public info type + internal mutable runtime container.
@@ -17,7 +23,7 @@ use std::sync::Arc;
 
 use rozsa_core::messages::AgentMessage;
 use rozsa_core::tool::Tool;
-use rozsa_model::types::{Model, ThinkingLevel};
+use rozsa_model::types::{Model, ThinkingEffort};
 use serde::Serialize;
 use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;
@@ -40,7 +46,7 @@ pub struct SubagentInfo {
     pub status: SubagentStatus,
     pub model_id: String,
     pub model_provider: String,
-    pub thinking_level: ThinkingLevel,
+    pub thinking_effort: ThinkingEffort,
     pub created_at: i64,
     pub last_activity_at: i64,
     pub last_error: Option<String>,
@@ -57,7 +63,7 @@ pub(super) struct SubagentRuntime {
     pub cancel_token: CancellationToken,
     pub system_prompt: String,
     pub model: Model,
-    pub thinking_level: ThinkingLevel,
+    pub thinking_effort: ThinkingEffort,
     pub tools: Vec<Arc<dyn Tool>>,
     pub session_manager: Option<crate::session::manager::SessionManager>,
     /// Watch channel for status changes — used by `wait()`.

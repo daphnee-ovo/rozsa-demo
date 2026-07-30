@@ -324,12 +324,15 @@ body {
 .thinking-level-popover {
   position: fixed;
   z-index: 180;
+  box-sizing: border-box;
   width: min(320px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   padding: 14px 16px 12px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--bg);
   box-shadow: 0 12px 32px color-mix(in srgb, var(--fg) 16%, transparent);
+  overflow: auto;
 }
 .thinking-level-popover[hidden] { display: none; }
 .thinking-level-popover-header {
@@ -350,7 +353,8 @@ body {
 }
 .thinking-level-slider-wrap {
   position: relative;
-  height: 40px;
+  height: 48px;
+  padding: 5px 0;
   display: flex;
   align-items: center;
 }
@@ -359,7 +363,7 @@ body {
   position: relative;
   z-index: 2;
   width: 100%;
-  height: 28px;
+  height: 38px;
   margin: 0;
   appearance: none;
   background: transparent;
@@ -3143,7 +3147,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="input-spacer"></div>
           <button class="model-selector" data-od-id="model-badge" title="Switch model" id="modelSelector" onclick="showModelPicker()">(not configured)</button>
           <div class="thinking-level-control">
-            <button class="thinking-level-badge" id="thinkingLevel" type="button" title="Choose thinking level" aria-haspopup="dialog" aria-expanded="false" onclick="toggleThinkingLevelPicker(event)">off</button>
+            <button class="thinking-level-badge" id="thinkingEffort" type="button" title="Choose thinking effort" aria-haspopup="dialog" aria-expanded="false" onclick="toggleThinkingEffortPicker(event)">off</button>
           </div>
           <select class="model-selector" id="runningSendMode" title="Send mode while running" onchange="updateAbortButton()" hidden><option value="queue">Queue</option><option value="steer">Steer</option></select>
           <button class="send-btn" data-od-id="send-btn" onclick="sendMessage()">Send</button>
@@ -3153,14 +3157,14 @@ body.native-split-main .settings-dialog { background: var(--bg); }
   </main>
 </div>
 
-<div class="thinking-level-popover" id="thinkingLevelPopover" role="dialog" aria-label="Thinking level picker" hidden>
+<div class="thinking-level-popover" id="thinkingEffortPopover" role="dialog" aria-label="Thinking effort picker" hidden>
   <div class="thinking-level-popover-header">
-    <span class="thinking-level-popover-title" id="thinkingLevelPickerTitle">Thinking level</span>
-    <span class="thinking-level-popover-value" id="thinkingLevelPickerValue">Off</span>
+    <span class="thinking-level-popover-title" id="thinkingEffortPickerTitle">Thinking effort</span>
+    <span class="thinking-level-popover-value" id="thinkingEffortPickerValue">Off</span>
   </div>
   <div class="thinking-level-slider-wrap">
-    <input class="thinking-level-slider" id="thinkingLevelSlider" type="range" min="0" max="5" step="1" value="0" aria-label="Thinking level" oninput="previewThinkingLevel(this.value)" onchange="selectThinkingLevel(this.value)">
-    <div class="thinking-level-marks" id="thinkingLevelMarks" aria-hidden="true"></div>
+    <input class="thinking-level-slider" id="thinkingEffortSlider" type="range" min="0" max="5" step="1" value="0" aria-label="Thinking effort" oninput="previewThinkingEffort(this.value)" onchange="selectThinkingEffort(this.value)">
+    <div class="thinking-level-marks" id="thinkingEffortMarks" aria-hidden="true"></div>
   </div>
 </div>
 
@@ -3223,7 +3227,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
         <div class="settings-pane-title">General</div>
         <div class="settings-group">
           <div class="settings-group-label">AI</div>
-          <div class="setting-item"><span class="setting-label">Thinking Level</span><select class="setting-select" id="settingsThinking" aria-label="Thinking Level"><option value="off">Off</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">XHigh</option></select></div>
+          <div class="setting-item"><span class="setting-label">Thinking effort</span><select class="setting-select" id="settingsThinkingEffort" aria-label="Thinking effort"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Xhigh</option><option value="max">Max</option></select></div>
           <div class="setting-item"><span class="setting-label">Auto Compact</span><button class="setting-toggle" id="settingsAutoCompact" type="button" role="switch" aria-checked="false" aria-label="Auto Compact"></button></div>
           <div class="setting-item"><span class="setting-label">Auto-name sessions</span><button class="setting-toggle" id="settingsAutoSessionNaming" type="button" role="switch" aria-checked="true" aria-label="Auto-name sessions"></button></div>
           <div class="setting-item"><span class="setting-label">Steering Mode</span><select class="setting-select" id="settingsSteeringMode" aria-label="Steering Mode"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>

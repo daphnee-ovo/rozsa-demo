@@ -6,7 +6,7 @@ use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
 use rozsa_app::resources::LoadedResources;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
-use rozsa_model::types::{Api, InputModality, Model, ModelCost, Provider, ThinkingLevel};
+use rozsa_model::types::{Api, InputModality, Model, ModelCost, Provider, ThinkingEffort};
 
 fn test_model() -> Model {
     Model {
@@ -25,7 +25,7 @@ fn test_model() -> Model {
         },
         context_window: 8192,
         max_tokens: 2048,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -49,7 +49,7 @@ async fn agent_session_creates_and_registers_tools() {
 
     let config = AgentSessionConfig {
         model: test_model(),
-        thinking_level: ThinkingLevel::Off,
+        thinking_effort: ThinkingEffort::Off,
         system_prompt: "You are a test agent.".to_string(),
         cwd: tmp_dir.path().to_path_buf(),
         session_manager,

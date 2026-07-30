@@ -1,3 +1,29 @@
+// FrameworkTree
+// agent_loop.rs
+// ├── agent_loop()
+// ├── agent_loop_continue()
+// ├── run_loop()
+// ├── build_model_context()
+// ├── stream_assistant_response()
+// ├── stream_event_partial()
+// ├── assistant_agent_message()
+// ├── aborted_partial_message()
+// ├── aborted_assistant_message()
+// ├── struct ToolBatchResult
+// ├── struct FinalizedToolCall
+// ├── execute_tool_batch()
+// ├── execute_sequential()
+// ├── enum PreparedEntry
+// ├── execute_parallel()
+// ├── execute_single_tool()
+// ├── make_error_finalized()
+// ├── make_cancelled_finalized()
+// ├── finalized_to_result_message()
+// ├── current_timestamp_ms()
+// ├── should_terminate_batch()
+// ├── is_cancelled()
+// └── apply_post_tool_use()
+
 use crate::config::{AgentContext, AgentLoopConfig, ShouldStopContext};
 use crate::events::AgentEvent;
 use crate::messages::AgentMessage;
@@ -5,7 +31,7 @@ use crate::tool::ToolExecutionMode;
 use rozsa_model::event_stream::{EventStream, EventStreamSender, create_event_stream};
 use rozsa_model::types::{
     AssistantMessage, ContentBlock, Context as ModelContext, Message, StopReason, StreamEvent,
-    ThinkingLevel, ToolCall, ToolResultMessage,
+    ThinkingEffort, ToolCall, ToolResultMessage,
 };
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -241,8 +267,8 @@ async fn run_loop(
                     if let Some(new_model) = update.model {
                         config.model = new_model;
                     }
-                    match update.thinking_level {
-                        Some(ThinkingLevel::Off) => config.reasoning = None,
+                    match update.thinking_effort {
+                        Some(ThinkingEffort::Off) => config.reasoning = None,
                         Some(level) => config.reasoning = Some(level),
                         None => {}
                     }

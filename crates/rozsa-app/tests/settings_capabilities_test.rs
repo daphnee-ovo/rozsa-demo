@@ -12,7 +12,7 @@ use rozsa_app::settings::{
 use rozsa_model::event_stream::create_event_stream;
 use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Model, ModelCost, Provider, StopReason, StreamEvent,
-    ThinkingLevel, Usage,
+    ThinkingEffort, Usage,
 };
 use tempfile::tempdir;
 
@@ -213,7 +213,7 @@ fn test_model() -> Model {
         },
         context_window: 128,
         max_tokens: 64,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -254,7 +254,7 @@ async fn tool_filtering_reaches_model_context_and_reload_updates_existing_sessio
     });
     let session = AgentSession::new(AgentSessionConfig {
         model: test_model(),
-        thinking_level: ThinkingLevel::Off,
+        thinking_effort: ThinkingEffort::Off,
         system_prompt: String::new(),
         cwd: temp.path().to_path_buf(),
         session_manager: SessionManager::create(

@@ -61,7 +61,7 @@ use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 use rozsa_core::tool::{Tool, ToolExecutionMode};
 use rozsa_model::types::{
-    CacheRetention, Message, Model, SimpleStreamOptions, StreamEvent, StreamOptions, ThinkingLevel,
+    CacheRetention, Message, Model, SimpleStreamOptions, StreamEvent, StreamOptions, ThinkingEffort,
     ToolSchema, Transport, UserContent, UserMessage,
 };
 use tokio::sync::{Mutex, watch};
@@ -105,7 +105,7 @@ pub struct SharedResources {
     pub main_tools: Arc<Mutex<Vec<Arc<dyn Tool>>>>,
     pub tool_settings: Arc<std::sync::RwLock<BTreeMap<String, bool>>>,
     pub main_model: Model,
-    pub main_thinking_level: ThinkingLevel,
+    pub main_thinking_effort: ThinkingEffort,
     pub cwd: PathBuf,
     /// Base directory for subagent session files. Subagent sessions land in
     /// `<session_dir>/<main_session_uuid>/subagent-N.jsonl`.
@@ -122,7 +122,7 @@ pub struct SpawnConfig {
     pub name: Option<String>,
     pub system_prompt: String,
     pub model: Option<Model>,
-    pub thinking_level: Option<ThinkingLevel>,
+    pub thinking_effort: Option<ThinkingEffort>,
     pub scope: SubagentScope,
 }
 
@@ -178,9 +178,9 @@ impl SubagentManager {
         let model = config
             .model
             .unwrap_or_else(|| self.shared.main_model.clone());
-        let thinking_level = config
-            .thinking_level
-            .unwrap_or(self.shared.main_thinking_level);
+        let thinking_effort = config
+            .thinking_effort
+            .unwrap_or(self.shared.main_thinking_effort);
 
         // Filter tools: exclude blocked, then apply scope whitelist.
         let main_tools_snapshot: Vec<Arc<dyn Tool>> = self.shared.main_tools.lock().await.clone();
@@ -225,7 +225,7 @@ impl SubagentManager {
             status: SubagentStatus::Idle,
             model_id: model.id.clone(),
             model_provider: model.provider.to_string(),
-            thinking_level,
+            thinking_effort,
             created_at: now,
             last_activity_at: now,
             last_error: None,
@@ -242,7 +242,7 @@ impl SubagentManager {
             cancel_token: CancellationToken::new(),
             system_prompt: config.system_prompt,
             model,
-            thinking_level,
+            thinking_effort,
             tools: filtered_tools,
             session_manager,
             status_tx,
@@ -321,7 +321,7 @@ impl SubagentManager {
             let loop_config = build_loop_config(
                 &self.shared,
                 &rt.model,
-                rt.thinking_level,
+                rt.thinking_effort,
                 rt.tools.clone(),
                 rt.scope.clone(),
                 self.shared.cwd.clone(),
@@ -435,13 +435,13 @@ impl SubagentManager {
 fn build_loop_config(
     shared: &SharedResources,
     model: &Model,
-    thinking_level: ThinkingLevel,
+    thinking_effort: ThinkingEffort,
     tools: Vec<Arc<dyn Tool>>,
     scope: SubagentScope,
     cwd: PathBuf,
 ) -> AgentLoopConfig {
-    let reasoning = match thinking_level {
-        ThinkingLevel::Off => None,
+    let reasoning = match thinking_effort {
+        ThinkingEffort::Off => None,
         level => Some(level),
     };
 
@@ -460,7 +460,7 @@ fn build_loop_config(
             metadata: None,
         },
         reasoning,
-        thinking_budgets: None,
+        thinking_effort_budgets: None,
         tool_choice: None,
     };
 

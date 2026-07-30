@@ -9,7 +9,7 @@ use rozsa_gui::state::{GuiState, LiveState, SessionTab, SharedResources};
 use rozsa_model::event_stream::create_event_stream;
 use rozsa_model::types::{
     Api, AssistantMessage, ContentBlock, Model, ModelCost, Provider, StopReason, StreamEvent,
-    ThinkingLevel, ToolCall, Usage,
+    ThinkingEffort, ToolCall, Usage,
 };
 use tauri::{Event, Listener};
 use tokio::sync::Mutex;
@@ -31,7 +31,7 @@ fn model() -> Model {
         },
         context_window: 8_192,
         max_tokens: 1_024,
-        thinking_level_map: None,
+        thinking_effort_map: None,
         headers: None,
         compat: None,
     }
@@ -97,7 +97,7 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
         resources: rozsa_app::resources::LoadedResources::default(),
         system_prompt: "test".to_string(),
         model: Mutex::new(model()),
-        thinking_level: Mutex::new(ThinkingLevel::Off),
+        thinking_effort: Mutex::new(ThinkingEffort::Off),
         pre_tool_use_factory: None,
         question_request_tx: None,
         model_stream: Some(scripted_stream(source.to_string_lossy().to_string())),

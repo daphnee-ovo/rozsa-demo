@@ -56,7 +56,7 @@ impl ApiProvider for BedrockProvider {
         let simple_options = SimpleStreamOptions {
             base: options.clone(),
             reasoning: None,
-            thinking_budgets: None,
+            thinking_effort_budgets: None,
             tool_choice: None,
         };
         self.stream_simple(model, context, &simple_options)
