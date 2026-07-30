@@ -57,7 +57,7 @@
   --code-border: oklch(90% 0.005 260);
   --sidebar-bg: oklch(97.5% 0.004 350);
   --titlebar-bg: oklch(98.5% 0.003 350);
-  --ui-font-size: 13px;
+  --ui-font-size: 14px;
   --ui-scale: 1;
   --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Menlo, monospace;
@@ -1727,6 +1727,8 @@ body.hide-thinking .thinking-block { display: none; }
   padding: 7px 0;
 }
 .setting-item:hover { background: oklch(99% 0.001 350); }
+.setting-item.is-disabled { opacity: .42; }
+.setting-item.is-disabled:hover { background: transparent; }
 .setting-label { font-size: 13px; color: var(--fg); }
 .setting-stack {
   display: grid;
@@ -2095,6 +2097,7 @@ html[data-theme-mode="dark"] .sidebar-btn:hover {
 }
 .setting-toggle.on { background: var(--accent); }
 .setting-toggle.on::after { transform: translateX(16px); }
+.setting-toggle:disabled { cursor: not-allowed; }
 .setting-toggle:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: 2px;
@@ -3188,7 +3191,12 @@ body.native-split-main .settings-dialog { background: var(--bg); }
             <button class="theme-mode-card" type="button" data-theme-mode-card="light" onclick="selectThemeModeCard('light')" aria-pressed="false"><div class="theme-preview"><div class="theme-preview-top"></div><div class="theme-preview-body light"><span></span><span></span></div></div><span>Light</span></button>
             <button class="theme-mode-card" type="button" data-theme-mode-card="dark" onclick="selectThemeModeCard('dark')" aria-pressed="false"><div class="theme-preview"><div class="theme-preview-top"></div><div class="theme-preview-body dark"><span></span><span></span></div></div><span>Dark</span></button>
           </div><select class="setting-select settings-theme-mode-select" id="settingsThemeMode" aria-label="Theme Mode"><option value="system">system</option><option value="light">light</option><option value="dark">dark</option></select></div>
-          <div class="setting-item"><span class="setting-label setting-label-with-hint">Font Size <span class="settings-hint" tabindex="0" aria-label="Font Size help: Applies to the whole Rózsa interface." data-tooltip="Applies to the whole Rózsa interface.">?</span></span><span style="display:flex;align-items:center;gap:10px"><input class="appearance-range" id="settingsFontSizeRange" type="range" min="5" max="50" step="1" aria-label="Font Size"><input class="setting-input appearance-font-size-input" id="settingsFontSizeInput" type="number" min="5" max="50" step="1" aria-label="Font Size in pixels"><span class="setting-value">px</span></span></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">Font Size <span class="settings-hint" tabindex="0" aria-label="Font Size help: Applies to the whole Rózsa interface." data-tooltip="Applies to the whole Rózsa interface.">?</span></span><span style="display:flex;align-items:center;gap:10px"><input class="appearance-range" id="settingsFontSizeRange" type="range" min="5" max="30" step="1" aria-label="Font Size"><input class="setting-input appearance-font-size-input" id="settingsFontSizeInput" type="number" min="5" max="30" step="1" aria-label="Font Size in pixels"><span class="setting-value">px</span></span></div>
+          <div class="setting-item appearance-sidebar-option"><span class="setting-label setting-label-with-hint">Translucent sidebar <span class="settings-hint" tabindex="0" aria-label="Translucent sidebar help: Available on macOS. Uses the system glass material for the sidebar." data-tooltip="Available on macOS. Uses the system glass material for the sidebar.">?</span></span><button class="setting-toggle" id="settingsTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Translucent sidebar"></button></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">Show rate limits <span class="settings-hint" tabindex="0" aria-label="Show rate limits help: Shows the Codex subscription quota in the sidebar when a Codex OAuth model is active." data-tooltip="Shows the Codex subscription quota in the sidebar when a Codex OAuth model is active.">?</span></span><button class="setting-toggle" id="settingsShowRateLimits" type="button" role="switch" aria-checked="false" aria-label="Show rate limits"></button></div>
+          <div class="setting-item"><span class="setting-label">Show hourly limit</span><button class="setting-toggle" id="settingsShowHourlyRateLimit" type="button" role="switch" aria-checked="false" aria-label="Show hourly limit"></button></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">Show weekly limit <span class="settings-hint" tabindex="0" aria-label="Show weekly limit help: Includes the weekly Codex subscription quota in the sidebar." data-tooltip="Includes the weekly Codex subscription quota in the sidebar.">?</span></span><button class="setting-toggle" id="settingsShowWeeklyRateLimit" type="button" role="switch" aria-checked="false" aria-label="Show weekly limit"></button></div>
+          <div class="setting-item"><span class="setting-label">Rate limit display</span><select class="setting-select" id="settingsRateLimitDisplayMode" aria-label="Rate limit display"><option value="remained">Remaining</option><option value="used">Used</option></select></div>
         </div>
         <div class="appearance-theme-section" id="appearanceLightSection">
           <div class="settings-group-label settings-group-label-with-hint">Light Theme <span class="settings-hint" tabindex="0" aria-label="Light Theme help: The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/." data-tooltip="The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.">?</span></div>
@@ -3198,7 +3206,6 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeForegroundPicker" type="color" value="#575279" aria-label="Light Theme Foreground color picker"><input class="setting-input theme-hex-input" id="lightThemeForeground" type="text" spellcheck="false" aria-label="Light Theme Foreground HEX"></span></div>
           <div class="setting-item"><span class="setting-label setting-label-with-hint">UI font <span class="settings-hint" tabindex="0" aria-label="UI font help: The font used by navigation, labels and message text." data-tooltip="The font used by navigation, labels and message text.">?</span></span><input class="setting-input" id="lightThemeUiFont" type="text" spellcheck="false" aria-label="Light Theme UI font"></div>
           <div class="setting-item"><span class="setting-label setting-label-with-hint">Code font <span class="settings-hint" tabindex="0" aria-label="Code font help: The font used inside code blocks and tool output." data-tooltip="The font used inside code blocks and tool output.">?</span></span><input class="setting-input" id="lightThemeCodeFont" type="text" spellcheck="false" aria-label="Light Theme Code font"></div>
-          <div class="setting-item appearance-sidebar-option" id="lightThemeSidebarOption"><span class="setting-label setting-label-with-hint">Translucent sidebar <span class="settings-hint" tabindex="0" aria-label="Translucent sidebar help: Available on macOS. Uses the system glass material for the sidebar." data-tooltip="Available on macOS. Uses the system glass material for the sidebar.">?</span></span><button class="setting-toggle" id="lightThemeTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Light Theme Translucent sidebar"></button></div>
           <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('light')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
         </div>
         <div class="appearance-theme-section" id="appearanceDarkSection">
@@ -3209,7 +3216,6 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeForegroundPicker" type="color" value="#F1E9EB" aria-label="Dark Theme Foreground color picker"><input class="setting-input theme-hex-input" id="darkThemeForeground" type="text" spellcheck="false" aria-label="Dark Theme Foreground HEX"></span></div>
           <div class="setting-item"><span class="setting-label setting-label-with-hint">UI font <span class="settings-hint" tabindex="0" aria-label="UI font help: The font used by navigation, labels and message text." data-tooltip="The font used by navigation, labels and message text.">?</span></span><input class="setting-input" id="darkThemeUiFont" type="text" spellcheck="false" aria-label="Dark Theme UI font"></div>
           <div class="setting-item"><span class="setting-label setting-label-with-hint">Code font <span class="settings-hint" tabindex="0" aria-label="Code font help: The font used inside code blocks and tool output." data-tooltip="The font used inside code blocks and tool output.">?</span></span><input class="setting-input" id="darkThemeCodeFont" type="text" spellcheck="false" aria-label="Dark Theme Code font"></div>
-          <div class="setting-item appearance-sidebar-option" id="darkThemeSidebarOption"><span class="setting-label setting-label-with-hint">Translucent sidebar <span class="settings-hint" tabindex="0" aria-label="Translucent sidebar help: Available on macOS. Uses the system glass material for the sidebar." data-tooltip="Available on macOS. Uses the system glass material for the sidebar.">?</span></span><button class="setting-toggle" id="darkThemeTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Dark Theme Translucent sidebar"></button></div>
           <div class="appearance-theme-actions"><button type="button" onclick="saveThemeAsCustom('dark')">Save as custom theme</button><span class="appearance-theme-note">Custom themes are stored in ~/.rozsa/themes/</span></div>
         </div>
       </div>

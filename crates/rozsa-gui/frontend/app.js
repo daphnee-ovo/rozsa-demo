@@ -83,6 +83,11 @@ let quotaEligible = false;
 let quotaModelKey = '';
 let quotaLoaded = false;
 let quotaLoading = false;
+let quotaDisplayEnabled = true;
+let weeklyQuotaDisplayEnabled = true;
+let hourlyQuotaDisplayEnabled = true;
+let rateLimitDisplayMode = 'remained';
+let quotaSnapshot = null;
 let chatAutoScrollPaused = false;
 let renderedMessageSessionId = null;
 let renderedMessageKeys = [];
@@ -342,6 +347,7 @@ function renderState(snap) {
   }
   updateHeader(snap);
   updateContextUsage(snap.contextUsage);
+  updateQuotaVisibility(snap.model);
   if (!nativeSplitMode) updateSidebar(snap);
   renderMessages(snap.messages, snap.isStreaming, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
   renderRunningMessages(snap.queuedMessages, snap.steeringConversation);
@@ -373,6 +379,10 @@ function updateQuotaBars(snapshot) {
   const weekVal = document.getElementById('quotaWeek');
   updateQuotaWindow(hourBar, hourVal, snapshot && snapshot.primary, '5 hours');
   updateQuotaWindow(weekBar, weekVal, snapshot && snapshot.secondary, 'This week');
+  const weekRow = weekBar && weekBar.closest('.quota-row');
+  if (weekRow) weekRow.style.display = weeklyQuotaDisplayEnabled ? '' : 'none';
+  const hourRow = hourBar && hourBar.closest('.quota-row');
+  if (hourRow) hourRow.style.display = hourlyQuotaDisplayEnabled ? '' : 'none';
 }
 
 function updateQuotaWindow(bar, valueEl, window, label) {
@@ -386,9 +396,10 @@ function updateQuotaWindow(bar, valueEl, window, label) {
     return;
   }
   const used = clampPercent(Number(window.usedPercent || 0));
-  bar.style.width = used + '%';
-  bar.classList.toggle('warn', used >= 80);
-  valueEl.textContent = Math.round(used) + '%';
+  const display = rateLimitDisplayMode === 'used' ? used : 100 - used;
+  bar.style.width = display + '%';
+  bar.classList.toggle('warn', rateLimitDisplayMode === 'used' ? used >= 80 : display <= 20);
+  valueEl.textContent = Math.round(display) + '%';
   setQuotaTooltip(row, bar, valueEl, formatResetTitle(label, window));
 }
 
@@ -411,10 +422,12 @@ async function refreshRateLimits(showResult) {
   quotaLoading = true;
   try {
     const snapshot = await invoke('get_rate_limits');
+    quotaSnapshot = snapshot;
     updateQuotaBars(snapshot);
     quotaLoaded = true;
     if (showResult) showNotification(formatRateLimitSnapshot(snapshot));
   } catch (e) {
+    quotaSnapshot = null;
     updateQuotaBars(null);
     quotaLoaded = true;
     if (showResult) showError('Rate limit query failed: ' + String(e));
@@ -465,7 +478,7 @@ function updateQuotaVisibility(model) {
   const nextKey = modelKey(model);
   const group = document.getElementById('quotaGroup');
   quotaEligible = nextEligible;
-  if (group) group.style.display = nextEligible ? '' : 'none';
+  if (group) group.style.display = nextEligible && quotaDisplayEnabled ? '' : 'none';
   if (!nextEligible) {
     quotaLoaded = false;
     quotaLoading = false;
@@ -479,7 +492,7 @@ function updateQuotaVisibility(model) {
     quotaLoaded = false;
     updateQuotaBars(null);
   }
-  if (!quotaLoaded) refreshRateLimits(false);
+  if (!quotaLoaded && nextEligible && quotaDisplayEnabled) refreshRateLimits(false);
 }
 
 function modelHasRateLimit(model) {
@@ -1949,6 +1962,7 @@ async function handleSlashAction(action, value) {
     case 'refreshModels':
       models = await invoke('list_models');
       renderModelSelector();
+      try { updateQuotaVisibility((await invoke('get_state')).model); } catch (e) { showError('get_state failed: ' + String(e)); }
       await refreshRateLimits(false);
       return;
     case 'copy':
@@ -3461,11 +3475,69 @@ function renderAppearanceSettings(appearance) {
     };
   }
 
+  quotaDisplayEnabled = appearance.showRateLimits !== false;
+  weeklyQuotaDisplayEnabled = appearance.showWeeklyRateLimit !== false;
+  hourlyQuotaDisplayEnabled = appearance.showHourlyRateLimit !== false;
+  rateLimitDisplayMode = appearance.rateLimitDisplayMode || 'remained';
+  const quotaSwitch = document.getElementById('settingsShowRateLimits');
+  if (quotaSwitch) {
+    setSettingSwitch(quotaSwitch, quotaDisplayEnabled);
+    wireSettingSwitch('settingsShowRateLimits', enabled => {
+      quotaDisplayEnabled = enabled;
+      setRateLimitSettingsDisabled(!enabled);
+      updateQuotaVisibility({ provider: currentSettings?.model_provider });
+      return saveSetting('appearance_show_rate_limits', String(enabled));
+    });
+  }
+  const weeklyQuotaSwitch = document.getElementById('settingsShowWeeklyRateLimit');
+  if (weeklyQuotaSwitch) {
+    setSettingSwitch(weeklyQuotaSwitch, weeklyQuotaDisplayEnabled);
+    wireSettingSwitch('settingsShowWeeklyRateLimit', enabled => {
+      weeklyQuotaDisplayEnabled = enabled;
+      updateQuotaBars(quotaSnapshot);
+      return saveSetting('appearance_show_weekly_rate_limit', String(enabled));
+    });
+  }
+  const hourlyQuotaSwitch = document.getElementById('settingsShowHourlyRateLimit');
+  if (hourlyQuotaSwitch) {
+    setSettingSwitch(hourlyQuotaSwitch, hourlyQuotaDisplayEnabled);
+    hourlyQuotaSwitch.disabled = !quotaDisplayEnabled;
+    wireSettingSwitch('settingsShowHourlyRateLimit', enabled => { if (!quotaDisplayEnabled) return; hourlyQuotaDisplayEnabled = enabled; updateQuotaBars(quotaSnapshot); return saveSetting('appearance_show_hourly_rate_limit', String(enabled)); });
+  }
+  if (weeklyQuotaSwitch) weeklyQuotaSwitch.disabled = !quotaDisplayEnabled;
+  const rateLimitMode = document.getElementById('settingsRateLimitDisplayMode');
+  if (rateLimitMode) {
+    rateLimitMode.value = rateLimitDisplayMode;
+    rateLimitMode.disabled = !quotaDisplayEnabled;
+    rateLimitMode.onchange = () => { if (!quotaDisplayEnabled) return; rateLimitDisplayMode = rateLimitMode.value; updateQuotaBars(quotaSnapshot); saveSetting('appearance_rate_limit_display_mode', rateLimitDisplayMode); };
+  }
+  setRateLimitSettingsDisabled(!quotaDisplayEnabled);
+  const translucentSidebar = document.getElementById('settingsTranslucentSidebar');
+  if (translucentSidebar) {
+    setSettingSwitch(translucentSidebar, appearance.translucentSidebar);
+    translucentSidebar.closest('.appearance-sidebar-option').hidden = !appearance.isMacos;
+    wireSettingSwitch('settingsTranslucentSidebar', enabled =>
+      saveSetting('appearance_translucent_sidebar', String(enabled)));
+  }
+
   renderThemeSelect('light', appearance.lightTheme);
   renderThemeSelect('dark', appearance.darkTheme);
   renderThemeControls('light', themeDefinitions.light, appearance.isMacos);
   renderThemeControls('dark', themeDefinitions.dark, appearance.isMacos);
   installSystemThemeListener();
+}
+
+function setRateLimitSettingsDisabled(disabled) {
+  for (const id of [
+    'settingsShowHourlyRateLimit',
+    'settingsShowWeeklyRateLimit',
+    'settingsRateLimitDisplayMode',
+  ]) {
+    const control = document.getElementById(id);
+    if (!control) continue;
+    control.disabled = disabled;
+    control.closest('.setting-item')?.classList.toggle('is-disabled', disabled);
+  }
 }
 
 function selectThemeModeCard(mode) {
@@ -3510,10 +3582,6 @@ function renderThemeControls(mode, theme, isMacos) {
   setThemeColorControlValue(prefix + 'ThemeForeground', theme.foreground);
   setThemeControlValue(prefix + 'ThemeUiFont', theme.uiFont);
   setThemeControlValue(prefix + 'ThemeCodeFont', theme.codeFont);
-  const sidebar = document.getElementById(prefix + 'ThemeTranslucentSidebar');
-  const sidebarOption = document.getElementById(prefix + 'ThemeSidebarOption');
-  setSettingSwitch(sidebar, theme.translucentSidebar);
-  if (sidebarOption) sidebarOption.hidden = !isMacos;
 
   const textIds = [
     prefix + 'ThemeUiFont',
@@ -3547,13 +3615,6 @@ function renderThemeControls(mode, theme, isMacos) {
       text.onchange = () => scheduleThemeSave(mode);
     }
   });
-  if (sidebar) {
-    sidebar.onclick = () => {
-      setSettingSwitch(sidebar, !isSettingSwitchOn(sidebar));
-      previewTheme(mode);
-      scheduleThemeSave(mode);
-    };
-  }
 }
 
 function setThemeControlValue(id, value) {
@@ -3612,7 +3673,6 @@ function readThemeEditor(mode) {
     background: getThemeControlValue(prefix + 'ThemeBackground'),
     foreground: getThemeControlValue(prefix + 'ThemeForeground'),
     uiFont: getThemeControlValue(prefix + 'ThemeUiFont'),
-    translucentSidebar: isSettingSwitchOn(document.getElementById(prefix + 'ThemeTranslucentSidebar')),
     codeFont: getThemeControlValue(prefix + 'ThemeCodeFont'),
   };
 }
@@ -3722,7 +3782,7 @@ function applyThemeDefinition(theme, themeMode, isMacos = currentSettings?.appea
   const root = document.documentElement;
   root.setAttribute('data-theme-mode', themeMode === 'system' ? effectiveThemeMode(themeMode) : themeMode);
   root.setAttribute('data-theme-id', theme.id);
-  root.setAttribute('data-theme-translucent-sidebar', theme.translucentSidebar && isMacos ? 'true' : 'false');
+  root.setAttribute('data-theme-translucent-sidebar', currentSettings?.appearance?.translucentSidebar && isMacos ? 'true' : 'false');
   Object.entries(theme.variables || {}).forEach(([key, value]) => root.style.setProperty(key, value));
   root.style.setProperty('--accent', theme.accent);
   root.style.setProperty('--semantic-accent', theme.accent);
@@ -3736,8 +3796,8 @@ function applyThemeDefinition(theme, themeMode, isMacos = currentSettings?.appea
 
 function clampFontSize(value) {
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return 13;
-  return Math.min(50, Math.max(5, parsed));
+  if (!Number.isFinite(parsed)) return 14;
+  return Math.min(30, Math.max(5, parsed));
 }
 
 function renderGeneralSettings(settings) {
@@ -4862,5 +4922,5 @@ function applyFontSize(value) {
   const fontSize = clampFontSize(value);
   const root = document.documentElement;
   root.style.setProperty('--ui-font-size', fontSize + 'px');
-  root.style.setProperty('--ui-scale', String(fontSize / 13));
+  root.style.setProperty('--ui-scale', String(fontSize / 14));
 }

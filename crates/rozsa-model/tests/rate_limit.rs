@@ -65,3 +65,25 @@ fn parses_camel_case_usage_payload() {
     );
     assert!(snapshot.secondary.is_none());
 }
+
+#[test]
+fn classifies_a_weekly_primary_window_as_weekly_not_hourly() {
+    let input = r#"{
+        "rate_limit": {
+            "primary_window": {
+                "used_percent": 50,
+                "limit_window_seconds": 604800,
+                "reset_after_seconds": 3600,
+                "reset_at": 1780000000
+            }
+        }
+    }"#;
+
+    let snapshot = parse_rate_limit_response_json(input).expect("valid usage payload");
+
+    assert!(snapshot.primary.is_none());
+    assert_eq!(
+        snapshot.secondary.expect("weekly window").used_percent,
+        50.0
+    );
+}

@@ -43,6 +43,7 @@ pub struct ThemeStateSnapshot {
     pub revision: u64,
     pub theme_mode: String,
     pub font_size: u8,
+    pub translucent_sidebar: bool,
     pub light_theme: ThemeDefinition,
     pub dark_theme: ThemeDefinition,
     pub is_macos: bool,
@@ -86,7 +87,6 @@ pub fn emit_both<R: Runtime, S: Serialize + Clone>(
 #[cfg(target_os = "macos")]
 fn native_theme_variant(theme: &ThemeDefinition) -> crate::native_split_view::NativeThemeVariant {
     crate::native_split_view::NativeThemeVariant {
-        translucent: theme.translucent_sidebar,
         opaque_color: theme
             .variables
             .get("--sidebar-bg")
@@ -103,6 +103,7 @@ fn apply_native_theme_surface<R: Runtime>(
 ) -> Result<(), String> {
     let surface = crate::native_split_view::NativeThemeSurface {
         theme_mode: snapshot.theme_mode.clone(),
+        translucent_sidebar: snapshot.translucent_sidebar,
         light: native_theme_variant(&snapshot.light_theme),
         dark: native_theme_variant(&snapshot.dark_theme),
     };
@@ -132,6 +133,7 @@ pub fn emit_theme_state<R: Runtime>(
         revision,
         theme_mode: appearance.theme_mode.clone(),
         font_size: appearance.font_size,
+        translucent_sidebar: appearance.translucent_sidebar,
         light_theme,
         dark_theme,
         is_macos: appearance.is_macos,

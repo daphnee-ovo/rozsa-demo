@@ -15,6 +15,7 @@
 // ├── struct AppearanceSettings
 // ├── impl AppearanceSettings
 // ├── default()
+// ├── default_quota_visibility()
 // ├── impl AppearanceSettings
 // ├── validate()
 // ├── struct PartialSettings
@@ -164,6 +165,14 @@ impl Default for Settings {
 pub struct AppearanceSettings {
     pub theme_mode: String,
     pub font_size: u8,
+    pub translucent_sidebar: bool,
+    #[serde(default = "default_quota_visibility")]
+    pub show_rate_limits: bool,
+    #[serde(default = "default_quota_visibility")]
+    pub show_hourly_rate_limit: bool,
+    #[serde(default = "default_quota_visibility")]
+    pub show_weekly_rate_limit: bool,
+    pub rate_limit_display_mode: String,
     pub light_theme: String,
     pub dark_theme: String,
 }
@@ -172,11 +181,20 @@ impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             theme_mode: "system".to_string(),
-            font_size: 13,
+            font_size: 14,
+            translucent_sidebar: false,
+            show_rate_limits: true,
+            show_hourly_rate_limit: true,
+            show_weekly_rate_limit: true,
+            rate_limit_display_mode: "remained".to_string(),
             light_theme: "rozsa".to_string(),
             dark_theme: "rozsa-dark".to_string(),
         }
     }
+}
+
+fn default_quota_visibility() -> bool {
+    true
 }
 
 impl AppearanceSettings {
@@ -184,10 +202,16 @@ impl AppearanceSettings {
         if !matches!(self.theme_mode.as_str(), "system" | "light" | "dark") {
             return Err(format!("invalid theme mode: {}", self.theme_mode));
         }
-        if !(5..=50).contains(&self.font_size) {
+        if !(5..=30).contains(&self.font_size) {
             return Err(format!(
-                "font size must be between 5 and 50: {}",
+                "font size must be between 5 and 30: {}",
                 self.font_size
+            ));
+        }
+        if !matches!(self.rate_limit_display_mode.as_str(), "used" | "remained") {
+            return Err(format!(
+                "invalid rate limit display mode: {}",
+                self.rate_limit_display_mode
             ));
         }
         for (label, id) in [
@@ -258,6 +282,16 @@ pub struct PartialAppearanceSettings {
     pub theme_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_size: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub translucent_sidebar: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_rate_limits: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_hourly_rate_limit: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_weekly_rate_limit: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limit_display_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub light_theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

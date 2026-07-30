@@ -1594,6 +1594,11 @@ pub async fn get_settings(
         appearance: AppearanceSnapshot {
             theme_mode: rt.appearance.theme_mode.clone(),
             font_size: rt.appearance.font_size,
+            translucent_sidebar: rt.appearance.translucent_sidebar,
+            show_rate_limits: rt.appearance.show_rate_limits,
+            show_hourly_rate_limit: rt.appearance.show_hourly_rate_limit,
+            show_weekly_rate_limit: rt.appearance.show_weekly_rate_limit,
+            rate_limit_display_mode: rt.appearance.rate_limit_display_mode.clone(),
             light_theme: rt.appearance.light_theme.clone(),
             dark_theme: rt.appearance.dark_theme.clone(),
             is_macos: cfg!(target_os = "macos"),
@@ -1788,8 +1793,8 @@ pub async fn update_setting(
             let font_size = value
                 .parse::<u8>()
                 .map_err(|_| format!("Invalid font size: {value}"))?;
-            if !(5..=50).contains(&font_size) {
-                return Err(format!("Font size must be between 5 and 50: {font_size}"));
+            if !(5..=30).contains(&font_size) {
+                return Err(format!("Font size must be between 5 and 30: {font_size}"));
             }
             let mut s = state.runtime_settings.lock().await;
             s.appearance.font_size = font_size;
@@ -1797,6 +1802,59 @@ pub async fn update_setting(
             persist_settings(&state).await?;
             emit_theme_state(&state, &app).await?;
             Ok(())
+        }
+        "appearance_translucent_sidebar" => {
+            state
+                .runtime_settings
+                .lock()
+                .await
+                .appearance
+                .translucent_sidebar = value == "true";
+            persist_settings(&state).await?;
+            emit_theme_state(&state, &app).await
+        }
+        "appearance_show_rate_limits" => {
+            state
+                .runtime_settings
+                .lock()
+                .await
+                .appearance
+                .show_rate_limits = value == "true";
+            persist_settings(&state).await?;
+            crate::events::emit_sidebar_state(&app, state.inner()).await
+        }
+        "appearance_show_weekly_rate_limit" => {
+            state
+                .runtime_settings
+                .lock()
+                .await
+                .appearance
+                .show_weekly_rate_limit = value == "true";
+            persist_settings(&state).await?;
+            crate::events::emit_sidebar_state(&app, state.inner()).await
+        }
+        "appearance_show_hourly_rate_limit" => {
+            state
+                .runtime_settings
+                .lock()
+                .await
+                .appearance
+                .show_hourly_rate_limit = value == "true";
+            persist_settings(&state).await?;
+            crate::events::emit_sidebar_state(&app, state.inner()).await
+        }
+        "appearance_rate_limit_display_mode" => {
+            if !matches!(value.as_str(), "used" | "remained") {
+                return Err(format!("Invalid rate limit display mode: {value}"));
+            }
+            state
+                .runtime_settings
+                .lock()
+                .await
+                .appearance
+                .rate_limit_display_mode = value;
+            persist_settings(&state).await?;
+            crate::events::emit_sidebar_state(&app, state.inner()).await
         }
         "appearance_light_theme" => {
             theme_store(&state)?
@@ -1857,6 +1915,11 @@ async fn emit_theme_state(state: &State<'_, GuiState>, app: &AppHandle) -> Resul
     let appearance = AppearanceSnapshot {
         theme_mode: settings.appearance.theme_mode.clone(),
         font_size: settings.appearance.font_size,
+        translucent_sidebar: settings.appearance.translucent_sidebar,
+        show_rate_limits: settings.appearance.show_rate_limits,
+        show_hourly_rate_limit: settings.appearance.show_hourly_rate_limit,
+        show_weekly_rate_limit: settings.appearance.show_weekly_rate_limit,
+        rate_limit_display_mode: settings.appearance.rate_limit_display_mode.clone(),
         light_theme: settings.appearance.light_theme.clone(),
         dark_theme: settings.appearance.dark_theme.clone(),
         is_macos: cfg!(target_os = "macos"),
@@ -1962,7 +2025,11 @@ pub async fn list_models(state: State<'_, GuiState>) -> Result<Vec<ModelListEntr
 }
 
 #[tauri::command]
-pub async fn switch_model(state: State<'_, GuiState>, model_id: String) -> Result<(), String> {
+pub async fn switch_model(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+    model_id: String,
+) -> Result<(), String> {
     let registered_model = {
         let registry = state
             .model_registry
@@ -1999,7 +2066,7 @@ pub async fn switch_model(state: State<'_, GuiState>, model_id: String) -> Resul
             agent.set_model(model.clone()).await;
         }
     }
-    Ok(())
+    crate::events::emit_sidebar_state(&app, state.inner()).await
 }
 
 // --- 认证 ---
@@ -3425,6 +3492,11 @@ pub struct CapabilityItemSnapshot {
 pub struct AppearanceSnapshot {
     pub theme_mode: String,
     pub font_size: u8,
+    pub translucent_sidebar: bool,
+    pub show_rate_limits: bool,
+    pub show_hourly_rate_limit: bool,
+    pub show_weekly_rate_limit: bool,
+    pub rate_limit_display_mode: String,
     pub light_theme: String,
     pub dark_theme: String,
     pub is_macos: bool,

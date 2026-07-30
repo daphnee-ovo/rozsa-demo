@@ -97,6 +97,20 @@ fn merge_appearance(
                 .clone()
                 .unwrap_or_else(|| base.theme_mode.clone()),
             font_size: overlay.font_size.unwrap_or(base.font_size),
+            translucent_sidebar: overlay
+                .translucent_sidebar
+                .unwrap_or(base.translucent_sidebar),
+            show_rate_limits: overlay.show_rate_limits.unwrap_or(base.show_rate_limits),
+            show_hourly_rate_limit: overlay
+                .show_hourly_rate_limit
+                .unwrap_or(base.show_hourly_rate_limit),
+            show_weekly_rate_limit: overlay
+                .show_weekly_rate_limit
+                .unwrap_or(base.show_weekly_rate_limit),
+            rate_limit_display_mode: overlay
+                .rate_limit_display_mode
+                .clone()
+                .unwrap_or_else(|| base.rate_limit_display_mode.clone()),
             light_theme: overlay
                 .light_theme
                 .clone()

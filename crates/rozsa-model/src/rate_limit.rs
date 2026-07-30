@@ -150,12 +150,27 @@ struct RateLimitWindowRaw {
 
 fn parse_payload(payload: RateLimitPayload) -> RateLimitSnapshot {
     let (allowed, limit_reached, primary, secondary) = match payload.rate_limit {
-        Some(details) => (
-            details.allowed.unwrap_or(true),
-            details.limit_reached.unwrap_or(false),
-            details.primary_window.map(parse_window),
-            details.secondary_window.map(parse_window),
-        ),
+        Some(details) => {
+            let windows = [details.primary_window, details.secondary_window]
+                .into_iter()
+                .flatten()
+                .map(parse_window)
+                .collect::<Vec<_>>();
+            let primary = windows
+                .iter()
+                .find(|window| is_window_duration(window, 5 * 60 * 60))
+                .cloned();
+            let secondary = windows
+                .iter()
+                .find(|window| is_window_duration(window, 7 * 24 * 60 * 60))
+                .cloned();
+            (
+                details.allowed.unwrap_or(true),
+                details.limit_reached.unwrap_or(false),
+                primary,
+                secondary,
+            )
+        }
         None => (true, false, None, None),
     };
 
@@ -166,6 +181,10 @@ fn parse_payload(payload: RateLimitPayload) -> RateLimitSnapshot {
         primary,
         secondary,
     }
+}
+
+fn is_window_duration(window: &RateLimitWindow, expected_secs: i32) -> bool {
+    (window.window_duration_secs - expected_secs).abs() <= 60
 }
 
 fn parse_window(raw: RateLimitWindowRaw) -> RateLimitWindow {

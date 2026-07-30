@@ -331,6 +331,10 @@ pub struct SidebarSnapshot {
     pub active_session_id: Option<String>,
     pub git: Option<GitStatus>,
     pub quota: Option<rozsa_model::rate_limit::RateLimitSnapshot>,
+    pub show_quota: bool,
+    pub show_hourly_quota: bool,
+    pub show_weekly_quota: bool,
+    pub rate_limit_display_mode: String,
     pub actions: SidebarActionsSnapshot,
 }
 
@@ -382,11 +386,24 @@ impl GuiState {
             .collect();
         drop(tabs);
         let has_active_session = active_session_id.is_some();
+        let appearance = self.runtime_settings.lock().await.appearance.clone();
+        let show_quota = appearance.show_rate_limits
+            && self.shared.model.lock().await.provider.as_str() == "codex-oauth";
+        let show_weekly_quota = show_quota && appearance.show_weekly_rate_limit;
+        let show_hourly_quota = show_quota && appearance.show_hourly_rate_limit;
         Ok(SidebarSnapshot {
             sessions,
             active_session_id,
             git: git_status(&self.shared.cwd),
-            quota: self.quota_summary.lock().await.clone(),
+            quota: if show_quota {
+                self.quota_summary.lock().await.clone()
+            } else {
+                None
+            },
+            show_quota,
+            show_hourly_quota,
+            show_weekly_quota,
+            rate_limit_display_mode: appearance.rate_limit_display_mode,
             actions: SidebarActionsSnapshot {
                 can_new_session: true,
                 can_rename_session: has_active_session,

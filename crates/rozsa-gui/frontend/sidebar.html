@@ -38,6 +38,13 @@ button { font: inherit; }
 .git-branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--font-mono); }
 .git-stats { display: flex; gap: 5px; font: 10.5px var(--font-mono); }
 .git-add { color: var(--success); } .git-del { color: var(--error); } .git-files { color: var(--muted); }
+.quota-group { display: flex; flex-direction: column; gap: 8px; }
+.quota-row { display: flex; flex-direction: column; gap: 4px; }
+.quota-row[hidden], .quota-group[hidden] { display: none; }
+.quota-label { display: flex; justify-content: space-between; color: var(--muted); font: 10.5px var(--font-mono); }
+.quota-bar-track { height: 4px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--border) 72%, transparent); }
+.quota-bar-fill { height: 100%; border-radius: inherit; background: var(--accent); transition: width .18s ease; }
+.quota-bar-fill.warn { background: var(--warning); }
 .sidebar-bottom { padding: 8px 6px; }
 .sidebar-action, .settings-back, .settings-tab { width: 100%; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; text-align: left; }
 .sidebar-action:hover, .settings-back:hover, .settings-tab:hover, .settings-tab.active { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--fg); }
@@ -61,6 +68,10 @@ body.native-fullscreen .sidebar-scene { padding-top: 0; }
     <div class="status-panel">
       <div class="git-branch" id="sidebarGitBranch">—</div>
       <div class="git-stats"><span class="git-add" id="sidebarGitAdd">—</span><span class="git-del" id="sidebarGitDel">—</span><span class="git-files" id="sidebarGitFiles">—</span></div>
+      <div class="quota-group" id="sidebarQuotaGroup" hidden>
+        <div class="quota-row" id="sidebarQuotaHourRow"><div class="quota-label"><span>5 hours</span><span id="sidebarQuotaHour">—</span></div><div class="quota-bar-track"><div class="quota-bar-fill" id="sidebarQuotaHourBar"></div></div></div>
+        <div class="quota-row" id="sidebarQuotaWeekRow"><div class="quota-label"><span>This week</span><span id="sidebarQuotaWeek">—</span></div><div class="quota-bar-track"><div class="quota-bar-fill" id="sidebarQuotaWeekBar"></div></div></div>
+      </div>
     </div>
   </div>
   <div class="sidebar-bottom"><button class="sidebar-action" type="button" onclick="openSidebarSettings()">Settings</button></div>

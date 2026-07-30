@@ -24,7 +24,46 @@ fn built_in_themes_are_available_without_theme_files() {
 
 #[test]
 fn appearance_defaults_to_following_the_system_theme() {
-    assert_eq!(AppearanceSettings::default().theme_mode, "system");
+    let appearance = AppearanceSettings::default();
+    assert_eq!(appearance.theme_mode, "system");
+    assert_eq!(appearance.font_size, 14);
+    assert!(appearance.show_rate_limits);
+    assert!(appearance.show_weekly_rate_limit);
+    let serialized = serde_json::to_value(appearance).unwrap();
+    assert_eq!(serialized["showRateLimits"], true);
+    assert_eq!(serialized["showWeeklyRateLimit"], true);
+}
+
+#[test]
+fn appearance_settings_enable_quota_display_when_existing_files_omit_the_new_fields() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = temp.path().join("settings.json");
+    std::fs::write(&settings, r#"{"appearance":{"fontSize":14}}"#).unwrap();
+
+    let manager = SettingsManager::load(settings, None, None).unwrap();
+    let loaded = manager.resolved();
+    assert!(loaded.appearance.show_rate_limits);
+    assert!(loaded.appearance.show_weekly_rate_limit);
+}
+
+#[test]
+fn appearance_rate_limit_preferences_round_trip_through_settings_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = temp.path().join("settings.json");
+    std::fs::write(
+        &settings,
+        r#"{"appearance":{"showRateLimits":false,"showHourlyRateLimit":false,"showWeeklyRateLimit":false,"rateLimitDisplayMode":"used","translucentSidebar":true,"fontSize":18}}"#,
+    )
+    .unwrap();
+
+    let manager = SettingsManager::load(settings, None, None).unwrap();
+    let appearance = &manager.resolved().appearance;
+    assert!(!appearance.show_rate_limits);
+    assert!(!appearance.show_hourly_rate_limit);
+    assert!(!appearance.show_weekly_rate_limit);
+    assert_eq!(appearance.rate_limit_display_mode, "used");
+    assert!(appearance.translucent_sidebar);
+    assert_eq!(appearance.font_size, 18);
 }
 
 #[test]
@@ -99,7 +138,7 @@ fn invalid_theme_files_and_values_fail_loudly() {
 fn settings_reject_out_of_range_font_size() {
     let temp = tempfile::tempdir().unwrap();
     let settings = temp.path().join("settings.json");
-    std::fs::write(&settings, r#"{"appearance":{"fontSize":51}}"#).unwrap();
+    std::fs::write(&settings, r#"{"appearance":{"fontSize":31}}"#).unwrap();
     assert!(SettingsManager::load(settings, None, None).is_err());
 }
 
@@ -113,11 +152,10 @@ fn theme_definition_serializes_expected_json_shape() {
         background: "#000".to_string(),
         foreground: "#fff".to_string(),
         ui_font: "system-ui".to_string(),
-        translucent_sidebar: true,
         code_font: "monospace".to_string(),
         variables: BTreeMap::new(),
     };
     let value = serde_json::to_value(theme).unwrap();
     assert_eq!(value["uiFont"], "system-ui");
-    assert_eq!(value["translucentSidebar"], true);
+    assert!(value.get("translucentSidebar").is_none());
 }

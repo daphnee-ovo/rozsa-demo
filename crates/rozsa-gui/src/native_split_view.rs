@@ -1,3 +1,38 @@
+// FrameworkTree
+// native_split_view.rs
+// ├── struct PendingInstall
+// ├── struct NativeSplitHost
+// ├── struct NativeThemeVariant
+// ├── struct NativeThemeSurface
+// ├── impl NativeSplitHost
+// ├── set_sidebar_overlay_visible()
+// ├── restore_hierarchy()
+// ├── make_sidebar_material()
+// ├── configure_inline_sidebar_appearance()
+// ├── make_opaque_backing()
+// ├── pin_to_parent()
+// ├── constraints_to_parent()
+// ├── install_native_split()
+// ├── close_sidebar_async()
+// ├── record_webview()
+// ├── install()
+// ├── toggle_sidebar()
+// ├── set_sidebar_overlay_visible()
+// ├── sidebar_overlay_width()
+// ├── is_sidebar_collapsed()
+// ├── reveal_content()
+// ├── window_uses_dark_appearance()
+// ├── apply_sidebar_appearance()
+// ├── parse_hex_color()
+// ├── parse_rgb_component()
+// ├── parse_alpha()
+// ├── parse_rgb_color()
+// ├── linear_to_srgb()
+// ├── parse_oklch_color()
+// ├── parse_sidebar_color()
+// ├── apply_theme_surface()
+// └── teardown()
+
 //! Persistent macOS native split host.
 //!
 //! Structure: `install` creates the sidebar WebView; `record_webview` waits for
@@ -91,13 +126,13 @@ struct NativeSplitHost {
 
 #[derive(Clone)]
 pub struct NativeThemeVariant {
-    pub translucent: bool,
     pub opaque_color: String,
 }
 
 #[derive(Clone)]
 pub struct NativeThemeSurface {
     pub theme_mode: String,
+    pub translucent_sidebar: bool,
     pub light: NativeThemeVariant,
     pub dark: NativeThemeVariant,
 }
@@ -744,7 +779,7 @@ pub fn apply_theme_surface(revision: u64, surface: NativeThemeSurface) -> Result
             "system" => &surface.light,
             other => return Err(format!("unknown native theme mode: {other}")),
         };
-        if variant.translucent {
+        if surface.translucent_sidebar {
             host.sidebar_opaque_backing.setHidden(true);
             host.sidebar_material.setHidden(false);
         } else {

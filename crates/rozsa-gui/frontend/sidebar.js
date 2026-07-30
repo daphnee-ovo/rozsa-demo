@@ -119,7 +119,33 @@ function renderSidebarState(snapshot) {
     setSidebarText('sidebarGitDel', '-' + Number(snapshot.git.deleted || 0));
     setSidebarText('sidebarGitFiles', Number(snapshot.git.files || 0) + ' files');
   }
+  renderSidebarQuota(snapshot);
   renderSidebarSessions();
+}
+
+function renderSidebarQuota(snapshot) {
+  const group = document.getElementById('sidebarQuotaGroup');
+  if (!group) return;
+  const showQuota = Boolean(snapshot.showQuota);
+  group.hidden = !showQuota;
+  if (!showQuota) return;
+  const hourRow = document.getElementById('sidebarQuotaHourRow');
+  if (hourRow) hourRow.hidden = !snapshot.showHourlyQuota;
+  renderSidebarQuotaWindow('sidebarQuotaHourBar', 'sidebarQuotaHour', snapshot.quota?.primary, snapshot.rateLimitDisplayMode);
+  const weekRow = document.getElementById('sidebarQuotaWeekRow');
+  if (weekRow) weekRow.hidden = !snapshot.showWeeklyQuota;
+  renderSidebarQuotaWindow('sidebarQuotaWeekBar', 'sidebarQuotaWeek', snapshot.quota?.secondary, snapshot.rateLimitDisplayMode);
+}
+
+function renderSidebarQuotaWindow(barId, valueId, window, mode) {
+  const bar = document.getElementById(barId);
+  const value = document.getElementById(valueId);
+  if (!bar || !value) return;
+  const used = Math.min(100, Math.max(0, Number(window?.usedPercent || 0)));
+  const display = mode === 'used' ? used : 100 - used;
+  bar.style.width = window ? display + '%' : '0%';
+  bar.classList.toggle('warn', mode === 'used' ? used >= 80 : display <= 20);
+  value.textContent = window ? Math.round(display) + '%' : '—';
 }
 
 function applySidebarThemeState(snapshot) {

@@ -54,8 +54,18 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(html.contains("value=\"system\""));
     assert!(html.contains("value=\"light\""));
     assert!(html.contains("value=\"dark\""));
-    assert!(html.contains("id=\"settingsFontSizeRange\" type=\"range\" min=\"5\" max=\"50\""));
-    assert!(html.contains("id=\"settingsFontSizeInput\" type=\"number\" min=\"5\" max=\"50\""));
+    assert!(html.contains("id=\"settingsFontSizeRange\" type=\"range\" min=\"5\" max=\"30\""));
+    assert!(html.contains("id=\"settingsFontSizeInput\" type=\"number\" min=\"5\" max=\"30\""));
+    assert!(html.contains("id=\"settingsShowRateLimits\" type=\"button\" role=\"switch\""));
+    assert!(html.contains("id=\"settingsShowWeeklyRateLimit\" type=\"button\" role=\"switch\""));
+    let appearance = html
+        .split("id=\"pane-appearance\"")
+        .nth(1)
+        .expect("missing appearance pane");
+    assert!(
+        appearance.find("Font Size").unwrap() < appearance.find("Show rate limits").unwrap(),
+        "rate-limit controls must follow Font Size"
+    );
     for tooltip in [
         "Applies to the whole Rózsa interface.",
         "The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.",
@@ -69,7 +79,7 @@ fn appearance_settings_are_in_a_dedicated_tab() {
             "missing appearance help tip: {tooltip}"
         );
     }
-    assert_eq!(html.matches("class=\"settings-hint\"").count(), 9);
+    assert_eq!(html.matches("class=\"settings-hint\"").count(), 10);
     let help_tip_style = html
         .split(".settings-hint {")
         .nth(1)
@@ -108,19 +118,19 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     for switch in [
         "settingsAutoCompact",
         "settingsBlockImages",
-        "lightThemeTranslucentSidebar",
-        "darkThemeTranslucentSidebar",
+        "settingsTranslucentSidebar",
     ] {
         assert!(
             html.contains(&format!("id=\"{switch}\" type=\"button\" role=\"switch\"")),
             "missing switch control: {switch}"
         );
     }
-    assert!(!html.contains("id=\"lightThemeTranslucentSidebar\" type=\"checkbox\""));
-    assert!(!html.contains("id=\"darkThemeTranslucentSidebar\" type=\"checkbox\""));
+    assert!(!html.contains("id=\"lightThemeTranslucentSidebar\""));
+    assert!(!html.contains("id=\"darkThemeTranslucentSidebar\""));
     assert!(!html.contains("id=\"settingsAutoCompact\" aria-label=\"自动压缩\"><option"));
     assert!(!html.contains("id=\"settingsBlockImages\" aria-label=\"Block images\"><option"));
     assert!(html.contains(".setting-toggle.on::after { transform: translateX(16px); }"));
+    assert!(html.contains(".setting-item.is-disabled { opacity: .42; }"));
     for picker in [
         "lightThemeAccentPicker",
         "lightThemeBackgroundPicker",
@@ -131,16 +141,9 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     ] {
         assert!(html.contains(&format!("id=\"{picker}\" type=\"color\"")));
     }
-    let light = html
-        .split("id=\"appearanceLightSection\"")
-        .nth(1)
-        .expect("missing light theme section");
-    assert!(light.find("Code font").unwrap() < light.find("Translucent sidebar").unwrap());
-    let dark = html
-        .split("id=\"appearanceDarkSection\"")
-        .nth(1)
-        .expect("missing dark theme section");
-    assert!(dark.find("Code font").unwrap() < dark.find("Translucent sidebar").unwrap());
+    assert!(
+        appearance.find("Translucent sidebar").unwrap() < appearance.find("Light Theme").unwrap()
+    );
     assert!(!html.contains("id=\"settingsTheme\""));
     assert!(!html.contains("id=\"settingsFontSize\""));
 }
@@ -164,7 +167,9 @@ fn appearance_is_backend_persisted_and_theme_files_are_loaded() {
     assert!(js.contains("rozsa-custom"));
     assert!(js.contains("isSettingSwitchOn"));
     assert!(js.contains("setSettingSwitch"));
-    assert!(js.contains("translucentSidebar: isSettingSwitchOn"));
+    assert!(js.contains("appearance_translucent_sidebar"));
+    assert!(!js.contains("lightThemeTranslucentSidebar"));
+    assert!(!js.contains("darkThemeTranslucentSidebar"));
     assert!(js.contains("toggleMainSidebar"));
     assert!(js.contains("native-sidebar-toggle"));
     assert!(js.contains("native-fullscreen"));
@@ -187,6 +192,10 @@ fn appearance_is_backend_persisted_and_theme_files_are_loaded() {
     assert!(rust.contains("pub fn get_theme"));
     assert!(rust.contains("pub fn save_theme"));
     assert!(rust.contains("appearance_font_size"));
+    assert!(rust.contains("appearance_show_rate_limits"));
+    assert!(rust.contains("appearance_show_weekly_rate_limit"));
+    assert!(js.contains("function setRateLimitSettingsDisabled(disabled)"));
+    assert!(js.contains("classList.toggle('is-disabled', disabled)"));
     assert!(lib.contains("commands::list_themes"));
     assert!(lib.contains("commands::get_theme"));
     assert!(lib.contains("commands::save_theme"));

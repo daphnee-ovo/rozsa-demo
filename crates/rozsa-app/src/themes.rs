@@ -1,3 +1,31 @@
+// FrameworkTree
+// themes.rs
+// ├── enum ThemeMode
+// ├── impl ThemeMode
+// ├── as_str()
+// ├── struct ThemeDefinition
+// ├── struct ThemeSummary
+// ├── struct ThemeFile
+// ├── enum ThemeError
+// ├── struct ThemeStore
+// ├── impl ThemeStore
+// ├── new()
+// ├── layered()
+// ├── root()
+// ├── list()
+// ├── load()
+// ├── save()
+// ├── read_file()
+// ├── from_file()
+// ├── builtin()
+// ├── from_definition()
+// ├── validate_file()
+// ├── validate_definition()
+// ├── validate_css_value()
+// ├── validate_variable()
+// ├── validate_id()
+// └── layered_theme_store()
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -33,7 +61,6 @@ pub struct ThemeDefinition {
     pub background: String,
     pub foreground: String,
     pub ui_font: String,
-    pub translucent_sidebar: bool,
     pub code_font: String,
     #[serde(default)]
     pub variables: BTreeMap<String, String>,
@@ -61,8 +88,6 @@ struct ThemeFile {
     foreground: Option<String>,
     #[serde(default)]
     ui_font: Option<String>,
-    #[serde(default)]
-    translucent_sidebar: Option<bool>,
     #[serde(default)]
     code_font: Option<String>,
     #[serde(default)]
@@ -266,9 +291,6 @@ impl ThemeStore {
         if let Some(value) = file.ui_font {
             theme.ui_font = value;
         }
-        if let Some(value) = file.translucent_sidebar {
-            theme.translucent_sidebar = value;
-        }
         if let Some(value) = file.code_font {
             theme.code_font = value;
         }
@@ -364,7 +386,6 @@ impl ThemeStore {
             background: background.to_string(),
             foreground: foreground.to_string(),
             ui_font: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif".to_string(),
-            translucent_sidebar: false,
             code_font: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Menlo, monospace".to_string(),
             variables,
         }
@@ -378,7 +399,6 @@ impl ThemeStore {
             background: Some(theme.background.clone()),
             foreground: Some(theme.foreground.clone()),
             ui_font: Some(theme.ui_font.clone()),
-            translucent_sidebar: Some(theme.translucent_sidebar),
             code_font: Some(theme.code_font.clone()),
             variables: theme.variables.clone(),
         }
