@@ -39,6 +39,7 @@ The active product is implemented entirely in the five Rust crates above. Do not
 - If a Rust test file changes, run its relevant test target before broader checks.
 - Full project verification is `cargo build`, `cargo clippy`, and `cargo test` from the repository root.
 - Use `cargo fmt --all -- --check` for formatting verification.
+- On macOS, use `./run.sh` to launch the GUI from a staged debug `.app` bundle with the development Dock icon; use `./run.sh --prepare-only` to validate the bundle without launching it.
 - Run `./devtools/sync-codex-model-client-version.sh` to update the models endpoint compatibility version directly from `openai/codex` GitHub tags; use `--check` for verification.
 - When verification requires opening the app, close the test app immediately after testing; do not leave a validation instance running in the user's session.
 - Never commit unless the user asks.

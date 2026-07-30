@@ -35,6 +35,16 @@ Rózsa is under active development. The native Tauri GUI is the supported intera
 cargo build
 ```
 
+## Run the GUI on macOS
+
+```bash
+./run.sh
+```
+
+The script builds the debug executable, stages `target/debug/Rózsa.app`, and
+launches that app bundle so the Dock uses the development application icon. Use
+`./run.sh --prepare-only` to stage and validate the bundle without launching it.
+
 ## Project Structure
 
 ```
