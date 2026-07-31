@@ -6,6 +6,7 @@
 // ├── snapshot_json()
 // ├── fast_timing()
 // ├── snapshot_adapter_accepts_unknown_fields_and_uses_only_data_get()
+// ├── polluted_item_ids_are_normalized_to_canonical_identity()
 // ├── invalid_update_preserves_the_last_good_snapshot_as_stale()
 // ├── missing_required_fields_and_invalid_ids_are_incompatible()
 // ├── oversized_content_length_is_rejected_before_body_read()
@@ -216,6 +217,48 @@ async fn missing_required_fields_and_invalid_ids_are_incompatible() {
         client.fetch_snapshot().await,
         Err(DevFlowError::IncompatibleApi(_))
     ));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn polluted_item_ids_are_normalized_to_canonical_identity() {
+    // The real dow dashboard can emit an issue id with trailing title text
+    // (e.g. `ISSUE-I001：Test TASK-T002 fail`). One polluted entry must not
+    // make the whole snapshot incompatible: the canonical id is extracted and
+    // the remaining items still decode.
+    let payload = serde_json::json!({
+        "status": {
+            "name": "rozsa",
+            "phase": "DEV",
+            "mode": "quick",
+            "version": "1.4.1",
+            "goals_minor": "ok",
+            "updated": "2026-07-31 03:18"
+        },
+        "tasks": [
+            {"id": "TASK-T007", "title": "sidebar task", "status": "pending"}
+        ],
+        "issues": [
+            {"id": "ISSUE-I001：Test TASK-T002 fail", "title": "running 12 tests", "status": "closed"},
+            {"id": "ISSUE-I002", "title": "clean issue", "status": "open"}
+        ]
+    })
+    .to_string();
+    let (url, _, server) = spawn_server(vec![ResponsePlan {
+        delay: Duration::ZERO,
+        response: json_response(&payload),
+        hold_open: Duration::ZERO,
+    }])
+    .await;
+    let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
+
+    let snapshot = client.fetch_snapshot().await.expect("snapshot decodes");
+    assert_eq!(snapshot.tasks[0].id, "TASK-T007");
+    assert_eq!(snapshot.tasks[0].title, "sidebar task");
+    assert_eq!(snapshot.issues.len(), 2);
+    assert_eq!(snapshot.issues[0].id, "ISSUE-I001");
+    assert_eq!(snapshot.issues[0].title, "running 12 tests");
+    assert_eq!(snapshot.issues[1].id, "ISSUE-I002");
     server.await.unwrap();
 }
 

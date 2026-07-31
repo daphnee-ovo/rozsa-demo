@@ -43,7 +43,7 @@
 // ├── try_from()
 // ├── impl DevFlowIssue
 // ├── try_from()
-// ├── validate_id()
+// ├── normalize_id()
 // ├── read_bounded()
 // ├── struct ReconnectBackoff
 // ├── impl ReconnectBackoff
@@ -568,7 +568,7 @@ impl TryFrom<DashboardTaskDto> for DevFlowTask {
     type Error = DevFlowError;
 
     fn try_from(dto: DashboardTaskDto) -> Result<Self, Self::Error> {
-        validate_id(&dto.id, "TASK-T")?;
+        let id = normalize_id(&dto.id, "TASK-T")?;
         let status = match dto.status.as_str() {
             "pending" => DevFlowTaskStatus::Pending,
             "in_progress" => DevFlowTaskStatus::InProgress,
@@ -580,7 +580,7 @@ impl TryFrom<DashboardTaskDto> for DevFlowTask {
             }
         };
         Ok(Self {
-            id: dto.id,
+            id,
             title: dto.title,
             status,
             priority: dto.priority,
@@ -600,7 +600,7 @@ impl TryFrom<DashboardIssueDto> for DevFlowIssue {
     type Error = DevFlowError;
 
     fn try_from(dto: DashboardIssueDto) -> Result<Self, Self::Error> {
-        validate_id(&dto.id, "ISSUE-I")?;
+        let id = normalize_id(&dto.id, "ISSUE-I")?;
         let status = match dto.status.as_str() {
             "open" => DevFlowIssueStatus::Open,
             "in_progress" => DevFlowIssueStatus::InProgress,
@@ -612,7 +612,7 @@ impl TryFrom<DashboardIssueDto> for DevFlowIssue {
             }
         };
         Ok(Self {
-            id: dto.id,
+            id,
             title: dto.title,
             status,
             severity: dto.severity,
@@ -623,16 +623,24 @@ impl TryFrom<DashboardIssueDto> for DevFlowIssue {
     }
 }
 
-fn validate_id(id: &str, prefix: &str) -> Result<(), DevFlowError> {
-    let suffix = id
-        .strip_prefix(prefix)
-        .filter(|suffix| !suffix.is_empty() && suffix.chars().all(|ch| ch.is_ascii_digit()));
-    if suffix.is_none() {
+/// Extracts the canonical item id (`TASK-T007`, `ISSUE-I001`) from the
+/// dashboard value. The real dow dashboard may append title text after the id
+/// when an issue entry is malformed; the leading prefix plus digits remain the
+/// authoritative identity and trailing junk is ignored. A value without the
+/// expected prefix or with no digits is still rejected as incompatible.
+fn normalize_id(id: &str, prefix: &str) -> Result<String, DevFlowError> {
+    let Some(rest) = id.strip_prefix(prefix) else {
+        return Err(DevFlowError::IncompatibleApi(format!(
+            "invalid item id `{id}`"
+        )));
+    };
+    let digits: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    if digits.is_empty() {
         return Err(DevFlowError::IncompatibleApi(format!(
             "invalid item id `{id}`"
         )));
     }
-    Ok(())
+    Ok(format!("{prefix}{digits}"))
 }
 
 async fn read_bounded(

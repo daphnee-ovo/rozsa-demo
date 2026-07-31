@@ -4678,6 +4678,10 @@ function showDevFlowDetail(payload) {
   openDevFlowDetailPanel();
 }
 
+function devFlowCountLabel(count, noun) {
+  return count === 1 ? '1 ' + noun : count + ' ' + noun + 's';
+}
+
 function renderDevFlowDetail(payload) {
   const revision = document.getElementById('devFlowDetailRevision');
   if (revision) revision.textContent = payload.revision ? '#' + payload.revision : '';
@@ -4685,7 +4689,7 @@ function renderDevFlowDetail(payload) {
   if (project) project.textContent = (payload.project.root || '') + ' · ' + (payload.project.revision || '');
   const summary = document.getElementById('devFlowDetailSummary');
   if (summary) {
-    summary.textContent = payload.openTasks + ' Tasks · ' + payload.openIssues + ' Issues' +
+    summary.textContent = devFlowCountLabel(payload.openTasks, 'Task') + ' · ' + devFlowCountLabel(payload.openIssues, 'Issue') +
       (payload.stale ? ' · stale' : '');
   }
   const list = document.getElementById('devFlowDetailList');

@@ -172,12 +172,16 @@ function renderSidebarDevFlow(snapshot) {
   }
   const summary = document.getElementById('sidebarDevFlowSummary');
   if (summary) {
-    summary.textContent = df.openTasks + ' Tasks · ' + df.openIssues + ' Issues';
+    summary.textContent = devFlowCountLabel(df.openTasks, 'Task') + ' · ' + devFlowCountLabel(df.openIssues, 'Issue');
     summary.classList.toggle('stale', Boolean(df.stale));
     summary.onclick = () => openDevFlowDetail({ kind: 'summary' });
   }
   renderDevFlowClaimedRows();
   updateDevFlowDashboardButton(df);
+}
+
+function devFlowCountLabel(count, noun) {
+  return count === 1 ? '1 ' + noun : count + ' ' + noun + 's';
 }
 
 function renderDevFlowClaimedRows() {
