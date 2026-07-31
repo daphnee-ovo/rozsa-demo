@@ -11,21 +11,55 @@
 // ├── struct DevFlowServiceHandle
 // ├── impl DevFlowServiceHandle
 // ├── new()
+// ├── with_child()
 // ├── id()
 // ├── snapshot()
+// ├── enum ServiceShutdownOutcome
+// ├── trait DashboardServiceControl
+// ├── trait MemoryReader
+// ├── struct SystemMemoryReader
+// ├── impl SystemMemoryReader
+// ├── total_physical_memory_bytes()
+// ├── child_rss_bytes()
 // ├── trait DashboardServiceFactory
 // ├── struct SessionDevFlowState
 // ├── struct SessionBinding
+// ├── enum ServiceState
+// ├── struct ServiceEntry
+// ├── struct SweepReport
+// ├── struct RegistryDiagnostics
 // ├── struct RegistryState
 // ├── struct DevFlowRegistry
 // ├── impl DevFlowRegistry
 // ├── new()
+// ├── with_memory_reader()
 // ├── probe_interval()
+// ├── sweep_interval()
+// ├── idle_reclamation_window()
+// ├── no_client_shutdown_window()
+// ├── memory_budget()
 // ├── associate_session()
+// ├── session_active()
+// ├── session_finished()
+// ├── session_closed()
+// ├── set_current_project()
+// ├── sweep()
+// ├── diagnostics()
 // ├── probe_selected()
 // ├── rescan_after_successful_bash()
 // ├── session_state()
 // ├── service_count()
+// ├── impl RegistryState
+// ├── next_seq()
+// ├── record_stop()
+// ├── refresh_stop_times()
+// ├── is_current_or_active()
+// ├── usage_and_budget()
+// ├── estimate_snapshot_bytes()
+// ├── estimate_task_bytes()
+// ├── estimate_issue_bytes()
+// ├── opt_text()
+// ├── vec_text_bytes()
 // ├── resolve_project_with()
 // ├── probe_project()
 // ├── validate_branch()
@@ -34,11 +68,12 @@
 
 //! Project identity, initialization probing, and shared dev-flow services.
 
+use std::cmp::max;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -47,11 +82,19 @@ use tokio::process::Command;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
 
-use super::dashboard::DevFlowSnapshot;
+use super::dashboard::{DevFlowIssue, DevFlowSnapshot, DevFlowTask};
 use super::discovery::{CommandExecutionError, CommandOutput};
 
 const PROJECT_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 const PROJECT_PROBE_INTERVAL: Duration = Duration::from_secs(2);
+
+pub const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+pub const IDLE_RECLAMATION_WINDOW: Duration = Duration::from_secs(15 * 60);
+pub const NO_CLIENT_SHUTDOWN_WINDOW: Duration = Duration::from_secs(35);
+pub const MIN_MEMORY_BUDGET_BYTES: u64 = 256 * 1024 * 1024;
+/// Documented approximate fixed per-service registry overhead in bytes.
+pub const REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE: u64 = 256 * 1024;
+const SNAPSHOT_ITEM_OVERHEAD: u64 = 128;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DevFlowProjectKey {
@@ -141,11 +184,32 @@ impl ProjectCommandRunner for SystemProjectCommandRunner {
 pub struct DevFlowServiceHandle {
     id: u64,
     snapshot: Arc<RwLock<Option<DevFlowSnapshot>>>,
+    control: Option<Arc<dyn DashboardServiceControl>>,
+    pid: Option<u32>,
 }
 
 impl DevFlowServiceHandle {
     pub fn new(id: u64, snapshot: Arc<RwLock<Option<DevFlowSnapshot>>>) -> Self {
-        Self { id, snapshot }
+        Self {
+            id,
+            snapshot,
+            control: None,
+            pid: None,
+        }
+    }
+
+    pub fn with_child(
+        id: u64,
+        snapshot: Arc<RwLock<Option<DevFlowSnapshot>>>,
+        control: Arc<dyn DashboardServiceControl>,
+        pid: Option<u32>,
+    ) -> Self {
+        Self {
+            id,
+            snapshot,
+            control: Some(control),
+            pid,
+        }
     }
 
     pub fn id(&self) -> u64 {
@@ -154,6 +218,51 @@ impl DevFlowServiceHandle {
 
     pub fn snapshot(&self) -> Arc<RwLock<Option<DevFlowSnapshot>>> {
         self.snapshot.clone()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServiceShutdownOutcome {
+    Exited,
+    StillRunning,
+}
+
+#[async_trait]
+pub trait DashboardServiceControl: Send + Sync {
+    /// Close owned connections and wait up to `grace` for the child to exit.
+    async fn shutdown(&self, grace: Duration) -> ServiceShutdownOutcome;
+    /// Probe whether the child (or its dashboard URL) is still alive.
+    async fn is_alive(&self) -> bool;
+}
+
+pub trait MemoryReader: Send + Sync {
+    fn total_physical_memory_bytes(&self) -> Option<u64>;
+    fn child_rss_bytes(&self, pid: u32) -> Option<u64>;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemMemoryReader;
+
+impl MemoryReader for SystemMemoryReader {
+    fn total_physical_memory_bytes(&self) -> Option<u64> {
+        let mut system = sysinfo::System::new_with_specifics(
+            sysinfo::RefreshKind::nothing()
+                .with_memory(sysinfo::MemoryRefreshKind::nothing().with_ram()),
+        );
+        system.refresh_memory();
+        Some(system.total_memory())
+    }
+
+    fn child_rss_bytes(&self, pid: u32) -> Option<u64> {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+        let mut system = System::new();
+        let pid = Pid::from_u32(pid);
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&[pid]),
+            true,
+            ProcessRefreshKind::everything(),
+        );
+        system.process(pid).map(|process| process.memory())
     }
 }
 
@@ -173,19 +282,58 @@ pub struct SessionDevFlowState {
 struct SessionBinding {
     cwd: PathBuf,
     state: SessionDevFlowState,
+    active: bool,
+    last_stop_at: Option<SystemTime>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ServiceState {
+    Live,
+    Protected,
+}
+
+struct ServiceEntry {
+    handle: DevFlowServiceHandle,
+    last_used_seq: u64,
+    last_stop_at: Option<SystemTime>,
+    state: ServiceState,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SweepReport {
+    pub reclaimed: Vec<DevFlowProjectKey>,
+    pub protected: Vec<DevFlowProjectKey>,
+    pub usage_bytes: u64,
+    pub budget_bytes: Option<u64>,
+    pub over_budget: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RegistryDiagnostics {
+    pub live_services: usize,
+    pub protected_services: usize,
+    pub active_sessions: usize,
+    pub usage_bytes: u64,
+    pub budget_bytes: Option<u64>,
+    pub over_budget: bool,
+    pub protected_usage_bytes: u64,
 }
 
 #[derive(Default)]
 struct RegistryState {
     sessions: HashMap<String, SessionBinding>,
-    services: HashMap<DevFlowProjectKey, DevFlowServiceHandle>,
+    services: HashMap<DevFlowProjectKey, ServiceEntry>,
+    current_project: Option<DevFlowProjectKey>,
+    last_used_seq: u64,
 }
 
 pub struct DevFlowRegistry {
     dow_executable: PathBuf,
     runner: Arc<dyn ProjectCommandRunner>,
     factory: Arc<dyn DashboardServiceFactory>,
+    memory: Arc<dyn MemoryReader>,
     state: Mutex<RegistryState>,
+    sweep_lock: Mutex<()>,
 }
 
 impl DevFlowRegistry {
@@ -194,16 +342,48 @@ impl DevFlowRegistry {
         runner: Arc<dyn ProjectCommandRunner>,
         factory: Arc<dyn DashboardServiceFactory>,
     ) -> Self {
+        Self::with_memory_reader(
+            dow_executable,
+            runner,
+            factory,
+            Arc::new(SystemMemoryReader),
+        )
+    }
+
+    pub fn with_memory_reader(
+        dow_executable: PathBuf,
+        runner: Arc<dyn ProjectCommandRunner>,
+        factory: Arc<dyn DashboardServiceFactory>,
+        memory: Arc<dyn MemoryReader>,
+    ) -> Self {
         Self {
             dow_executable,
             runner,
             factory,
+            memory,
             state: Mutex::new(RegistryState::default()),
+            sweep_lock: Mutex::new(()),
         }
     }
 
     pub fn probe_interval() -> Duration {
         PROJECT_PROBE_INTERVAL
+    }
+
+    pub fn sweep_interval() -> Duration {
+        SWEEP_INTERVAL
+    }
+
+    pub fn idle_reclamation_window() -> Duration {
+        IDLE_RECLAMATION_WINDOW
+    }
+
+    pub fn no_client_shutdown_window() -> Duration {
+        NO_CLIENT_SHUTDOWN_WINDOW
+    }
+
+    pub fn memory_budget(total_physical_bytes: u64) -> u64 {
+        max(total_physical_bytes * 5 / 100, MIN_MEMORY_BUDGET_BYTES)
     }
 
     pub async fn associate_session(
@@ -218,12 +398,45 @@ impl DevFlowRegistry {
 
         let mut registry = self.state.lock().await;
         let service = if availability == DevFlowAvailability::Ready {
-            if let Some(service) = registry.services.get(&project) {
-                Some(service.clone())
+            let existing = {
+                let seq = registry.next_seq();
+                match registry.services.get_mut(&project) {
+                    Some(entry) => {
+                        entry.last_used_seq = seq;
+                        if entry.state == ServiceState::Protected {
+                            let alive = match &entry.handle.control {
+                                Some(control) => control.is_alive().await,
+                                None => false,
+                            };
+                            if alive {
+                                entry.state = ServiceState::Live;
+                                Some(entry.handle.clone())
+                            } else {
+                                None
+                            }
+                        } else {
+                            Some(entry.handle.clone())
+                        }
+                    }
+                    None => None,
+                }
+            };
+            if let Some(handle) = existing {
+                Some(handle)
             } else {
+                registry.services.remove(&project);
                 match self.factory.start(&project).await {
                     Ok(service) => {
-                        registry.services.insert(project.clone(), service.clone());
+                        let seq = registry.next_seq();
+                        registry.services.insert(
+                            project.clone(),
+                            ServiceEntry {
+                                last_used_seq: seq,
+                                last_stop_at: None,
+                                state: ServiceState::Live,
+                                handle: service.clone(),
+                            },
+                        );
                         Some(service)
                     }
                     Err(error) => {
@@ -237,6 +450,8 @@ impl DevFlowRegistry {
                             SessionBinding {
                                 cwd,
                                 state: state.clone(),
+                                active: false,
+                                last_stop_at: None,
                             },
                         );
                         return Ok(state);
@@ -256,9 +471,189 @@ impl DevFlowRegistry {
             SessionBinding {
                 cwd,
                 state: state.clone(),
+                active: false,
+                last_stop_at: None,
             },
         );
         Ok(state)
+    }
+
+    pub async fn session_active(&self, session_id: &str) {
+        let mut registry = self.state.lock().await;
+        if let Some(binding) = registry.sessions.get_mut(session_id) {
+            binding.active = true;
+        }
+    }
+
+    pub async fn session_finished(&self, session_id: &str, stopped_at: SystemTime) {
+        let mut registry = self.state.lock().await;
+        let project = {
+            let Some(binding) = registry.sessions.get_mut(session_id) else {
+                return;
+            };
+            binding.active = false;
+            binding.last_stop_at = Some(stopped_at);
+            binding.state.project.clone()
+        };
+        registry.record_stop(&project, stopped_at);
+    }
+
+    pub async fn session_closed(&self, session_id: &str, stopped_at: SystemTime) {
+        let mut registry = self.state.lock().await;
+        let project = {
+            let Some(binding) = registry.sessions.remove(session_id) else {
+                return;
+            };
+            binding.state.project.clone()
+        };
+        registry.record_stop(&project, stopped_at);
+    }
+
+    pub async fn set_current_project(&self, project: Option<DevFlowProjectKey>) {
+        self.state.lock().await.current_project = project;
+    }
+
+    pub async fn sweep(&self, now: SystemTime) -> SweepReport {
+        let _sweep_guard = self.sweep_lock.lock().await;
+        let mut report = SweepReport::default();
+        let idle_cutoff = now.checked_sub(IDLE_RECLAMATION_WINDOW);
+        let previously_protected = {
+            let registry = self.state.lock().await;
+            registry
+                .services
+                .iter()
+                .filter(|(_, entry)| entry.state == ServiceState::Protected)
+                .map(|(project, _)| project.clone())
+                .collect::<Vec<_>>()
+        };
+
+        loop {
+            let next = {
+                let mut registry = self.state.lock().await;
+                registry.refresh_stop_times();
+                let (usage, budget, _) = registry.usage_and_budget(self.memory.as_ref()).await;
+                report.usage_bytes = usage;
+                report.budget_bytes = budget;
+                report.over_budget = budget.is_some_and(|budget| usage > budget);
+
+                let mut candidates = registry
+                    .services
+                    .iter()
+                    .filter(|(key, entry)| {
+                        entry.state != ServiceState::Protected
+                            && !registry.is_current_or_active(key)
+                    })
+                    .map(|(key, entry)| {
+                        let time_eligible = idle_cutoff.is_some_and(|cutoff| {
+                            entry
+                                .last_stop_at
+                                .is_some_and(|stopped_at| stopped_at <= cutoff)
+                        });
+                        (key.clone(), time_eligible)
+                    })
+                    .collect::<Vec<_>>();
+                candidates.sort_by(|left, right| {
+                    let left_seq = registry.services[&left.0].last_used_seq;
+                    let right_seq = registry.services[&right.0].last_used_seq;
+                    right.1.cmp(&left.1).then(left_seq.cmp(&right_seq))
+                });
+                candidates
+                    .into_iter()
+                    .find(|(_, time_eligible)| *time_eligible || report.over_budget)
+                    .map(|(key, _)| key)
+            };
+            let Some(project) = next else {
+                break;
+            };
+
+            let outcome = {
+                let registry = self.state.lock().await;
+                let entry = registry
+                    .services
+                    .get(&project)
+                    .expect("sweep candidate exists");
+                match &entry.handle.control {
+                    Some(control) => control.shutdown(NO_CLIENT_SHUTDOWN_WINDOW).await,
+                    None => ServiceShutdownOutcome::Exited,
+                }
+            };
+
+            let mut registry = self.state.lock().await;
+            let Some(entry) = registry.services.get_mut(&project) else {
+                continue;
+            };
+            match outcome {
+                ServiceShutdownOutcome::Exited => {
+                    registry.services.remove(&project);
+                    report.reclaimed.push(project);
+                }
+                ServiceShutdownOutcome::StillRunning => {
+                    entry.state = ServiceState::Protected;
+                    report.protected.push(project);
+                }
+            }
+        }
+
+        for project in previously_protected {
+            let outcome = {
+                let registry = self.state.lock().await;
+                let entry = registry
+                    .services
+                    .get(&project)
+                    .expect("protected service exists");
+                match &entry.handle.control {
+                    Some(control) => control.shutdown(Duration::ZERO).await,
+                    None => ServiceShutdownOutcome::Exited,
+                }
+            };
+            let mut registry = self.state.lock().await;
+            if registry
+                .services
+                .get(&project)
+                .is_some_and(|entry| entry.state == ServiceState::Protected)
+                && outcome == ServiceShutdownOutcome::Exited
+            {
+                registry.services.remove(&project);
+                report.reclaimed.push(project);
+            }
+        }
+
+        let (usage, budget, _) = {
+            let registry = self.state.lock().await;
+            registry.usage_and_budget(self.memory.as_ref()).await
+        };
+        report.usage_bytes = usage;
+        report.budget_bytes = budget;
+        report.over_budget = budget.is_some_and(|budget| usage > budget);
+        report
+    }
+
+    pub async fn diagnostics(&self) -> RegistryDiagnostics {
+        let mut registry = self.state.lock().await;
+        registry.refresh_stop_times();
+        let (usage, budget, protected_usage) =
+            registry.usage_and_budget(self.memory.as_ref()).await;
+        RegistryDiagnostics {
+            live_services: registry
+                .services
+                .values()
+                .filter(|entry| entry.state == ServiceState::Live)
+                .count(),
+            protected_services: registry
+                .services
+                .values()
+                .filter(|entry| entry.state == ServiceState::Protected)
+                .count(),
+            active_sessions: registry
+                .sessions
+                .values()
+                .filter(|binding| binding.active)
+                .count(),
+            usage_bytes: usage,
+            budget_bytes: budget,
+            over_budget: budget.is_some_and(|budget| usage > budget),
+            protected_usage_bytes: protected_usage,
+        }
     }
 
     pub async fn probe_selected(
@@ -316,6 +711,126 @@ impl DevFlowRegistry {
     pub async fn service_count(&self) -> usize {
         self.state.lock().await.services.len()
     }
+}
+
+impl RegistryState {
+    fn next_seq(&mut self) -> u64 {
+        self.last_used_seq += 1;
+        self.last_used_seq
+    }
+
+    fn record_stop(&mut self, project: &DevFlowProjectKey, stopped_at: SystemTime) {
+        if let Some(entry) = self.services.get_mut(project) {
+            entry.last_stop_at = Some(
+                entry
+                    .last_stop_at
+                    .map_or(stopped_at, |current| current.max(stopped_at)),
+            );
+        }
+    }
+
+    fn refresh_stop_times(&mut self) {
+        let stops = self
+            .sessions
+            .values()
+            .filter_map(|binding| {
+                binding
+                    .last_stop_at
+                    .map(|stopped_at| (binding.state.project.clone(), stopped_at))
+            })
+            .collect::<Vec<_>>();
+        for (project, stopped_at) in stops {
+            self.record_stop(&project, stopped_at);
+        }
+    }
+
+    fn is_current_or_active(&self, project: &DevFlowProjectKey) -> bool {
+        if self.current_project.as_ref() == Some(project) {
+            return true;
+        }
+        self.sessions
+            .values()
+            .any(|binding| binding.active && binding.state.project == *project)
+    }
+
+    async fn usage_and_budget(&self, memory: &dyn MemoryReader) -> (u64, Option<u64>, u64) {
+        let mut usage = 0u64;
+        let mut protected_usage = 0u64;
+        for entry in self.services.values() {
+            let mut bytes = REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE;
+            if let Some(pid) = entry.handle.pid {
+                bytes += memory.child_rss_bytes(pid).unwrap_or(0);
+            }
+            if let Some(snapshot) = entry.handle.snapshot.read().await.as_ref() {
+                bytes += estimate_snapshot_bytes(snapshot);
+            }
+            usage += bytes;
+            if entry.state == ServiceState::Protected {
+                protected_usage += bytes;
+            }
+        }
+        let budget = memory
+            .total_physical_memory_bytes()
+            .map(DevFlowRegistry::memory_budget);
+        (usage, budget, protected_usage)
+    }
+}
+
+fn estimate_snapshot_bytes(snapshot: &DevFlowSnapshot) -> u64 {
+    let mut bytes = 512u64;
+    for text in [
+        snapshot.project.name.as_deref(),
+        snapshot.project.phase.as_deref(),
+        snapshot.project.mode.as_deref(),
+        snapshot.project.version.as_deref(),
+        snapshot.project.goals_minor.as_deref(),
+        snapshot.project.updated.as_deref(),
+    ] {
+        bytes += text.map_or(0, |text| text.len() as u64);
+    }
+    bytes += snapshot.tasks.iter().map(estimate_task_bytes).sum::<u64>();
+    bytes += snapshot
+        .issues
+        .iter()
+        .map(estimate_issue_bytes)
+        .sum::<u64>();
+    bytes
+}
+
+fn estimate_task_bytes(task: &DevFlowTask) -> u64 {
+    SNAPSHOT_ITEM_OVERHEAD
+        + task.id.len() as u64
+        + task.title.len() as u64
+        + opt_text(task.priority.as_deref())
+        + opt_text(task.complexity.as_deref())
+        + opt_text(task.task_type.as_deref())
+        + opt_text(task.refs.as_deref())
+        + vec_text_bytes(&task.depends_on)
+        + vec_text_bytes(&task.done_when)
+        + vec_text_bytes(&task.files_create)
+        + vec_text_bytes(&task.files_modify)
+        + vec_text_bytes(&task.files_test)
+}
+
+fn estimate_issue_bytes(issue: &DevFlowIssue) -> u64 {
+    SNAPSHOT_ITEM_OVERHEAD
+        + issue.id.len() as u64
+        + issue.title.len() as u64
+        + opt_text(issue.severity.as_deref())
+        + opt_text(issue.description.as_deref())
+        + vec_text_bytes(&issue.files_create)
+        + vec_text_bytes(&issue.files_modify)
+}
+
+fn opt_text(text: Option<&str>) -> u64 {
+    text.map_or(0, |text| text.len() as u64)
+}
+
+fn vec_text_bytes(values: &[String]) -> u64 {
+    values
+        .iter()
+        .map(|value| value.len() as u64 + 8)
+        .sum::<u64>()
 }
 
 pub async fn resolve_project_with(

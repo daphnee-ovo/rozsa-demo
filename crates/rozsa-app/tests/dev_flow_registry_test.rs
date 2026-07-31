@@ -19,11 +19,35 @@
 // ├── struct FakeFactory
 // ├── impl FakeFactory
 // ├── starts()
+// ├── set_control()
+// ├── set_pid()
+// ├── set_snapshot()
 // ├── impl FakeFactory
 // ├── start()
+// ├── enum FakeShutdownMode
+// ├── struct FakeControlState
+// ├── struct FakeControl
+// ├── impl FakeControl
+// ├── new()
+// ├── set_mode()
+// ├── set_alive()
+// ├── shutdown_calls()
+// ├── impl FakeControl
+// ├── shutdown()
+// ├── is_alive()
+// ├── struct FakeMemory
+// ├── impl FakeMemory
+// ├── with_total()
+// ├── set_rss()
+// ├── impl FakeMemory
+// ├── total_physical_memory_bytes()
+// ├── child_rss_bytes()
 // ├── temp_project()
 // ├── write_status()
 // ├── registry()
+// ├── registry_with_memory()
+// ├── add_ready_git_project()
+// ├── snapshot_with_task()
 // ├── struct TimeoutRunner
 // ├── impl TimeoutRunner
 // ├── run()
@@ -35,19 +59,33 @@
 // ├── selected_probe_detects_dow_init_completed_during_runtime()
 // ├── same_project_revision_shares_service_and_snapshot()
 // ├── different_projects_do_not_share_services()
-// └── successful_bash_reassociates_worktree_sessions_and_keeps_old_service()
+// ├── successful_bash_reassociates_worktree_sessions_and_keeps_old_service()
+// ├── activity_signals_track_exact_stop_times_and_active_state()
+// ├── closed_session_records_stop_time_and_enables_reclamation()
+// ├── sweep_protects_current_and_active_services_and_reclaims_idle_ones()
+// ├── memory_budget_is_max_of_five_percent_and_256_mib()
+// ├── usage_accounts_for_child_rss_snapshots_and_fixed_overhead()
+// ├── budget_pressure_reclaims_lru_order_and_stops_under_budget()
+// ├── no_client_child_exits_within_window_and_cleanup_is_idempotent()
+// ├── surviving_child_becomes_protected_and_is_never_force_killed()
+// └── protected_revisit_reuses_alive_service_and_replaces_dead_one()
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use rozsa_app::dev_flow::registry::{
+    DashboardServiceControl, MemoryReader, NO_CLIENT_SHUTDOWN_WINDOW,
+    REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE, ServiceShutdownOutcome,
+};
 use rozsa_app::dev_flow::{
     CommandExecutionError, CommandOutput, DashboardServiceFactory, DevFlowAvailability,
-    DevFlowProjectKey, DevFlowRegistry, DevFlowRevisionKey, DevFlowServiceHandle,
-    ProjectCommandRunner, ProjectResolutionError, resolve_project_with,
+    DevFlowProjectKey, DevFlowProjectStatus, DevFlowRegistry, DevFlowRevisionKey,
+    DevFlowServiceHandle, DevFlowSnapshot, DevFlowTask, DevFlowTaskStatus, ProjectCommandRunner,
+    ProjectResolutionError, resolve_project_with,
 };
 use tempfile::TempDir;
 use tokio::sync::RwLock;
@@ -207,11 +245,32 @@ fn failure(stderr: &str) -> CommandOutput {
 struct FakeFactory {
     next_id: AtomicU64,
     starts: Mutex<Vec<DevFlowProjectKey>>,
+    controls: Mutex<HashMap<DevFlowProjectKey, FakeControl>>,
+    pids: Mutex<HashMap<DevFlowProjectKey, u32>>,
+    snapshots: Mutex<HashMap<DevFlowProjectKey, DevFlowSnapshot>>,
 }
 
 impl FakeFactory {
     fn starts(&self) -> Vec<DevFlowProjectKey> {
         self.starts.lock().unwrap().clone()
+    }
+
+    fn set_control(&self, project: &DevFlowProjectKey, control: FakeControl) {
+        self.controls
+            .lock()
+            .unwrap()
+            .insert(project.clone(), control);
+    }
+
+    fn set_pid(&self, project: &DevFlowProjectKey, pid: u32) {
+        self.pids.lock().unwrap().insert(project.clone(), pid);
+    }
+
+    fn set_snapshot(&self, project: &DevFlowProjectKey, snapshot: DevFlowSnapshot) {
+        self.snapshots
+            .lock()
+            .unwrap()
+            .insert(project.clone(), snapshot);
     }
 }
 
@@ -220,7 +279,105 @@ impl DashboardServiceFactory for FakeFactory {
     async fn start(&self, project: &DevFlowProjectKey) -> Result<DevFlowServiceHandle, String> {
         self.starts.lock().unwrap().push(project.clone());
         let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
-        Ok(DevFlowServiceHandle::new(id, Arc::new(RwLock::new(None))))
+        let snapshot = self.snapshots.lock().unwrap().get(project).cloned();
+        let snapshot = Arc::new(RwLock::new(snapshot));
+        let control = self.controls.lock().unwrap().get(project).cloned();
+        let pid = self.pids.lock().unwrap().get(project).copied();
+        Ok(match control {
+            Some(control) => DevFlowServiceHandle::with_child(id, snapshot, Arc::new(control), pid),
+            None if pid.is_some() => DevFlowServiceHandle::with_child(
+                id,
+                snapshot,
+                Arc::new(FakeControl::default()),
+                pid,
+            ),
+            None => DevFlowServiceHandle::new(id, snapshot),
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum FakeShutdownMode {
+    #[default]
+    Exited,
+    StillRunning,
+}
+
+#[derive(Default)]
+struct FakeControlState {
+    shutdown_calls: Vec<Duration>,
+    mode: FakeShutdownMode,
+    alive: bool,
+}
+
+#[derive(Clone, Default)]
+struct FakeControl {
+    state: Arc<Mutex<FakeControlState>>,
+}
+
+impl FakeControl {
+    fn new(mode: FakeShutdownMode, alive: bool) -> Self {
+        let control = Self::default();
+        control.set_mode(mode);
+        control.set_alive(alive);
+        control
+    }
+
+    fn set_mode(&self, mode: FakeShutdownMode) {
+        self.state.lock().unwrap().mode = mode;
+    }
+
+    fn set_alive(&self, alive: bool) {
+        self.state.lock().unwrap().alive = alive;
+    }
+
+    fn shutdown_calls(&self) -> Vec<Duration> {
+        self.state.lock().unwrap().shutdown_calls.clone()
+    }
+}
+
+#[async_trait]
+impl DashboardServiceControl for FakeControl {
+    async fn shutdown(&self, grace: Duration) -> ServiceShutdownOutcome {
+        let mut state = self.state.lock().unwrap();
+        state.shutdown_calls.push(grace);
+        match state.mode {
+            FakeShutdownMode::Exited => ServiceShutdownOutcome::Exited,
+            FakeShutdownMode::StillRunning => ServiceShutdownOutcome::StillRunning,
+        }
+    }
+
+    async fn is_alive(&self) -> bool {
+        self.state.lock().unwrap().alive
+    }
+}
+
+#[derive(Clone, Default)]
+struct FakeMemory {
+    total: Option<u64>,
+    rss: Arc<Mutex<HashMap<u32, u64>>>,
+}
+
+impl FakeMemory {
+    fn with_total(total: u64) -> Self {
+        Self {
+            total: Some(total),
+            ..Default::default()
+        }
+    }
+
+    fn set_rss(&self, pid: u32, bytes: u64) {
+        self.rss.lock().unwrap().insert(pid, bytes);
+    }
+}
+
+impl MemoryReader for FakeMemory {
+    fn total_physical_memory_bytes(&self) -> Option<u64> {
+        self.total
+    }
+
+    fn child_rss_bytes(&self, pid: u32) -> Option<u64> {
+        self.rss.lock().unwrap().get(&pid).copied()
     }
 }
 
@@ -238,6 +395,56 @@ fn write_status(root: &Path, branch: &str) {
 
 fn registry(runner: Arc<FakeRunner>, factory: Arc<FakeFactory>) -> DevFlowRegistry {
     DevFlowRegistry::new(PathBuf::from("/fake/dow"), runner, factory)
+}
+
+fn registry_with_memory(
+    runner: Arc<FakeRunner>,
+    factory: Arc<FakeFactory>,
+    memory: Arc<FakeMemory>,
+) -> DevFlowRegistry {
+    DevFlowRegistry::with_memory_reader(PathBuf::from("/fake/dow"), runner, factory, memory)
+}
+
+fn add_ready_git_project(runner: &Arc<FakeRunner>, project: &TempDir, oid: &str, branch: &str) {
+    runner.add_git_project(
+        project.path(),
+        FakeRevision::Named {
+            branch: branch.to_owned(),
+            oid: oid.to_owned(),
+        },
+    );
+    write_status(project.path(), branch);
+}
+
+fn snapshot_with_task(title: &str) -> DevFlowSnapshot {
+    DevFlowSnapshot {
+        revision: 1,
+        project: DevFlowProjectStatus {
+            name: None,
+            phase: None,
+            mode: None,
+            version: None,
+            goals_minor: None,
+            updated: None,
+        },
+        tasks: vec![DevFlowTask {
+            id: "TASK-T001".to_owned(),
+            title: title.to_owned(),
+            status: DevFlowTaskStatus::Pending,
+            priority: None,
+            complexity: None,
+            task_type: None,
+            refs: None,
+            depends_on: Vec::new(),
+            done_when: Vec::new(),
+            files_create: Vec::new(),
+            files_modify: Vec::new(),
+            files_test: Vec::new(),
+        }],
+        issues: Vec::new(),
+        received_at: UNIX_EPOCH,
+        stale: false,
+    }
 }
 
 struct TimeoutRunner;
@@ -583,4 +790,392 @@ async fn successful_bash_reassociates_worktree_sessions_and_keeps_old_service() 
             DevFlowRevisionKey::NamedBranch("feature".to_owned())
         );
     }
+}
+
+#[tokio::test]
+async fn activity_signals_track_exact_stop_times_and_active_state() {
+    let project = temp_project();
+    let runner = Arc::new(FakeRunner::default());
+    add_ready_git_project(&runner, &project, &"a".repeat(40), "main");
+    let factory = Arc::new(FakeFactory::default());
+    let registry = registry(runner, factory);
+    let associated = registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+    let key = associated.project;
+
+    registry.session_active("session").await;
+    assert_eq!(registry.diagnostics().await.active_sessions, 1);
+
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(2_000_000);
+    let active_sweep = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 + 60))
+        .await;
+    assert!(
+        active_sweep.reclaimed.is_empty(),
+        "active service is protected"
+    );
+
+    registry.session_finished("session", stopped_at).await;
+    assert_eq!(registry.diagnostics().await.active_sessions, 0);
+
+    let before = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 - 1))
+        .await;
+    assert!(before.reclaimed.is_empty(), "not idle before 15 minutes");
+
+    let at = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60))
+        .await;
+    assert_eq!(at.reclaimed, vec![key]);
+
+    // A newer finish extends the idle horizon to the exact newest stop time.
+    registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+    registry
+        .session_finished("session", stopped_at + Duration::from_secs(60))
+        .await;
+    let still_recent = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 + 59))
+        .await;
+    assert!(still_recent.reclaimed.is_empty());
+    let now_idle = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 + 60))
+        .await;
+    assert_eq!(now_idle.reclaimed.len(), 1);
+}
+
+#[tokio::test]
+async fn closed_session_records_stop_time_and_enables_reclamation() {
+    let project = temp_project();
+    let runner = Arc::new(FakeRunner::default());
+    add_ready_git_project(&runner, &project, &"c".repeat(40), "main");
+    let factory = Arc::new(FakeFactory::default());
+    let registry = registry(runner, factory);
+    let associated = registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+    let key = associated.project;
+
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(2_100_000);
+    registry.session_closed("session", stopped_at).await;
+    assert!(registry.session_state("session").await.is_none());
+
+    let report = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60))
+        .await;
+    assert_eq!(report.reclaimed, vec![key]);
+}
+
+#[tokio::test]
+async fn sweep_protects_current_and_active_services_and_reclaims_idle_ones() {
+    let first = temp_project();
+    let second = temp_project();
+    let third = temp_project();
+    let runner = Arc::new(FakeRunner::default());
+    let projects = [&first, &second, &third];
+    for (index, project) in projects.iter().enumerate() {
+        add_ready_git_project(&runner, project, &format!("{index}").repeat(40), "main");
+    }
+    let factory = Arc::new(FakeFactory::default());
+    let registry = registry(runner, factory);
+    let mut keys = Vec::new();
+    for (index, project) in projects.iter().enumerate() {
+        let state = registry
+            .associate_session(format!("session-{index}"), project.path().to_path_buf())
+            .await
+            .unwrap();
+        keys.push(state.project);
+    }
+
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(2_200_000);
+    for index in 0..3 {
+        registry
+            .session_finished(&format!("session-{index}"), stopped_at)
+            .await;
+    }
+    registry.set_current_project(Some(keys[0].clone())).await;
+    registry.session_active("session-1").await;
+
+    let report = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 + 5))
+        .await;
+    assert_eq!(report.reclaimed, vec![keys[2].clone()]);
+    assert_eq!(registry.service_count().await, 2);
+    let diagnostics = registry.diagnostics().await;
+    assert_eq!(diagnostics.active_sessions, 1);
+    assert_eq!(diagnostics.live_services, 2);
+}
+
+#[test]
+fn memory_budget_is_max_of_five_percent_and_256_mib() {
+    let gib = 1024 * 1024 * 1024;
+    assert_eq!(DevFlowRegistry::memory_budget(gib), 256 * 1024 * 1024);
+    assert_eq!(DevFlowRegistry::memory_budget(16 * gib), 16 * gib / 20);
+    assert_eq!(DevFlowRegistry::memory_budget(0), 256 * 1024 * 1024);
+}
+
+#[tokio::test]
+async fn usage_accounts_for_child_rss_snapshots_and_fixed_overhead() {
+    let first = temp_project();
+    let second = temp_project();
+    let runner = Arc::new(FakeRunner::default());
+    add_ready_git_project(&runner, &first, &"d".repeat(40), "main");
+    add_ready_git_project(&runner, &second, &"e".repeat(40), "main");
+    let first_key = resolve_project_with(first.path(), runner.as_ref())
+        .await
+        .unwrap();
+    let second_key = resolve_project_with(second.path(), runner.as_ref())
+        .await
+        .unwrap();
+    let factory = Arc::new(FakeFactory::default());
+    factory.set_pid(&first_key, 4242);
+    factory.set_snapshot(&first_key, snapshot_with_task("short"));
+    let memory = Arc::new(FakeMemory::with_total(1 << 30));
+    let registry = registry_with_memory(runner, factory.clone(), memory.clone());
+
+    let associated = registry
+        .associate_session("first", first.path().to_path_buf())
+        .await
+        .unwrap();
+    let handle = associated.service.unwrap();
+    assert_eq!(handle.id(), 1);
+
+    memory.set_rss(4242, 300 * 1024 * 1024);
+    let diagnostics = registry.diagnostics().await;
+    assert!(
+        diagnostics.over_budget,
+        "300 MiB RSS exceeds the 256 MiB budget"
+    );
+    assert!(
+        diagnostics.usage_bytes >= 300 * 1024 * 1024 + REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE
+    );
+
+    memory.set_rss(4242, 0);
+    let usage_short = registry.diagnostics().await.usage_bytes;
+    assert!(
+        (REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE
+            ..REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE + 2048)
+            .contains(&usage_short),
+        "usage includes the documented fixed per-service overhead"
+    );
+    factory.set_snapshot(&second_key, snapshot_with_task(&"x".repeat(4096)));
+    registry
+        .associate_session("second", second.path().to_path_buf())
+        .await
+        .unwrap();
+    let usage_long = registry.diagnostics().await.usage_bytes;
+    let snapshot_delta = usage_long - usage_short - REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE;
+    assert!(
+        (4096..4096 + 2048).contains(&snapshot_delta),
+        "snapshot bytes are counted in usage: {snapshot_delta}"
+    );
+}
+
+#[tokio::test]
+async fn budget_pressure_reclaims_lru_order_and_stops_under_budget() {
+    let projects = [temp_project(), temp_project(), temp_project()];
+    let runner = Arc::new(FakeRunner::default());
+    for (index, project) in projects.iter().enumerate() {
+        add_ready_git_project(&runner, project, &format!("{index}").repeat(40), "main");
+    }
+    let factory = Arc::new(FakeFactory::default());
+    let memory = Arc::new(FakeMemory::with_total(1 << 30));
+    let registry = registry_with_memory(runner.clone(), factory.clone(), memory.clone());
+
+    let mut keys = Vec::new();
+    for (index, project) in projects.iter().enumerate() {
+        let key = resolve_project_with(project.path(), runner.as_ref())
+            .await
+            .unwrap();
+        keys.push(key.clone());
+        let pid = 5000 + index as u32;
+        factory.set_pid(&key, pid);
+        memory.set_rss(pid, 200 * 1024 * 1024);
+        registry
+            .associate_session(format!("session-{index}"), project.path().to_path_buf())
+            .await
+            .unwrap();
+    }
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(2_300_000);
+    for index in 0..3 {
+        registry
+            .session_finished(&format!("session-{index}"), stopped_at)
+            .await;
+    }
+    assert!(registry.diagnostics().await.over_budget);
+
+    let report = registry.sweep(stopped_at + Duration::from_secs(60)).await;
+    assert_eq!(report.reclaimed, vec![keys[0].clone(), keys[1].clone()]);
+    assert_eq!(registry.service_count().await, 1);
+    let diagnostics = registry.diagnostics().await;
+    assert_eq!(diagnostics.live_services, 1);
+    assert!(!diagnostics.over_budget);
+}
+
+#[tokio::test]
+async fn no_client_child_exits_within_window_and_cleanup_is_idempotent() {
+    let project = temp_project();
+    let runner = Arc::new(FakeRunner::default());
+    add_ready_git_project(&runner, &project, &"f".repeat(40), "main");
+    let key = resolve_project_with(project.path(), runner.as_ref())
+        .await
+        .unwrap();
+    let control = FakeControl::new(FakeShutdownMode::Exited, true);
+    let factory = Arc::new(FakeFactory::default());
+    factory.set_control(&key, control.clone());
+    let registry = registry(runner, factory);
+    let associated = registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+    let first_id = associated.service.unwrap().id();
+
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(2_400_000);
+    registry.session_finished("session", stopped_at).await;
+    let report = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60))
+        .await;
+    assert_eq!(report.reclaimed, vec![key.clone()]);
+    assert_eq!(control.shutdown_calls(), vec![NO_CLIENT_SHUTDOWN_WINDOW]);
+
+    let again = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 + 60))
+        .await;
+    assert!(again.reclaimed.is_empty());
+    assert_eq!(
+        control.shutdown_calls().len(),
+        1,
+        "cleanup must be idempotent"
+    );
+
+    let stale = registry.session_state("session").await.unwrap();
+    assert_eq!(
+        stale.service.unwrap().id(),
+        first_id,
+        "stale cache is retained"
+    );
+    let state = registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+    assert_eq!(state.service.unwrap().id(), first_id + 1);
+}
+
+#[tokio::test]
+async fn surviving_child_becomes_protected_and_is_never_force_killed() {
+    let project = temp_project();
+    let runner = Arc::new(FakeRunner::default());
+    add_ready_git_project(&runner, &project, &"9".repeat(40), "main");
+    let key = resolve_project_with(project.path(), runner.as_ref())
+        .await
+        .unwrap();
+    let control = FakeControl::new(FakeShutdownMode::StillRunning, true);
+    let factory = Arc::new(FakeFactory::default());
+    factory.set_control(&key, control.clone());
+    factory.set_pid(&key, 7777);
+    let memory = Arc::new(FakeMemory::with_total(1 << 30));
+    let registry = registry_with_memory(runner, factory, memory.clone());
+    registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(2_500_000);
+    registry.session_finished("session", stopped_at).await;
+    memory.set_rss(7777, 300 * 1024 * 1024);
+    assert!(registry.diagnostics().await.over_budget);
+    let report = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60))
+        .await;
+    assert!(report.reclaimed.is_empty());
+    assert_eq!(report.protected, vec![key.clone()]);
+    assert_eq!(
+        control.shutdown_calls(),
+        vec![NO_CLIENT_SHUTDOWN_WINDOW],
+        "protected child must never be force-killed"
+    );
+    let diagnostics = registry.diagnostics().await;
+    assert_eq!(diagnostics.protected_services, 1);
+    assert!(
+        diagnostics.over_budget,
+        "temporary budget excess is visible"
+    );
+    assert!(diagnostics.protected_usage_bytes >= 300 * 1024 * 1024);
+
+    let second = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 + 60))
+        .await;
+    assert!(second.protected.is_empty());
+    assert_eq!(
+        control.shutdown_calls(),
+        vec![NO_CLIENT_SHUTDOWN_WINDOW, Duration::ZERO],
+        "protected children are rechecked with zero grace"
+    );
+    assert_eq!(registry.diagnostics().await.protected_services, 1);
+
+    control.set_mode(FakeShutdownMode::Exited);
+    let third = registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 + 120))
+        .await;
+    assert_eq!(third.reclaimed, vec![key]);
+    assert_eq!(registry.service_count().await, 0);
+}
+
+#[tokio::test]
+async fn protected_revisit_reuses_alive_service_and_replaces_dead_one() {
+    let project = temp_project();
+    let runner = Arc::new(FakeRunner::default());
+    add_ready_git_project(&runner, &project, &"1".repeat(40), "main");
+    let key = resolve_project_with(project.path(), runner.as_ref())
+        .await
+        .unwrap();
+    let control = FakeControl::new(FakeShutdownMode::StillRunning, true);
+    let factory = Arc::new(FakeFactory::default());
+    factory.set_control(&key, control.clone());
+    let registry = registry(runner, factory.clone());
+    let associated = registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+    let first_id = associated.service.unwrap().id();
+
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(2_600_000);
+    registry.session_finished("session", stopped_at).await;
+    registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60))
+        .await;
+    assert_eq!(registry.diagnostics().await.protected_services, 1);
+
+    let state = registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+    assert_eq!(
+        state.service.unwrap().id(),
+        first_id,
+        "alive service is reused"
+    );
+    assert_eq!(factory.starts().len(), 1, "no replacement is started");
+    assert_eq!(registry.diagnostics().await.protected_services, 0);
+
+    registry.session_finished("session", stopped_at).await;
+    registry
+        .sweep(stopped_at + Duration::from_secs(15 * 60 + 60))
+        .await;
+    control.set_alive(false);
+    let state = registry
+        .associate_session("session", project.path().to_path_buf())
+        .await
+        .unwrap();
+    assert_eq!(
+        state.service.unwrap().id(),
+        first_id + 1,
+        "dead service is replaced"
+    );
+    assert_eq!(factory.starts().len(), 2);
 }
