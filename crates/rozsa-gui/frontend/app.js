@@ -2749,6 +2749,7 @@ async function loadSettings() {
     renderSettingsPane(currentSettings);
     renderCapabilitySettings();
     renderPermissionSettings();
+    loadDevFlowSettings();
     await applySelectedTheme();
   } catch (e) {
     console.warn('settings:', e);
@@ -2756,8 +2757,124 @@ async function loadSettings() {
     availableThemes = [];
     capabilitySettings = null;
     permissionSettings = null;
+    devFlowSettings = null;
     showError('Failed to load settings: ' + String(e));
     throw e;
+  }
+}
+
+let devFlowSettings = null;
+
+async function loadDevFlowSettings() {
+  try {
+    devFlowSettings = await invoke('get_dev_flow_settings');
+  } catch (e) {
+    console.warn('dev-flow settings:', e);
+    devFlowSettings = null;
+  }
+  renderDevFlowSettings();
+}
+
+function devFlowAddRow(container, label, value) {
+  const row = document.createElement('div');
+  row.className = 'dev-flow-diagnostic-row';
+  const name = document.createElement('span');
+  name.className = 'dev-flow-diagnostic-label';
+  name.textContent = label;
+  const text = document.createElement('span');
+  text.textContent = value == null ? '—' : String(value);
+  row.append(name, text);
+  container.appendChild(row);
+}
+
+function renderDevFlowSettings() {
+  const s = devFlowSettings;
+  const enabled = document.getElementById('devFlowEnabled');
+  const sidebarStatus = document.getElementById('devFlowSidebarStatus');
+  const cli = document.getElementById('devFlowCliDiagnostics');
+  const project = document.getElementById('devFlowProjectDiagnostics');
+  const auto = document.getElementById('devFlowSourceAuto');
+  const custom = document.getElementById('devFlowSourceCustom');
+  const pathInput = document.getElementById('devFlowExecutablePath');
+  if (!s) return;
+  setSettingSwitch(enabled, s.enabled);
+  setSettingSwitch(sidebarStatus, s.show_sidebar_status);
+  if (cli) {
+    cli.replaceChildren();
+    if (s.cli.available) {
+      devFlowAddRow(cli, 'Executable', s.cli.executable);
+      devFlowAddRow(cli, 'Version', s.cli.version);
+      devFlowAddRow(cli, 'Source', s.cli.source);
+    } else {
+      devFlowAddRow(cli, 'CLI', s.cli.error || 'Not found');
+    }
+  }
+  if (project) {
+    project.replaceChildren();
+    if (s.project) {
+      devFlowAddRow(project, 'Root', s.project.root);
+      devFlowAddRow(project, 'Revision', s.project.revision);
+      devFlowAddRow(project, 'Availability', s.project.availability);
+      if (s.project.message) devFlowAddRow(project, 'Detail', s.project.message);
+    } else {
+      devFlowAddRow(project, 'Status', 'No active session');
+    }
+  }
+  if (auto) auto.checked = !s.executable_path;
+  if (custom) custom.checked = !!s.executable_path;
+  if (pathInput) pathInput.value = s.executable_path || '';
+  const install = document.querySelector('.dev-flow-install');
+  if (install) install.hidden = !!s.cli.available;
+}
+
+function wireDevFlowSettings() {
+  wireSettingSwitch('devFlowEnabled', async enabled => {
+    try {
+      await invoke('set_dev_flow_enabled', { enabled });
+    } catch (e) {
+      showError('Failed to update Dev Flow: ' + String(e));
+    }
+    await loadDevFlowSettings();
+  });
+  wireSettingSwitch('devFlowSidebarStatus', async enabled => {
+    try {
+      await invoke('set_dev_flow_sidebar_status', { enabled });
+    } catch (e) {
+      showError('Failed to update Dev Flow: ' + String(e));
+    }
+    await loadDevFlowSettings();
+  });
+  const auto = document.getElementById('devFlowSourceAuto');
+  const custom = document.getElementById('devFlowSourceCustom');
+  const pathInput = document.getElementById('devFlowExecutablePath');
+  const rescan = document.getElementById('devFlowRescan');
+  const applyPath = async () => {
+    const useCustom = custom && custom.checked;
+    const path = useCustom && pathInput ? pathInput.value.trim() : null;
+    if (useCustom && !path) {
+      showError('Enter an absolute path to the dow executable');
+      await loadDevFlowSettings();
+      return;
+    }
+    try {
+      await invoke('set_dev_flow_executable_path', { path });
+    } catch (e) {
+      showError('Failed to update Dev Flow executable: ' + String(e));
+    }
+    await loadDevFlowSettings();
+  };
+  if (auto) auto.onchange = applyPath;
+  if (custom) custom.onchange = applyPath;
+  if (pathInput) pathInput.onchange = applyPath;
+  if (rescan) {
+    rescan.onclick = async () => {
+      try {
+        await invoke('rescan_dev_flow');
+      } catch (e) {
+        showError('Failed to rescan Dev Flow: ' + String(e));
+      }
+      await loadDevFlowSettings();
+    };
   }
 }
 
@@ -3541,6 +3658,7 @@ function renderAppearanceSettings(appearance) {
   renderThemeSelect('dark', appearance.darkTheme);
   renderThemeControls('light', themeDefinitions.light, appearance.isMacos);
   renderThemeControls('dark', themeDefinitions.dark, appearance.isMacos);
+  wireDevFlowSettings();
   installSystemThemeListener();
 }
 

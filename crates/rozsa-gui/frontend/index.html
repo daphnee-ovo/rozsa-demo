@@ -1666,6 +1666,22 @@ body.hide-thinking .thinking-block { display: none; }
   margin-bottom: 20px;
 }
 .settings-group { margin-bottom: 20px; }
+.dev-flow-diagnostics {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border, #00000026) 60%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--code-bg, #00000008) 70%, transparent);
+  font-size: 12px;
+  word-break: break-all;
+}
+.dev-flow-diagnostic-row { display: flex; gap: 8px; justify-content: space-between; }
+.dev-flow-diagnostic-label { color: var(--muted); flex: none; }
+.setting-radio-row { display: inline-flex; gap: 14px; align-items: center; }
+.setting-radio { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.dev-flow-install-list { margin: 8px 0 0; padding-left: 18px; }
+.dev-flow-install-list li { margin: 4px 0; }
 .settings-group-label {
   font-size: 10px;
   font-weight: 600;
@@ -3323,6 +3339,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
       <button class="settings-tab" data-settings-pane="appearance" onclick="switchSettingsTab('appearance', this)">Appearance</button>
       <button class="settings-tab" data-settings-pane="keyboard-shortcuts" onclick="switchSettingsTab('keyboard-shortcuts', this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M4 6h.01M7 6h.01M10 6h.01M12.5 6h.01M4 9h.01M6.5 9h.01M9 9h3.5M4 11h5"/></svg>Keyboard shortcuts</button>
       <button class="settings-tab" data-settings-pane="permissions" onclick="switchSettingsTab('permissions', this)">Permissions</button>
+      <button class="settings-tab" data-settings-pane="dev-flow" onclick="switchSettingsTab('dev-flow', this)">Dev Flow</button>
     </nav>
     </template>
     <div id="fallbackSettingsNavigationMount" hidden></div>
@@ -3460,6 +3477,34 @@ body.native-split-main .settings-dialog { background: var(--bg); }
           <div class="permission-rule-editor-actions"><button type="button" onclick="closePermissionRuleEditor()">Cancel</button><button class="primary" type="button" onclick="savePermissionRule()">Add rule</button></div>
         </div>
         </template>
+      </div>
+      <div class="settings-pane" id="pane-dev-flow">
+        <div class="settings-pane-title">Dev Flow</div>
+        <div class="settings-group">
+          <div class="settings-group-label">Integration</div>
+          <div class="setting-item"><span class="setting-label">Enable Dev Flow</span><button class="setting-toggle" id="devFlowEnabled" type="button" role="switch" aria-checked="false" aria-label="Enable Dev Flow integration"></button></div>
+          <div class="setting-item"><span class="setting-label">Show status in sidebar</span><button class="setting-toggle" id="devFlowSidebarStatus" type="button" role="switch" aria-checked="false" aria-label="Show Dev Flow status in sidebar"></button></div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label">CLI</div>
+          <div class="dev-flow-diagnostics" id="devFlowCliDiagnostics"></div>
+          <div class="setting-item"><span class="setting-label">Executable</span><span class="setting-radio-row"><label class="setting-radio"><input type="radio" name="devFlowSource" value="auto" id="devFlowSourceAuto" checked> Auto</label><label class="setting-radio"><input type="radio" name="devFlowSource" value="custom" id="devFlowSourceCustom"> Custom</label></span></div>
+          <div class="setting-item"><input class="setting-input" id="devFlowExecutablePath" type="text" placeholder="/absolute/path/to/dow" aria-label="Custom dow executable path" spellcheck="false"></div>
+          <div class="setting-item"><button type="button" id="devFlowRescan">Rescan</button></div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label">Project</div>
+          <div class="dev-flow-diagnostics" id="devFlowProjectDiagnostics"></div>
+        </div>
+        <div class="settings-group dev-flow-install">
+          <div class="settings-group-label">Install</div>
+          <p class="setting-note">dev-flow (dow) is optional. When the CLI is missing, install it with one of the official commands:</p>
+          <ul class="dev-flow-install-list">
+            <li><code>brew install daphnee-ovo/tap/dev-flow</code></li>
+            <li><code>npm install -g @xin_yue/dev-flow</code></li>
+            <li><code>cargo install dev-flow</code></li>
+          </ul>
+        </div>
       </div>
     </div>
     </div>

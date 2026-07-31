@@ -9,6 +9,7 @@ edition.workspace = true
 tauri-build = { workspace = true }
 
 [dependencies]
+async-trait = { workspace = true }
 tauri = { workspace = true, features = ["macos-private-api"] }
 tauri-plugin-dialog = "2.7.1"
 serde = { workspace = true }

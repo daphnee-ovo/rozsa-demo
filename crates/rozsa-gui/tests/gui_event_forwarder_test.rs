@@ -4,6 +4,7 @@ use dashmap::DashMap;
 use rozsa_app::agent_session::ModelStream;
 use rozsa_app::permissions::{PermissionController, PermissionMode};
 use rozsa_app::settings::SettingsManager;
+use rozsa_gui::dev_flow::DevFlowRuntime;
 use rozsa_gui::events::spawn_event_forwarder_for_session;
 use rozsa_gui::state::{GuiState, LiveState, SessionTab, SharedResources};
 use rozsa_model::event_stream::create_event_stream;
@@ -117,6 +118,13 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
         }])),
         active_tab: Arc::new(Mutex::new(0)),
         shared,
+        dev_flow: DevFlowRuntime::new(
+            Arc::new(std::sync::Mutex::new(None)),
+            Arc::new(rozsa_app::dev_flow::SystemProjectCommandRunner),
+            Arc::new(rozsa_app::dev_flow::SystemCommandRunner),
+            rozsa_app::dev_flow::DiscoveryEnvironment::from_process(),
+            rozsa_gui::dev_flow::real_factory_provider(Arc::new(std::sync::Mutex::new(None))),
+        ),
         model_registry: None,
         session_dir: None,
         session_dirs: vec![],

@@ -1,6 +1,7 @@
 // FrameworkTree
 // lib.rs
 // ├── mod commands
+// ├── mod dev_flow
 // ├── mod events
 // ├── mod file_refs
 // ├── mod git_diff
@@ -23,6 +24,7 @@
 // rozsa-gui 入口。多会话架构：每个 session tab 有独立的 agent backend（懒加载）。
 
 mod commands;
+pub mod dev_flow;
 pub mod events;
 pub mod file_refs;
 pub mod git_diff;
@@ -116,6 +118,7 @@ fn native_sidebar_overlay_width() -> Result<f64, String> {
 
 pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_settings = config.settings_manager.resolved().clone();
+    let initial_cwd = config.cwd.clone();
     // 共享资源（创建新 agent backend 时复用）
     let shared = Arc::new(SharedResources {
         cwd: config.cwd,
@@ -140,6 +143,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
     let initial_session_id = initial.id.clone();
     let initial_messages = initial.agent.messages().await;
+    let initial_dev_flow_settings = runtime_settings.dev_flow.clone();
 
     // 初始 tab 与后续新建 tab 都由同一个 GUI factory 创建。
     let initial_tab = SessionTab::Active {
@@ -151,11 +155,17 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         },
     };
 
+    let dev_flow = dev_flow::system_runtime(
+        Arc::new(std::sync::Mutex::new(None)),
+        Arc::new(rozsa_app::dev_flow::SystemProjectCommandRunner),
+    );
+
     let gui_state = GuiState {
         scene_router: Arc::new(tokio::sync::Mutex::new(scene_router::SceneRouter::default())),
         tabs: Arc::new(tokio::sync::Mutex::new(vec![initial_tab])),
         active_tab: Arc::new(tokio::sync::Mutex::new(0)),
         shared,
+        dev_flow,
         model_registry: config
             .model_registry
             .map(|registry| Arc::new(std::sync::RwLock::new((*registry).clone()))),
@@ -196,6 +206,11 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::prepare_permission,
             commands::get_settings,
             commands::update_setting,
+            commands::get_dev_flow_settings,
+            commands::set_dev_flow_enabled,
+            commands::set_dev_flow_sidebar_status,
+            commands::set_dev_flow_executable_path,
+            commands::rescan_dev_flow,
             commands::get_capability_settings,
             commands::update_capability_setting,
             commands::get_permission_settings,
@@ -333,6 +348,17 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             if let Some(rx) = question_rx {
                 events::spawn_user_question_listener(app.handle().clone(), rx);
             }
+
+            let dev_flow = app.state::<GuiState>().dev_flow.clone();
+            dev_flow.attach_notifier(dev_flow::real_notifier(app.handle().clone()));
+            tokio::spawn(async move {
+                dev_flow
+                    .switch_to_session(&initial_session_id, initial_cwd)
+                    .await;
+                if let Err(error) = dev_flow.reconfigure(&initial_dev_flow_settings).await {
+                    tracing::warn!("dev-flow initial reconfigure failed: {error}");
+                }
+            });
 
             Ok(())
         })

@@ -27,6 +27,7 @@
 // ├── enum ServiceState
 // ├── struct ServiceEntry
 // ├── struct SweepReport
+// ├── struct ShutdownAllReport
 // ├── struct RegistryDiagnostics
 // ├── struct RegistryState
 // ├── struct DevFlowRegistry
@@ -43,11 +44,13 @@
 // ├── session_finished()
 // ├── session_closed()
 // ├── set_current_project()
+// ├── shutdown_all()
 // ├── sweep()
 // ├── diagnostics()
 // ├── probe_selected()
 // ├── rescan_after_successful_bash()
 // ├── session_state()
+// ├── last_stop_at()
 // ├── service_count()
 // ├── impl RegistryState
 // ├── next_seq()
@@ -309,6 +312,12 @@ pub struct SweepReport {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ShutdownAllReport {
+    pub terminated: Vec<DevFlowProjectKey>,
+    pub still_running: Vec<DevFlowProjectKey>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RegistryDiagnostics {
     pub live_services: usize,
     pub protected_services: usize,
@@ -513,6 +522,55 @@ impl DevFlowRegistry {
         self.state.lock().await.current_project = project;
     }
 
+    /// Terminate and reap every currently live Rózsa-owned child. Children
+    /// already classified as `PossibleExternalClient` are never touched.
+    pub async fn shutdown_all(&self) -> ShutdownAllReport {
+        let _sweep_guard = self.sweep_lock.lock().await;
+        let mut report = ShutdownAllReport::default();
+        loop {
+            let next = {
+                let registry = self.state.lock().await;
+                registry
+                    .services
+                    .iter()
+                    .filter(|(_, entry)| entry.state != ServiceState::Protected)
+                    .map(|(project, _)| project.clone())
+                    .next()
+            };
+            let Some(project) = next else {
+                break;
+            };
+
+            let outcome = {
+                let registry = self.state.lock().await;
+                let entry = registry
+                    .services
+                    .get(&project)
+                    .expect("shutdown candidate exists");
+                match &entry.handle.control {
+                    Some(control) => control.shutdown(NO_CLIENT_SHUTDOWN_WINDOW).await,
+                    None => ServiceShutdownOutcome::Exited,
+                }
+            };
+
+            let mut registry = self.state.lock().await;
+            let Some(entry) = registry.services.get_mut(&project) else {
+                continue;
+            };
+            match outcome {
+                ServiceShutdownOutcome::Exited => {
+                    registry.services.remove(&project);
+                    report.terminated.push(project);
+                }
+                ServiceShutdownOutcome::StillRunning => {
+                    entry.state = ServiceState::Protected;
+                    report.still_running.push(project);
+                }
+            }
+        }
+        report
+    }
+
     pub async fn sweep(&self, now: SystemTime) -> SweepReport {
         let _sweep_guard = self.sweep_lock.lock().await;
         let mut report = SweepReport::default();
@@ -706,6 +764,15 @@ impl DevFlowRegistry {
             .sessions
             .get(session_id)
             .map(|binding| binding.state.clone())
+    }
+
+    pub async fn last_stop_at(&self, session_id: &str) -> Option<SystemTime> {
+        self.state
+            .lock()
+            .await
+            .sessions
+            .get(session_id)
+            .and_then(|binding| binding.last_stop_at)
     }
 
     pub async fn service_count(&self) -> usize {

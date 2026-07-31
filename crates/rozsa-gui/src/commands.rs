@@ -43,6 +43,11 @@
 // ├── apply_resolved_permissions()
 // ├── permission_settings_snapshot()
 // ├── get_settings()
+// ├── get_dev_flow_settings()
+// ├── set_dev_flow_enabled()
+// ├── set_dev_flow_sidebar_status()
+// ├── set_dev_flow_executable_path()
+// ├── rescan_dev_flow()
 // ├── list_themes()
 // ├── get_theme()
 // ├── save_theme()
@@ -141,7 +146,7 @@
 //
 // Tauri IPC 命令。多会话架构：操作都针对当前活跃 tab。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -303,6 +308,10 @@ pub async fn send_message(
     };
     drop(tabs);
     let should_name_session = agent.is_initial_session_name_candidate().await;
+    state
+        .dev_flow
+        .session_started(&session_id, agent.current_cwd().await)
+        .await;
     if spawn_forwarder {
         crate::events::spawn_event_forwarder_for_session(
             app.clone(),
@@ -812,6 +821,10 @@ pub async fn abort(state: State<'_, GuiState>) -> Result<(), String> {
         }
         cancel_pending_user_questions(&state.pending_user_questions, Some(&session_id));
         agent.abort().await;
+        state
+            .dev_flow
+            .session_finished(&session_id, SystemTime::now())
+            .await;
     }
     Ok(())
 }
@@ -931,6 +944,10 @@ async fn finish_interaction(gui_state: &GuiState, app: &AppHandle, session_id: &
     if let Err(error) = emit_session_views(gui_state, app, session_id).await {
         eprintln!("[rozsa-gui][session] failed to refresh completed interaction: {error}");
     }
+    gui_state
+        .dev_flow
+        .session_finished(session_id, SystemTime::now())
+        .await;
 }
 
 fn spawn_session_name_generation(
@@ -1176,7 +1193,23 @@ pub async fn switch_session(
         let snapshot = UiSnapshot::from_tab(tab, &state.shared);
         let _ = crate::events::emit_main(&app, "ui-state", &snapshot);
     }
+    let (session_id, cwd) = match tabs.get(target_idx) {
+        Some(SessionTab::Active { agent, .. }) => {
+            let cwd = agent.current_cwd().await;
+            (tabs[target_idx].session_id(), Some(cwd))
+        }
+        Some(SessionTab::Loaded { path, .. }) | Some(SessionTab::Idle { path, .. }) => {
+            let cwd = SessionManager::open(path)
+                .ok()
+                .map(|manager| PathBuf::from(manager.cwd()));
+            (tabs[target_idx].session_id(), cwd)
+        }
+        _ => (tabs[target_idx].session_id(), None),
+    };
     drop(tabs);
+    if let Some(cwd) = cwd {
+        state.dev_flow.switch_to_session(&session_id, cwd).await;
+    }
     crate::events::emit_sidebar_state(&app, state.inner()).await?;
 
     Ok(())
@@ -1254,6 +1287,7 @@ pub async fn respond_permission(
     sender
         .send(response)
         .map_err(|_| "Failed to send permission response".to_string())?;
+    state.dev_flow.session_resumed(&session_id).await;
     crate::events::emit_sidebar_state(&app, state.inner()).await
 }
 
@@ -1264,6 +1298,7 @@ pub async fn respond_user_question(
     id: String,
     answers: std::collections::BTreeMap<String, AskUserQuestionAnswer>,
 ) -> Result<(), String> {
+    state.dev_flow.session_resumed(&session_id).await;
     respond_pending_user_question(&state.pending_user_questions, &session_id, &id, answers)
 }
 
@@ -1606,6 +1641,68 @@ pub async fn get_settings(
     };
     publish_theme_state(&state, &app, &snapshot.appearance)?;
     Ok(snapshot)
+}
+
+#[tauri::command]
+pub async fn get_dev_flow_settings(
+    state: State<'_, GuiState>,
+) -> Result<crate::dev_flow::DevFlowSettingsSnapshot, String> {
+    let settings = state.runtime_settings.lock().await.dev_flow.clone();
+    Ok(state.dev_flow.diagnostics(&settings).await)
+}
+
+#[tauri::command]
+pub async fn set_dev_flow_enabled(state: State<'_, GuiState>, enabled: bool) -> Result<(), String> {
+    let settings = {
+        let mut runtime = state.runtime_settings.lock().await;
+        runtime.dev_flow.enabled = enabled;
+        runtime.dev_flow.clone()
+    };
+    persist_settings(&state).await?;
+    state.dev_flow.reconfigure(&settings).await
+}
+
+#[tauri::command]
+pub async fn set_dev_flow_sidebar_status(
+    state: State<'_, GuiState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state
+        .runtime_settings
+        .lock()
+        .await
+        .dev_flow
+        .show_sidebar_status = enabled;
+    persist_settings(&state).await
+}
+
+#[tauri::command]
+pub async fn set_dev_flow_executable_path(
+    state: State<'_, GuiState>,
+    path: Option<String>,
+) -> Result<(), String> {
+    let settings = {
+        let mut runtime = state.runtime_settings.lock().await;
+        runtime.dev_flow.executable_path = match path {
+            Some(path) => {
+                let path = PathBuf::from(path);
+                if !path.is_absolute() {
+                    return Err("dev-flow executable path must be absolute".to_string());
+                }
+                Some(path)
+            }
+            None => None,
+        };
+        runtime.dev_flow.clone()
+    };
+    persist_settings(&state).await?;
+    state.dev_flow.reconfigure(&settings).await
+}
+
+#[tauri::command]
+pub async fn rescan_dev_flow(state: State<'_, GuiState>) -> Result<(), String> {
+    let settings = state.runtime_settings.lock().await.dev_flow.clone();
+    state.dev_flow.reconfigure(&settings).await
 }
 
 #[tauri::command]
@@ -2219,6 +2316,7 @@ pub async fn delete_session(
     let mut tabs = state.tabs.lock().await;
     tabs.retain(|t| t.path() != path);
     drop(tabs);
+    state.dev_flow.session_closed(&session_id).await;
     SessionManager::delete(&path).map_err(|e| e.to_string())?;
     crate::events::emit_sidebar_state(&app, state.inner()).await
 }
@@ -2231,11 +2329,15 @@ pub async fn run_bash(
 ) -> Result<(), String> {
     let idx = *state.active_tab.lock().await;
     let tabs = state.tabs.lock().await;
-    let agent = match tabs.get(idx) {
-        Some(SessionTab::Active { agent, .. }) => agent.clone(),
+    let (session_id, agent) = match tabs.get(idx) {
+        Some(SessionTab::Active { agent, .. }) => (tabs[idx].session_id(), agent.clone()),
         _ => return Err("No active agent for bash execution".to_string()),
     };
     drop(tabs);
+    let dev_flow = state.dev_flow.clone();
+    dev_flow
+        .session_started(&session_id, agent.current_cwd().await)
+        .await;
 
     // 通过 agent.prompt 执行 bang command（agent 内部会识别 ! 前缀）
     tokio::spawn(async move {
@@ -2243,6 +2345,9 @@ pub async fn run_bash(
         if let Err(e) = agent.prompt(&bang_cmd).await {
             let _ = crate::events::emit_main(&app, "error", e.to_string());
         }
+        dev_flow
+            .session_finished(&session_id, SystemTime::now())
+            .await;
     });
     Ok(())
 }
@@ -2726,6 +2831,10 @@ async fn create_new_session(
     drop(tabs);
 
     *state.active_tab.lock().await = new_idx;
+    state
+        .dev_flow
+        .switch_to_session(&session_id, state.shared.cwd.clone())
+        .await;
     crate::events::spawn_event_forwarder_for_session(
         app.clone(),
         session_id,

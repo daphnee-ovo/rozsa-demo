@@ -23,5 +23,6 @@ pub use discovery::{
 pub use registry::{
     DashboardServiceFactory, DevFlowAvailability, DevFlowProjectKey, DevFlowRegistry,
     DevFlowRevisionKey, DevFlowServiceHandle, ProjectCommandRunner, ProjectResolutionError,
-    SessionDevFlowState, SystemProjectCommandRunner, probe_project, resolve_project_with,
+    SessionDevFlowState, ShutdownAllReport, SystemProjectCommandRunner, probe_project,
+    resolve_project_with,
 };

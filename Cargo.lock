@@ -3655,6 +3655,7 @@ dependencies = [
 name = "rozsa-gui"
 version = "1.0.4"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "dashmap",
  "dirs",

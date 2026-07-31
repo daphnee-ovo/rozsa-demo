@@ -180,7 +180,8 @@ pub async fn discover_dow_with<R: DiscoveryCommandRunner>(
     let homebrew_dow = environment
         .homebrew_bin_dirs
         .iter()
-        .map(|directory| directory.join(executable_name("dow")));
+        .map(|directory| directory.join(executable_name("dow")))
+        .collect::<Vec<_>>();
     if let Some(found) = try_candidates(
         homebrew_dow,
         DowInstallSource::Homebrew,

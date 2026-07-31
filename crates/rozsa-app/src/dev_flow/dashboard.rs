@@ -55,6 +55,7 @@
 // ├── id()
 // ├── stderr()
 // ├── shutdown()
+// ├── wait_for_graceful_exit()
 // ├── start_dashboard()
 // ├── start_dashboard_with_delay()
 // ├── port_is_available()
@@ -724,6 +725,22 @@ impl DashboardProcess {
             .map_err(|error| DevFlowError::Startup(error.to_string()))?;
         let _ = self.stderr_task.await;
         Ok(())
+    }
+
+    /// Wait up to `grace` for the child to exit on its own (for example its
+    /// no-client shutdown window). Returns true when the child exited and was
+    /// reaped; the process-group guard is disarmed so a later drop or
+    /// [`DashboardProcess::shutdown`] is a no-op. Returns false when the child
+    /// is still running after `grace`.
+    pub async fn wait_for_graceful_exit(&mut self, grace: Duration) -> bool {
+        let exited = match timeout(grace, self.child.wait()).await {
+            Ok(Ok(_)) => true,
+            Ok(Err(_)) | Err(_) => false,
+        };
+        if exited {
+            self.process_group.disarm();
+        }
+        exited
     }
 }
 

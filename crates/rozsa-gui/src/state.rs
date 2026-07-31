@@ -292,6 +292,8 @@ pub struct GuiState {
     pub active_tab: Arc<Mutex<usize>>,
     /// 创建新 agent backend 所需的共享资源
     pub shared: Arc<SharedResources>,
+    /// Dev-flow runtime registry, activity wiring, and diagnostics.
+    pub dev_flow: Arc<crate::dev_flow::DevFlowRuntime>,
     pub model_registry: Option<Arc<RwLock<ModelRegistry>>>,
     pub session_dir: Option<PathBuf>,
     pub session_dirs: Vec<PathBuf>,

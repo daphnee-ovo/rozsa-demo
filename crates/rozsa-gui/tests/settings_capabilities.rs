@@ -21,6 +21,7 @@ fn settings_navigation_and_panes_match_the_product_order() {
         "data-settings-pane=\"appearance\"",
         "data-settings-pane=\"keyboard-shortcuts\"",
         "data-settings-pane=\"permissions\"",
+        "data-settings-pane=\"dev-flow\"",
     ];
 
     for markup in [index, sidebar] {

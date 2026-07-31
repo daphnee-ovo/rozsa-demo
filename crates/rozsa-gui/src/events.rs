@@ -275,6 +275,56 @@ pub fn spawn_event_forwarder_for_session<R: Runtime>(
                         _ => {}
                     }
 
+                    // Dev-flow activity wiring: the session is active while the
+                    // agent runs, finishes at AgentEnd, and successful Bash
+                    // completion rescans the whole worktree.
+                    match &event {
+                        AgentEvent::AgentStart => {
+                            let cwd = {
+                                let tabs_guard = tabs.lock().await;
+                                match find_tab_index_by_session(&tabs_guard, &session_id)
+                                    .and_then(|index| tabs_guard.get(index))
+                                {
+                                    Some(SessionTab::Active { agent, .. }) => {
+                                        Some(agent.current_cwd().await)
+                                    }
+                                    _ => None,
+                                }
+                            };
+                            if let Some(cwd) = cwd {
+                                gui_state.dev_flow.session_started(&session_id, cwd).await;
+                            }
+                        }
+                        AgentEvent::AgentEnd { .. } => {
+                            gui_state
+                                .dev_flow
+                                .session_finished(&session_id, std::time::SystemTime::now())
+                                .await;
+                        }
+                        AgentEvent::ToolExecutionEnd {
+                            tool_name, result, ..
+                        } if tool_name == "bash" && !result.is_error => {
+                            let cwd = {
+                                let tabs_guard = tabs.lock().await;
+                                match find_tab_index_by_session(&tabs_guard, &session_id)
+                                    .and_then(|index| tabs_guard.get(index))
+                                {
+                                    Some(SessionTab::Active { agent, .. }) => {
+                                        Some(agent.current_cwd().await)
+                                    }
+                                    _ => None,
+                                }
+                            };
+                            if let Some(cwd) = cwd {
+                                gui_state
+                                    .dev_flow
+                                    .on_successful_bash(&session_id, cwd)
+                                    .await;
+                            }
+                        }
+                        _ => {}
+                    }
+
                     // Only emit a snapshot when this immutable session is active.
                     if changed {
                         if throttled_update
