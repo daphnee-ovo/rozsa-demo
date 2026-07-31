@@ -17,11 +17,13 @@
 // ├── reconnect_backoff_is_bounded_and_reports_at_the_defined_threshold()
 // ├── non_loopback_or_redirectable_base_urls_are_rejected()
 // ├── failed_startup_kills_and_reaps_the_owned_child()
+// ├── startup_window_starts_at_spawn_not_before()
 // └── free_dashboard_port()
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use rozsa_app::dev_flow::dashboard::start_dashboard_with_delay;
 use rozsa_app::dev_flow::{
     DashboardClient, DashboardTiming, DevFlowError, DevFlowIssueStatus, DevFlowTaskStatus,
     ReconnectBackoff, start_dashboard,
@@ -430,6 +432,52 @@ async fn failed_startup_kills_and_reaps_the_owned_child() {
         port..=port,
         process_timing,
         &CancellationToken::new(),
+    )
+    .await;
+
+    assert!(matches!(result, Err(DevFlowError::StartupTimeout { .. })));
+    let pid = std::fs::read_to_string(pid_file).unwrap();
+    let status = std::process::Command::new("/bin/kill")
+        .args(["-0", pid.trim()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(!status.success(), "owned child was not reaped");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn startup_window_starts_at_spawn_not_before() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let script = temp.path().join("fake-dow");
+    let pid_file = temp.path().join("pid");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nsleep 0.2\necho $$ > '{}'\nsleep 60\n",
+            pid_file.display()
+        ),
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&script).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&script, permissions).unwrap();
+    let port = free_dashboard_port().await;
+    let process_timing = DashboardTiming {
+        startup_timeout: Duration::from_secs(1),
+        ..fast_timing()
+    };
+
+    let result = start_dashboard_with_delay(
+        &script,
+        temp.path(),
+        port..=port,
+        process_timing,
+        &CancellationToken::new(),
+        Duration::from_millis(1500),
     )
     .await;
 

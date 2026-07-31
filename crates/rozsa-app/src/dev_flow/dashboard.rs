@@ -56,6 +56,7 @@
 // ├── stderr()
 // ├── shutdown()
 // ├── start_dashboard()
+// ├── start_dashboard_with_delay()
 // ├── port_is_available()
 // ├── capture_stderr()
 // ├── cleanup_child()
@@ -733,10 +734,35 @@ pub async fn start_dashboard(
     timing: DashboardTiming,
     cancellation: &CancellationToken,
 ) -> Result<DashboardProcess, DevFlowError> {
+    start_dashboard_with_delay(
+        executable,
+        project_root,
+        ports,
+        timing,
+        cancellation,
+        Duration::ZERO,
+    )
+    .await
+}
+
+/// Test-only seam: delays each child spawn so startup-window semantics can be
+/// verified deterministically without load-dependent races.
+#[doc(hidden)]
+pub async fn start_dashboard_with_delay(
+    executable: &Path,
+    project_root: &Path,
+    ports: RangeInclusive<u16>,
+    timing: DashboardTiming,
+    cancellation: &CancellationToken,
+    spawn_delay: Duration,
+) -> Result<DashboardProcess, DevFlowError> {
     let mut last_failure = None;
     for port in ports {
         if !port_is_available(port).await {
             continue;
+        }
+        if !spawn_delay.is_zero() {
+            sleep(spawn_delay).await;
         }
         let mut command = Command::new(executable);
         command
