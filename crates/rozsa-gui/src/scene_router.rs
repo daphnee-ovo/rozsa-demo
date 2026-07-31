@@ -59,6 +59,8 @@ pub enum SettingsPane {
     #[serde(rename = "keyboard-shortcuts")]
     KeyboardShortcuts,
     Permissions,
+    #[serde(rename = "dev-flow")]
+    DevFlow,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]

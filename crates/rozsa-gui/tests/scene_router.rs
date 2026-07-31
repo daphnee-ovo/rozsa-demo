@@ -104,6 +104,18 @@ fn permissions_is_a_supported_settings_pane() {
 }
 
 #[test]
+fn dev_flow_is_a_supported_settings_pane() {
+    let mut router = SceneRouter::default();
+    let update = router
+        .set_scene(GuiScene::Settings, Some(SettingsPane::DevFlow), 1)
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(update.snapshot.selected_pane).unwrap(),
+        serde_json::json!("dev-flow")
+    );
+}
+
+#[test]
 fn settings_requires_a_selected_pane_and_main_clears_it() {
     let mut router = SceneRouter::default();
     assert!(router.set_scene(GuiScene::Settings, None, 1).is_err());
