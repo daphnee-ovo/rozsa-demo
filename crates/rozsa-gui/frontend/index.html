@@ -2993,6 +2993,102 @@ body.native-split-main .settings-content { height: 100%; max-height: none; }
 body.native-split-main .settings-dialog { background: var(--bg); }
 #fallbackSidebarMount,
 #fallbackSettingsNavigationMount { display: none; }
+/* ============ Dev-flow 只读详情浮层（主视图全局层） ============ */
+.dev-flow-detail {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 110;
+  width: clamp(280px, 30vw, 420px);
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: 10px 0 24px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.dev-flow-detail[hidden] { display: none !important; }
+.dev-flow-detail-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.dev-flow-detail-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 10px;
+}
+.dev-flow-detail-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.dev-flow-detail-revision { flex: none; color: var(--muted); font: 10.5px var(--font-mono); }
+.dev-flow-detail-close {
+  flex: none;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 2px 7px;
+}
+.dev-flow-detail-close:hover,
+.dev-flow-detail-close:focus-visible { background: var(--code-bg); color: var(--fg); }
+.dev-flow-detail-project {
+  flex: none;
+  padding: 0 16px 8px;
+  color: var(--muted);
+  font: 10.5px var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dev-flow-detail-summary {
+  flex: none;
+  padding: 4px 16px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dev-flow-detail-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dev-flow-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.dev-flow-detail-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dev-flow-detail-item.focus { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.dev-flow-detail-item-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.dev-flow-detail-item-id { flex: none; color: var(--accent); font: 10.5px var(--font-mono); }
+.dev-flow-detail-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
+.dev-flow-detail-item-status {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font: 10px var(--font-mono);
+}
+.dev-flow-detail-item-status.in-progress { border-color: var(--accent); color: var(--accent); }
+.dev-flow-detail-item-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font: 10.5px var(--font-mono); }
+.dev-flow-detail-item-desc { color: var(--muted); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.dev-flow-detail-empty { padding: 18px 16px; color: var(--muted); font-size: 12px; }
+@media (max-width: 720px) {
+  .dev-flow-detail {
+    inset: 0;
+    width: auto;
+    border-right: 0;
+    box-shadow: none;
+  }
+}
 </style>
 
 /* ============ 通知中心（主视图全局层，位于 Main/Settings 根之外） ============ */
@@ -3527,6 +3623,21 @@ body.native-split-main .settings-dialog { background: var(--bg); }
       <span id="notificationErrorCount">0</span>
     </button>
     <div id="notificationErrorList" class="notification-error-list" role="list" hidden></div>
+  </div>
+</div>
+
+
+<!-- ============ Dev-flow 只读详情浮层：Main/Settings 根之外的全局层 ============ -->
+<div id="devFlowDetail" class="dev-flow-detail" role="dialog" aria-modal="false" aria-label="Dev-flow work details" hidden>
+  <div class="dev-flow-detail-panel">
+    <div class="dev-flow-detail-header">
+      <span class="dev-flow-detail-title">Dev-flow work</span>
+      <span class="dev-flow-detail-revision" id="devFlowDetailRevision"></span>
+      <button class="dev-flow-detail-close" id="devFlowDetailClose" type="button" aria-label="Close dev-flow details" title="Close">✕</button>
+    </div>
+    <div class="dev-flow-detail-project" id="devFlowDetailProject"></div>
+    <div class="dev-flow-detail-summary" id="devFlowDetailSummary"></div>
+    <div class="dev-flow-detail-list" id="devFlowDetailList" role="list"></div>
   </div>
 </div>
 

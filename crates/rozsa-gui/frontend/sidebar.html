@@ -26,6 +26,7 @@ button { font: inherit; }
 .icon-button { border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 17px; }
 .icon-button:hover { background: var(--border); color: var(--fg); }
 .sidebar-scroll { flex: 1; min-height: 0; padding: 0 6px 8px; overflow-y: auto; }
+.sidebar-section.sessions { min-height: var(--dev-flow-sessions-min, 96px); }
 .session-item { min-height: 34px; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
 .session-item:hover { background: color-mix(in srgb, var(--surface) 45%, transparent); }
 .session-item.active { border-color: color-mix(in oklch, var(--accent) 26%, var(--border)); background: var(--surface); }
@@ -35,6 +36,21 @@ button { font: inherit; }
 .session-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
 .session-meta { color: var(--muted); font: 10.5px var(--font-mono); }
 .status-panel { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 14px; }
+.dev-flow-group { display: flex; flex-direction: column; gap: 3px; }
+.dev-flow-group[hidden] { display: none; }
+.dev-flow-summary { border: 0; border-radius: 7px; background: transparent; padding: 3px 6px; margin: 0 -6px; color: var(--fg); font-size: 11.5px; font-weight: 600; cursor: pointer; text-align: left; }
+.dev-flow-summary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.dev-flow-summary:disabled { color: var(--muted); cursor: default; }
+.dev-flow-summary.stale { color: var(--muted); }
+.dev-flow-claimed { display: flex; flex-direction: column; gap: 1px; }
+.dev-flow-claimed-row { min-width: 0; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 7px; background: transparent; padding: 3px 6px; margin: 0 -6px; color: var(--fg); font-size: 12px; cursor: pointer; text-align: left; }
+.dev-flow-claimed-row:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.dev-flow-claimed-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); }
+.dev-flow-claimed-id { flex: none; color: var(--accent); font: 10.5px var(--font-mono); }
+.dev-flow-claimed-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-flow-more { border: 0; border-radius: 7px; background: transparent; padding: 3px 6px; margin: 0 -6px; color: var(--muted); font: 11px var(--font-ui); cursor: pointer; text-align: left; }
+.dev-flow-more:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--fg); }
+.dev-flow-more[hidden] { display: none; }
 .git-branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--font-mono); }
 .git-stats { display: flex; gap: 5px; font: 10.5px var(--font-mono); }
 .git-add { color: var(--success); } .git-del { color: var(--error); } .git-files { color: var(--muted); }
@@ -63,18 +79,26 @@ body.native-fullscreen .sidebar-scene { padding-top: 0; }
     <div class="sidebar-header"><span>Sessions</span><button class="icon-button" type="button" title="New session" onclick="newSidebarSession()">+</button></div>
     <div class="sidebar-scroll" id="sidebarSessionList"></div>
   </div>
-  <div class="sidebar-section">
+  <div class="sidebar-section" id="sidebarStatusSection">
     <div class="sidebar-header"><span>Status</span></div>
     <div class="status-panel">
       <div class="git-branch" id="sidebarGitBranch">—</div>
       <div class="git-stats"><span class="git-add" id="sidebarGitAdd">—</span><span class="git-del" id="sidebarGitDel">—</span><span class="git-files" id="sidebarGitFiles">—</span></div>
+      <div class="dev-flow-group" id="sidebarDevFlowGroup" hidden>
+        <button class="dev-flow-summary" id="sidebarDevFlowSummary" type="button" title="Show dev-flow work details"></button>
+        <div class="dev-flow-claimed" id="sidebarDevFlowClaimed"></div>
+        <button class="dev-flow-more" id="sidebarDevFlowMore" type="button" hidden></button>
+      </div>
       <div class="quota-group" id="sidebarQuotaGroup" hidden>
         <div class="quota-row" id="sidebarQuotaHourRow"><div class="quota-label"><span>5 hours</span><span id="sidebarQuotaHour">—</span></div><div class="quota-bar-track"><div class="quota-bar-fill" id="sidebarQuotaHourBar"></div></div></div>
         <div class="quota-row" id="sidebarQuotaWeekRow"><div class="quota-label"><span>This week</span><span id="sidebarQuotaWeek">—</span></div><div class="quota-bar-track"><div class="quota-bar-fill" id="sidebarQuotaWeekBar"></div></div></div>
       </div>
     </div>
   </div>
-  <div class="sidebar-bottom"><button class="sidebar-action" type="button" onclick="openSidebarSettings()">Settings</button></div>
+  <div class="sidebar-bottom">
+    <button class="sidebar-action" id="sidebarDevFlowDashboard" type="button" onclick="openDevFlowDashboard()" disabled>Dashboard</button>
+    <button class="sidebar-action" type="button" onclick="openSidebarSettings()">Settings</button>
+  </div>
 </section>
 <nav id="settingsSidebarScene" class="sidebar-scene settings-scene" data-sidebar-scene="settings-sidebar" aria-label="Settings navigation" hidden inert>
   <button class="settings-back" type="button" onclick="closeSidebarSettings()">← Back to app</button>

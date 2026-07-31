@@ -158,6 +158,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
     let dev_flow = dev_flow::system_runtime(
         Arc::new(std::sync::Mutex::new(None)),
         Arc::new(rozsa_app::dev_flow::SystemProjectCommandRunner),
+        Arc::new(std::sync::Mutex::new(None)),
     );
 
     let gui_state = GuiState {
@@ -186,6 +187,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(gui_state)
         .invoke_handler(tauri::generate_handler![
             commands::set_gui_scene,
@@ -211,6 +213,8 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::set_dev_flow_sidebar_status,
             commands::set_dev_flow_executable_path,
             commands::rescan_dev_flow,
+            commands::dev_flow_detail,
+            commands::open_dev_flow_dashboard,
             commands::get_capability_settings,
             commands::update_capability_setting,
             commands::get_permission_settings,
@@ -351,6 +355,10 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
 
             let dev_flow = app.state::<GuiState>().dev_flow.clone();
             dev_flow.attach_notifier(dev_flow::real_notifier(app.handle().clone()));
+            dev_flow.attach_sidebar_refresh(dev_flow::real_sidebar_refresher(
+                app.handle().clone(),
+                app.state::<GuiState>().inner().clone(),
+            ));
             tokio::spawn(async move {
                 dev_flow
                     .switch_to_session(&initial_session_id, initial_cwd)

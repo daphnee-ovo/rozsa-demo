@@ -12,8 +12,10 @@
 // ├── impl DevFlowServiceHandle
 // ├── new()
 // ├── with_child()
+// ├── with_base_url()
 // ├── id()
 // ├── snapshot()
+// ├── base_url()
 // ├── enum ServiceShutdownOutcome
 // ├── trait DashboardServiceControl
 // ├── trait MemoryReader
@@ -84,6 +86,8 @@ use thiserror::Error;
 use tokio::process::Command;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
+
+use reqwest::Url;
 
 use super::dashboard::{DevFlowIssue, DevFlowSnapshot, DevFlowTask};
 use super::discovery::{CommandExecutionError, CommandOutput};
@@ -189,6 +193,7 @@ pub struct DevFlowServiceHandle {
     snapshot: Arc<RwLock<Option<DevFlowSnapshot>>>,
     control: Option<Arc<dyn DashboardServiceControl>>,
     pid: Option<u32>,
+    base_url: Option<Url>,
 }
 
 impl DevFlowServiceHandle {
@@ -198,6 +203,7 @@ impl DevFlowServiceHandle {
             snapshot,
             control: None,
             pid: None,
+            base_url: None,
         }
     }
 
@@ -207,11 +213,24 @@ impl DevFlowServiceHandle {
         control: Arc<dyn DashboardServiceControl>,
         pid: Option<u32>,
     ) -> Self {
+        Self::with_base_url(id, snapshot, control, pid, None)
+    }
+
+    /// Constructs a handle that records the loopback dashboard URL so the GUI
+    /// can open it without re-deriving the child's port.
+    pub fn with_base_url(
+        id: u64,
+        snapshot: Arc<RwLock<Option<DevFlowSnapshot>>>,
+        control: Arc<dyn DashboardServiceControl>,
+        pid: Option<u32>,
+        base_url: Option<Url>,
+    ) -> Self {
         Self {
             id,
             snapshot,
             control: Some(control),
             pid,
+            base_url,
         }
     }
 
@@ -221,6 +240,10 @@ impl DevFlowServiceHandle {
 
     pub fn snapshot(&self) -> Arc<RwLock<Option<DevFlowSnapshot>>> {
         self.snapshot.clone()
+    }
+
+    pub fn base_url(&self) -> Option<&Url> {
+        self.base_url.as_ref()
     }
 }
 

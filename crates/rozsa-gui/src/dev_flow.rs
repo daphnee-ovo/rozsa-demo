@@ -11,6 +11,7 @@
 // ├── impl DevFlowRuntime
 // ├── new()
 // ├── attach_notifier()
+// ├── attach_sidebar_refresh()
 // ├── shutdown()
 // ├── reconfigure()
 // ├── session_started()
@@ -20,6 +21,9 @@
 // ├── switch_to_session()
 // ├── on_successful_bash()
 // ├── diagnostics()
+// ├── sidebar_snapshot()
+// ├── dashboard_url()
+// ├── detail()
 // ├── session_state()
 // ├── last_stop_at()
 // ├── active_sessions()
@@ -44,17 +48,33 @@
 // ├── is_alive()
 // ├── run_connection_loop()
 // ├── mark_stale()
+// ├── notify_sidebar_refresh()
 // ├── maybe_report_connection_error()
 // ├── project_hash()
 // ├── install_source_label()
 // ├── revision_label()
 // ├── availability_label()
+// ├── validate_loopback_url()
+// ├── struct DevFlowProjectIdentity
+// ├── struct DevFlowClaimedSummary
+// ├── struct DevFlowSidebarSnapshot
+// ├── struct DevFlowDetailTarget
+// ├── struct DevFlowDetailRequest
+// ├── struct DevFlowDetailItem
+// ├── struct DevFlowDetailPayload
+// ├── validate_detail_request()
+// ├── project_identity()
+// ├── summarize_work()
+// ├── short_dev_flow_id()
+// ├── task_status_label()
+// ├── issue_status_label()
 // ├── struct DevFlowSettingsSnapshot
 // ├── struct DevFlowCliDiagnostics
 // ├── struct DevFlowProjectDiagnostics
 // ├── system_runtime()
 // ├── real_factory_provider()
-// └── real_notifier()
+// ├── real_notifier()
+// └── real_sidebar_refresher()
 
 //! Dev-flow runtime orchestration, diagnostics, and settings commands for the
 //! GUI. Owns the registry lifecycle, session activity wiring, and the real
@@ -73,22 +93,25 @@ use rozsa_app::dev_flow::dashboard::{DashboardTiming, ReconnectBackoff};
 use rozsa_app::dev_flow::registry::{DashboardServiceControl, ServiceShutdownOutcome};
 use rozsa_app::dev_flow::{
     CommandExecutionError, CommandOutput, DashboardClient, DashboardProcess,
-    DashboardServiceFactory, DevFlowAvailability, DevFlowError, DevFlowProjectKey, DevFlowRegistry,
-    DevFlowRevisionKey, DevFlowServiceHandle, DevFlowSnapshot, DiscoveryCommandRunner,
-    DiscoveryEnvironment, DowDiscoveryError, DowInstallSource, ProjectCommandRunner,
-    SessionDevFlowState, SystemCommandRunner, discover_dow_with, start_dashboard,
+    DashboardServiceFactory, DevFlowAvailability, DevFlowError, DevFlowIssueStatus,
+    DevFlowProjectKey, DevFlowRegistry, DevFlowRevisionKey, DevFlowServiceHandle, DevFlowSnapshot,
+    DevFlowTaskStatus, DiscoveryCommandRunner, DiscoveryEnvironment, DowDiscoveryError,
+    DowInstallSource, ProjectCommandRunner, SessionDevFlowState, SystemCommandRunner,
+    discover_dow_with, start_dashboard,
 };
 use rozsa_app::settings::DevFlowSettings;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::time::{MissedTickBehavior, sleep};
 use tokio_util::sync::CancellationToken;
 
 use crate::notifications::{AppNotificationEvent, NotificationSeverity, emit_notification};
+use crate::state::GuiState;
 
 pub const CLI_ERROR_ID: &str = "dev-flow.cli";
 pub const DASHBOARD_START_PREFIX: &str = "dev-flow.dashboard-start:";
 pub const CONNECTION_PREFIX: &str = "dev-flow.connection:";
+pub const DASHBOARD_OPEN_PREFIX: &str = "dev-flow.open:";
 
 const DASHBOARD_PORTS: RangeInclusive<u16> = 9800..=9900;
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
@@ -104,6 +127,11 @@ pub type DashboardFactoryProvider =
 /// attaches the real Tauri emitter during setup; tests attach channel sinks.
 pub type NotificationSink = Arc<dyn Fn(AppNotificationEvent) + Send + Sync>;
 pub type SharedNotificationSink = Arc<std::sync::Mutex<Option<NotificationSink>>>;
+
+/// Push hook invoked whenever a dashboard snapshot changes or goes stale so
+/// the GUI can re-emit the sidebar summary without polling.
+pub type SidebarRefreshSink = Arc<dyn Fn() + Send + Sync>;
+pub type SharedSidebarRefreshSink = Arc<std::sync::Mutex<Option<SidebarRefreshSink>>>;
 
 #[derive(Clone, Debug, Default)]
 struct RuntimeDiagnostics {
@@ -123,6 +151,7 @@ struct DevFlowRuntimeInner {
     sessions: Mutex<HashMap<String, PathBuf>>,
     current_session: Mutex<Option<String>>,
     diagnostics: Mutex<RuntimeDiagnostics>,
+    sidebar_refresh: SharedSidebarRefreshSink,
     project_errors: Mutex<std::collections::HashSet<String>>,
     shutdown: CancellationToken,
 }
@@ -173,6 +202,7 @@ impl DevFlowRuntime {
             sessions: Mutex::new(HashMap::new()),
             current_session: Mutex::new(None),
             diagnostics: Mutex::new(RuntimeDiagnostics::default()),
+            sidebar_refresh: Arc::new(std::sync::Mutex::new(None)),
             project_errors: Mutex::new(std::collections::HashSet::new()),
             shutdown: CancellationToken::new(),
         });
@@ -185,6 +215,12 @@ impl DevFlowRuntime {
     /// first reconfigure; replaces any previously attached sink.
     pub fn attach_notifier(&self, sink: NotificationSink) {
         *self.inner.notifier.lock().unwrap() = Some(sink);
+    }
+
+    /// Attach a sink invoked after every dashboard snapshot update so the GUI
+    /// can push a fresh sidebar summary. Idempotent; replaces any previous sink.
+    pub fn attach_sidebar_refresh(&self, sink: SidebarRefreshSink) {
+        *self.inner.sidebar_refresh.lock().unwrap() = Some(sink);
     }
 
     /// Stop the background maintenance loop. Idempotent.
@@ -316,6 +352,158 @@ impl DevFlowRuntime {
             },
             project,
         }
+    }
+
+    /// Read-only sidebar summary for one associated session. Returns `None`
+    /// when the integration owns no registry (disabled or no CLI).
+    pub async fn sidebar_snapshot(
+        &self,
+        session_id: &str,
+        show_sidebar_status: bool,
+    ) -> Option<DevFlowSidebarSnapshot> {
+        let state = self.session_state(session_id).await?;
+        let snapshot = match &state.service {
+            Some(service) => service.snapshot().read().await.clone(),
+            None => None,
+        };
+        let (availability, availability_message) = availability_label(&state.availability);
+        let (open_tasks, open_issues, claimed) = match &snapshot {
+            Some(snapshot) => summarize_work(snapshot),
+            None => (0, 0, Vec::new()),
+        };
+        Some(DevFlowSidebarSnapshot {
+            project: project_identity(&state.project),
+            revision: snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revision)
+                .unwrap_or(0),
+            open_tasks,
+            open_issues,
+            claimed,
+            stale: snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.stale)
+                .unwrap_or(false),
+            availability,
+            availability_message,
+            dashboard_ready: state.service.is_some(),
+            show_sidebar_status,
+        })
+    }
+
+    /// Loopback dashboard URL for the session's project, starting or reusing
+    /// the shared service, plus the stable project key used for notifications.
+    /// Never touches a dashboard mutation route.
+    pub async fn dashboard_url(
+        &self,
+        session_id: &str,
+        cwd: PathBuf,
+    ) -> Result<(String, String), String> {
+        let Some(registry) = self.inner.registry.lock().await.clone() else {
+            return Err("dev-flow is disabled or no compatible CLI is available".to_string());
+        };
+        let state = registry
+            .associate_session(session_id.to_owned(), cwd)
+            .await
+            .map_err(|error| error.to_string())?;
+        self.note_state(state.clone()).await;
+        self.sync_current_project().await;
+        if state.availability != DevFlowAvailability::Ready {
+            let (_, message) = availability_label(&state.availability);
+            return Err(message.unwrap_or_else(|| state.availability.to_string()));
+        }
+        let Some(service) = &state.service else {
+            return Err("dev-flow dashboard is not running".to_string());
+        };
+        let Some(url) = service.base_url() else {
+            return Err("dev-flow dashboard URL is unavailable".to_string());
+        };
+        Ok((url.to_string(), project_hash(&state.project)))
+    }
+
+    /// Read-only detail payload for one validated request. The request must
+    /// match the live project key and snapshot revision exactly; anything else
+    /// is rejected before any detail reaches the main view.
+    pub async fn detail(
+        &self,
+        session_id: &str,
+        request: &DevFlowDetailRequest,
+    ) -> Result<DevFlowDetailPayload, String> {
+        let Some(current) = self.sidebar_snapshot(session_id, true).await else {
+            return Err("dev-flow is unavailable".to_string());
+        };
+        validate_detail_request(&current, request)?;
+        let Some(state) = self.session_state(session_id).await else {
+            return Err("dev-flow is unavailable".to_string());
+        };
+        let snapshot = match &state.service {
+            Some(service) => service.snapshot().read().await.clone(),
+            None => None,
+        };
+        let Some(snapshot) = snapshot else {
+            return Err("dev-flow dashboard has no snapshot yet".to_string());
+        };
+        let (open_tasks, open_issues, _claimed) = summarize_work(&snapshot);
+        let mut items = Vec::new();
+        let mut claimed_ids = Vec::new();
+        for task in &snapshot.tasks {
+            if task.status != DevFlowTaskStatus::Done {
+                if task.status == DevFlowTaskStatus::InProgress {
+                    claimed_ids.push(task.id.clone());
+                }
+                items.push(DevFlowDetailItem {
+                    kind: "task".to_string(),
+                    id: task.id.clone(),
+                    short_id: short_dev_flow_id(&task.id),
+                    title: task.title.clone(),
+                    status: task_status_label(task.status),
+                    priority: task.priority.clone(),
+                    complexity: task.complexity.clone(),
+                    task_type: task.task_type.clone(),
+                    refs: task.refs.clone(),
+                    depends_on: task.depends_on.clone(),
+                    severity: None,
+                    description: None,
+                });
+            }
+        }
+        for issue in &snapshot.issues {
+            if issue.status != DevFlowIssueStatus::Closed {
+                if issue.status == DevFlowIssueStatus::InProgress {
+                    claimed_ids.push(issue.id.clone());
+                }
+                items.push(DevFlowDetailItem {
+                    kind: "issue".to_string(),
+                    id: issue.id.clone(),
+                    short_id: short_dev_flow_id(&issue.id),
+                    title: issue.title.clone(),
+                    status: issue_status_label(issue.status),
+                    priority: None,
+                    complexity: None,
+                    task_type: None,
+                    refs: None,
+                    depends_on: Vec::new(),
+                    severity: issue.severity.clone(),
+                    description: issue.description.clone(),
+                });
+            }
+        }
+        let focus_id = match &request.target {
+            DevFlowDetailTarget { kind, id } if kind == "item" => id.clone(),
+            _ => None,
+        };
+        Ok(DevFlowDetailPayload {
+            project: current.project.clone(),
+            revision: snapshot.revision,
+            open_tasks,
+            open_issues,
+            items,
+            claimed_ids,
+            focus_id,
+            stale: snapshot.stale,
+            availability: current.availability.clone(),
+            availability_message: current.availability_message.clone(),
+        })
     }
 
     /// Current registry state for one associated session, if any.
@@ -596,15 +784,21 @@ pub struct RealDashboardServiceFactory {
     executable: PathBuf,
     timing: DashboardTiming,
     notifier: SharedNotificationSink,
+    sidebar_refresh: SharedSidebarRefreshSink,
     ports: RangeInclusive<u16>,
 }
 
 impl RealDashboardServiceFactory {
-    pub fn new(executable: PathBuf, notifier: SharedNotificationSink) -> Self {
+    pub fn new(
+        executable: PathBuf,
+        notifier: SharedNotificationSink,
+        sidebar_refresh: SharedSidebarRefreshSink,
+    ) -> Self {
         Self {
             executable,
             timing: DashboardTiming::default(),
             notifier,
+            sidebar_refresh,
             ports: DASHBOARD_PORTS,
         }
     }
@@ -639,9 +833,11 @@ impl DashboardServiceFactory for RealDashboardServiceFactory {
 
         let stream_snapshot = snapshot.clone();
         let stream_client = process.client.clone();
+        let dashboard_base_url = stream_client.base_url().clone();
         let stream_cancellation = cancellation.clone();
         let connection_id = format!("{CONNECTION_PREFIX}{project_id}");
         let notifier = self.notifier.clone();
+        let sidebar_refresh = self.sidebar_refresh.clone();
         tokio::spawn(async move {
             run_connection_loop(
                 &stream_client,
@@ -649,6 +845,7 @@ impl DashboardServiceFactory for RealDashboardServiceFactory {
                 &stream_cancellation,
                 &notifier,
                 &connection_id,
+                &sidebar_refresh,
             )
             .await;
         });
@@ -658,7 +855,13 @@ impl DashboardServiceFactory for RealDashboardServiceFactory {
             cancellation,
         });
         let id = NEXT_SERVICE_ID.fetch_add(1, Ordering::Relaxed);
-        Ok(DevFlowServiceHandle::with_child(id, snapshot, control, pid))
+        Ok(DevFlowServiceHandle::with_base_url(
+            id,
+            snapshot,
+            control,
+            pid,
+            Some(dashboard_base_url),
+        ))
     }
 }
 
@@ -698,6 +901,7 @@ async fn run_connection_loop(
     cancellation: &CancellationToken,
     notifier: &SharedNotificationSink,
     connection_id: &str,
+    sidebar_refresh: &SharedSidebarRefreshSink,
 ) {
     let mut backoff = ReconnectBackoff::default();
     let mut disconnected_since: Option<Instant> = None;
@@ -735,6 +939,7 @@ async fn run_connection_loop(
             match stream.next_snapshot(cancellation).await {
                 Ok(Some(next)) => {
                     *snapshot.write().await = Some(next);
+                    notify_sidebar_refresh(sidebar_refresh);
                     backoff.reset();
                     disconnected_since = None;
                     if error_reported {
@@ -748,11 +953,13 @@ async fn run_connection_loop(
                 }
                 Ok(None) => {
                     mark_stale(&snapshot).await;
+                    notify_sidebar_refresh(sidebar_refresh);
                     break;
                 }
                 Err(DevFlowError::Cancelled) => return,
                 Err(_) => {
                     mark_stale(&snapshot).await;
+                    notify_sidebar_refresh(sidebar_refresh);
                     break;
                 }
             }
@@ -775,6 +982,12 @@ async fn run_connection_loop(
 async fn mark_stale(snapshot: &Arc<tokio::sync::RwLock<Option<DevFlowSnapshot>>>) {
     if let Some(current) = snapshot.write().await.as_mut() {
         current.mark_stale();
+    }
+}
+
+fn notify_sidebar_refresh(sink: &SharedSidebarRefreshSink) {
+    if let Some(refresh) = sink.lock().unwrap().clone() {
+        refresh();
     }
 }
 
@@ -850,6 +1063,211 @@ fn availability_label(availability: &DevFlowAvailability) -> (String, Option<Str
     (key.to_string(), message)
 }
 
+/// True when the URL is an HTTP loopback URL (127.0.0.1, localhost, or ::1)
+/// with a numeric port. The dashboard opener must never leave loopback.
+pub fn validate_loopback_url(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("http://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() || authority.contains("://") {
+        return false;
+    }
+    let host = authority.rsplit_once(':').unwrap_or((authority, ""));
+    if !host.1.parse::<u16>().is_ok() || host.1.is_empty() {
+        return false;
+    }
+    let host = host.0.trim_start_matches('[').trim_end_matches(']');
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
+}
+
+/// Canonical project identity shared by the sidebar summary and detail UI.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevFlowProjectIdentity {
+    pub project_key: String,
+    pub root: String,
+    pub revision: String,
+}
+
+/// One claimed (InProgress) Task or Issue shown as a sidebar row.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevFlowClaimedSummary {
+    pub kind: String,
+    pub id: String,
+    pub short_id: String,
+    pub title: String,
+    pub priority: Option<String>,
+    pub complexity: Option<String>,
+}
+
+/// Read-only sidebar summary of open and claimed dev-flow work.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevFlowSidebarSnapshot {
+    pub project: DevFlowProjectIdentity,
+    pub revision: u64,
+    pub open_tasks: u32,
+    pub open_issues: u32,
+    pub claimed: Vec<DevFlowClaimedSummary>,
+    pub stale: bool,
+    pub availability: String,
+    pub availability_message: Option<String>,
+    pub dashboard_ready: bool,
+    pub show_sidebar_status: bool,
+}
+
+/// Which part of the summary opened the detail UI.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevFlowDetailTarget {
+    pub kind: String,
+    pub id: Option<String>,
+}
+
+/// Typed detail request carrying the rendered project key, snapshot revision,
+/// and target so the main view never renders stale or cross-project data.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevFlowDetailRequest {
+    pub project_key: String,
+    pub revision: u64,
+    pub target: DevFlowDetailTarget,
+}
+
+/// One open Task or Issue row in the read-only detail UI.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevFlowDetailItem {
+    pub kind: String,
+    pub id: String,
+    pub short_id: String,
+    pub title: String,
+    pub status: String,
+    pub priority: Option<String>,
+    pub complexity: Option<String>,
+    pub task_type: Option<String>,
+    pub refs: Option<String>,
+    pub depends_on: Vec<String>,
+    pub severity: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Read-only detail payload emitted to the main WebView overlay.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevFlowDetailPayload {
+    pub project: DevFlowProjectIdentity,
+    pub revision: u64,
+    pub open_tasks: u32,
+    pub open_issues: u32,
+    pub items: Vec<DevFlowDetailItem>,
+    pub claimed_ids: Vec<String>,
+    pub focus_id: Option<String>,
+    pub stale: bool,
+    pub availability: String,
+    pub availability_message: Option<String>,
+}
+
+/// Rejects detail requests whose project key or snapshot revision no longer
+/// match the live sidebar state; stale or cross-project requests never render.
+pub fn validate_detail_request(
+    current: &DevFlowSidebarSnapshot,
+    request: &DevFlowDetailRequest,
+) -> Result<(), String> {
+    if request.project_key != current.project.project_key {
+        return Err("dev-flow detail request targets a different project".to_string());
+    }
+    if request.revision != current.revision {
+        return Err("dev-flow detail request is stale".to_string());
+    }
+    match &request.target {
+        DevFlowDetailTarget { kind, id: Some(_) } if kind == "item" => {}
+        DevFlowDetailTarget { kind, id: None } if kind == "summary" || kind == "more" => {}
+        _ => return Err("dev-flow detail target is invalid".to_string()),
+    }
+    Ok(())
+}
+
+pub fn project_identity(project: &DevFlowProjectKey) -> DevFlowProjectIdentity {
+    DevFlowProjectIdentity {
+        project_key: project_hash(project),
+        root: project.root.to_string_lossy().into_owned(),
+        revision: revision_label(&project.revision),
+    }
+}
+
+/// Open work counts and claimed (InProgress) summaries. Claimed items are not
+/// double-counted; closed/done work is excluded entirely.
+fn summarize_work(snapshot: &DevFlowSnapshot) -> (u32, u32, Vec<DevFlowClaimedSummary>) {
+    let mut open_tasks = 0;
+    let mut open_issues = 0;
+    let mut claimed = Vec::new();
+    for task in &snapshot.tasks {
+        if task.status == DevFlowTaskStatus::Done {
+            continue;
+        }
+        open_tasks += 1;
+        if task.status == DevFlowTaskStatus::InProgress {
+            claimed.push(DevFlowClaimedSummary {
+                kind: "task".to_string(),
+                id: task.id.clone(),
+                short_id: short_dev_flow_id(&task.id),
+                title: task.title.clone(),
+                priority: task.priority.clone(),
+                complexity: task.complexity.clone(),
+            });
+        }
+    }
+    for issue in &snapshot.issues {
+        if issue.status == DevFlowIssueStatus::Closed {
+            continue;
+        }
+        open_issues += 1;
+        if issue.status == DevFlowIssueStatus::InProgress {
+            claimed.push(DevFlowClaimedSummary {
+                kind: "issue".to_string(),
+                id: issue.id.clone(),
+                short_id: short_dev_flow_id(&issue.id),
+                title: issue.title.clone(),
+                priority: None,
+                complexity: None,
+            });
+        }
+    }
+    (open_tasks, open_issues, claimed)
+}
+
+/// `TASK-T007` → `T007`, `ISSUE-I003` → `I003`; other ids pass through.
+pub fn short_dev_flow_id(id: &str) -> String {
+    if let Some(rest) = id.strip_prefix("TASK-") {
+        return rest.to_string();
+    }
+    if let Some(rest) = id.strip_prefix("ISSUE-") {
+        return rest.to_string();
+    }
+    id.to_string()
+}
+
+fn task_status_label(status: DevFlowTaskStatus) -> String {
+    match status {
+        DevFlowTaskStatus::Pending => "pending",
+        DevFlowTaskStatus::InProgress => "in-progress",
+        DevFlowTaskStatus::Done => "done",
+    }
+    .to_string()
+}
+
+fn issue_status_label(status: DevFlowIssueStatus) -> String {
+    match status {
+        DevFlowIssueStatus::Open => "open",
+        DevFlowIssueStatus::InProgress => "in-progress",
+        DevFlowIssueStatus::Closed => "closed",
+    }
+    .to_string()
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevFlowSettingsSnapshot {
@@ -884,21 +1302,26 @@ pub struct DevFlowProjectDiagnostics {
 pub fn system_runtime(
     notifier: SharedNotificationSink,
     project_runner: Arc<dyn ProjectCommandRunner>,
+    sidebar_refresh: SharedSidebarRefreshSink,
 ) -> Arc<DevFlowRuntime> {
     DevFlowRuntime::new(
         notifier.clone(),
         project_runner,
         Arc::new(SystemCommandRunner),
         DiscoveryEnvironment::from_process(),
-        real_factory_provider(notifier),
+        real_factory_provider(notifier, sidebar_refresh),
     )
 }
 
-pub fn real_factory_provider(notifier: SharedNotificationSink) -> DashboardFactoryProvider {
+pub fn real_factory_provider(
+    notifier: SharedNotificationSink,
+    sidebar_refresh: SharedSidebarRefreshSink,
+) -> DashboardFactoryProvider {
     Arc::new(move |executable| {
         Arc::new(RealDashboardServiceFactory::new(
             executable.to_path_buf(),
             notifier.clone(),
+            sidebar_refresh.clone(),
         ))
     })
 }
@@ -907,5 +1330,18 @@ pub fn real_factory_provider(notifier: SharedNotificationSink) -> DashboardFacto
 pub fn real_notifier(app: tauri::AppHandle) -> NotificationSink {
     Arc::new(move |event| {
         let _ = emit_notification(&app, event);
+    })
+}
+
+/// Real sidebar refresh sink bound to the running application. Invoked after
+/// dashboard snapshot changes so the sidebar summary stays current without
+/// polling; failures are logged by the emitter, never surfaced as toasts.
+pub fn real_sidebar_refresher(app: tauri::AppHandle, gui_state: GuiState) -> SidebarRefreshSink {
+    Arc::new(move || {
+        let app = app.clone();
+        let gui_state = gui_state.clone();
+        tokio::spawn(async move {
+            let _ = crate::events::emit_sidebar_state(&app, &gui_state).await;
+        });
     })
 }

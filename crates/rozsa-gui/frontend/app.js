@@ -232,6 +232,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('permission-request', ev => showPermission(ev.payload));
   await listen('question-request', ev => showUserQuestion(ev.payload));
   await listen('error', ev => showError(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
+  await listen('dev-flow-detail', ev => showDevFlowDetail(ev.payload));
   await listen('app-notification', ev => {
     const payload = ev.payload;
     if (payload && payload.type === 'upsert') {
@@ -4661,6 +4662,135 @@ function showError(message) {
 
 // ============ 通知中心：主视图全局 toast 层 ============
 const NOTIFICATION_TIMEOUT_MS = 6000;
+// ============ Dev-flow 只读详情浮层 ============
+const devFlowDetailBaselines = new Map();
+let devFlowDetailOpen = false;
+
+function showDevFlowDetail(payload) {
+  if (!payload || !payload.project || payload.availability !== 'ready') return;
+  const projectKey = payload.project.projectKey;
+  const baseline = devFlowDetailBaselines.get(projectKey) || 0;
+  // The main view rejects stale or out-of-order events for a project it has
+  // already rendered at a newer snapshot revision.
+  if (payload.revision < baseline) return;
+  devFlowDetailBaselines.set(projectKey, payload.revision);
+  renderDevFlowDetail(payload);
+  openDevFlowDetailPanel();
+}
+
+function renderDevFlowDetail(payload) {
+  const revision = document.getElementById('devFlowDetailRevision');
+  if (revision) revision.textContent = payload.revision ? '#' + payload.revision : '';
+  const project = document.getElementById('devFlowDetailProject');
+  if (project) project.textContent = (payload.project.root || '') + ' · ' + (payload.project.revision || '');
+  const summary = document.getElementById('devFlowDetailSummary');
+  if (summary) {
+    summary.textContent = payload.openTasks + ' Tasks · ' + payload.openIssues + ' Issues' +
+      (payload.stale ? ' · stale' : '');
+  }
+  const list = document.getElementById('devFlowDetailList');
+  if (!list) return;
+  list.replaceChildren();
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'dev-flow-detail-empty';
+    empty.textContent = 'No open work';
+    list.appendChild(empty);
+    return;
+  }
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'dev-flow-detail-item';
+    row.setAttribute('role', 'listitem');
+    row.tabIndex = 0;
+    row.setAttribute('aria-label', (item.kind === 'issue' ? 'Issue ' : 'Task ') + item.shortId + ' ' + item.title);
+    const head = document.createElement('div');
+    head.className = 'dev-flow-detail-item-head';
+    const id = document.createElement('span');
+    id.className = 'dev-flow-detail-item-id';
+    id.textContent = item.shortId || item.id;
+    const title = document.createElement('span');
+    title.className = 'dev-flow-detail-item-title';
+    title.textContent = item.title || '';
+    const status = document.createElement('span');
+    status.className = 'dev-flow-detail-item-status' + (item.status === 'in-progress' ? ' in-progress' : '');
+    status.textContent = item.status || '';
+    head.append(id, title, status);
+    row.appendChild(head);
+    const metaParts = [];
+    if (item.priority) metaParts.push(item.priority);
+    if (item.complexity) metaParts.push(item.complexity);
+    if (item.taskType) metaParts.push(item.taskType);
+    if (item.severity) metaParts.push(item.severity);
+    if (item.dependsOn && item.dependsOn.length) metaParts.push('depends: ' + item.dependsOn.join(', '));
+    if (item.refs) metaParts.push(item.refs);
+    if (metaParts.length) {
+      const meta = document.createElement('div');
+      meta.className = 'dev-flow-detail-item-meta';
+      meta.textContent = metaParts.join(' · ');
+      row.appendChild(meta);
+    }
+    if (item.description) {
+      const desc = document.createElement('div');
+      desc.className = 'dev-flow-detail-item-desc';
+      desc.textContent = item.description;
+      row.appendChild(desc);
+    }
+    if (payload.focusId && payload.focusId === item.id) {
+      row.classList.add('focus');
+    }
+    list.appendChild(row);
+  });
+  const focusItem = payload.focusId
+    ? items.findIndex(item => item.id === payload.focusId)
+    : -1;
+  if (focusItem >= 0 && list.children[focusItem]) {
+    list.children[focusItem].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function openDevFlowDetailPanel() {
+  const overlay = document.getElementById('devFlowDetail');
+  if (!overlay) return;
+  overlay.hidden = false;
+  devFlowDetailOpen = true;
+  const focusTarget = overlay.querySelector('.dev-flow-detail-item') || document.getElementById('devFlowDetailClose');
+  if (focusTarget) focusTarget.focus();
+}
+
+function closeDevFlowDetail() {
+  const overlay = document.getElementById('devFlowDetail');
+  if (!overlay) return;
+  overlay.hidden = true;
+  devFlowDetailOpen = false;
+}
+
+document.addEventListener('pointerdown', event => {
+  if (devFlowDetailOpen && !event.target.closest('#devFlowDetail')) {
+    closeDevFlowDetail();
+  }
+});
+
+document.addEventListener('keydown', event => {
+  if (!devFlowDetailOpen) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeDevFlowDetail();
+    return;
+  }
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    const items = Array.from(document.querySelectorAll('.dev-flow-detail-item'));
+    if (!items.length) return;
+    const index = items.indexOf(document.activeElement);
+    const next = event.key === 'ArrowDown'
+      ? (index + 1) % items.length
+      : (index - 1 + items.length) % items.length;
+    event.preventDefault();
+    items[next].focus();
+  }
+});
+
 const notificationToasts = new Map();
 const unresolvedErrors = new Map();
 let legacyNotificationCounter = 0;

@@ -331,6 +331,7 @@ pub struct SidebarActionsSnapshot {
 pub struct SidebarSnapshot {
     pub sessions: Vec<SidebarSessionSnapshot>,
     pub active_session_id: Option<String>,
+    pub dev_flow: Option<crate::dev_flow::DevFlowSidebarSnapshot>,
     pub git: Option<GitStatus>,
     pub quota: Option<rozsa_model::rate_limit::RateLimitSnapshot>,
     pub show_quota: bool,
@@ -387,6 +388,21 @@ impl GuiState {
             })
             .collect();
         drop(tabs);
+        let dev_flow = {
+            let dev_flow_settings = self.runtime_settings.lock().await.dev_flow.clone();
+            if dev_flow_settings.enabled {
+                match &active_session_id {
+                    Some(session_id) => {
+                        self.dev_flow
+                            .sidebar_snapshot(session_id, dev_flow_settings.show_sidebar_status)
+                            .await
+                    }
+                    None => None,
+                }
+            } else {
+                None
+            }
+        };
         let has_active_session = active_session_id.is_some();
         let appearance = self.runtime_settings.lock().await.appearance.clone();
         let show_quota = appearance.show_rate_limits
@@ -396,6 +412,7 @@ impl GuiState {
         Ok(SidebarSnapshot {
             sessions,
             active_session_id,
+            dev_flow,
             git: git_status(&self.shared.cwd),
             quota: if show_quota {
                 self.quota_summary.lock().await.clone()

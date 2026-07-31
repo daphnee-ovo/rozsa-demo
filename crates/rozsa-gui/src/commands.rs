@@ -48,6 +48,8 @@
 // ├── set_dev_flow_sidebar_status()
 // ├── set_dev_flow_executable_path()
 // ├── rescan_dev_flow()
+// ├── dev_flow_detail()
+// ├── open_dev_flow_dashboard()
 // ├── list_themes()
 // ├── get_theme()
 // ├── save_theme()
@@ -100,6 +102,8 @@
 // ├── impl AttachmentPickMode
 // ├── parse()
 // ├── normalize_skill_commands_in_text()
+// ├── active_session_id()
+// ├── active_session_cwd()
 // ├── active_agent()
 // ├── active_session_summary()
 // ├── create_new_session()
@@ -153,6 +157,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
 use rozsa_app::agent_session::AgentSession;
 use rozsa_app::model_registry::ModelRegistry;
@@ -168,6 +173,7 @@ use rozsa_model::types::{
     AssistantMessage, ContentBlock, Message, Provider, StopReason, ThinkingEffort, Usage,
 };
 
+use crate::notifications::{AppNotificationEvent, NotificationSeverity, emit_notification};
 use crate::state::{
     GuiState, SessionTab, UiSnapshot, cancel_pending_user_questions, deny_pending_approvals,
     find_tab_index_by_session, permission_pending_key, respond_pending_user_question,
@@ -1705,6 +1711,61 @@ pub async fn rescan_dev_flow(state: State<'_, GuiState>) -> Result<(), String> {
     state.dev_flow.reconfigure(&settings).await
 }
 
+/// Read-only dev-flow detail request from the sidebar. The payload is
+/// validated against the live project key and snapshot revision, then emitted
+/// to the main WebView overlay; stale or cross-project requests are rejected.
+#[tauri::command]
+pub async fn dev_flow_detail(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+    request: crate::dev_flow::DevFlowDetailRequest,
+) -> Result<crate::dev_flow::DevFlowDetailPayload, String> {
+    let session_id = active_session_id(&state).await?;
+    let payload = state.dev_flow.detail(&session_id, &request).await?;
+    crate::events::emit_main(&app, "dev-flow-detail", &payload)?;
+    Ok(payload)
+}
+
+/// Opens the current project's dashboard in the system browser through the
+/// restricted loopback opener. One click starts or reuses one shared service.
+/// Successful opening is silent; failures produce a resolvable error.
+#[tauri::command]
+pub async fn open_dev_flow_dashboard(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let (session_id, cwd) = active_session_cwd(&state).await?;
+    let (url, project_key) = state.dev_flow.dashboard_url(&session_id, cwd).await?;
+    if !crate::dev_flow::validate_loopback_url(&url) {
+        return Err(format!("dev-flow dashboard URL is not loopback: {url}"));
+    }
+    let id = format!("{}{}", crate::dev_flow::DASHBOARD_OPEN_PREFIX, project_key);
+    let opened = app
+        .opener()
+        .open_url(url.clone(), None::<&str>)
+        .map_err(|error| error.to_string());
+    match opened {
+        Ok(()) => {
+            emit_notification(&app, AppNotificationEvent::Resolve { id }).ok();
+            Ok(())
+        }
+        Err(error) => {
+            emit_notification(
+                &app,
+                AppNotificationEvent::Upsert {
+                    id,
+                    severity: NotificationSeverity::Error,
+                    title: "Dev-flow dashboard failed to open".to_string(),
+                    message: format!("Could not open {url}: {error}"),
+                    timeout_ms: 6_000,
+                },
+            )
+            .ok();
+            Err(error)
+        }
+    }
+}
+
 #[tauri::command]
 pub fn list_themes(state: State<'_, GuiState>) -> Result<Vec<ThemeSummary>, String> {
     theme_store(&state)?
@@ -2791,6 +2852,34 @@ fn normalize_skill_commands_in_text(
     }
     normalized.push_str(&text[cursor..]);
     Some(normalized)
+}
+
+async fn active_session_id(state: &State<'_, GuiState>) -> Result<String, String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    match tabs.get(idx) {
+        Some(tab) => Ok(tab.session_id().to_string()),
+        None => Err("No active tab".to_string()),
+    }
+}
+
+async fn active_session_cwd(state: &State<'_, GuiState>) -> Result<(String, PathBuf), String> {
+    let idx = *state.active_tab.lock().await;
+    let tabs = state.tabs.lock().await;
+    match tabs.get(idx) {
+        Some(SessionTab::Active { agent, .. }) => {
+            let cwd = agent.current_cwd().await;
+            Ok((tabs[idx].session_id().to_string(), cwd))
+        }
+        Some(SessionTab::Loaded { path, .. }) | Some(SessionTab::Idle { path, .. }) => {
+            let cwd = SessionManager::open(path)
+                .ok()
+                .map(|manager| PathBuf::from(manager.cwd()))
+                .ok_or("Session cwd is unavailable")?;
+            Ok((tabs[idx].session_id().to_string(), cwd))
+        }
+        None => Err("No active tab".to_string()),
+    }
 }
 
 async fn active_agent(state: &State<'_, GuiState>) -> Result<Arc<AgentSession>, String> {

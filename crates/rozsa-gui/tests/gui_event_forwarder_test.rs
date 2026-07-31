@@ -123,7 +123,10 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
             Arc::new(rozsa_app::dev_flow::SystemProjectCommandRunner),
             Arc::new(rozsa_app::dev_flow::SystemCommandRunner),
             rozsa_app::dev_flow::DiscoveryEnvironment::from_process(),
-            rozsa_gui::dev_flow::real_factory_provider(Arc::new(std::sync::Mutex::new(None))),
+            rozsa_gui::dev_flow::real_factory_provider(
+                Arc::new(std::sync::Mutex::new(None)),
+                Arc::new(std::sync::Mutex::new(None)),
+            ),
         ),
         model_registry: None,
         session_dir: None,
