@@ -47,8 +47,6 @@
 // ├── read_bounded()
 // ├── struct ReconnectBackoff
 // ├── impl ReconnectBackoff
-// ├── default()
-// ├── impl ReconnectBackoff
 // ├── next_delay()
 // ├── reset()
 // ├── should_report_error()
@@ -666,15 +664,9 @@ async fn read_bounded(
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ReconnectBackoff {
     attempt: usize,
-}
-
-impl Default for ReconnectBackoff {
-    fn default() -> Self {
-        Self { attempt: 0 }
-    }
 }
 
 impl ReconnectBackoff {
@@ -741,7 +733,6 @@ pub async fn start_dashboard(
     timing: DashboardTiming,
     cancellation: &CancellationToken,
 ) -> Result<DashboardProcess, DevFlowError> {
-    let deadline = Instant::now() + timing.startup_timeout;
     let mut last_failure = None;
     for port in ports {
         if !port_is_available(port).await {
@@ -769,6 +760,7 @@ pub async fn start_dashboard(
         let base_url = Url::parse(&format!("http://127.0.0.1:{port}/"))
             .map_err(|error| DevFlowError::Startup(error.to_string()))?;
         let client = DashboardClient::with_timing(base_url, timing)?;
+        let deadline = Instant::now() + timing.startup_timeout;
         loop {
             if cancellation.is_cancelled() {
                 cleanup_child(&mut child, &mut process_group, stderr_task).await;
