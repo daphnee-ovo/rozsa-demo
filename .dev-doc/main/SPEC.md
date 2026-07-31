@@ -1,0 +1,568 @@
+# SPEC: Read-only Dev-flow Integration
+
+## Goal
+
+Add a project-scoped, read-only dev-flow integration to Rózsa. It must discover
+and validate `dow`, manage reusable dashboard services, adapt the current
+dashboard snapshot/SSE API behind an internal boundary, present open and claimed
+work in the GUI, specialize supported successful `dow` Bash results, and add a
+reusable notification center without coupling GUI code to dev-flow API details.
+
+## Scope
+
+### In
+
+- Type-safe Dev-flow settings, CLI discovery, project/revision identity, dashboard
+  process ownership, HTTP snapshot reads, SSE updates, lifecycle reclamation,
+  and resource accounting.
+- Open Task/Issue counts, claimed work rows, responsive read-only detail UI, and
+  a Dashboard action in the sidebar.
+- A dedicated Dev-flow settings pane with automatic/custom CLI selection,
+  diagnostics, installation guidance, and dependent enablement.
+- Structured presentation for supported successful create, claim, task-done,
+  and issue-close Bash calls while preserving raw execution details.
+- A general app notification center with independent timers and unresolved-error
+  aggregation.
+- Focused deterministic tests, isolated real-`dow` contract tests, GUI
+  validation, and synchronized GUI documentation/prototype updates.
+
+### Out
+
+- Calling dashboard mutation routes or adding Task/Issue edit actions.
+- Parsing Task/Issue state directly from `.dev-doc`.
+- Installing dev-flow, running `dow init`, or embedding the dashboard deeply.
+- Supporting arbitrary compound shell scripts as structured `dow` results.
+- Changing dev-flow itself or claiming compatibility with future unversioned API
+  shapes outside the private adapter.
+
+## Requirements Trace
+
+| Requirement | Source | Design coverage |
+|-------------|--------|-----------------|
+| R-001 Read-only API integration | Brainstorm: transport and mutation boundary | `dev_flow::dashboard` exposes only snapshot/SSE reads |
+| R-002 API changes remain localized | User decision and Brainstorm architecture | Private DTO → domain → GUI snapshot layers |
+| R-003 Project-scoped sharing | User correction | Registry groups services by canonical project root and branch |
+| R-004 Sidebar open counts and claimed work | User-defined layout | `DevFlowSidebarSnapshot` and responsive row fitting |
+| R-005 Dashboard action | Initial request | Reused Rózsa-owned service and system-browser opening |
+| R-006 Settings and CLI discovery | Initial request and follow-up | Typed settings plus Homebrew/npm/Cargo discovery |
+| R-007 Late `dow init` detection | User follow-up | Branch-aware initialization marker plus validated `dow status`, periodic probe, and immediate Bash-triggered rescan |
+| R-008 Specialized `dow` results | Initial request and pipeline follow-up | Conservative recognizer plus project snapshot enrichment |
+| R-009 Notification behavior | User-defined behavior | Generic notification center and unresolved-error registry |
+| R-010 Bounded service growth | User-defined lifecycle | 15-minute idle sweep and memory soft budget |
+| R-011 Isolated real CLI tests | User constraint | `tmp/test_env` contract-test harness |
+
+## Design
+
+### 1. Module and dependency boundaries
+
+Add an app-layer module because process, network, settings, and project state are
+product-runtime concerns rather than GUI rendering concerns:
+
+```text
+crates/rozsa-app/src/dev_flow/
+├── mod.rs          facade, public domain types, errors
+├── discovery.rs    executable candidates and `dow --version`
+├── dashboard.rs    child process, bounded HTTP JSON, SSE decoder
+├── registry.rs     project/revision services, activity, retries, reclamation
+└── command.rs      conservative Bash recognition and presentation model
+```
+
+`rozsa-gui` owns only Tauri wiring, session-to-project activity signals, GUI
+snapshots, browser opening, and frontend components. `rozsa-core` and
+`rozsa-model` remain unchanged unless the existing session-log owner must gain
+the backward-compatible typed metadata variant required by
+`DevFlowPresentationRecord`; that schema change must not add dev-flow runtime
+dependencies to a lower crate.
+
+Use the existing workspace `reqwest` dependency in `rozsa-app`. Add `sysinfo` as
+a reviewed workspace dependency for physical-memory and child-RSS accounting.
+Decode the narrow SSE protocol internally over `reqwest::Response::chunk()` to
+avoid another event-source dependency. Add the official Tauri opener plugin to
+`rozsa-gui` for system-browser opening and grant only its URL-opening capability.
+
+All subprocesses use `tokio::process::Command`/`std::process::Command` argument
+arrays; no shell is used for discovery or dashboard startup. HTTP clients reject
+redirects and accept only loopback URLs created by the process manager.
+
+### 2. Domain model and compatibility adapter
+
+Private dashboard DTOs mirror only fields Rózsa consumes. Unknown JSON fields
+are ignored. The required compatibility surface is:
+
+```rust
+struct DashboardSnapshotDto {
+    status: DashboardStatusDto,
+    tasks: Vec<DashboardTaskDto>,
+    issues: Vec<DashboardIssueDto>,
+}
+```
+
+`tasks`, `issues`, and each item's `id`, `title`, and `status` are required.
+Priority/severity, complexity/type, refs, files, done criteria, description, and
+project status details are optional so a missing decorative field does not
+disable counts. Missing required fields, invalid IDs, or unknown required status
+values produce `DevFlowError::IncompatibleApi`.
+
+The adapter maps DTOs into stable Rózsa-owned types:
+
+```rust
+struct DevFlowSnapshot {
+    revision: u64,
+    project: DevFlowProjectStatus,
+    tasks: Vec<DevFlowTask>,
+    issues: Vec<DevFlowIssue>,
+    received_at: SystemTime,
+    stale: bool,
+}
+
+enum DevFlowTaskStatus { Pending, InProgress, Done }
+enum DevFlowIssueStatus { Open, InProgress, Closed }
+```
+
+The raw response is capped at 16 MiB for both `/api/data` and each SSE event.
+Document bodies returned by the current API are not retained. A new snapshot is
+validated completely before atomically replacing the last good snapshot.
+
+The private client has no generic public request method and exposes only:
+
+```rust
+async fn fetch_snapshot(&self) -> Result<DevFlowSnapshot, DevFlowError>;
+async fn subscribe(&self) -> Result<DevFlowEventStream, DevFlowError>;
+```
+
+No dashboard POST path is represented or invoked.
+
+### 3. CLI discovery and settings
+
+Add typed settings with serde defaults:
+
+```rust
+struct DevFlowSettings {
+    enabled: bool,                 // default true
+    show_sidebar_status: bool,     // default true
+    executable_path: Option<PathBuf>, // None = automatic
+}
+```
+
+All three settings are global application settings. This matches the master
+switch's process-wide ownership semantics and prevents one project-scoped value
+from ambiguously enabling or stopping services shared by several sessions.
+`SettingsManager` gains field-preserving typed Dev-flow update methods instead
+of routing these values through the stringly typed generic GUI setting command.
+
+Automatic discovery checks, in order:
+
+1. current process `PATH`;
+2. `/opt/homebrew/bin/dow`, `/usr/local/bin/dow`, and the prefix returned by a
+   discovered standard Homebrew executable;
+3. `$CARGO_HOME/bin/dow`, or the user's `.cargo/bin/dow`;
+4. `<npm prefix -g>/bin/dow` and supported platform npm global-bin locations.
+
+A configured custom absolute path is the sole candidate until the user selects
+Auto again. Existing candidates are canonicalized and deduplicated. Discovery
+helper commands and `dow --version` run under a two-second timeout. Validation
+requires exit zero and `dow <semver>`. The validated absolute path is cached and
+used directly for dashboard startup.
+
+Setting `enabled=false` cancels connection work, resolves integration-owned
+errors, terminates and reaps every Rózsa-owned dashboard child, and removes
+Dev-flow controls from project views while retaining no live snapshot as
+authoritative. Re-enabling rediscovers the CLI and starts services only for
+currently relevant initialized projects.
+
+Changing the executable selection or pressing Rescan validates the replacement
+before adopting it. A valid changed executable restarts currently relevant
+Rózsa-owned services through the new absolute path and marks old snapshots stale
+until new initial snapshots arrive. An invalid custom path is shown as an
+actionable CLI error and stops owned services; it never falls back to automatic
+discovery. Selecting Auto restores automatic discovery.
+
+The settings pane uses dedicated typed commands:
+
+```text
+get_dev_flow_settings
+set_dev_flow_enabled
+set_dev_flow_sidebar_status
+set_dev_flow_executable_path
+rescan_dev_flow
+```
+
+It remains visible when `dow` is missing and shows the official Homebrew, npm,
+and Cargo commands without executing them.
+
+### 4. Project identity and service registry
+
+Resolve each session's current cwd from `AgentSession::current_cwd()` when
+active, or `SessionMeta.cwd` when inactive. Resolve a canonical Git root with
+`git -C <cwd> rev-parse --show-toplevel`; fall back to the canonical cwd for a
+non-Git project.
+
+Dev-flow's current doc-root selection is branch-aware. Model revision states
+explicitly instead of collapsing detached or unborn repositories into `None`:
+
+```rust
+struct DevFlowProjectKey {
+    root: PathBuf,
+    revision: DevFlowRevisionKey,
+}
+
+enum DevFlowRevisionKey {
+    NamedBranch(String),
+    UnbornBranch(String),
+    DetachedCommit(String),
+    NonGit,
+}
+```
+
+Resolve named/unborn branches with `git symbolic-ref`; resolve detached identity
+with the full commit OID. The top-level registry groups entries by canonical
+root, while each supported revision has its own service/snapshot. Sessions in
+the same worktree and revision share one service. A branch change selects or
+creates another service without destroying the previous one. Successful Bash
+completion, session switching, and the two-second selected-project probe
+re-evaluate the identity for every session associated with that worktree, so a
+branch-changing command cannot leave sibling sessions attached to the old
+snapshot.
+
+For an enabled project with a compatible CLI:
+
+- for a named or unborn branch, require a readable
+  `<root>/.dev-doc/<branch>/STATUS.yaml`;
+- for a non-Git root, require exactly one readable
+  `<root>/.dev-doc/*/STATUS.yaml`; zero means `ProjectNotInitialized` and more
+  than one is an explicit ambiguous-project error;
+- after the marker check, run read-only `dow status` in the project root under a
+  two-second timeout and require exit zero plus a valid JSON response before
+  starting the dashboard;
+- probe readiness every two seconds while the project is relevant and rescan
+  immediately after any successful Bash completion, including a late
+  `dow init`;
+- treat the project as Ready only after a valid first dashboard snapshot.
+
+The current `dow dashboard` cannot be directed to a detached commit's matching
+doc root. Detached HEAD therefore has a distinct, explicit
+`UnsupportedRevision` availability state and starts no dashboard rather than
+risk showing another branch. This boundary can be removed when dev-flow exposes
+explicit revision selection.
+
+Rózsa reads only the initialization marker; it does not parse Task/Issue state
+from `.dev-doc`. Because marker validation happens before dashboard startup,
+Rózsa does not invoke `dow dashboard` merely to create a missing branch
+directory.
+
+### 5. Dashboard process and SSE lifecycle
+
+Start the validated executable as:
+
+```text
+dow dashboard --port <candidate> --no-open
+```
+
+Use an explicit loopback port from 9800–9900 so the URL is known without parsing
+human stderr. Probe candidates and retry on bind/start races. Startup succeeds
+only when `GET /api/data` returns a valid snapshot within five seconds. Capture
+bounded stderr for diagnostics and always reap children.
+
+Loopback connects have a one-second deadline. The initial snapshot, refresh
+requests, and SSE response headers each have a five-second overall deadline.
+Once subscribed, no bytes, comment keep-alive, or valid update for 45 seconds is
+treated as a stalled connection. Disable, project reclamation, executable
+change, and application shutdown cancel all pending requests and retries.
+
+Connect SSE immediately after the first snapshot. The decoder supports comments,
+CRLF/LF, multiline `data`, and blank-line event termination. Only `event:
+update` is mapped; its data must be a complete valid snapshot. Keep-alives do
+not increment revision.
+
+On unexpected disconnect:
+
+- retain the last snapshot with `stale=true`;
+- retry after 1, 2, 4, 8, 16, then at most 30 seconds while enabled;
+- register one deduplicated unresolved error after the third consecutive
+  failed retry or seven elapsed seconds from disconnect, whichever comes first;
+- clear it and reset backoff on recovery.
+
+Closing the master switch or exiting Rózsa terminates and reaps every child
+started by Rózsa. Processes not started by Rózsa are never terminated.
+
+Dashboard startup, snapshot/SSE connection, and browser opening use stable
+per-project notification IDs:
+`dev-flow.dashboard-start:<project-hash>`,
+`dev-flow.connection:<project-hash>`, and
+`dev-flow.dashboard-open:<project-hash>`, where the hash covers canonical root
+and full revision identity. CLI discovery uses the global `dev-flow.cli` ID.
+The matching successful recovery resolves each condition. Intentional
+disable/reclamation resolves the affected integration-owned conditions without
+emitting a new notification.
+
+### 6. Activity, reclamation, and memory
+
+The GUI reports session start/stop/project-change activity to the registry.
+`finish_interaction`, abort/failure completion, permission/user-question
+resolution, session close, and session switch must leave the registry with an
+accurate active/inactive state. Waiting permission or user input counts as
+active. Store exact runtime `last_stop_at`; do not substitute session
+`modified`.
+
+Sweep once per minute. A revision service is time-reclaimable when:
+
+- it is not the currently displayed project/revision;
+- no associated session is active;
+- the newest associated stop time is at least 15 minutes old.
+
+The soft budget is:
+
+```text
+max(total physical memory × 5%, 256 MiB)
+```
+
+Count Rózsa-started dashboard RSS plus serialized retained-snapshot size and a
+documented fixed registry overhead. When over budget, reclaim eligible services
+in least-recently-used order, preferring those past 15 minutes. If necessary,
+reclaim the oldest undisplayed inactive service before 15 minutes. Never reclaim
+the displayed service or an active-session service merely for the soft budget.
+
+Reclamation first closes Rózsa's SSE and waits up to the known dashboard
+no-client shutdown window, capped at 35 seconds. If a supported tested `dow`
+child exits, reap it. If it remains alive, classify it
+`PossibleExternalClient`, infer that a browser dashboard may still be connected,
+and never force-kill it for time or memory pressure. Retain only a compact stale
+snapshot and URL, and recheck protected children once per minute. Revisit probes
+the old URL before starting a replacement. Intentional reclamation never creates
+an error.
+
+The memory threshold is a soft budget, not a hard cap: displayed/active services
+and `PossibleExternalClient` children may keep usage above it. The registry
+reports that protected usage in diagnostics and continues reclaiming other
+eligible services. This explicitly favors not destroying a dashboard the user
+may have open over strict budget enforcement.
+
+### 7. GUI IPC and presentation
+
+Extend `SidebarSnapshot` with an optional `DevFlowSidebarSnapshot` containing:
+
+```text
+project key/revision
+open task count
+open issue count
+claimed item summaries
+stale flag
+availability
+dashboard availability
+```
+
+Count Tasks in `Pending|InProgress` and Issues in `Open|InProgress`; claimed
+items are the `InProgress` subset and are not double-counted. An initialized
+Ready project with no open work displays `0 Tasks · 0 Issues`. An uninitialized
+project displays no count row.
+
+The sidebar uses `ResizeObserver` and measured row height. It reserves a usable
+minimum session-list area, displays as many claimed rows as fit, and ends with
+`more N` for hidden rows. The summary, claimed rows, and `more N` invoke a typed
+detail request. The backend emits a main-WebView request containing project key,
+snapshot revision, and target; the main view rejects a stale/mismatched request.
+
+The read-only overlay shows the fields available in the domain snapshot. It is
+an anchored panel beside the divider at wide sizes and a main-content sheet at
+narrow sizes. It supports focus management, Escape, outside-click dismissal,
+and keyboard navigation, and contains no mutation controls.
+
+Add Dashboard immediately above Settings. `open_dev_flow_dashboard` ensures or
+reuses the current project service, then uses the Tauri opener plugin. Missing
+CLI, disabled integration, uninitialized project, startup, and failure states
+have explicit disabled/loading/error UI. Successful opening is silent.
+
+### 8. Structured Bash result presentation
+
+`dev_flow::command` uses a conservative finite-state scanner that respects
+single/double quotes and escapes. It rejects unclosed quoting and top-level
+`&&`, `||`, `;`, newline lists, background execution, loops, substitutions used
+as the final executable, and indirect scripts.
+
+Accept:
+
+- standalone `dow task create`, `dow issue create`, `dow claim <ids...>`,
+  `dow task done <ids...>`, and `dow issue close <ids...>`;
+- a single pipeline whose final stage is exactly Task/Issue create;
+- stdin redirection into Task/Issue create;
+- `dow` or the validated absolute executable as the final executable.
+
+The producer stages before create are not interpreted. Recognition requires
+Bash `details.success == true`, `exit_code == 0`, and `truncated == false`;
+`ToolResultMessage.is_error` alone is insufficient for Bash.
+
+Create IDs are parsed from stdout as one canonical full ID per line. Other IDs
+come from command arguments and normalize to full IDs internally and short
+`T001`/`I001` labels in the UI. Resolve titles from the project snapshot.
+Create performs bounded read refreshes for up to two seconds to cover the
+dashboard watcher debounce. Missing enrichment renders the confirmed action and
+ID with `Details unavailable`.
+
+Store `DevFlowToolPresentation` by tool-call ID in GUI live state and include it
+in `UiSnapshot`. After recognizing a completed action, persist a typed,
+non-message `DevFlowPresentationRecord` in the session log containing the tool
+call ID, execution-time canonical root, full `DevFlowRevisionKey`, action, IDs,
+confirmed titles if any, and timestamp. The entry is backward-compatible
+session metadata and is excluded from visible chat rendering.
+
+On session activation, rebuild presentations from these records plus the
+persisted assistant ToolCalls and Bash ToolResults without re-execution. A later
+snapshot may fill a missing title only when its project key exactly matches the
+recorded execution-time key; switching cwd or branch never associates an old
+action with new-project data. The specialized collapsed card replaces only the
+generic summary; expansion always preserves the original command, the Bash
+tool's combined stdout/stderr output, exit code, duration, timeout, truncation,
+and file-delta details.
+
+### 9. Notification center
+
+Replace the single appended chat notification behavior with a reusable
+main-WebView notification layer outside Main/Settings roots. Keep compatibility
+for existing string `notification` events by mapping them to nonpersistent info
+toasts. Add a structured event:
+
+```rust
+enum AppNotificationEvent {
+    Upsert {
+        id: String,
+        severity: NotificationSeverity,
+        title: String,
+        message: String,
+        timeout_ms: u64,
+    },
+    Resolve { id: String },
+}
+```
+
+Each toast owns its timer; hovering pauses only that timer. Toasts stack from the
+safe top-right area and animate upward independently when an earlier toast
+leaves. Info/success events are emitted only when user feedback is necessary.
+Warnings disappear after six seconds. Errors show for six seconds, then remain
+as unresolved entries behind a circled `!` with the unresolved count.
+
+Stable IDs deduplicate repeated failures. Closing a toast does not resolve the
+condition. Recovery emits `Resolve` and decrements the count. Hover/focus opens
+the error list, pointer transition into the list keeps it open, click pins it,
+and Escape closes it. The component is accessible without color and adapts to
+font/window changes.
+
+Integration failures use the per-project IDs defined in the dashboard lifecycle
+section. Startup, connection, incompatible API, invalid CLI, and browser-open
+failures are errors; successful recovery or the relevant intentional shutdown
+resolves them. Routine readiness and successful dashboard opening remain silent.
+
+### 10. Documentation and generated structure
+
+Create `docs/gui/DEV_FLOW_INTEGRATION.md`. Synchronize
+`docs/gui/ARCHITECTURE.md`, `UI_USAGE_GUIDELINES.md`, `TERMINOLOGY.md`,
+`FRONTEND_TERMINOLOGY.md`, Related Docs/backlinks, and
+`docs/gui/prototype/`. Update `AGENTS.md` only if implementation changes project
+structure or workflow conventions. Run `make-tree --write` for every supported
+Rust file whose symbol structure changes; never edit generated trees manually.
+
+## Acceptance
+
+- SPEC-AC-001: With no custom path, tests prove discovery order covers PATH,
+  Homebrew, Cargo, and npm; each executable is validated by a two-second
+  `dow --version` call, and an invalid custom path does not silently fall back.
+- SPEC-AC-002: With a compatible CLI and integration enabled, a project lacking
+  the current branch's readable `STATUS.yaml` or a successful two-second
+  `dow status` starts no dashboard; completing `dow init` during the run causes
+  readiness detection without restarting Rózsa. Detached and ambiguous non-Git
+  roots fail explicitly rather than selecting an arbitrary branch.
+- SPEC-AC-003: Sessions with the same canonical root and revision share one
+  child and snapshot; named, unborn, detached, and non-Git identities remain
+  distinct; a worktree branch change re-associates all its sessions; and
+  switching projects or branches never shows another project's snapshot.
+- SPEC-AC-004: Contract tests prove the integration client sends only loopback
+  GET requests to `/api/data` and `/api/events`; it exposes and invokes no
+  dashboard mutation route.
+- SPEC-AC-005: A valid initial snapshot and SSE update atomically replace state;
+  malformed/oversized data preserves the last good snapshot as stale. Tests
+  enforce one-second connect, five-second request/header, 45-second SSE-stall,
+  deterministic retry/error timing, cancellation, and one deduplicated
+  incompatibility/connection error that resolves on recovery.
+- SPEC-AC-006: Sidebar counts include only open Task/Issue statuses, claimed
+  items appear once beneath the count, and available height/font changes yield
+  the correct visible rows and `more N` without making Sessions unusable.
+- SPEC-AC-007: Summary, claimed-row, and `more N` interactions open the correct
+  read-only responsive detail UI with keyboard focus, Escape, and no mutation
+  controls.
+- SPEC-AC-008: Dashboard is immediately above Settings; one click starts or
+  reuses one project service and opens its loopback URL, while unavailable states
+  are explicit; startup/open failures create resolvable per-project errors; and
+  successful opening emits no notification.
+- SPEC-AC-009: Recognizer tests cover direct commands, file/stdin and arbitrary
+  producer pipelines ending in create, multi-ID output, absolute `dow`, quoting,
+  failure/truncation, and rejection of unsupported compound commands.
+- SPEC-AC-010: Successful supported calls render Created/Claimed/Completed/Closed
+  Task/Issue cards with short ID and title when available; reload reconstructs
+  them from persisted execution-time project/revision records without execution
+  or cross-project enrichment, and expansion preserves raw Bash evidence.
+- SPEC-AC-011: Dev-flow Settings exposes CLI/version/path/project diagnostics,
+  master/sidebar switches, Auto/custom path, rescan, and official install
+  commands; dependent controls disable when the master switch or CLI is
+  unavailable. Tests prove global scope, disable cleanup, valid executable
+  replacement/restart, and invalid-custom-path failure without fallback.
+- SPEC-AC-012: Notification tests prove downward stacking, independent six-second
+  timers, per-toast hover pause, upward reflow, deduplication, hover/focus error
+  expansion, click pinning, and automatic unresolved-count reduction on Resolve.
+- SPEC-AC-013: Lifecycle tests prove 15-minute idle reclamation, the
+  `max(memory*5%, 256 MiB)` soft budget, LRU pressure ordering, active/current
+  protection, tested no-client shutdown, `PossibleExternalClient` protection
+  with observable temporary budget excess, stale-cache reuse, and idempotent
+  child cleanup.
+- SPEC-AC-014: Real-`dow` contract tests run only in unique
+  `tmp/test_env/<test-name>-<unique-id>/` roots with per-command cwd and owned
+  ports/processes; they never access or modify the development `.dev-doc`.
+- SPEC-AC-015: Relevant focused Cargo/frontend tests, formatting, clippy, real
+  isolated contract verification, responsive macOS GUI validation, generated
+  FrameworkTrees, and synchronized GUI docs/prototype all pass before delivery.
+
+## Risks
+
+- The dashboard API is unversioned. Required-field validation, fixture contract
+  tests, response caps, and the private adapter contain the blast radius.
+- `dow dashboard` currently resolves branch-specific doc roots and may create a
+  missing branch directory. Rózsa validates the exact branch marker before
+  startup and refuses detached/ambiguous selection, containing this behavior
+  until dev-flow exposes explicit revision selection.
+- SSE/no-client shutdown behavior may change. Process lifecycle assumptions stay
+  inside `dashboard.rs`; supported versions receive real contract coverage, and
+  a surviving child is protected as a possible external-browser service.
+- RSS collection adds a dependency and is approximate. Resource decisions use a
+  soft budget and never kill current/active work solely for budget compliance.
+- Conservative shell recognition may leave valid complex commands generic. This
+  is preferred to false success presentation.
+- Current `/api/data` includes document bodies. Response caps and immediate DTO
+  reduction prevent those bodies from becoming retained application state.
+
+## Test Plan
+
+- Pure app tests with fake executable runners, clock, memory reader, process
+  launcher, HTTP transport, cancellation, session metadata, and SSE chunks.
+- App integration tests against a loopback mock server covering startup, schema
+  compatibility, deadlines, stalled streams, reconnect/error timing,
+  branch/project isolation, and read-only requests.
+- GUI integration/contract tests for IPC snapshots, settings, tool presentation,
+  details, notification behavior, and responsive DOM.
+- Opt-in real CLI test using the discovered `dow`, a
+  `tempfile::Builder::tempdir_in("tmp/test_env")` root, `Command::current_dir`,
+  a unique Git repository and owned port. The harness owns/reaps every child and
+  retains actionable diagnostics on failure.
+- Manual macOS validation at minimum/normal/large window sizes and UI font sizes,
+  including sidebar fit, scene switching, dashboard opening, notification
+  stacking, and returning to a cached project.
+
+## Self Check
+
+- [x] Goal is clear
+- [x] Scope and non-goals are explicit
+- [x] Requirements trace to confirmed Brainstorm decisions
+- [x] Module and dependency boundaries preserve crate direction
+- [x] API mutation paths are excluded
+- [x] Project/branch/session ownership is explicit
+- [x] Failure, stale-data, resource, and cleanup paths are covered
+- [x] Acceptance criteria are testable
+- [x] Real `dow` tests are isolated from the development project
+- [x] Matches quick mode without task decomposition

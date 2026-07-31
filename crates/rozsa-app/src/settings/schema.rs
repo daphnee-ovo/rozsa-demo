@@ -9,6 +9,9 @@
 // ├── struct PermissionSettings
 // ├── impl PermissionSettings
 // ├── default()
+// ├── struct DevFlowSettings
+// ├── impl DevFlowSettings
+// ├── default()
 // ├── struct Settings
 // ├── impl Settings
 // ├── default()
@@ -19,6 +22,7 @@
 // ├── impl AppearanceSettings
 // ├── validate()
 // ├── struct PartialSettings
+// ├── struct PartialDevFlowSettings
 // ├── struct PartialAppearanceSettings
 // ├── struct PartialCompactionSettings
 // ├── struct PartialRetrySettings
@@ -26,6 +30,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 
 /// Compaction settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +103,25 @@ impl Default for PermissionSettings {
     }
 }
 
+/// Global settings for the optional, read-only dev-flow integration.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevFlowSettings {
+    pub enabled: bool,
+    pub show_sidebar_status: bool,
+    pub executable_path: Option<PathBuf>,
+}
+
+impl Default for DevFlowSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            show_sidebar_status: true,
+            executable_path: None,
+        }
+    }
+}
+
 /// Fully resolved settings (all fields have values)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -130,6 +154,8 @@ pub struct Settings {
     pub skills: BTreeMap<String, bool>,
     #[serde(default)]
     pub appearance: AppearanceSettings,
+    #[serde(default)]
+    pub dev_flow: DevFlowSettings,
 }
 
 impl Default for Settings {
@@ -154,6 +180,7 @@ impl Default for Settings {
             tools: BTreeMap::new(),
             skills: BTreeMap::new(),
             appearance: AppearanceSettings::default(),
+            dev_flow: DevFlowSettings::default(),
         }
     }
 }
@@ -275,6 +302,19 @@ pub struct PartialSettings {
     pub skills: Option<BTreeMap<String, bool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<PartialAppearanceSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dev_flow: Option<PartialDevFlowSettings>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialDevFlowSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_sidebar_status: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

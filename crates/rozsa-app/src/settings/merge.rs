@@ -1,6 +1,7 @@
 // FrameworkTree
 // merge.rs
 // ├── merge_settings()
+// ├── merge_dev_flow()
 // ├── merge_capabilities()
 // ├── merge_appearance()
 // ├── merge_compaction()
@@ -8,9 +9,9 @@
 // └── merge_permissions()
 
 use super::schema::{
-    AppearanceSettings, CompactionSettings, PartialAppearanceSettings, PartialCompactionSettings,
-    PartialPermissionSettings, PartialRetrySettings, PartialSettings, PermissionSettings,
-    RetrySettings, Settings,
+    AppearanceSettings, CompactionSettings, DevFlowSettings, PartialAppearanceSettings,
+    PartialCompactionSettings, PartialDevFlowSettings, PartialPermissionSettings,
+    PartialRetrySettings, PartialSettings, PermissionSettings, RetrySettings, Settings,
 };
 
 /// Merge settings: base + overlay → resolved
@@ -67,6 +68,26 @@ pub fn merge_settings(base: &Settings, overlay: &PartialSettings) -> Settings {
         tools: merge_capabilities(&base.tools, overlay.tools.as_ref()),
         skills: merge_capabilities(&base.skills, overlay.skills.as_ref()),
         appearance: merge_appearance(&base.appearance, overlay.appearance.as_ref()),
+        dev_flow: merge_dev_flow(&base.dev_flow, overlay.dev_flow.as_ref()),
+    }
+}
+
+fn merge_dev_flow(
+    base: &DevFlowSettings,
+    overlay: Option<&PartialDevFlowSettings>,
+) -> DevFlowSettings {
+    match overlay {
+        None => base.clone(),
+        Some(overlay) => DevFlowSettings {
+            enabled: overlay.enabled.unwrap_or(base.enabled),
+            show_sidebar_status: overlay
+                .show_sidebar_status
+                .unwrap_or(base.show_sidebar_status),
+            executable_path: overlay
+                .executable_path
+                .clone()
+                .or_else(|| base.executable_path.clone()),
+        },
     }
 }
 

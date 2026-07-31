@@ -20,6 +20,11 @@
 // ├── steering_mode()
 // ├── follow_up_mode()
 // ├── permissions()
+// ├── dev_flow_settings()
+// ├── set_dev_flow_enabled()
+// ├── set_dev_flow_sidebar_status()
+// ├── set_dev_flow_executable_path()
+// ├── set_dev_flow_field()
 // ├── project_path()
 // ├── context_window_preference()
 // ├── context_window_preferences()
@@ -42,7 +47,7 @@
 // └── write_json()
 
 use super::merge::merge_settings;
-use super::schema::{PartialSettings, Settings};
+use super::schema::{DevFlowSettings, PartialSettings, Settings};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -110,6 +115,7 @@ impl SettingsManager {
             let partial = Self::read_partial(&global_path)?;
             resolved = merge_settings(&resolved, &partial);
         }
+        let global_dev_flow = resolved.dev_flow.clone();
 
         // Merge project settings
         if let Some(ref path) = project_path {
@@ -126,6 +132,7 @@ impl SettingsManager {
                 resolved = merge_settings(&resolved, &partial);
             }
         }
+        resolved.dev_flow = global_dev_flow;
 
         resolved
             .appearance
@@ -148,6 +155,7 @@ impl SettingsManager {
             let partial = Self::read_partial(&self.global_path)?;
             resolved = merge_settings(&resolved, &partial);
         }
+        let global_dev_flow = resolved.dev_flow.clone();
 
         if let Some(ref path) = self.project_path {
             if path.exists() {
@@ -162,6 +170,7 @@ impl SettingsManager {
                 resolved = merge_settings(&resolved, &partial);
             }
         }
+        resolved.dev_flow = global_dev_flow;
 
         self.resolved = resolved;
         self.resolved
@@ -228,6 +237,70 @@ impl SettingsManager {
 
     pub fn permissions(&self) -> &super::schema::PermissionSettings {
         &self.resolved.permissions
+    }
+
+    pub fn dev_flow_settings(&self) -> &DevFlowSettings {
+        &self.resolved.dev_flow
+    }
+
+    pub fn set_dev_flow_enabled(&mut self, enabled: bool) -> Result<(), SettingsError> {
+        self.set_dev_flow_field("enabled", Some(serde_json::Value::Bool(enabled)))
+    }
+
+    pub fn set_dev_flow_sidebar_status(&mut self, enabled: bool) -> Result<(), SettingsError> {
+        self.set_dev_flow_field("showSidebarStatus", Some(serde_json::Value::Bool(enabled)))
+    }
+
+    pub fn set_dev_flow_executable_path(
+        &mut self,
+        executable_path: Option<PathBuf>,
+    ) -> Result<(), SettingsError> {
+        if executable_path
+            .as_deref()
+            .is_some_and(|path| !path.is_absolute())
+        {
+            return Err(SettingsError::Invalid {
+                message: "dev-flow executable path must be absolute".to_owned(),
+            });
+        }
+        let value = executable_path
+            .map(|path| serde_json::Value::String(path.as_os_str().to_string_lossy().into_owned()));
+        self.set_dev_flow_field("executablePath", value)
+    }
+
+    fn set_dev_flow_field(
+        &mut self,
+        field: &str,
+        value: Option<serde_json::Value>,
+    ) -> Result<(), SettingsError> {
+        let path = self.global_path.clone();
+        let mut settings = read_json_object_or_empty(&path)?;
+        let root = settings
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: format!("settings root must be an object: {}", path.display()),
+            })?;
+        let dev_flow = root
+            .entry("devFlow".to_owned())
+            .or_insert_with(|| serde_json::json!({}));
+        let dev_flow = dev_flow
+            .as_object_mut()
+            .ok_or_else(|| SettingsError::Invalid {
+                message: "settings.devFlow must be an object".to_owned(),
+            })?;
+        match value {
+            Some(value) => {
+                dev_flow.insert(field.to_owned(), value);
+            }
+            None => {
+                dev_flow.remove(field);
+            }
+        }
+        if dev_flow.is_empty() {
+            root.remove("devFlow");
+        }
+        write_json(&path, &settings)?;
+        self.reload()
     }
 
     pub fn project_path(&self) -> Option<&Path> {
