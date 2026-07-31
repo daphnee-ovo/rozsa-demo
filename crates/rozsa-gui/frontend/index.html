@@ -2978,6 +2978,147 @@ body.native-split-main .settings-dialog { background: var(--bg); }
 #fallbackSidebarMount,
 #fallbackSettingsNavigationMount { display: none; }
 </style>
+
+/* ============ 通知中心（主视图全局层，位于 Main/Settings 根之外） ============ */
+.notification-center {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.notification-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.notification-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(20 10 15 / 20%);
+  animation: notification-in 0.18s ease-out;
+}
+@keyframes notification-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.notification-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.notification-info .notification-icon { color: var(--accent); }
+.notification-success .notification-icon { color: var(--success); }
+.notification-warning .notification-icon { color: var(--accent); }
+.notification-error .notification-icon { color: var(--error); }
+.notification-warning { border-color: var(--accent-border); }
+.notification-error { border-color: var(--error); }
+.notification-body { min-width: 0; flex: 1; }
+.notification-title { font-weight: 600; font-size: 13px; color: var(--fg); }
+.notification-message { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+.notification-close {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.notification-close:hover { background: var(--code-bg); color: var(--fg); }
+.notification-close:focus-visible,
+.notification-error-tray-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+.notification-error-tray {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.notification-error-tray[hidden] { display: none; }
+.notification-error-tray-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--error);
+  background: var(--surface);
+  color: var(--error);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.notification-error-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.notification-error-list {
+  width: 100%;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(20 10 15 / 20%);
+}
+.notification-error-list[hidden] { display: none; }
+.notification-error-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.notification-error-item:last-child { border-bottom: none; }
+.notification-error-item-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--error);
+  color: var(--error);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+.notification-error-item-title { font-weight: 600; font-size: 13px; color: var(--fg); }
+.notification-error-item-message { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+
 </head>
 <body>
 
@@ -3331,6 +3472,18 @@ body.native-split-main .settings-dialog { background: var(--bg); }
   <div id="nativeSidebarEdgeTrigger"></div>
 </div>
 
+<!-- ============ 通知中心：Main/Settings 场景根之外的全局层 ============ -->
+<div id="notificationCenter" class="notification-center" aria-live="polite">
+  <div id="notificationStack" class="notification-stack"></div>
+  <div id="notificationErrorTray" class="notification-error-tray" hidden>
+    <button id="notificationErrorTrayButton" type="button" class="notification-error-tray-button"
+      aria-label="Unresolved errors" aria-expanded="false">
+      <span class="notification-error-icon" aria-hidden="true">!</span>
+      <span id="notificationErrorCount">0</span>
+    </button>
+    <div id="notificationErrorList" class="notification-error-list" role="list" hidden></div>
+  </div>
+</div>
 
 <!-- ============ Tauri IPC 脚本 ============ -->
 

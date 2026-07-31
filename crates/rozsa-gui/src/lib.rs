@@ -8,6 +8,7 @@
 // ├── mod key_bindings
 // ├── mod native_split_view
 // ├── mod native_titlebar
+// ├── mod notifications
 // ├── mod scene_router
 // ├── mod state
 // ├── mod turn_diff
@@ -31,6 +32,7 @@ pub mod key_bindings;
 mod native_split_view;
 #[cfg(target_os = "macos")]
 mod native_titlebar;
+pub mod notifications;
 pub mod scene_router;
 pub mod state;
 pub mod turn_diff;

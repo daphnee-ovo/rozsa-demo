@@ -223,6 +223,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   configureAttachmentPicker();
   await configureNativeFileDrag();
   setupComposerHints();
+  setupNotificationErrorTray();
 
   await listen('gui-scene-snapshot', ev => applyGuiSceneSnapshot(ev.payload));
   await listen('theme-state', ev => applyMainThemeState(ev.payload));
@@ -231,6 +232,14 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('permission-request', ev => showPermission(ev.payload));
   await listen('question-request', ev => showUserQuestion(ev.payload));
   await listen('error', ev => showError(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
+  await listen('app-notification', ev => {
+    const payload = ev.payload;
+    if (payload && payload.type === 'upsert') {
+      upsertNotification(payload);
+    } else if (payload && payload.type === 'resolve') {
+      resolveNotification(payload.id);
+    }
+  });
   await listen('notification', ev => showNotification(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
   await listen('models-updated', async () => {
     try {
@@ -4254,6 +4263,13 @@ document.addEventListener('keydown', function(e) {
   // intact; Enter/send, autocomplete, and DOM replacement run after commit.
   if (isInputComposing || e.isComposing || e.keyCode === 229) return;
 
+  // Notification error list: Escape closes it (and unpins) before other handling.
+  if (e.key === 'Escape' && !notificationErrorList().hidden) {
+    e.preventDefault();
+    closeNotificationErrorList();
+    return;
+  }
+
   // A first Escape keeps its contextual behavior (dismiss, deny, close).
   // A second Escape within the window always stops the active interaction.
   if (e.key === 'Escape' && isStreaming) {
@@ -4525,16 +4541,226 @@ function showError(message) {
   container.scrollTop = container.scrollHeight;
 }
 
+// ============ 通知中心：主视图全局 toast 层 ============
+const NOTIFICATION_TIMEOUT_MS = 6000;
+const notificationToasts = new Map();
+const unresolvedErrors = new Map();
+let legacyNotificationCounter = 0;
+let notificationErrorListPinned = false;
+
+function notificationStack() {
+  return document.getElementById('notificationStack');
+}
+
+function notificationErrorTray() {
+  return document.getElementById('notificationErrorTray');
+}
+
+function notificationErrorList() {
+  return document.getElementById('notificationErrorList');
+}
+
+function notificationErrorTrayButton() {
+  return document.getElementById('notificationErrorTrayButton');
+}
+
+function notificationErrorCount() {
+  return document.getElementById('notificationErrorCount');
+}
+
+function notificationIcon(severity) {
+  if (severity === 'success') return '✓';
+  if (severity === 'error') return '!';
+  return 'i';
+}
+
 function showNotification(message) {
-  const container = document.getElementById('chatMessages');
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = 'msg msg-assistant';
-  div.innerHTML = '<div class="msg-avatar" style="background:var(--success-bg);color:var(--success)">i</div>' +
-    '<div class="msg-body"><div class="msg-role">System</div>' +
-    '<div class="msg-content"><p>' + escapeHtml(message) + '</p></div></div>';
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
+  legacyNotificationCounter += 1;
+  upsertNotification({
+    id: 'legacy-' + legacyNotificationCounter,
+    severity: 'info',
+    title: 'Rózsa',
+    message: String(message),
+    timeoutMs: NOTIFICATION_TIMEOUT_MS,
+  });
+}
+
+function upsertNotification(payload) {
+  const id = String(payload.id);
+  const severity = String(payload.severity || 'info');
+  const title = String(payload.title || 'Rózsa');
+  const message = String(payload.message || '');
+  const timeoutMs = Number.isFinite(payload.timeoutMs) && payload.timeoutMs > 0
+    ? payload.timeoutMs
+    : NOTIFICATION_TIMEOUT_MS;
+  const existing = notificationToasts.get(id);
+  if (existing) {
+    existing.element.querySelector('.notification-title').textContent = title;
+    existing.element.querySelector('.notification-message').textContent = message;
+    existing.element.className = 'notification-toast notification-' + severity;
+    existing.severity = severity;
+    existing.title = title;
+    existing.message = message;
+    existing.remainingMs = timeoutMs;
+    existing.expiresAt = performance.now() + timeoutMs;
+    clearTimeout(existing.timer);
+    existing.timer = setTimeout(() => expireNotification(id), timeoutMs);
+    return;
+  }
+  if (unresolvedErrors.has(id)) {
+    unresolvedErrors.set(id, { title, message });
+    updateNotificationErrorTray();
+    return;
+  }
+  const element = document.createElement('div');
+  element.className = 'notification-toast notification-' + severity;
+  element.setAttribute('role', severity === 'error' ? 'alert' : 'status');
+  element.innerHTML =
+    '<div class="notification-icon" aria-hidden="true">' + notificationIcon(severity) + '</div>' +
+    '<div class="notification-body">' +
+    '<div class="notification-title"></div>' +
+    '<div class="notification-message"></div>' +
+    '</div>' +
+    '<button class="notification-close" type="button" aria-label="Dismiss notification">✕</button>';
+  element.querySelector('.notification-title').textContent = title;
+  element.querySelector('.notification-message').textContent = message;
+  element.querySelector('.notification-close').addEventListener('click', () => dismissToast(id));
+  element.addEventListener('pointerenter', () => pauseToastTimer(id));
+  element.addEventListener('pointerleave', () => resumeToastTimer(id));
+  notificationStack().appendChild(element);
+  const toast = {
+    element,
+    timer: null,
+    remainingMs: timeoutMs,
+    severity,
+    title,
+    message,
+  };
+  notificationToasts.set(id, toast);
+  toast.expiresAt = performance.now() + timeoutMs;
+  toast.timer = setTimeout(() => expireNotification(id), timeoutMs);
+}
+
+function pauseToastTimer(id) {
+  const toast = notificationToasts.get(id);
+  if (!toast || toast.timer == null) return;
+  clearTimeout(toast.timer);
+  toast.timer = null;
+  toast.remainingMs = Math.max(0, toast.expiresAt - performance.now());
+}
+
+function resumeToastTimer(id) {
+  const toast = notificationToasts.get(id);
+  if (!toast || toast.timer != null) return;
+  if (toast.remainingMs <= 0) {
+    expireNotification(id);
+    return;
+  }
+  toast.expiresAt = performance.now() + toast.remainingMs;
+  toast.timer = setTimeout(() => expireNotification(id), toast.remainingMs);
+}
+
+function expireNotification(id) {
+  const toast = notificationToasts.get(id);
+  if (!toast) return;
+  notificationToasts.delete(id);
+  clearTimeout(toast.timer);
+  toast.element.remove();
+  if (toast.severity === 'error') {
+    unresolvedErrors.set(id, { title: toast.title, message: toast.message });
+  }
+  updateNotificationErrorTray();
+}
+
+function dismissToast(id) {
+  const toast = notificationToasts.get(id);
+  if (!toast) return;
+  notificationToasts.delete(id);
+  clearTimeout(toast.timer);
+  toast.element.remove();
+  if (toast.severity === 'error') {
+    unresolvedErrors.set(id, { title: toast.title, message: toast.message });
+  }
+  updateNotificationErrorTray();
+}
+
+function resolveNotification(id) {
+  const toast = notificationToasts.get(id);
+  if (toast) {
+    notificationToasts.delete(id);
+    clearTimeout(toast.timer);
+    toast.element.remove();
+  }
+  unresolvedErrors.delete(id);
+  updateNotificationErrorTray();
+}
+
+function isNotificationErrorListOpen() {
+  return !notificationErrorList().hidden;
+}
+
+function openNotificationErrorList() {
+  notificationErrorList().hidden = false;
+  notificationErrorTrayButton().setAttribute('aria-expanded', 'true');
+  renderNotificationErrorList();
+}
+
+function closeNotificationErrorList() {
+  notificationErrorList().hidden = true;
+  notificationErrorTrayButton().setAttribute('aria-expanded', 'false');
+  notificationErrorListPinned = false;
+}
+
+function renderNotificationErrorList() {
+  const list = notificationErrorList();
+  list.textContent = '';
+  for (const [id, entry] of unresolvedErrors) {
+    const item = document.createElement('div');
+    item.className = 'notification-error-item';
+    item.setAttribute('role', 'listitem');
+    item.innerHTML =
+      '<span class="notification-error-item-icon" aria-hidden="true">!</span>' +
+      '<div class="notification-error-item-body">' +
+      '<div class="notification-error-item-title"></div>' +
+      '<div class="notification-error-item-message"></div>' +
+      '</div>';
+    item.querySelector('.notification-error-item-title').textContent = entry.title;
+    item.querySelector('.notification-error-item-message').textContent = entry.message;
+    list.appendChild(item);
+  }
+}
+
+function updateNotificationErrorTray() {
+  const count = unresolvedErrors.size;
+  notificationErrorCount().textContent = String(count);
+  notificationErrorTray().hidden = count === 0;
+  if (count === 0) closeNotificationErrorList();
+  if (isNotificationErrorListOpen()) renderNotificationErrorList();
+}
+
+function setupNotificationErrorTray() {
+  const tray = notificationErrorTray();
+  const button = notificationErrorTrayButton();
+  button.addEventListener('click', () => {
+    if (isNotificationErrorListOpen()) {
+      closeNotificationErrorList();
+    } else {
+      openNotificationErrorList();
+      notificationErrorListPinned = true;
+    }
+  });
+  tray.addEventListener('pointerenter', () => {
+    if (unresolvedErrors.size > 0) openNotificationErrorList();
+  });
+  tray.addEventListener('pointerleave', () => {
+    if (!notificationErrorListPinned) closeNotificationErrorList();
+  });
+  button.addEventListener('focusin', () => {
+    if (unresolvedErrors.size > 0) openNotificationErrorList();
+  });
+  button.addEventListener('focusout', () => {
+    if (!notificationErrorListPinned) closeNotificationErrorList();
+  });
 }
 
 function showHelp(topic) {
