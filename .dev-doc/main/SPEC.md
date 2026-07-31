@@ -51,6 +51,82 @@ reusable notification center without coupling GUI code to dev-flow API details.
 | R-010 Bounded service growth | User-defined lifecycle | 15-minute idle sweep and memory soft budget |
 | R-011 Isolated real CLI tests | User constraint | `tmp/test_env` contract-test harness |
 
+## Implementation Contract
+
+This section is normative for every implementation Task. It exists so a
+cold-start implementer can make the same decisions without access to the design
+conversation.
+
+### Required reading and decision order
+
+For each Task, read this contract, the Task's referenced design section, and
+its referenced acceptance criteria before editing. The Task's file scope and
+dependencies are mandatory. A narrower Task must not absorb later ownership
+because an adjacent implementation looks convenient. When the Task and SPEC
+cannot both be satisfied, stop and update the artifacts through dev-flow; do
+not guess.
+
+### Cross-task invariants
+
+1. **Read-only boundary**: dashboard integration exposes only loopback GET
+   `/api/data` and GET `/api/events`. No public generic request method, POST
+   route, or Task/Issue mutation operation is allowed. Direct `.dev-doc` access
+   is limited to locating and opening the selected `STATUS.yaml` marker; all
+   Task/Issue data comes from the private dashboard adapter.
+2. **Compatibility boundary**: dashboard paths, DTOs, raw status strings, SSE
+   framing, and child-process arguments remain private to app-layer adapters.
+   Registry, GUI, session persistence, and frontend code consume Rózsa-owned
+   typed domain models only.
+3. **Identity boundary**: the service key is canonical root plus full
+   `DevFlowRevisionKey`. `NamedBranch`, `UnbornBranch`, `DetachedCommit`, and
+   `NonGit` are never collapsed. Detached is an explicit unsupported
+   availability state; NonGit with more than one readable marker is explicit
+   ambiguity.
+4. **Readiness boundary**: readable marker → successful two-second JSON
+   `dow status` → service startup → first valid snapshot → Ready. A failure at
+   any earlier stage starts no dashboard and cannot be represented as Ready.
+5. **Ownership boundary**: services and snapshots belong to a project key, not
+   a session. Session selection changes association/subscription. It must not
+   destroy another revision's service or enrich records across project keys.
+6. **Lifecycle boundary**: only Rózsa-owned children may be stopped by disable,
+   replacement, reclamation, or shutdown. `PossibleExternalClient` is protected.
+   The memory threshold is soft and never authorizes killing active/displayed
+   or possibly external work.
+7. **Presentation boundary**: open counts exclude closed/done work; claimed is
+   the API `InProgress` subset. Routine Ready/sync/open success is silent.
+   Structured Bash cards require confirmed success and preserve the full raw
+   Bash result when expanded.
+8. **Persistence boundary**: restored presentation uses persisted
+   execution-time project/revision identity and never executes commands. A
+   current snapshot may add a title only on exact project-key equality.
+9. **Test isolation boundary**: deterministic tests inject runners, clocks,
+   factories, transports, and memory readers. A real `dow` test must use a
+   unique `tmp/test_env/<test-name>-<unique-id>/` root, explicit per-command cwd,
+   owned port/PID cleanup, and before/after proof that the development
+   `.dev-doc` was untouched.
+10. **Structure boundary**: preserve crate dependency direction, reuse existing
+    public components, keep settings global, and run `make-tree --write` for
+    every supported Rust file whose symbol structure changes.
+
+### Task ownership matrix
+
+| Task | Required output | Explicit non-goals |
+|------|-----------------|--------------------|
+| T003 | Resolver, marker/status probe, shared registry service handle, whole-worktree reassociation | Activity timestamps, reclamation, GUI/session event wiring |
+| T004 | Activity state, sweep/LRU/memory accounting, protected child handling and stale reuse | Frontend behavior and settings IPC |
+| T005 | Generic notification events/store/timers/accessibility | Dev-flow runtime orchestration and project errors |
+| T006 | Integration facade, settings/diagnostics commands, discovery/restart/disable and activity/rescan wiring | Sidebar/detail and structured Bash card UI |
+| T007 | Responsive sidebar/detail snapshots and constrained loopback Dashboard opening | Shell parsing, persistence, mutation controls |
+| T008 | Side-effect-free shell recognizer and typed presentation model | Command execution, persistence, GUI rendering |
+| T009 | Backward-compatible typed metadata and no-execution reconstruction | Visual rendering and cross-project title lookup |
+| T010 | Structured collapsed card and evidence-preserving expansion | Recognition grammar and storage schema |
+| T011 | Real supported-`dow` contract proof in isolated temporary projects | Feature implementation and skipped-as-passed tests |
+| T012 | Final user/developer docs, backlinks, prototype and scoped checks | Full TEST phase, release, or undocumented product changes |
+
+The dependency graph, rather than numeric order alone, determines scheduling.
+T013 is a documentation gate before T003 and the independent notification Task
+T005; all other unfinished work depends on those paths transitively.
+
 ## Design
 
 ### 1. Module and dependency boundaries

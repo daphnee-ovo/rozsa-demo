@@ -36,6 +36,89 @@ The integration should:
 | Detail UI | Read-only responsive detail overlay in the main content area | Sidebar WebView width cannot reliably contain dashboard-style detail cards |
 | Real CLI tests | Permit real `dow` only inside `tmp/test_env/<test-name>-<unique-id>/` | Exercises the real contract without modifying the development project's `.dev-doc` |
 
+## Implementation Handoff Contract
+
+This section is the cold-start handoff for an implementer who has no access to
+the design conversation. It is normative together with the SPEC and the active
+Task returned by `dow task show <ID>`.
+
+### Authority and conflict handling
+
+1. Explicit user decisions recorded in this document define product intent.
+2. The SPEC translates that intent into technical invariants and acceptance
+   criteria.
+3. Each Task narrows the SPEC to one file boundary and verification target.
+4. A Task may specialize the SPEC but may not silently weaken or contradict it.
+5. If these artifacts conflict, stop implementation and align the SPEC and Task
+   through dev-flow before choosing an interpretation. Do not use chat history,
+   a guessed fallback, or an adjacent Task as an implicit requirement.
+
+### Stable vocabulary
+
+- **Project root**: the canonical Git top-level directory; for NonGit, the
+  canonical session cwd.
+- **Revision**: exactly one of `NamedBranch`, `UnbornBranch`,
+  `DetachedCommit`, or `NonGit`. It is part of the service key.
+- **Project key**: canonical project root plus the full revision identity.
+- **Service**: one registry-owned dashboard connection/snapshot for one project
+  key. It is shared by sessions and is not session-owned.
+- **Relevant project**: selected/displayed or associated with an active session;
+  uninitialized relevant projects receive the lightweight two-second probe.
+- **Ready**: marker and `dow status` validation passed and the service factory
+  obtained a first valid dashboard snapshot. Marker presence alone is not Ready.
+- **Open work**: Task `Pending|InProgress` and Issue `Open|InProgress`.
+- **Claimed work**: the `InProgress` subset exposed by the dashboard API. Do not
+  invent independent claim state that the current API does not provide.
+- **Owned child**: a dashboard process started by Rózsa. External processes are
+  never terminated by this integration.
+
+### Non-negotiable product invariants
+
+- The feature is optional and is inert until a compatible `dow` executable is
+  detected and validated. Global custom-path failure never falls back silently.
+- Dashboard state is read only through loopback `GET /api/data` and
+  `GET /api/events`. The only direct `.dev-doc` read is the branch-selection
+  `STATUS.yaml` readiness marker; Task/Issue files are never parsed directly.
+- No implementation may install dev-flow, invoke `dow init`, call a dashboard
+  mutation route, or add Task/Issue mutation controls.
+- State follows canonical project root plus revision, not a Rózsa session.
+  Sessions on the same project key share one service and snapshot.
+- Detached revisions remain explicitly unsupported until `dow dashboard` can
+  select an exact revision. Ambiguous NonGit roots must fail instead of guessing.
+- A branch change re-associates all sessions for that worktree and retains the
+  previous revision service for a possible return.
+- Successful dashboard readiness/opening and routine synchronization are silent.
+  Errors toast for six seconds and then remain unresolved behind the circled
+  `!` until the underlying condition resolves.
+- Structured Bash presentation is conservative, occurs only after confirmed
+  success, replaces only the collapsed summary, preserves raw evidence, and
+  never reruns a command during restoration.
+- Every real `dow` invocation is confined to a unique
+  `tmp/test_env/<test-name>-<unique-id>/` root with explicit cwd, owned ports and
+  child cleanup. The development project's `.dev-doc` is never a test target.
+
+### Task ownership and execution order
+
+| Task | Owns | Must leave to later Tasks |
+|------|------|---------------------------|
+| T003 | Project/revision resolution, readiness probe, service sharing and reassociation | Activity/reclamation, GUI/session wiring |
+| T004 | Exact activity, idle/memory reclamation, old-service reuse/protection | GUI event wiring and presentation |
+| T005 | Generic notification state/events and accessible frontend behavior | Dev-flow-specific error production |
+| T006 | Runtime orchestration, settings/diagnostics IPC, session/Bash rescan signals | Sidebar/detail and tool-result presentation |
+| T007 | Sidebar counts/rows, read-only detail, Dashboard browser action | Bash recognition and persistence |
+| T008 | Pure conservative Bash recognizer and presentation domain model | Persistence and GUI rendering |
+| T009 | Typed non-message persistence and no-execution restoration | Visual card rendering |
+| T010 | Collapsed structured card and raw expanded evidence | Parser/persistence semantics |
+| T011 | Mandatory isolated real-`dow` contract coverage | Product features |
+| T012 | Final GUI docs, backlinks, prototype and scoped delivery checks | Full TEST phase or release |
+
+Tasks are executed according to their declared dependencies, not table order
+alone. Before editing, read the active Task with `dow task show`, read every
+referenced SPEC section/acceptance criterion, claim it, and remain inside its
+declared files. Run its focused tests and required FrameworkTree generation,
+then call `dow task done` immediately. Do not opportunistically implement a
+downstream Task.
+
 ## Design Approach
 
 ### Architecture
