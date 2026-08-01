@@ -545,20 +545,23 @@
           <section class="settings-page" id="page-models"><h1 class="settings-page-title">Models</h1><p class="settings-page-lead">Model providers and available models.</p></section>
           <section class="settings-page dev-flow-settings-page" id="page-dev-flow">
             <h1 class="settings-page-title" tabindex="-1">Dev Flow</h1>
-            <div class="dev-flow-version">Version 0.3.9</div>
-            <p class="settings-page-lead">Connect Rózsa to this project's task and issue workflow through the detected <code>dow</code> CLI.</p>
-            <h2 class="settings-section-title">Overview</h2>
-            <div class="dev-flow-settings-list" aria-label="Dev Flow overview">
-              <div class="settings-field"><span class="settings-field-label">Dashboard Availability</span><span class="dev-flow-ready"><span aria-hidden="true"></span>Ready</span></div>
-              <div class="settings-field"><span class="settings-field-label">Dashboard address</span><code class="setting-value">http://127.0.0.1:43117</code></div>
-              <div class="settings-field"><span class="settings-field-label">Memory Use</span><span class="setting-value">38 MiB</span></div>
-              <div class="settings-field dev-flow-path-row"><label class="settings-field-label" for="prototypeDowPath">Path</label><div class="settings-field-control"><input id="prototypeDowPath" class="dev-flow-path-input" value="/Users/xinyue/.local/bin/dow"><button class="settings-secondary-button" type="button" onclick="choosePrototypeDowPath()">Choose…</button></div></div>
+            <p class="settings-page-lead dev-flow-description"><strong>Engineering discipline for coding agents.</strong> Connect this project to Dev Flow for lightweight workflow structure, project status, and a local dashboard. Optional, but recommended for reliable delivery.</p>
+            <div class="dev-flow-section"><h2 class="settings-section-title">Overview</h2>
+            <div class="dev-flow-module dev-flow-overview-module">
+            <div class="dev-flow-overview" aria-label="Dev Flow overview">
+              <div class="dev-flow-overview-card dev-flow-overview-status is-ready" title="Dashboard availability"><svg class="dev-flow-overview-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 16 0"/><path d="M12 12l4-4"/><path d="M6 18h12"/></svg><div><span class="dev-flow-overview-kicker">Dashboard</span><span class="dev-flow-overview-value">Ready</span></div></div>
+              <div class="dev-flow-overview-card" title="Dashboard address"><button class="dev-flow-overview-link" type="button" onclick="openPrototypeDashboard()"><svg class="dev-flow-overview-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/></svg><span>127.0.0.1:43117/</span><span aria-hidden="true">↗</span></button></div>
+              <div class="dev-flow-overview-card" title="Dev Flow version"><span class="dev-flow-overview-value"><span class="dev-flow-version-prefix">v</span>0.3.9</span></div>
+              <div class="dev-flow-overview-card" title="Dashboard memory use"><svg class="dev-flow-overview-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg><span class="dev-flow-overview-value">6.2<span class="dev-flow-memory-unit">MiB</span></span></div>
             </div>
-            <h2 class="settings-section-title dev-flow-settings-heading">Settings</h2>
-            <div class="dev-flow-settings-list" aria-label="Dev Flow settings">
+            </div></div>
+            <div class="dev-flow-section"><h2 class="settings-section-title dev-flow-settings-heading">Settings</h2>
+            <div class="dev-flow-module dev-flow-settings-list" aria-label="Dev Flow settings">
+              <div class="settings-field dev-flow-path-row"><label class="settings-field-label" for="prototypeDowPath">Executable Path</label><div class="settings-field-control"><input id="prototypeDowPath" class="dev-flow-path-input" value="/Users/xinyue/.local/bin/dow" onblur="savePrototypeDowPath(this)"><button class="settings-secondary-button dev-flow-icon-button" type="button" aria-label="Choose Dev Flow executable" title="Choose executable" onclick="choosePrototypeDowPath()"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3.5 6.5h6l1.8 2H20.5v9.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M3.5 6.5v-1a2 2 0 0 1 2-2h4l2 2h5"/></svg></button></div></div>
               <div class="settings-field"><span class="settings-field-label">Enable Dev Flow</span><button class="settings-toggle on" id="prototypeDevFlowMaster" type="button" aria-label="Enable Dev Flow" aria-pressed="true" onclick="togglePrototypeDevFlowMaster()"></button></div>
               <div class="settings-field dev-flow-dependent"><span class="settings-field-label">Show status in sidebar</span><button class="settings-toggle on" id="prototypeDevFlowSidebarToggle" type="button" aria-label="Show Dev Flow status in sidebar" aria-pressed="true" onclick="togglePrototypeSetting(this, 'prototypeDevFlowStatus')"></button></div>
               <div class="settings-field dev-flow-dependent"><span class="settings-field-label">Show Dashboard button</span><button class="settings-toggle on" id="prototypeDashboardToggle" type="button" aria-label="Show Dashboard button" aria-pressed="true" onclick="togglePrototypeSetting(this, 'prototypeDashboardButton')"></button></div>
+            </div>
             </div>
           </section>
         </div>

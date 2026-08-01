@@ -13,15 +13,37 @@ later `dow init` is detected without restarting Rózsa.
 
 ## Settings pane
 
-The Dev Flow pane follows the same flat groups, typography, hairlines, switches,
-inputs and buttons as the other Settings panes. It contains:
+The Dev Flow pane follows the same typography, hairlines, switches, inputs and
+buttons as the other Settings panes. Overview and Settings are separate
+submodules. Settings keeps a light rounded container; Overview keeps one shared
+layout parent without an outer border, and each field carries its own compact
+border. This preserves the module relationship without turning Overview into a
+large outlined panel.
+It contains:
 
-- the detected version beneath the title and a short integration description;
+- the Dev Flow positioning and a short description beneath the title;
 - missing-CLI installation guidance plus `Check again`;
-- an `Overview` with Dashboard Availability, Dashboard address, current-project
-  Memory Use, and one Path row with `Choose…` and optional `Use automatic`;
-- `Enable Dev Flow`, `Show Dev Flow status in sidebar`, and `Show Dashboard
+- an `Overview` with a green Dashboard/Ready status, a shortened clickable
+  loopback address, the compact `v<version>` value, and icon-led Memory Use;
+- a `Settings` group with an editable Executable Path input saved on blur and
+  an icon-based chooser;
+  `Enable Dev Flow`, `Show Dev Flow status in sidebar`, and `Show Dashboard
   button` switches.
+
+The description presents Dev Flow as optional but recommended in one naturally
+wrapping paragraph: **Engineering discipline for coding agents.** Connect this
+project to Dev Flow for lightweight workflow structure, project status, and a
+local dashboard. Optional, but recommended for reliable delivery.
+
+Clicking the Dashboard address uses the same restricted loopback opener as the
+sidebar Dashboard action. It starts or reuses the current project's shared
+service and opens the address in the system browser.
+
+The Executable Path field is a real text input: users can type or paste an
+absolute path directly, and the value is persisted when the field loses focus.
+The chooser writes to the same field and uses the same persistence command.
+Clearing the field and leaving it restores automatic discovery; no second path
+icon is shown for that recovery action.
 
 The master switch always remains operable. The two dependent switches are
 disabled when the master switch is off or the CLI is unavailable. Setting

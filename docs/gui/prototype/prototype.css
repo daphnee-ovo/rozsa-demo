@@ -2204,25 +2204,50 @@ html[data-preview-theme="dark"] {
 .unresolved-error-tray.expanded .error-tray-copy { display: block; }
 @keyframes notification-in { from { opacity: 0; transform: translateY(-6px); } }
 
-/* Dev Flow Settings reuses the normal page surface instead of adding a gray card. */
+/* Dev Flow Settings reuses the normal page surface with a compact overview. */
 .dev-flow-settings-page .settings-page-title { margin-bottom: 4px; }
-.dev-flow-version { margin: 0 0 8px; color: var(--muted); font-size: .75rem; }
-.dev-flow-settings-page .settings-page-lead { margin: 0 0 32px; }
+.dev-flow-settings-page .settings-page-lead { width: 100%; margin: 10px 0 18px; line-height: 1.45; }
+.dev-flow-description strong { color: var(--fg); font-weight: 600; }
+.dev-flow-section { margin-bottom: 18px; }
+.dev-flow-section:last-child { margin-bottom: 24px; }
+.dev-flow-module { padding: 8px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.dev-flow-overview-module { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.dev-flow-overview { display: grid; grid-template-columns: minmax(150px, 1.15fr) minmax(220px, 1.75fr) minmax(110px, .8fr) minmax(120px, .9fr); align-items: stretch; gap: 8px; min-height: 76px; }
+.dev-flow-overview-card { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 76px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; text-align: center; }
+.dev-flow-overview-icon { width: 20px; height: 20px; flex: 0 0 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; color: var(--muted); }
+.dev-flow-overview-kicker { display: block; color: var(--muted); font-size: .72rem; line-height: 1.2; }
+.dev-flow-overview-value { display: block; min-width: 0; color: var(--fg); font-size: 1.14rem; line-height: 1.25; overflow-wrap: anywhere; }
+.dev-flow-overview-status { border-radius: 8px; }
+.dev-flow-overview-status.is-ready { color: var(--success); background: var(--success-bg); }
+.dev-flow-overview-status.is-ready .dev-flow-overview-icon { color: var(--success); }
+.dev-flow-overview-link { min-width: 0; display: inline-flex; align-items: center; gap: 8px; border: 0; padding: 0; color: var(--accent); background: transparent; font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.dev-flow-overview-link:hover { color: var(--accent-hover); text-decoration: underline; }
+.dev-flow-overview-link .dev-flow-overview-icon { color: currentColor; }
+.dev-flow-version-prefix, .dev-flow-memory-unit { color: var(--muted); font-size: .76rem; }
+.dev-flow-memory-unit { margin-left: 3px; }
 .dev-flow-settings-list { margin-bottom: 28px; border-top: 1px solid var(--border); }
 .dev-flow-settings-list .settings-field { min-height: 48px; margin: 0; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .dev-flow-settings-heading { margin-top: 34px; }
-.dev-flow-ready { display: inline-flex; align-items: center; gap: 7px; color: var(--fg); }
-.dev-flow-ready > span { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
-.dev-flow-path-row .settings-field-control { display: flex; justify-content: flex-end; gap: 8px; width: min(100%, 570px); }
-.dev-flow-path-input { min-width: 0; flex: 1; height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; color: var(--fg); background: transparent; font: inherit; }
-.settings-secondary-button { min-height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 12px; color: var(--fg); background: transparent; font: inherit; cursor: pointer; }
+.dev-flow-path-row { align-items: center; min-height: 56px; }
+.dev-flow-path-row .settings-field-control { display: flex; align-items: center; justify-content: flex-end; gap: 8px; width: min(100%, 570px); }
+.dev-flow-path-input { min-width: 0; flex: 1; height: 38px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; color: var(--fg); background: transparent; font: inherit; }
+.settings-secondary-button { min-height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 12px; color: var(--fg); background: var(--surface); font: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
+.settings-secondary-button:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-bg); }
+.dev-flow-icon-button { width: 34px; height: 34px; display: inline-grid; place-items: center; padding: 0; }
+.dev-flow-icon-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .dev-flow-dependent.disabled { opacity: .42; }
 .settings-toggle:disabled { cursor: not-allowed; }
 @media (max-width: 650px) {
+  .dev-flow-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dev-flow-detail { left: 14px; right: 14px; width: auto; top: 58px; }
   .notification-center { right: 12px; width: min(320px, calc(100vw - 24px)); }
   .dev-flow-path-row { align-items: flex-start; flex-direction: column; }
   .dev-flow-path-row .settings-field-control { width: 100%; }
+}
+@media (max-width: 420px) {
+  .dev-flow-overview { grid-template-columns: 1fr; }
+  .dev-flow-overview-card { border-right: 0; border-bottom: 1px solid var(--border); }
+  .dev-flow-overview-card:last-child { border-bottom: 0; }
 }
 #settingsPanel.settings-sidebar-collapsed .settings-sidebar {
   position: absolute;

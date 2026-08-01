@@ -453,16 +453,16 @@ function togglePrototypeDevFlowMaster() {
 }
 
 function openPrototypeDashboard() {
-  const button = document.getElementById('prototypeDashboardButton');
-  if (!button) return;
-  button.classList.add('active');
-  button.title = 'Dashboard opened at http://127.0.0.1:43117';
-  setTimeout(() => button.classList.remove('active'), 700);
+  window.open('http://127.0.0.1:43117', '_blank', 'noopener,noreferrer');
 }
 
 function choosePrototypeDowPath() {
   const input = document.getElementById('prototypeDowPath');
   if (input) input.select();
+}
+
+function savePrototypeDowPath(input) {
+  if (input) input.dataset.savedPath = input.value;
 }
 
 function showErrorTray() {

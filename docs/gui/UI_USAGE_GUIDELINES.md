@@ -312,10 +312,14 @@ tool call 是 Rózsa GUI 的核心组件，应像对话中的轻量命令行记�
 - Tool 使用可编辑单选 combobox：输入前缀过滤，Tab 补全，也可展开列表选择。
 - Permission mode 在两个 scope 都直接展示当前生效的 on-request、auto-approve 或
   yolo，不显示 “Use default” 或 “Inherit” 作为第四种伪模式。
-- Dev Flow pane 与其他 pane 使用同一背景、字号、标题和表单行。版本位于标题下；
-  description 后显示 Overview（Dashboard Availability、address、Memory Use、Path）
-  和 Settings（Enable Dev Flow、sidebar status、Dashboard button）。Path 只保留一个
-  可编辑位置与 Choose action，不重复展示 executable。
+- Dev Flow pane 与其他 pane 使用同一背景、字号和标题。Overview 与 Settings 是两个独立
+  子模块；Settings 使用浅色圆角容器，Overview 保留同一母布局但去掉外层边框，由内部字段
+  各自承担边框区隔，不使用包住整个页面的大容器。描述需要说明它是可选但推荐
+  的 coding-agent workflow 联动，且 tagline 与说明保持同一自然换行段落；Overview 使用横向自适应布局，状态用绿色 Dashboard/Ready
+  表达，地址省略 `http://` 并使用打开图标，版本只显示 `v` 与版本号，内存使用 icon、
+  数值和小号单位表达。Executable Path 放入 Settings，必须是真正可编辑的输入框，失焦
+  保存；Choose 使用文件夹图标，不能使用浏览器默认按钮外观；清空 Path 并失焦即可恢复自动
+  发现，不额外显示第二个路径图标。
 - 未检测到 `dow` 时显示安装建议；自动安装与 system prompt 注入保持 TODO，不伪装为
   已实现。主开关关闭时依赖项禁用并变灰，重新开启必须恢复可操作状态。
 

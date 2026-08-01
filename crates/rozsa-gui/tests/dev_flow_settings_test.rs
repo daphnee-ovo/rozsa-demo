@@ -85,11 +85,21 @@ fn settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hint
     assert!(index.contains("id=\"devFlowMissing\""));
     assert!(index.contains("id=\"devFlowDashboardAvailability\""));
     assert!(index.contains("id=\"devFlowDashboardAddress\""));
-    assert!(index.contains("id=\"devFlowMemoryUse\""));
+    assert!(index.contains("id=\"devFlowMemoryAmount\""));
+    assert!(index.contains("id=\"devFlowMemoryUnit\""));
     assert!(index.contains("id=\"devFlowExecutablePath\""));
     assert!(index.contains("id=\"devFlowPickExecutable\""));
-    assert!(index.contains("id=\"devFlowUseAutomatic\""));
+    assert!(!index.contains("id=\"devFlowUseAutomatic\""));
     assert!(index.contains("id=\"devFlowRescan\""));
+    assert!(index.contains("class=\"dev-flow-overview\""));
+    assert!(index.contains("class=\"dev-flow-section\""));
+    assert!(index.contains("class=\"setting-note dev-flow-description\"><strong>Engineering discipline for coding agents.</strong> Connect this project"));
+    assert!(!index.contains("class=\"dev-flow-tagline\""));
+    assert!(index.contains("class=\"dev-flow-overview-link\" id=\"devFlowDashboardAddress\""));
+    assert!(index.contains("class=\"dev-flow-overview-icon\""));
+    assert!(index.contains("class=\"dev-flow-icon-button\" type=\"button\" id=\"devFlowPickExecutable\""));
+    assert!(!index.contains("id=\"devFlowExecutablePath\" type=\"text\" aria-label=\"Resolved dow executable path\" readonly"));
+    assert!(index.contains("Engineering discipline for coding agents."));
     assert!(!index.contains("dev-flow-diagnostics"));
     assert!(!index.contains("id=\"devFlowSourceAuto\""));
     assert!(!index.contains("id=\"devFlowSourceCustom\""));
@@ -107,6 +117,9 @@ fn settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hint
     assert!(app_js.contains("'set_dev_flow_executable_path'"));
     assert!(app_js.contains("'rescan_dev_flow'"));
     assert!(app_js.contains("invoke('pick_dev_flow_executable')"));
+    assert!(app_js.contains("invoke('open_dev_flow_dashboard')"));
+    assert!(app_js.contains("pathInput.addEventListener('blur'"));
+    assert!(app_js.contains("set_dev_flow_executable_path"));
     assert!(app_js.contains("function setDevFlowDependentControlDisabled"));
     assert!(app_js.contains("const dependentDisabled = devFlowDependentControlsDisabled(s);"));
     assert!(app_js.contains("setDevFlowDependentControlDisabled(enabled, false);"));
@@ -116,12 +129,20 @@ fn settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hint
     assert!(app_js.contains("function showDevFlowSettingsError"));
     assert!(!app_js.contains("showError('Failed to update Dev Flow"));
 
-    for diagnostic in ["Dashboard Availability", "Dashboard address", "Memory Use"] {
+    for diagnostic in ["Dashboard", "devFlowDashboardAddressText", "devFlowMemoryAmount"] {
         assert!(
             index.contains(diagnostic),
             "missing {diagnostic} diagnostic"
         );
     }
+
+    let overview_start = index
+        .find("<div class=\"dev-flow-module dev-flow-overview-module\">")
+        .unwrap();
+    let settings_start = index.find("<div class=\"dev-flow-module dev-flow-settings-rows\">").unwrap();
+    let path_position = index.find("id=\"devFlowExecutablePath\"").unwrap();
+    assert!(settings_start > overview_start);
+    assert!(path_position > settings_start);
 }
 
 #[test]

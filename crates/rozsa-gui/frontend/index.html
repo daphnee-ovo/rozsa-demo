@@ -1673,15 +1673,48 @@ body.hide-thinking .thinking-block { display: none; }
   margin-bottom: 20px;
 }
 .settings-group { margin-bottom: 20px; }
-.dev-flow-heading { margin-bottom: 20px; }
+.dev-flow-heading { margin-bottom: 18px; }
 .dev-flow-heading .settings-pane-title { margin-bottom: 3px; }
-.dev-flow-version { color: var(--muted); font-size: 11.5px; }
-.dev-flow-description { max-width: 620px; margin: 9px 0 0; }
+.dev-flow-description { width: 100%; margin: 10px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.dev-flow-description strong { color: var(--fg); font-weight: 600; }
 .dev-flow-missing { margin-top: 12px; }
 .dev-flow-install-list { margin: 7px 0 10px; padding-left: 18px; color: var(--muted); font-size: 11.5px; }
 .dev-flow-install-list li { margin: 3px 0; }
+.dev-flow-section { margin-bottom: 18px; }
+.dev-flow-section:last-child { margin-bottom: 24px; }
+.dev-flow-module { padding: 8px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.dev-flow-overview-module { padding: 0; border: 0; border-radius: 0; background: transparent; overflow: visible; }
 .dev-flow-settings-rows .setting-item + .setting-item { border-top: 1px solid var(--border); }
 .dev-flow-value { min-width: 0; max-width: 62%; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
+.dev-flow-overview { display: grid; grid-template-columns: minmax(150px, 1.15fr) minmax(220px, 1.75fr) minmax(110px, .8fr) minmax(120px, .9fr); align-items: stretch; gap: 8px; min-height: 80px; }
+.dev-flow-overview-card { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 80px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; text-align: center; }
+.dev-flow-overview-icon { width: 20px; height: 20px; flex: 0 0 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; color: var(--muted); }
+.dev-flow-overview-card > div { min-width: 0; }
+.dev-flow-overview-kicker { display: block; color: var(--muted); font-size: 12px; line-height: 1.2; }
+.dev-flow-overview-value { display: block; min-width: 0; color: var(--fg); font-size: 20px; line-height: 1.25; overflow-wrap: anywhere; }
+.dev-flow-overview-status { border-radius: 8px; }
+.dev-flow-overview-status.is-ready { color: var(--success); background: var(--success-bg); }
+.dev-flow-overview-status.is-ready .dev-flow-overview-icon { color: var(--success); }
+.dev-flow-overview-link { min-width: 0; display: inline-flex; align-items: center; gap: 8px; border: 0; padding: 0; color: var(--fg); background: transparent; font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.dev-flow-overview-link:hover { color: var(--accent-hover); text-decoration: underline; }
+.dev-flow-overview-link:disabled { color: var(--muted); cursor: not-allowed; text-decoration: none; }
+.dev-flow-overview-link .dev-flow-overview-icon { color: currentColor; }
+.dev-flow-version-prefix, .dev-flow-memory-unit { color: var(--muted); font-size: 13px; }
+.dev-flow-memory-unit { margin-left: 3px; }
+.dev-flow-settings-rows .dev-flow-path-item { align-items: center; min-height: 56px; }
+.dev-flow-path-control { min-width: 0; display: flex; justify-content: flex-end; gap: 8px; width: min(100%, 570px); }
+.dev-flow-path-control { align-items: center; }
+.dev-flow-path-control .setting-input { min-width: 0; flex: 1; height: 38px; line-height: 38px; }
+.dev-flow-path-control button { flex: 0 0 auto; }
+.dev-flow-icon-button { width: 38px; height: 38px; display: inline-grid; place-items: center; flex: 0 0 38px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--surface); cursor: pointer; transition: color .12s, background .12s, border-color .12s; }
+.dev-flow-icon-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.dev-flow-icon-button:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); background: var(--accent-bg); }
+.dev-flow-icon-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); outline-offset: 2px; }
+.dev-flow-icon-button:disabled { cursor: not-allowed; opacity: .45; }
+.dev-flow-secondary-button { min-height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 12px; color: var(--fg); background: var(--surface); font: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
+.dev-flow-secondary-button:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-bg); }
+.dev-flow-secondary-button:active { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.dev-flow-secondary-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); outline-offset: 2px; }
 .settings-group-label {
   font-size: 10px;
   font-weight: 600;
@@ -1760,8 +1793,14 @@ body.hide-thinking .thinking-block { display: none; }
 .dev-flow-path-control .setting-input { flex: 1; min-width: 0; }
 @media (max-width: 640px) {
   .dev-flow-value { max-width: 56%; }
+  .dev-flow-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dev-flow-path-item { align-items: flex-start; flex-direction: column; }
   .dev-flow-path-control { align-items: stretch; flex-direction: column; width: 100%; }
+}
+@media (max-width: 420px) {
+  .dev-flow-overview { grid-template-columns: 1fr; }
+  .dev-flow-overview-card { border-right: 0; border-bottom: 1px solid var(--border); }
+  .dev-flow-overview-card:last-child { border-bottom: 0; }
 }
 .setting-stack {
   display: grid;
@@ -3606,8 +3645,7 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
       <div class="settings-pane" id="pane-dev-flow">
         <div class="dev-flow-heading">
           <div class="settings-pane-title">Dev Flow</div>
-          <div class="dev-flow-version" id="devFlowVersion">Checking installation…</div>
-          <p class="setting-note dev-flow-description">Connects this project to the optional <code>dow</code> workflow service for read-only work status and its dashboard.</p>
+          <p class="setting-note dev-flow-description"><strong>Engineering discipline for coding agents.</strong> Connect this project to Dev Flow for lightweight workflow structure, project status, and a local dashboard. Optional, but recommended for reliable delivery.</p>
           <div class="dev-flow-missing" id="devFlowMissing" hidden>
             <p class="setting-note">Dev Flow was not detected. Install it to enable project status and dashboard access:</p>
             <ul class="dev-flow-install-list">
@@ -3618,18 +3656,25 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
             <button type="button" id="devFlowRescan">Check again</button>
           </div>
         </div>
-        <div class="settings-group dev-flow-settings-rows">
+        <div class="dev-flow-section">
           <div class="settings-group-label">Overview</div>
-          <div class="setting-item"><span class="setting-label">Dashboard Availability</span><span class="dev-flow-value" id="devFlowDashboardAvailability">Unavailable</span></div>
-          <div class="setting-item"><span class="setting-label">Dashboard address</span><span class="dev-flow-value" id="devFlowDashboardAddress">Unavailable</span></div>
-          <div class="setting-item"><span class="setting-label">Memory Use</span><span class="dev-flow-value" id="devFlowMemoryUse">Unavailable</span></div>
-          <div class="setting-item dev-flow-path-item"><span class="setting-label">Path</span><span class="dev-flow-path-control"><input class="setting-input" id="devFlowExecutablePath" type="text" aria-label="Resolved dow executable path" readonly spellcheck="false"><button type="button" id="devFlowPickExecutable">Choose…</button><button type="button" id="devFlowUseAutomatic" hidden>Use automatic</button></span></div>
+          <div class="dev-flow-module dev-flow-overview-module">
+          <div class="dev-flow-overview" aria-label="Dev Flow overview">
+            <div class="dev-flow-overview-card dev-flow-overview-status" id="devFlowDashboardStatus" title="Dashboard availability"><svg class="dev-flow-overview-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 16 0"/><path d="M12 12l4-4"/><path d="M6 18h12"/></svg><div><span class="dev-flow-overview-kicker">Dashboard</span><span class="dev-flow-overview-value" id="devFlowDashboardAvailability">Unavailable</span></div></div>
+            <div class="dev-flow-overview-card" title="Dashboard address"><button class="dev-flow-overview-link" id="devFlowDashboardAddress" type="button" disabled><svg class="dev-flow-overview-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/></svg><span id="devFlowDashboardAddressText">Unavailable</span><span aria-hidden="true">↗</span></button></div>
+            <div class="dev-flow-overview-card" title="Dev Flow version"><div><span class="dev-flow-overview-value"><span class="dev-flow-version-prefix">v</span><span id="devFlowVersion">unknown</span></span></div></div>
+            <div class="dev-flow-overview-card" title="Dashboard memory use"><svg class="dev-flow-overview-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg><div><span class="dev-flow-overview-value"><span id="devFlowMemoryAmount">Unavailable</span><span class="dev-flow-memory-unit" id="devFlowMemoryUnit"></span></span></div></div>
+          </div>
+          </div>
         </div>
-        <div class="settings-group dev-flow-settings-rows">
+        <div class="dev-flow-section">
           <div class="settings-group-label">Settings</div>
+          <div class="dev-flow-module dev-flow-settings-rows">
+          <div class="setting-item dev-flow-path-item"><label class="setting-label" for="devFlowExecutablePath">Path</label><span class="dev-flow-path-control"><input class="setting-input" id="devFlowExecutablePath" type="text" aria-label="Resolved dow executable path" spellcheck="false"><button class="dev-flow-icon-button" type="button" id="devFlowPickExecutable" aria-label="Choose Dev Flow executable" title="Choose executable"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3.5 6.5h6l1.8 2H20.5v9.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M3.5 6.5v-1a2 2 0 0 1 2-2h4l2 2h5"/></svg></button></span></div>
           <div class="setting-item"><span class="setting-label">Enable Dev Flow</span><button class="setting-toggle" id="devFlowEnabled" type="button" role="switch" aria-checked="false" aria-label="Enable Dev Flow integration"></button></div>
           <div class="setting-item"><span class="setting-label">Show Dev Flow status in sidebar</span><button class="setting-toggle" id="devFlowSidebarStatus" type="button" role="switch" aria-checked="false" aria-label="Show Dev Flow status in sidebar"></button></div>
           <div class="setting-item"><span class="setting-label">Show Dashboard button</span><button class="setting-toggle" id="devFlowDashboardButton" type="button" role="switch" aria-checked="false" aria-label="Show Dev Flow Dashboard button"></button></div>
+          </div>
         </div>
       </div>
     </div>
