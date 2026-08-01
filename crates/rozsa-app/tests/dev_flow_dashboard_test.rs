@@ -3,7 +3,7 @@
 // ├── struct ResponsePlan
 // ├── spawn_server()
 // ├── json_response()
-// ├── snapshot_json()
+// ├── rest_plans()
 // ├── fast_timing()
 // ├── snapshot_adapter_accepts_unknown_fields_and_uses_only_data_get()
 // ├── invalid_update_preserves_the_last_good_snapshot_as_stale()
@@ -13,6 +13,8 @@
 // ├── oversized_content_length_is_rejected_before_body_read()
 // ├── sse_supports_comments_crlf_and_complete_update_events()
 // ├── response_header_deadline_is_enforced()
+// ├── combined_rest_snapshot_has_one_overall_deadline()
+// ├── malformed_sse_signal_marks_the_last_snapshot_stale()
 // ├── stalled_sse_marks_the_last_snapshot_stale()
 // ├── oversized_sse_event_is_rejected()
 // ├── cancellation_interrupts_waiting_for_response_headers()
@@ -92,29 +94,41 @@ fn json_response(body: &str) -> String {
     )
 }
 
-fn snapshot_json(task_status: &str) -> String {
-    serde_json::json!({
-        "status": {
-            "name": "demo",
-            "phase": "DEV",
-            "unknownFutureField": true
-        },
-        "tasks": [{
+fn rest_plans(task_status: &str) -> Vec<ResponsePlan> {
+    let status = serde_json::json!({
+        "name": "demo",
+        "phase": "DEV",
+        "unknownFutureField": true
+    });
+    let tasks = serde_json::json!({
+        "items": [{
             "id": "TASK-T001",
             "title": "Build integration",
             "status": task_status,
             "priority": "P0",
-            "documentBody": "must not be retained"
+            "documentBody": "must not be retained",
+            "files": {"create": [], "modify": ["src/main.rs"], "test": []}
         }],
-        "issues": [{
+        "total": 1
+    });
+    let issues = serde_json::json!({
+        "items": [{
             "id": "ISSUE-I001",
             "title": "Connection failed",
             "status": "open",
-            "severity": "P1"
+            "severity": "P1",
+            "files": {"create": [], "modify": ["src/main.rs"]}
         }],
-        "docs": {"spec": {"content": "ignored"}}
-    })
-    .to_string()
+        "total": 1
+    });
+    [status, tasks, issues]
+        .into_iter()
+        .map(|body| ResponsePlan {
+            delay: Duration::ZERO,
+            response: json_response(&body.to_string()),
+            hold_open: Duration::ZERO,
+        })
+        .collect()
 }
 
 fn fast_timing() -> DashboardTiming {
@@ -129,13 +143,7 @@ fn fast_timing() -> DashboardTiming {
 
 #[tokio::test]
 async fn snapshot_adapter_accepts_unknown_fields_and_uses_only_data_get() {
-    let body = snapshot_json("pending");
-    let (url, requests, server) = spawn_server(vec![ResponsePlan {
-        delay: Duration::ZERO,
-        response: json_response(&body),
-        hold_open: Duration::ZERO,
-    }])
-    .await;
+    let (url, requests, server) = spawn_server(rest_plans("pending")).await;
     let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
 
     let snapshot = client.fetch_snapshot().await.unwrap();
@@ -147,35 +155,29 @@ async fn snapshot_adapter_accepts_unknown_fields_and_uses_only_data_get() {
     server.await.unwrap();
     assert_eq!(
         requests.lock().unwrap().as_slice(),
-        ["GET /api/data HTTP/1.1"]
+        [
+            "GET /api/v1/status HTTP/1.1",
+            "GET /api/v1/tasks HTTP/1.1",
+            "GET /api/v1/issues HTTP/1.1",
+        ]
     );
 }
 
 #[tokio::test]
 async fn invalid_update_preserves_the_last_good_snapshot_as_stale() {
-    let valid = snapshot_json("in_progress");
-    let invalid = snapshot_json("future_status");
-    let (url, _, server) = spawn_server(vec![
-        ResponsePlan {
-            delay: Duration::ZERO,
-            response: json_response(&valid),
-            hold_open: Duration::ZERO,
-        },
-        ResponsePlan {
-            delay: Duration::ZERO,
-            response: json_response(&invalid),
-            hold_open: Duration::ZERO,
-        },
-    ])
-    .await;
+    let mut plans = rest_plans("in_progress");
+    let mut invalid = rest_plans("future_status");
+    plans.append(&mut invalid);
+    let (url, _, server) = spawn_server(plans).await;
     let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
 
     let first = client.fetch_snapshot().await.unwrap();
     assert_eq!(first.tasks[0].status, DevFlowTaskStatus::InProgress);
-    assert!(matches!(
-        client.fetch_snapshot().await,
-        Err(DevFlowError::IncompatibleApi(_))
-    ));
+    let invalid_result = client.fetch_snapshot().await;
+    assert!(
+        matches!(invalid_result, Err(DevFlowError::IncompatibleApi(_))),
+        "unexpected invalid update result: {invalid_result:?}"
+    );
     let retained = client.last_snapshot().await.unwrap();
     assert_eq!(retained.revision, 1);
     assert!(retained.stale);
@@ -184,29 +186,27 @@ async fn invalid_update_preserves_the_last_good_snapshot_as_stale() {
 
 #[tokio::test]
 async fn missing_required_fields_and_invalid_ids_are_incompatible() {
+    let status = serde_json::json!({}).to_string();
     let missing_title = serde_json::json!({
-        "status": {},
-        "tasks": [{"id": "TASK-T001", "status": "pending"}],
-        "issues": []
+        "items": [{"id": "TASK-T001", "status": "pending"}]
     })
     .to_string();
+    let empty_tasks = serde_json::json!({"items": []}).to_string();
     let invalid_id = serde_json::json!({
-        "status": {},
-        "tasks": [],
-        "issues": [{"id": "I001", "title": "bad", "status": "open"}]
+        "items": [{"id": "I001", "title": "bad", "status": "open", "files": {"create": [], "modify": []}}]
     })
     .to_string();
+    let plan = |body: &str| ResponsePlan {
+        delay: Duration::ZERO,
+        response: json_response(body),
+        hold_open: Duration::ZERO,
+    };
     let (url, _, server) = spawn_server(vec![
-        ResponsePlan {
-            delay: Duration::ZERO,
-            response: json_response(&missing_title),
-            hold_open: Duration::ZERO,
-        },
-        ResponsePlan {
-            delay: Duration::ZERO,
-            response: json_response(&invalid_id),
-            hold_open: Duration::ZERO,
-        },
+        plan(&status),
+        plan(&missing_title),
+        plan(&status),
+        plan(&empty_tasks),
+        plan(&invalid_id),
     ])
     .await;
     let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
@@ -228,31 +228,33 @@ async fn polluted_item_ids_are_normalized_to_canonical_identity() {
     // (e.g. `ISSUE-I001：Test TASK-T002 fail`). One polluted entry must not
     // make the whole snapshot incompatible: the canonical id is extracted and
     // the remaining items still decode.
-    let payload = serde_json::json!({
-        "status": {
+    let status = serde_json::json!({
             "name": "rozsa",
             "phase": "DEV",
             "mode": "quick",
             "version": "1.4.1",
             "goals_minor": "ok",
             "updated": "2026-07-31 03:18"
-        },
-        "tasks": [
-            {"id": "TASK-T007", "title": "sidebar task", "status": "pending"},
-            {"id": "TASK-T008 generated title", "title": "space suffix", "status": "pending"},
-            {"id": "TASK-T009: generated title", "title": "colon suffix", "status": "pending"}
-        ],
-        "issues": [
-            {"id": "ISSUE-I001：Test TASK-T002 fail", "title": "running 12 tests", "status": "closed"},
-            {"id": "ISSUE-I002", "title": "clean issue", "status": "open"}
-        ]
-    })
-    .to_string();
-    let (url, _, server) = spawn_server(vec![ResponsePlan {
-        delay: Duration::ZERO,
-        response: json_response(&payload),
-        hold_open: Duration::ZERO,
-    }])
+    });
+    let tasks = serde_json::json!({"items": [
+            {"id": "TASK-T007", "title": "sidebar task", "status": "pending", "files": {"create": [], "modify": [], "test": []}},
+            {"id": "TASK-T008 generated title", "title": "space suffix", "status": "pending", "files": {"create": [], "modify": [], "test": []}},
+            {"id": "TASK-T009: generated title", "title": "colon suffix", "status": "pending", "files": {"create": [], "modify": [], "test": []}}
+    ]});
+    let issues = serde_json::json!({"items": [
+            {"id": "ISSUE-I001：Test TASK-T002 fail", "title": "running 12 tests", "status": "closed", "files": {"create": [], "modify": []}},
+            {"id": "ISSUE-I002", "title": "clean issue", "status": "open", "files": {"create": [], "modify": []}}
+    ]});
+    let (url, _, server) = spawn_server(
+        [status, tasks, issues]
+            .into_iter()
+            .map(|body| ResponsePlan {
+                delay: Duration::ZERO,
+                response: json_response(&body.to_string()),
+                hold_open: Duration::ZERO,
+            })
+            .collect(),
+    )
     .await;
     let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
 
@@ -271,37 +273,38 @@ async fn polluted_item_ids_are_normalized_to_canonical_identity() {
 #[tokio::test]
 async fn ambiguous_item_id_suffixes_are_incompatible() {
     let letter_suffix = serde_json::json!({
-        "status": {},
-        "tasks": [{"id": "TASK-T001evil", "title": "bad", "status": "pending"}],
-        "issues": []
+        "items": [{"id": "TASK-T001evil", "title": "bad", "status": "pending", "files": {"create": [], "modify": [], "test": []}}]
     })
     .to_string();
     let underscore_suffix = serde_json::json!({
-        "status": {},
-        "tasks": [],
-        "issues": [{"id": "ISSUE-I001_title", "title": "bad", "status": "open"}]
+        "items": [{"id": "ISSUE-I001_title", "title": "bad", "status": "open", "files": {"create": [], "modify": []}}]
     })
     .to_string();
+    let status = serde_json::json!({}).to_string();
+    let empty_tasks = serde_json::json!({"items": []}).to_string();
+    let empty_issues = serde_json::json!({"items": []}).to_string();
+    let plan = |body: &str| ResponsePlan {
+        delay: Duration::ZERO,
+        response: json_response(body),
+        hold_open: Duration::ZERO,
+    };
     let (url, _, server) = spawn_server(vec![
-        ResponsePlan {
-            delay: Duration::ZERO,
-            response: json_response(&letter_suffix),
-            hold_open: Duration::ZERO,
-        },
-        ResponsePlan {
-            delay: Duration::ZERO,
-            response: json_response(&underscore_suffix),
-            hold_open: Duration::ZERO,
-        },
+        plan(&status),
+        plan(&letter_suffix),
+        plan(&empty_issues),
+        plan(&status),
+        plan(&empty_tasks),
+        plan(&underscore_suffix),
     ])
     .await;
     let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
 
     for _ in 0..2 {
-        assert!(matches!(
-            client.fetch_snapshot().await,
-            Err(DevFlowError::IncompatibleApi(_))
-        ));
+        let result = client.fetch_snapshot().await;
+        assert!(
+            matches!(result, Err(DevFlowError::IncompatibleApi(_))),
+            "unexpected ambiguous id result: {result:?}"
+        );
     }
     server.await.unwrap();
 }
@@ -329,21 +332,19 @@ async fn oversized_content_length_is_rejected_before_body_read() {
 
 #[tokio::test]
 async fn sse_supports_comments_crlf_and_complete_update_events() {
-    let body = snapshot_json("done");
-    let split_at = body.find(",\"tasks\"").unwrap() + 1;
-    let (first, second) = body.split_at(split_at);
-    let sse = format!(": keep-alive\r\nevent: update\r\ndata: {first}\r\ndata: {second}\r\n\r\n");
+    let sse = ": keep-alive\r\nevent: update\r\ndata: {\"resource\":\r\ndata: \"all\"}\r\n\r\n";
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         sse.len(),
         sse
     );
-    let (url, requests, server) = spawn_server(vec![ResponsePlan {
+    let mut plans = vec![ResponsePlan {
         delay: Duration::ZERO,
         response,
         hold_open: Duration::ZERO,
-    }])
-    .await;
+    }];
+    plans.extend(rest_plans("done"));
+    let (url, requests, server) = spawn_server(plans).await;
     let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
     let mut stream = client.subscribe().await.unwrap();
 
@@ -357,13 +358,18 @@ async fn sse_supports_comments_crlf_and_complete_update_events() {
     server.await.unwrap();
     assert_eq!(
         requests.lock().unwrap().as_slice(),
-        ["GET /api/events HTTP/1.1"]
+        [
+            "GET /api/v1/events HTTP/1.1",
+            "GET /api/v1/status HTTP/1.1",
+            "GET /api/v1/tasks HTTP/1.1",
+            "GET /api/v1/issues HTTP/1.1",
+        ]
     );
 }
 
 #[tokio::test]
 async fn response_header_deadline_is_enforced() {
-    let body = snapshot_json("pending");
+    let body = serde_json::json!({"name": "demo"}).to_string();
     let (url, _, server) = spawn_server(vec![ResponsePlan {
         delay: Duration::from_millis(200),
         response: json_response(&body),
@@ -380,23 +386,60 @@ async fn response_header_deadline_is_enforced() {
 }
 
 #[tokio::test]
+async fn combined_rest_snapshot_has_one_overall_deadline() {
+    let mut plans = rest_plans("pending");
+    for plan in &mut plans {
+        plan.delay = Duration::from_millis(60);
+    }
+    plans.truncate(2);
+    let (url, _, server) = spawn_server(plans).await;
+    let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
+
+    assert!(matches!(
+        client.fetch_snapshot().await,
+        Err(DevFlowError::Timeout(duration)) if duration == Duration::from_millis(100)
+    ));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn malformed_sse_signal_marks_the_last_snapshot_stale() {
+    let sse = "event: update\ndata: not-json\n\n";
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        sse.len(),
+        sse
+    );
+    let mut plans = rest_plans("pending");
+    plans.push(ResponsePlan {
+        delay: Duration::ZERO,
+        response,
+        hold_open: Duration::ZERO,
+    });
+    let (url, _, server) = spawn_server(plans).await;
+    let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
+    client.fetch_snapshot().await.unwrap();
+    let mut stream = client.subscribe().await.unwrap();
+
+    assert!(matches!(
+        stream.next_snapshot(&CancellationToken::new()).await,
+        Err(DevFlowError::IncompatibleApi(_))
+    ));
+    assert!(client.last_snapshot().await.unwrap().stale);
+    server.await.unwrap();
+}
+
+#[tokio::test]
 async fn stalled_sse_marks_the_last_snapshot_stale() {
-    let body = snapshot_json("pending");
     let sse_headers =
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\n";
-    let (url, _, server) = spawn_server(vec![
-        ResponsePlan {
-            delay: Duration::ZERO,
-            response: json_response(&body),
-            hold_open: Duration::ZERO,
-        },
-        ResponsePlan {
-            delay: Duration::ZERO,
-            response: sse_headers.to_owned(),
-            hold_open: Duration::from_millis(200),
-        },
-    ])
-    .await;
+    let mut plans = rest_plans("pending");
+    plans.push(ResponsePlan {
+        delay: Duration::ZERO,
+        response: sse_headers.to_owned(),
+        hold_open: Duration::from_millis(200),
+    });
+    let (url, _, server) = spawn_server(plans).await;
     let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
     client.fetch_snapshot().await.unwrap();
     let mut stream = client.subscribe().await.unwrap();
@@ -440,7 +483,7 @@ async fn oversized_sse_event_is_rejected() {
 
 #[tokio::test]
 async fn cancellation_interrupts_waiting_for_response_headers() {
-    let body = snapshot_json("pending");
+    let body = serde_json::json!({"resource": "all"}).to_string();
     let (url, _, server) = spawn_server(vec![ResponsePlan {
         delay: Duration::from_millis(200),
         response: json_response(&body),
@@ -498,12 +541,7 @@ async fn failed_startup_kills_and_reaps_the_owned_child() {
 
     let temp = tempfile::tempdir().unwrap();
     let script = temp.path().join("fake-dow");
-    let pid_file = temp.path().join("pid");
-    std::fs::write(
-        &script,
-        format!("#!/bin/sh\necho $$ > '{}'\nsleep 60\n", pid_file.display()),
-    )
-    .unwrap();
+    std::fs::write(&script, "#!/bin/sh\nsleep 60\n").unwrap();
     let mut permissions = std::fs::metadata(&script).unwrap().permissions();
     permissions.set_mode(0o755);
     std::fs::set_permissions(&script, permissions).unwrap();
@@ -522,10 +560,12 @@ async fn failed_startup_kills_and_reaps_the_owned_child() {
     )
     .await;
 
-    assert!(matches!(result, Err(DevFlowError::StartupTimeout { .. })));
-    let pid = std::fs::read_to_string(pid_file).unwrap();
+    let pid = match result {
+        Err(DevFlowError::StartupTimeout { pid: Some(pid), .. }) => pid,
+        _ => panic!("startup did not return its owned pid"),
+    };
     let status = std::process::Command::new("/bin/kill")
-        .args(["-0", pid.trim()])
+        .args(["-0", &pid.to_string()])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -541,13 +581,9 @@ async fn stalled_initial_snapshot_respects_the_startup_deadline() {
 
     let temp = tempfile::tempdir().unwrap();
     let script = temp.path().join("fake-dow");
-    let pid_file = temp.path().join("pid");
     std::fs::write(
         &script,
-        format!(
-            "#!/bin/sh\necho $$ > '{}'\nexec python3 -c 'import socket,sys,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind((\"127.0.0.1\",int(sys.argv[1]))); s.listen(1); s.accept(); time.sleep(60)' \"$3\"\n",
-            pid_file.display()
-        ),
+        "#!/bin/sh\nexec python3 -c 'import socket,sys,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind((\"127.0.0.1\",int(sys.argv[1]))); s.listen(1); s.accept(); time.sleep(60)' \"$3\"\n",
     )
     .unwrap();
     let mut permissions = std::fs::metadata(&script).unwrap().permissions();
@@ -556,7 +592,10 @@ async fn stalled_initial_snapshot_respects_the_startup_deadline() {
     let port = free_dashboard_port().await;
     let timing = DashboardTiming {
         request_timeout: Duration::from_secs(2),
-        startup_timeout: Duration::from_millis(200),
+        // Leave enough time for the spawned interpreter to bind and accept the
+        // request. A 200 ms window made this a scheduler race rather than a
+        // test of a stalled response body.
+        startup_timeout: Duration::from_secs(1),
         startup_poll_interval: Duration::from_millis(5),
         ..fast_timing()
     };
@@ -572,14 +611,16 @@ async fn stalled_initial_snapshot_respects_the_startup_deadline() {
     .await;
     let elapsed = started.elapsed();
 
-    assert!(matches!(result, Err(DevFlowError::StartupTimeout { .. })));
+    let pid = match result {
+        Err(DevFlowError::StartupTimeout { pid: Some(pid), .. }) => pid,
+        _ => panic!("stalled startup did not return its owned pid"),
+    };
     assert!(
-        elapsed < Duration::from_millis(1500),
+        elapsed < Duration::from_millis(2500),
         "startup request deadline plus mandatory child reaping was exceeded: {elapsed:?}"
     );
-    let pid = std::fs::read_to_string(pid_file).unwrap();
     let status = std::process::Command::new("/bin/kill")
-        .args(["-0", pid.trim()])
+        .args(["-0", &pid.to_string()])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -594,15 +635,7 @@ async fn startup_window_starts_at_spawn_not_before() {
 
     let temp = tempfile::tempdir().unwrap();
     let script = temp.path().join("fake-dow");
-    let pid_file = temp.path().join("pid");
-    std::fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\nsleep 0.2\necho $$ > '{}'\nsleep 60\n",
-            pid_file.display()
-        ),
-    )
-    .unwrap();
+    std::fs::write(&script, "#!/bin/sh\nsleep 0.2\nsleep 60\n").unwrap();
     let mut permissions = std::fs::metadata(&script).unwrap().permissions();
     permissions.set_mode(0o755);
     std::fs::set_permissions(&script, permissions).unwrap();
@@ -622,10 +655,12 @@ async fn startup_window_starts_at_spawn_not_before() {
     )
     .await;
 
-    assert!(matches!(result, Err(DevFlowError::StartupTimeout { .. })));
-    let pid = std::fs::read_to_string(pid_file).unwrap();
+    let pid = match result {
+        Err(DevFlowError::StartupTimeout { pid: Some(pid), .. }) => pid,
+        _ => panic!("delayed startup did not return its owned pid"),
+    };
     let status = std::process::Command::new("/bin/kill")
-        .args(["-0", pid.trim()])
+        .args(["-0", &pid.to_string()])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()

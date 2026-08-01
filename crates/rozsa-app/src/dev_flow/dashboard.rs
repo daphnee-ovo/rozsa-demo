@@ -21,6 +21,7 @@
 // ├── fetch_snapshot_cancellable()
 // ├── subscribe()
 // ├── subscribe_cancellable()
+// ├── fetch_json()
 // ├── send_get()
 // ├── decode_snapshot()
 // ├── record_result()
@@ -34,8 +35,12 @@
 // ├── push()
 // ├── finish()
 // ├── process_line()
-// ├── struct DashboardSnapshotDto
+// ├── struct DashboardUpdateDto
 // ├── struct DashboardStatusDto
+// ├── struct DashboardTasksDto
+// ├── struct DashboardIssuesDto
+// ├── struct DashboardTaskFilesDto
+// ├── struct DashboardIssueFilesDto
 // ├── struct DashboardTaskDto
 // ├── struct DashboardIssueDto
 // ├── decode_snapshot()
@@ -202,8 +207,12 @@ pub enum DevFlowError {
     NoAvailablePort,
     #[error("failed to start dashboard: {0}")]
     Startup(String),
-    #[error("dashboard did not become ready within {timeout:?}: {stderr}")]
-    StartupTimeout { timeout: Duration, stderr: String },
+    #[error("dashboard process {pid:?} did not become ready within {timeout:?}: {stderr}")]
+    StartupTimeout {
+        timeout: Duration,
+        pid: Option<u32>,
+        stderr: String,
+    },
 }
 
 #[derive(Clone)]
@@ -259,14 +268,18 @@ impl DashboardClient {
         &self,
         cancellation: &CancellationToken,
     ) -> Result<DevFlowSnapshot, DevFlowError> {
-        let result = async {
-            let response = self
-                .send_get("api/data", self.timing.request_timeout, cancellation)
-                .await?;
-            let bytes = read_bounded(response, self.timing.request_timeout, cancellation).await?;
-            self.decode_snapshot(&bytes)
-        }
-        .await;
+        let fetch = async {
+            let status = self.fetch_json("api/v1/status", cancellation).await?;
+            let tasks = self.fetch_json("api/v1/tasks", cancellation).await?;
+            let issues = self.fetch_json("api/v1/issues", cancellation).await?;
+            self.decode_snapshot(status, tasks, issues)
+        };
+        let result = tokio::select! {
+            _ = cancellation.cancelled() => Err(DevFlowError::Cancelled),
+            result = timeout(self.timing.request_timeout, fetch) => {
+                result.map_err(|_| DevFlowError::Timeout(self.timing.request_timeout))?
+            }
+        };
         self.record_result(result).await
     }
 
@@ -279,16 +292,28 @@ impl DashboardClient {
         cancellation: &CancellationToken,
     ) -> Result<DevFlowEventStream, DevFlowError> {
         let response = self
-            .send_get("api/events", self.timing.request_timeout, cancellation)
+            .send_get("api/v1/events", self.timing.request_timeout, cancellation)
             .await?;
         Ok(DevFlowEventStream {
             response,
             decoder: SseDecoder::default(),
             pending: VecDeque::new(),
             timing: self.timing,
-            revision: Arc::clone(&self.revision),
-            last_good: Arc::clone(&self.last_good),
+            client: self.clone(),
         })
+    }
+
+    async fn fetch_json<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<T, DevFlowError> {
+        let response = self
+            .send_get(path, self.timing.request_timeout, cancellation)
+            .await?;
+        let bytes = read_bounded(response, self.timing.request_timeout, cancellation).await?;
+        serde_json::from_slice(&bytes)
+            .map_err(|error| DevFlowError::IncompatibleApi(error.to_string()))
     }
 
     async fn send_get(
@@ -315,8 +340,13 @@ impl DashboardClient {
         Ok(response)
     }
 
-    fn decode_snapshot(&self, bytes: &[u8]) -> Result<DevFlowSnapshot, DevFlowError> {
-        let mut snapshot = decode_snapshot(bytes, 0)?;
+    fn decode_snapshot(
+        &self,
+        status: DashboardStatusDto,
+        tasks: DashboardTasksDto,
+        issues: DashboardIssuesDto,
+    ) -> Result<DevFlowSnapshot, DevFlowError> {
+        let mut snapshot = decode_snapshot(status, tasks, issues, 0)?;
         snapshot.revision = self.revision.fetch_add(1, Ordering::Relaxed) + 1;
         Ok(snapshot)
     }
@@ -349,8 +379,7 @@ pub struct DevFlowEventStream {
     decoder: SseDecoder,
     pending: VecDeque<Vec<u8>>,
     timing: DashboardTiming,
-    revision: Arc<AtomicU64>,
-    last_good: Arc<RwLock<Option<DevFlowSnapshot>>>,
+    client: DashboardClient,
 }
 
 impl DevFlowEventStream {
@@ -360,20 +389,28 @@ impl DevFlowEventStream {
     ) -> Result<Option<DevFlowSnapshot>, DevFlowError> {
         loop {
             if let Some(data) = self.pending.pop_front() {
-                let result = decode_snapshot(&data, 0).map(|mut snapshot| {
-                    snapshot.revision = self.revision.fetch_add(1, Ordering::Relaxed) + 1;
-                    snapshot
-                });
-                return match result {
-                    Ok(snapshot) => {
-                        *self.last_good.write().await = Some(snapshot.clone());
-                        Ok(Some(snapshot))
-                    }
+                let update: DashboardUpdateDto = match serde_json::from_slice(&data) {
+                    Ok(update) => update,
                     Err(error) => {
                         self.mark_last_stale().await;
-                        Err(error)
+                        return Err(DevFlowError::IncompatibleApi(error.to_string()));
                     }
                 };
+                if !matches!(
+                    update.resource.as_str(),
+                    "all" | "status" | "tasks" | "issues"
+                ) {
+                    self.mark_last_stale().await;
+                    return Err(DevFlowError::IncompatibleApi(format!(
+                        "unknown update resource `{}`",
+                        update.resource
+                    )));
+                }
+                return self
+                    .client
+                    .fetch_snapshot_cancellable(cancellation)
+                    .await
+                    .map(Some);
             }
             let chunk = tokio::select! {
                 _ = cancellation.cancelled() => {
@@ -404,7 +441,7 @@ impl DevFlowEventStream {
     }
 
     async fn mark_last_stale(&self) {
-        if let Some(snapshot) = self.last_good.write().await.as_mut() {
+        if let Some(snapshot) = self.client.last_good.write().await.as_mut() {
             snapshot.mark_stale();
         }
     }
@@ -483,10 +520,8 @@ impl SseDecoder {
 }
 
 #[derive(Deserialize)]
-struct DashboardSnapshotDto {
-    status: DashboardStatusDto,
-    tasks: Vec<DashboardTaskDto>,
-    issues: Vec<DashboardIssueDto>,
+struct DashboardUpdateDto {
+    resource: String,
 }
 
 #[derive(Deserialize)]
@@ -497,6 +532,29 @@ struct DashboardStatusDto {
     version: Option<String>,
     goals_minor: Option<String>,
     updated: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DashboardTasksDto {
+    items: Vec<DashboardTaskDto>,
+}
+
+#[derive(Deserialize)]
+struct DashboardIssuesDto {
+    items: Vec<DashboardIssueDto>,
+}
+
+#[derive(Deserialize)]
+struct DashboardTaskFilesDto {
+    create: Vec<String>,
+    modify: Vec<String>,
+    test: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct DashboardIssueFilesDto {
+    create: Vec<String>,
+    modify: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -513,12 +571,7 @@ struct DashboardTaskDto {
     depends_on: Vec<String>,
     #[serde(default)]
     done_when: Vec<String>,
-    #[serde(default)]
-    files_create: Vec<String>,
-    #[serde(default)]
-    files_modify: Vec<String>,
-    #[serde(default)]
-    files_test: Vec<String>,
+    files: DashboardTaskFilesDto,
 }
 
 #[derive(Deserialize)]
@@ -528,34 +581,34 @@ struct DashboardIssueDto {
     status: String,
     severity: Option<String>,
     description: Option<String>,
-    #[serde(default)]
-    files_create: Vec<String>,
-    #[serde(default)]
-    files_modify: Vec<String>,
+    files: DashboardIssueFilesDto,
 }
 
-fn decode_snapshot(bytes: &[u8], revision: u64) -> Result<DevFlowSnapshot, DevFlowError> {
-    let dto: DashboardSnapshotDto = serde_json::from_slice(bytes)
-        .map_err(|error| DevFlowError::IncompatibleApi(error.to_string()))?;
-    let tasks = dto
-        .tasks
+fn decode_snapshot(
+    status: DashboardStatusDto,
+    tasks: DashboardTasksDto,
+    issues: DashboardIssuesDto,
+    revision: u64,
+) -> Result<DevFlowSnapshot, DevFlowError> {
+    let tasks = tasks
+        .items
         .into_iter()
         .map(DevFlowTask::try_from)
         .collect::<Result<Vec<_>, _>>()?;
-    let issues = dto
-        .issues
+    let issues = issues
+        .items
         .into_iter()
         .map(DevFlowIssue::try_from)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(DevFlowSnapshot {
         revision,
         project: DevFlowProjectStatus {
-            name: dto.status.name,
-            phase: dto.status.phase,
-            mode: dto.status.mode,
-            version: dto.status.version,
-            goals_minor: dto.status.goals_minor,
-            updated: dto.status.updated,
+            name: status.name,
+            phase: status.phase,
+            mode: status.mode,
+            version: status.version,
+            goals_minor: status.goals_minor,
+            updated: status.updated,
         },
         tasks,
         issues,
@@ -589,9 +642,9 @@ impl TryFrom<DashboardTaskDto> for DevFlowTask {
             refs: dto.refs,
             depends_on: dto.depends_on,
             done_when: dto.done_when,
-            files_create: dto.files_create,
-            files_modify: dto.files_modify,
-            files_test: dto.files_test,
+            files_create: dto.files.create,
+            files_modify: dto.files.modify,
+            files_test: dto.files.test,
         })
     }
 }
@@ -617,8 +670,8 @@ impl TryFrom<DashboardIssueDto> for DevFlowIssue {
             status,
             severity: dto.severity,
             description: dto.description,
-            files_create: dto.files_create,
-            files_modify: dto.files_modify,
+            files_create: dto.files.create,
+            files_modify: dto.files.modify,
         })
     }
 }
@@ -839,9 +892,11 @@ pub async fn start_dashboard_with_delay(
                 break;
             }
             if Instant::now() >= deadline {
+                let pid = child.id();
                 cleanup_child(&mut child, &mut process_group, stderr_task).await;
                 return Err(DevFlowError::StartupTimeout {
                     timeout: timing.startup_timeout,
+                    pid,
                     stderr: String::from_utf8_lossy(&stderr.lock().await).into_owned(),
                 });
             }
@@ -867,9 +922,11 @@ pub async fn start_dashboard_with_delay(
                     sleep(timing.startup_poll_interval.min(remaining)).await;
                 }
                 Err(_) => {
+                    let pid = child.id();
                     cleanup_child(&mut child, &mut process_group, stderr_task).await;
                     return Err(DevFlowError::StartupTimeout {
                         timeout: timing.startup_timeout,
+                        pid,
                         stderr: String::from_utf8_lossy(&stderr.lock().await).into_owned(),
                     });
                 }

@@ -260,7 +260,7 @@ async fn run_real_contract(development_root: &Path, sandbox: &Path) -> Result<()
     });
 
     let base_url = reqwest::Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
-    let client = DashboardClient::new(base_url).map_err(|error| error.to_string())?;
+    let client = DashboardClient::new(base_url.clone()).map_err(|error| error.to_string())?;
     let snapshot = tokio::time::timeout(Duration::from_secs(8), async {
         loop {
             match client.fetch_snapshot().await {
@@ -275,6 +275,53 @@ async fn run_real_contract(development_root: &Path, sandbox: &Path) -> Result<()
         return Err(format!(
             "wrong dashboard project: port={port} pid={pid:?} snapshot={snapshot:?}"
         ));
+    }
+
+    let rest_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| error.to_string())?;
+    let discovery: serde_json::Value = rest_client
+        .get(base_url.join("api/v1").unwrap())
+        .send()
+        .await
+        .map_err(|error| format!("GET /api/v1 failed: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("GET /api/v1 returned an error: {error}"))?
+        .json()
+        .await
+        .map_err(|error| format!("GET /api/v1 was not JSON: {error}"))?;
+    if discovery["api_version"] != "v1" {
+        return Err(format!("unexpected API discovery document: {discovery}"));
+    }
+    let endpoints = discovery["endpoints"]
+        .as_array()
+        .ok_or_else(|| format!("discovery endpoints were not an array: {discovery}"))?;
+    for path in [
+        "/api/v1/status",
+        "/api/v1/tasks",
+        "/api/v1/issues",
+        "/api/v1/events",
+    ] {
+        if !endpoints
+            .iter()
+            .any(|endpoint| endpoint["method"] == "GET" && endpoint["path"].as_str() == Some(path))
+        {
+            return Err(format!("discovery omitted read-only {path}: {discovery}"));
+        }
+    }
+    for path in ["api/v1/status", "api/v1/tasks", "api/v1/issues"] {
+        let response = rest_client
+            .get(base_url.join(path).unwrap())
+            .send()
+            .await
+            .map_err(|error| format!("GET /{path} failed: {error}"))?
+            .error_for_status()
+            .map_err(|error| format!("GET /{path} returned an error: {error}"))?;
+        let _: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|error| format!("GET /{path} was not JSON: {error}"))?;
     }
 
     let cancellation = CancellationToken::new();
@@ -342,6 +389,7 @@ async fn run_real_contract(development_root: &Path, sandbox: &Path) -> Result<()
         ));
     }
     drop(client);
+    drop(rest_client);
 
     let status = match tokio::time::timeout(Duration::from_secs(42), child.wait()).await {
         Ok(result) => result.map_err(|error| error.to_string())?,

@@ -1,3 +1,11 @@
+// FrameworkTree
+// gui_layout_polish_test.rs
+// ├── sidebar_and_settings_keep_compact_titlebar_spacing()
+// ├── composer_controls_follow_the_requested_order_and_hint_behavior()
+// ├── native_main_content_stays_centered_while_resizing()
+// ├── native_sidebar_button_reflects_real_collapsed_state()
+// └── native_collapsed_sidebar_reveals_at_the_edge_and_avoids_the_titlebar()
+
 #[test]
 fn sidebar_and_settings_keep_compact_titlebar_spacing() {
     let sidebar = include_str!("../frontend/sidebar.html");
@@ -118,7 +126,8 @@ fn native_collapsed_sidebar_reveals_at_the_edge_and_avoids_the_titlebar() {
     assert!(frontend.contains(
         "document.documentElement.addEventListener('pointerenter', handleSidebarEdgeReveal)"
     ));
-    assert!(!sidebar_frontend.contains("pointerleave"));
+    // Feature-local hover surfaces may use pointerleave; the sidebar must not
+    // own or hide the native overlay itself.
     assert!(!sidebar_frontend.contains("set_native_sidebar_overlay_visible"));
     assert!(html.contains("id=\"nativeSidebarEdgeTrigger\""));
     assert!(html.contains("id=\"nativeGuiInteractionLayer\" aria-hidden=\"true\""));

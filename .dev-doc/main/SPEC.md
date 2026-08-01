@@ -3,8 +3,8 @@
 ## Goal
 
 Add a project-scoped, read-only dev-flow integration to Rózsa. It must discover
-and validate `dow`, manage reusable dashboard services, adapt the current
-dashboard snapshot/SSE API behind an internal boundary, present open and claimed
+and validate `dow`, manage reusable dashboard services, adapt the versioned
+dashboard REST/SSE API behind an internal boundary, present open and claimed
 work in the GUI, specialize supported successful `dow` Bash results, and add a
 reusable notification center without coupling GUI code to dev-flow API details.
 
@@ -32,8 +32,8 @@ reusable notification center without coupling GUI code to dev-flow API details.
 - Parsing Task/Issue state directly from `.dev-doc`.
 - Installing dev-flow, running `dow init`, or embedding the dashboard deeply.
 - Supporting arbitrary compound shell scripts as structured `dow` results.
-- Changing dev-flow itself or claiming compatibility with future unversioned API
-  shapes outside the private adapter.
+- Changing dev-flow itself or claiming compatibility with future API versions
+  outside the private adapter.
 
 ## Requirements Trace
 
@@ -68,11 +68,13 @@ not guess.
 
 ### Cross-task invariants
 
-1. **Read-only boundary**: dashboard integration exposes only loopback GET
-   `/api/data` and GET `/api/events`. No public generic request method, POST
-   route, or Task/Issue mutation operation is allowed. Direct `.dev-doc` access
-   is limited to locating and opening the selected `STATUS.yaml` marker; all
-   Task/Issue data comes from the private dashboard adapter.
+1. **Read-only boundary**: dashboard integration invokes only loopback GET
+   `/api/v1/status`, `/api/v1/tasks`, `/api/v1/issues`, and `/api/v1/events`.
+   API discovery at GET `/api/v1` is contract-test-only. No public generic
+   request method, POST/PATCH/PUT/DELETE route, or Task/Issue mutation operation
+   is allowed. Direct `.dev-doc` access is limited to locating and opening the
+   selected `STATUS.yaml` marker; all Task/Issue data comes from the private
+   dashboard adapter.
 2. **Compatibility boundary**: dashboard paths, DTOs, raw status strings, SSE
    framing, and child-process arguments remain private to app-layer adapters.
    Registry, GUI, session persistence, and frontend code consume Rózsa-owned
@@ -195,9 +197,10 @@ enum DevFlowTaskStatus { Pending, InProgress, Done }
 enum DevFlowIssueStatus { Open, InProgress, Closed }
 ```
 
-The raw response is capped at 16 MiB for both `/api/data` and each SSE event.
-Document bodies returned by the current API are not retained. A new snapshot is
-validated completely before atomically replacing the last good snapshot.
+Every REST resource response and each SSE event is capped at 16 MiB. Rózsa does
+not request `/api/v1/docs`, so document bodies never cross the adapter boundary.
+The status, task, and issue DTOs are combined and validated completely before
+atomically replacing the last good snapshot.
 
 The private client has no generic public request method and exposes only:
 
@@ -206,7 +209,7 @@ async fn fetch_snapshot(&self) -> Result<DevFlowSnapshot, DevFlowError>;
 async fn subscribe(&self) -> Result<DevFlowEventStream, DevFlowError>;
 ```
 
-No dashboard POST path is represented or invoked.
+No dashboard mutation method or path is represented or invoked.
 
 ### 3. CLI discovery and settings
 
@@ -362,8 +365,9 @@ dow dashboard --port <candidate> --no-open
 
 Use an explicit loopback port from 9800–9900 so the URL is known without parsing
 human stderr. Probe candidates and retry on bind/start races. Startup succeeds
-only when `GET /api/data` returns a valid snapshot within five seconds. Capture
-bounded stderr for diagnostics and always reap children.
+only when GET `/api/v1/status`, `/api/v1/tasks`, and `/api/v1/issues` combine
+into a valid snapshot within five seconds. Capture bounded stderr for
+diagnostics and always reap children.
 
 Loopback connects have a one-second deadline. The initial snapshot, refresh
 requests, and SSE response headers each have a five-second overall deadline.
@@ -371,10 +375,12 @@ Once subscribed, no bytes, comment keep-alive, or valid update for 45 seconds is
 treated as a stalled connection. Disable, project reclamation, executable
 change, and application shutdown cancel all pending requests and retries.
 
-Connect SSE immediately after the first snapshot. The decoder supports comments,
-CRLF/LF, multiline `data`, and blank-line event termination. Only `event:
-update` is mapped; its data must be a complete valid snapshot. Keep-alives do
-not increment revision.
+Connect GET `/api/v1/events` immediately after the first snapshot. The decoder
+supports comments, CRLF/LF, multiline `data`, and blank-line event termination.
+Only `event: update` is mapped. Its `{"resource":"..."}` data is an
+invalidation signal; the adapter re-fetches the three read-only resources and
+publishes only the fully validated combined snapshot. Keep-alives do not
+increment revision.
 
 On unexpected disconnect:
 
@@ -577,10 +583,12 @@ Rust file whose symbol structure changes; never edit generated trees manually.
   distinct; a worktree branch change re-associates all its sessions; and
   switching projects or branches never shows another project's snapshot.
 - SPEC-AC-004: Contract tests prove the integration client sends only loopback
-  GET requests to `/api/data` and `/api/events`; it exposes and invokes no
-  dashboard mutation route.
-- SPEC-AC-005: A valid initial snapshot and SSE update atomically replace state;
-  malformed/oversized data preserves the last good snapshot as stale. Tests
+  GET requests to `/api/v1/status`, `/api/v1/tasks`, `/api/v1/issues`, and
+  `/api/v1/events`; real-`dow` coverage also validates GET `/api/v1` discovery.
+  It exposes and invokes no dashboard mutation route.
+- SPEC-AC-005: A valid combined initial snapshot and an SSE-triggered REST
+  refresh atomically replace state; malformed/oversized data preserves the last
+  good snapshot as stale. Tests
   enforce one-second connect, five-second request/header, 45-second SSE-stall,
   deterministic retry/error timing, cancellation, and one deduplicated
   incompatibility/connection error that resolves on recovery.
@@ -633,8 +641,9 @@ Rust file whose symbol structure changes; never edit generated trees manually.
 
 ## Risks
 
-- The dashboard API is unversioned. Required-field validation, fixture contract
-  tests, response caps, and the private adapter contain the blast radius.
+- Dashboard API v1 may evolve within its version. Required-field validation,
+  fixture and real-CLI contract tests, response caps, and the private adapter
+  contain the blast radius.
 - `dow dashboard` currently resolves branch-specific doc roots and may create a
   missing branch directory. Rózsa validates the exact branch marker before
   startup and refuses detached/ambiguous selection, containing this behavior
@@ -646,8 +655,9 @@ Rust file whose symbol structure changes; never edit generated trees manually.
   soft budget and never kill current/active work solely for budget compliance.
 - Conservative shell recognition may leave valid complex commands generic. This
   is preferred to false success presentation.
-- Current `/api/data` includes document bodies. Response caps and immediate DTO
-  reduction prevent those bodies from becoming retained application state.
+- The dashboard exposes document and mutation resources that Rózsa does not
+  need. The private client has no generic public request surface, keeping those
+  routes unreachable from GUI and registry code.
 
 ## Test Plan
 
@@ -658,7 +668,7 @@ Rust file whose symbol structure changes; never edit generated trees manually.
   branch/project isolation, and read-only requests.
 - GUI integration/contract tests for IPC snapshots, settings, tool presentation,
   details, notification behavior, and responsive DOM.
-- Opt-in real CLI test using the discovered `dow`, a
+- Required real CLI test using the discovered `dow`, a
   `tempfile::Builder::tempdir_in("tmp/test_env")` root, `Command::current_dir`,
   a unique Git repository and owned port. The harness owns/reaps every child and
   retains actionable diagnostics on failure.

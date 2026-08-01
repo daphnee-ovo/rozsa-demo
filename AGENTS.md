@@ -1,5 +1,10 @@
 # Development Rules
 
+## Overview
+> Use `CONTRIBUTING.md` to document development guidelines shared by both human contributors and agents.
+
+@CONTRIBUTING.md
+
 ## Project Scope
 
 Rózsa is a Rust 2024 Cargo workspace. The supported interactive frontend is the native Tauri GUI.
@@ -40,6 +45,7 @@ The active product is implemented entirely in the five Rust crates above. Do not
 - Full project verification is `cargo build`, `cargo clippy`, and `cargo test` from the repository root.
 - Use `cargo fmt --all -- --check` for formatting verification.
 - On macOS, use `./run.sh` to launch the GUI from a staged debug `.app` bundle with the development Dock icon; use `./run.sh --prepare-only` to validate the bundle without launching it.
+- Run tests that depend on real macOS FSEvents, filesystem watchers, or watcher-driven SSE updates with host permissions. A sandbox may allow REST and socket traffic while suppressing FSEvents; reproduce a watcher timeout on the host before treating it as a product defect.
 - Run `./devtools/sync-codex-model-client-version.sh` to update the models endpoint compatibility version directly from `openai/codex` GitHub tags; use `--check` for verification.
 - When verification requires opening the app, close the test app immediately after testing; do not leave a validation instance running in the user's session.
 - Never commit unless the user asks.
@@ -48,6 +54,10 @@ The active product is implemented entirely in the five Rust crates above. Do not
 
 - Treat `Cargo.toml` and `Cargo.lock` changes as reviewed code.
 - Use workspace dependencies for versions shared across crates.
+
+## Docs
+- Keeping documentation up to date and ensuring it accurately reflects the current state of the code is as important as writing the code itself.
+
 
 ## Git
 
@@ -69,16 +79,11 @@ If rebase conflicts occur:
 - If a conflict is in a file you did not modify, abort and ask the user.
 - Never force push.
 
-## Issues and Pull Requests
-
-Treat `CONTRIBUTING.md` as the canonical entry point for contributor prerequisites, development tools, code style, testing, and pull request requirements.
-
-- Do not edit `CHANGELOG.md`; maintainers manage changelog entries.
-- When a commit should close issues, repeat `fixes #<number>` or `closes #<number>` for each issue.
-
 ## GUI
 
 - Treat `docs/gui/UI_USAGE_GUIDELINES.md`, `docs/gui/ARCHITECTURE.md`, `docs/gui/TERMINOLOGY.md`, and `docs/gui/prototype/` as the GUI design sources.
 - New GUI elements must preserve the established visual and interaction language.
 - If the prototype conflicts with an explicit user requirement, the user requirement wins. Obtain approval before modifying the prototype to restore product/prototype consistency.
 - Shared prototype CSS and JavaScript may be extracted when doing so improves scene reuse without changing behavior.
+- Components that interact with the operating system, such as native file pickers, must support macOS, Linux, and Windows.
+- Use Gaussian blur to make hierarchical relationships feel more elegant.

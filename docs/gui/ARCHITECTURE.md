@@ -247,6 +247,21 @@ class SessionStore {
 
 `PendingUserQuestions` 是按 `session_id + request_id` 索引的 `Arc<DashMap<...>>`，值包含问题定义和 `oneshot::Sender<AskUserQuestionResponse>`。响应命令只允许消费一次 pending request；取消和窗口关闭按 session 清理，避免后台 session 的问题覆盖当前 tab。
 
+### 5.5 Dev Flow 项目运行时
+
+Dev Flow 集成由 app 层 adapter 和项目级 dashboard runtime 承担，GUI 不直接拼接
+`dow` 参数、REST 路径或 SSE payload。adapter 负责 CLI 发现、版本探测、只读 REST
+解码与兼容错误；runtime 以规范化 project root 和 revision 为 identity，使同一项目的
+多个 session 共享服务与状态，而不是把 dashboard 绑定到当前 session。
+
+sidebar 和 Settings 消费同一份只读 snapshot。项目文件变化经 dashboard watcher、
+SSE `update` 事件和 adapter refresh 更新 snapshot；断线重连与 revision 切换不能销毁
+用户可能返回的旧服务。没有项目活跃 session 15 分钟后才进入回收候选，并受
+`max(系统内存 5%, 256 MiB)` 的总内存阈值约束。错误通过公共 notification center
+呈现，6 秒后折叠进 unresolved error tray；成功与普通就绪状态不主动打扰。
+
+完整约定见 [`DEV_FLOW_INTEGRATION.md`](./DEV_FLOW_INTEGRATION.md)。
+
 ## 6. 流式响应机制
 
 ### 6.1 Agent 事件流

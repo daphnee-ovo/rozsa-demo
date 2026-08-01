@@ -49,6 +49,7 @@
   --titlebar-bg: oklch(98.5% 0.003 350);
   --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Menlo, monospace;
+  --ui-font-size: 13px;
   --radius: 10px;
   --radius-lg: 14px;
 }
@@ -57,7 +58,7 @@
 
 body {
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   color: var(--fg);
   background: var(--bg);
   height: 100vh;
@@ -2165,6 +2166,64 @@ html[data-preview-theme="dark"] {
 #settingsPanel .settings-workspace { position: relative; }
 #settingsPanel.settings-sidebar-collapsed .settings-workspace { grid-template-columns: minmax(0, 1fr); }
 #settingsPanel.settings-sidebar-collapsed .settings-chrome { background: var(--app-body-bg); }
+
+/* Dev Flow project status and read-only detail */
+.dev-flow-status { min-width: 0; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); padding-top: 9px; }
+.dev-flow-summary, .dev-flow-claimed-row, .dev-flow-more { width: 100%; min-width: 0; border: 0; padding: 2px 0; background: transparent; color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
+.dev-flow-summary { color: var(--fg); font-size: .78rem; font-weight: 650; }
+.dev-flow-claimed-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 6px; font-size: .72rem; }
+.dev-flow-active-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex: 0 0 auto; }
+.dev-flow-item-id { color: var(--fg); font-family: var(--font-mono); font-size: .68rem; }
+.dev-flow-item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-flow-more { font-size: .68rem; padding-left: 13px; }
+.dev-flow-summary:hover, .dev-flow-claimed-row:hover, .dev-flow-more:hover { color: var(--accent); }
+.dev-flow-detail { position: fixed; z-index: 80; top: 58px; left: clamp(244px, calc(var(--main-sidebar-width) + 12px), 350px); width: min(430px, calc(100vw - var(--main-sidebar-width) - 32px)); max-height: min(520px, calc(100vh - 82px)); overflow: auto; border: 1px solid color-mix(in srgb, var(--border) 78%, transparent); border-radius: 14px; padding: 15px; color: var(--fg); background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 18px 48px rgb(30 20 25 / 15%); backdrop-filter: blur(24px) saturate(130%); }
+.dev-flow-detail[hidden] { display: none; }
+.dev-flow-detail header { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 11px; border-bottom: 1px solid var(--border); }
+.dev-flow-detail header div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.dev-flow-detail header span, .dev-flow-detail footer { color: var(--muted); font-size: .7rem; }
+.dev-flow-detail header button { border: 0; background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
+.dev-flow-detail-list { display: grid; gap: 4px; padding: 8px 0; }
+.dev-flow-detail article { padding: 8px 4px; border-bottom: 1px solid color-mix(in srgb, var(--border) 52%, transparent); }
+.dev-flow-detail article div { display: flex; align-items: center; gap: 7px; font-size: .73rem; }
+.dev-flow-detail article p { margin: 5px 0 0; font-size: .78rem; line-height: 1.4; }
+.dev-flow-kind { margin-left: auto; color: var(--muted); font-size: .66rem; }
+
+/* App-level notifications keep unresolved errors after toast expiry. */
+.notification-center { position: fixed; z-index: 90; top: 46px; right: 18px; width: min(340px, calc(100vw - 36px)); display: grid; justify-items: end; gap: 8px; pointer-events: none; }
+.notification-toast, .unresolved-error-tray { pointer-events: auto; border: 1px solid color-mix(in srgb, var(--border) 78%, transparent); background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 12px 36px rgb(30 20 25 / 13%); backdrop-filter: blur(22px) saturate(125%); }
+.notification-toast { width: 100%; display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border-radius: 12px; animation: notification-in .18s ease-out; }
+.notification-toast p { margin: 3px 0 0; color: var(--muted); font-size: .72rem; }
+.notification-mark, .error-count-mark { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--error); border-radius: 50%; color: var(--error); font-size: .72rem; font-weight: 800; }
+.unresolved-error-tray { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 6px 8px; border-radius: 18px; color: var(--fg); font: inherit; cursor: pointer; }
+.error-count { color: var(--error); font-size: .72rem; font-weight: 700; }
+.error-tray-copy { display: none; min-width: 0; text-align: left; }
+.error-tray-copy strong, .error-tray-copy small { display: block; }
+.error-tray-copy small { margin-top: 2px; color: var(--muted); font-size: .66rem; }
+.unresolved-error-tray.expanded { width: 100%; border-radius: 12px; }
+.unresolved-error-tray.expanded .error-tray-copy { display: block; }
+@keyframes notification-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* Dev Flow Settings reuses the normal page surface instead of adding a gray card. */
+.dev-flow-settings-page .settings-page-title { margin-bottom: 4px; }
+.dev-flow-version { margin: 0 0 8px; color: var(--muted); font-size: .75rem; }
+.dev-flow-settings-page .settings-page-lead { margin: 0 0 32px; }
+.dev-flow-settings-list { margin-bottom: 28px; border-top: 1px solid var(--border); }
+.dev-flow-settings-list .settings-field { min-height: 48px; margin: 0; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.dev-flow-settings-heading { margin-top: 34px; }
+.dev-flow-ready { display: inline-flex; align-items: center; gap: 7px; color: var(--fg); }
+.dev-flow-ready > span { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.dev-flow-path-row .settings-field-control { display: flex; justify-content: flex-end; gap: 8px; width: min(100%, 570px); }
+.dev-flow-path-input { min-width: 0; flex: 1; height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; color: var(--fg); background: transparent; font: inherit; }
+.settings-secondary-button { min-height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 12px; color: var(--fg); background: transparent; font: inherit; cursor: pointer; }
+.dev-flow-dependent.disabled { opacity: .42; }
+.settings-toggle:disabled { cursor: not-allowed; }
+@media (max-width: 650px) {
+  .dev-flow-detail { left: 14px; right: 14px; width: auto; top: 58px; }
+  .notification-center { right: 12px; width: min(320px, calc(100vw - 24px)); }
+  .dev-flow-path-row { align-items: flex-start; flex-direction: column; }
+  .dev-flow-path-row .settings-field-control { width: 100%; }
+}
 #settingsPanel.settings-sidebar-collapsed .settings-sidebar {
   position: absolute;
   z-index: 20;

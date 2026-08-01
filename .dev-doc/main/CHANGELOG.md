@@ -15,3 +15,8 @@
 - 16:26 fix: 修复 SSE Sidebar 推送与原子详情快照契约
 - 20:42 test: 增加严格隔离且必须真实执行的 dow 契约测试
 - 22:26 fix: 重做 Dev-flow 设置页并修复设置状态传播
+- 23:35 test: 更新 RESTful dashboard adapter 并增加真实 dow 契约测试
+
+## 2026-08-02
+- 00:21 docs: 同步 Dev-flow GUI 文档、原型与开发阶段校验
+- 00:48 fix: harden dev-flow integration and settings

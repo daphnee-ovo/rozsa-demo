@@ -128,6 +128,11 @@ tool call = agent 请求执行 Read / Edit / Write / Bash 的运行时动作
 | `tool chips` | 工具计数标签 | Bash、Read、Edit 等工具名与调用次数 |
 | `sidebar footer` | 侧栏底部操作区 | `.sidebar-bottom` |
 | `settings action` | 设置入口 | `openSidebarSettings()`，不要叫 settings toolbar |
+| `Dev Flow status summary` | 开放项摘要 | `#sidebarDevFlowGroup` 中的 `3 Tasks · 1 Issue`；不另加 Dev Flow 标题 |
+| `claimed row` | 执行中条目 | 带状态点、ID 与截断 title 的 task/issue 行 |
+| `more action` | 更多条目入口 | sidebar 空间不足时显示 `more <count>`，打开只读 detail surface |
+| `Dashboard action` | Dashboard 入口 | sidebar 底部、Settings 上方的网页 dashboard 操作 |
+| `Dev Flow detail surface` | 只读详情浮层 | hover delay 临时显示，click 固定；不提供 mutation controls |
 | `collapsed sidebar` | 折叠侧栏 | AppKit 折叠 sidebar item，WebView identity 不变 |
 
 `sidebar` 是一个页面区域；`session list` 是其中的内容组件；`session item` 是列表项；`New session` 和 `Settings` 是控件/操作，不是新的 sidebar。
@@ -379,6 +384,15 @@ composer host                                     [data-od-id="chat-input"]
 | `subagent panel` | 子代理面板 | 展示 subagent 名称、状态、模型和消息数 | `#subagentPanel`；`showSubagentPanel()` |
 | `subagent row` | 子代理行 | 单个 subagent 的信息行 | `#subagentPanel li`、`.subagent-meta` |
 
+### 11.3 Notification center 与 unresolved errors
+
+| 术语 | 中文 | 当前锚点/说明 |
+| --- | --- | --- |
+| `notification center` | 应用内通知区 | main WebView 右上角承载 toast stack |
+| `notification toast` | 瞬时通知 | 每条独立计时 6 秒并向下堆叠；非必要 info/success 不显示 |
+| `error toast` | 错误通知 | 到时后转入 unresolved error tray，不代表错误已解决 |
+| `unresolved error tray` | 未解决错误入口 | 圆圈 `!` 与数量；hover 展开，click 固定 |
+
 ## 12. 前端交互状态
 
 状态词描述的是同一个组件在某个时刻的 UI 状态，不是新的组件名称。沟通时应同时说组件和状态，例如“autocomplete item 进入 selected state”。
@@ -438,7 +452,7 @@ message editor                                  #msgInput.rich-input
 ## 13. Settings 控件全量术语
 
 Settings pane 的固定顺序是 Skills、Tools、Extensions、General、Appearance、Keyboard
-shortcuts、Permissions。Models 在 General 中；Permissions 是独立 pane。
+shortcuts、Permissions、Dev Flow。Models 在 General 中；Permissions 与 Dev Flow 是独立 pane。
 
 ```text
 settings scene
@@ -468,7 +482,7 @@ settings scene
 | `settings workspace` | 设置工作区 | main WebView 内组织 settings content | `.settings-workspace` |
 | `settings navigation` | 设置导航 | sidebar WebView 中的 pane 切换入口 | `#settingsSidebarScene [data-settings-pane]` |
 | `back action` | 返回应用操作 | 请求切回 Main scene | `.settings-back`；`closeSidebarSettings()` |
-| `settings tab` | 设置页签 | 按固定顺序切换 Skills、Tools、Extensions、General、Appearance、Keyboard shortcuts、Permissions | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
+| `settings tab` | 设置页签 | 按固定顺序切换 Skills、Tools、Extensions、General、Appearance、Keyboard shortcuts、Permissions、Dev Flow | `[data-settings-pane]`；`selectSidebarSettingsPane()` |
 | `settings content` | 设置内容区 | 承载当前 pane 的滚动内容 | `.settings-content` |
 | `settings pane` | 设置页面 | 一个完整的 Settings 分类页面 | `.settings-pane`、`#pane-*`；`renderSettingsPane()` |
 | `pane title` | 页面标题 | 当前 pane 的标题 | `.settings-pane-title` |
@@ -550,6 +564,19 @@ group 只展示已经接到 `update_setting` 的控件。
 | `shortcut row` | 快捷键行 | 展示动作、说明、当前绑定和重置入口 | `.shortcut-row` |
 | `shortcut binding action` | 快捷键绑定操作 | 进入按键捕获并保存新绑定 | `.shortcut-binding`；`beginKeyBindingCapture()` |
 | `context controls group` | 上下文控制分组 | 只读展示权限、问题和自动补全等固定按键 | `#fixedKeyBindingList` |
+
+### 13.5 Dev Flow pane
+
+| 术语 | 中文 | 当前锚点/说明 |
+| --- | --- | --- |
+| `Dev Flow pane` | Dev Flow 设置页 | 标题下显示版本、description、Overview 与 Settings；沿用普通 settings surface |
+| `Dashboard Availability` | Dashboard 可用状态 | 只读 overview row，例如 Ready 或 Unavailable |
+| `Dashboard address` | Dashboard 地址 | 当前项目只读服务地址 |
+| `Memory Use` | 内存使用 | 当前 project dashboard runtime 的 MiB 值 |
+| `Path field` | CLI 路径字段 | 唯一的 `dow` path 编辑位置，配套 Choose action |
+| `Enable Dev Flow` | 集成总开关 | 控制已实现联动；system prompt 注入仍为 TODO |
+| `sidebar status setting` | sidebar 状态开关 | 控制 status summary、claimed row 与 detail surface |
+| `Dashboard button setting` | Dashboard 按钮开关 | 控制 sidebar Dashboard action |
 
 ## 14. 术语表的范围与使用规则
 

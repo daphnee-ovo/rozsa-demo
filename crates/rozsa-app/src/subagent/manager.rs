@@ -61,8 +61,8 @@ use rozsa_core::events::AgentEvent;
 use rozsa_core::messages::AgentMessage;
 use rozsa_core::tool::{Tool, ToolExecutionMode};
 use rozsa_model::types::{
-    CacheRetention, Message, Model, SimpleStreamOptions, StreamEvent, StreamOptions, ThinkingEffort,
-    ToolSchema, Transport, UserContent, UserMessage,
+    CacheRetention, Message, Model, SimpleStreamOptions, StreamEvent, StreamOptions,
+    ThinkingEffort, ToolSchema, Transport, UserContent, UserMessage,
 };
 use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;

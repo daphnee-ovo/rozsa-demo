@@ -366,7 +366,23 @@ sidebar material 错     -> native_split_view.rs + revisioned theme-state
 
 主题设置影响颜色、字体和 sidebar material；它不改变 permission policy、session ownership 或 agent loop。
 
-## 9. 推荐用语
+## 9. Dev Flow 与 Notification
+
+| 术语 | 当前含义 |
+| --- | --- |
+| Dev Flow project identity | 规范化 project root 与 revision 组成的 runtime key；不是 session ID |
+| project dashboard runtime | 同一项目多个 session 共享的 dashboard 服务、SSE 连接与只读 snapshot |
+| status summary | sidebar 中不带 Dev Flow 标题的开放数量，例如 `3 Tasks · 1 Issue` |
+| claimed row | 当前正在执行且未关闭的 task/issue 单行摘要，例如 `● T011 Update adapter` |
+| detail surface | 由 hover delay 或 click 打开的只读任务/问题详情；不是编辑器或 dashboard 嵌入页 |
+| Dashboard action | Settings 上方打开项目 dashboard 网页的 sidebar 操作 |
+| notification toast | 右上角独立计时的瞬时反馈；普通 ready/success 默认不显示 |
+| unresolved error tray | error toast 到时后保留的 `!` 入口和未解决数量；hover 展开、click 固定 |
+
+Dev Flow 的 task/issue 数量只统计未关闭项。项目切换会跟随当前 project identity，
+但不会立即销毁旧 dashboard runtime；session 只是活跃度来源，不拥有集成状态。
+
+## 10. 推荐用语
 
 | 推荐说法 | 具体指向 | 避免的模糊说法 |
 | --- | --- | --- |
@@ -379,7 +395,7 @@ sidebar material 错     -> native_split_view.rs + revisioned theme-state
 | “native titlebar event routing” | AppKit drag、double-click、traffic lights 的命中与转发 | “顶部栏点击有问题” |
 | “native split divider position” | AppKit 保存和恢复 sidebar divider | “左边宽度不对” |
 
-## 10. 代码索引
+## 11. 代码索引
 
 | 领域 | 主要入口 |
 | --- | --- |
@@ -398,5 +414,8 @@ sidebar material 错     -> native_split_view.rs + revisioned theme-state
 | macOS titlebar | [`crates/rozsa-gui/src/native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs) |
 | macOS split/sidebar backing | [`crates/rozsa-gui/src/native_split_view.rs`](../../crates/rozsa-gui/src/native_split_view.rs) |
 | Appearance / theme behavior | [`docs/gui/themes.md`](./themes.md) |
+| Dev Flow adapter/runtime/UI contract | [`docs/gui/DEV_FLOW_INTEGRATION.md`](./DEV_FLOW_INTEGRATION.md) |
 
-相关规范：[`GUI 架构`](./ARCHITECTURE.md)、[`GUI 使用规范`](./UI_USAGE_GUIDELINES.md)。
+相关规范：[`GUI 架构`](./ARCHITECTURE.md)、[`GUI 使用规范`](./UI_USAGE_GUIDELINES.md)、
+[`前端术语`](./FRONTEND_TERMINOLOGY.md)、
+[`Dev Flow GUI integration`](./DEV_FLOW_INTEGRATION.md)。

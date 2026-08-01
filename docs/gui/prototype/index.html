@@ -103,11 +103,20 @@
             <span class="tool-chip"><span class="tool-chip-name">Write</span><span class="tool-chip-count">1</span></span>
           </div>
         </div>
+        <div class="status-group dev-flow-status" id="prototypeDevFlowStatus">
+          <button class="dev-flow-summary" type="button" aria-haspopup="dialog" onclick="toggleDevFlowDetail(event)" onpointerenter="scheduleDevFlowDetail()" onpointerleave="leaveDevFlowTrigger()">3 Tasks · 1 Issue</button>
+          <button class="dev-flow-claimed-row" type="button" onclick="toggleDevFlowDetail(event)" onpointerenter="scheduleDevFlowDetail()" onpointerleave="leaveDevFlowTrigger()"><span class="dev-flow-active-dot" aria-hidden="true"></span><span class="dev-flow-item-id">T011</span><span class="dev-flow-item-title">Update RESTful dashboard adapter</span></button>
+          <button class="dev-flow-more" type="button" onclick="toggleDevFlowDetail(event)" onpointerenter="scheduleDevFlowDetail()" onpointerleave="leaveDevFlowTrigger()">more 3</button>
+        </div>
       </div>
     </div>
 
     <!-- 底部导航 -->
     <div class="sidebar-bottom">
+      <button class="sidebar-btn" id="prototypeDashboardButton" data-od-id="btn-dashboard" onclick="openPrototypeDashboard()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5 10V7.5M8 10V5.5M11 10V8.5"/></svg>
+        <span>Dashboard</span>
+      </button>
       <button class="sidebar-btn" data-od-id="btn-settings" onclick="toggleSettings()">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="2.5" y1="4" x2="13.5" y2="4"/><circle cx="10" cy="4" r="1.5" fill="currentColor" stroke="none"/><line x1="2.5" y1="8" x2="13.5" y2="8"/><circle cx="5.5" cy="8" r="1.5" fill="currentColor" stroke="none"/><line x1="2.5" y1="12" x2="13.5" y2="12"/><circle cx="11.5" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
         <span>Settings</span>
@@ -429,6 +438,21 @@
   </main>
 </div>
 
+<section class="dev-flow-detail" id="devFlowDetail" role="dialog" aria-label="Open tasks and issues" hidden onpointerenter="keepDevFlowDetail()" onpointerleave="leaveDevFlowDetail()">
+  <header><div><strong>3 Tasks · 1 Issue</strong><span>rozsa-demo · main</span></div><button type="button" aria-label="Close details" onclick="closeDevFlowDetail()">×</button></header>
+  <div class="dev-flow-detail-list">
+    <article><div><span class="dev-flow-active-dot" aria-hidden="true"></span><strong>T011</strong><span class="dev-flow-kind">Task · claimed</span></div><p>Update RESTful dashboard adapter</p></article>
+    <article><div><strong>T012</strong><span class="dev-flow-kind">Task · open</span></div><p>Synchronize GUI documentation and prototype</p></article>
+    <article><div><strong>I004</strong><span class="dev-flow-kind">Issue · open</span></div><p>Reconnect dashboard event stream after interruption</p></article>
+  </div>
+  <footer>Read-only status · Open Dashboard for full details</footer>
+</section>
+
+<aside class="notification-center" aria-label="Notifications">
+  <div class="notification-toast error" data-prototype-toast><span class="notification-mark" aria-hidden="true">!</span><div><strong>Connection lost</strong><p>Retrying the project dashboard…</p></div></div>
+  <button class="unresolved-error-tray" id="unresolvedErrorTray" type="button" aria-expanded="false" onclick="toggleErrorTray()" onpointerenter="showErrorTray()" onpointerleave="leaveErrorTray()"><span class="error-count-mark" aria-hidden="true">!</span><span class="error-count">1</span><span class="error-tray-copy"><strong>1 unresolved error</strong><small>Dashboard stream disconnected</small></span></button>
+</aside>
+
 
 <!-- ============ Full-window settings scene ============ -->
 <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-label="Settings">
@@ -460,6 +484,7 @@
           <button class="settings-nav-item" type="button" onclick="switchSettingsPage('permissions', this)"><svg class="settings-nav-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.7l4.8 1.8v3.6c0 3.4-2.1 5.8-4.8 7.2-2.7-1.4-4.8-3.8-4.8-7.2V3.5z"/><path d="M5.7 8l1.5 1.5 3-3"/></svg>Permissions</button>
           <button class="settings-nav-item" type="button" onclick="switchSettingsPage('tools', this)"><svg class="settings-nav-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.8 2.3a3 3 0 00-3.6 3.6l-4 4a1.5 1.5 0 002.1 2.1l4-4a3 3 0 003.6-3.6l-1.8 1.8-1.9-.3-.3-1.9z"/></svg>Tools</button>
           <button class="settings-nav-item" type="button" onclick="switchSettingsPage('models', this)"><svg class="settings-nav-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/><path d="M8 1.4v1.3M8 13.3v1.3"/></svg>Models</button>
+          <button class="settings-nav-item" type="button" onclick="switchSettingsPage('dev-flow', this)"><svg class="settings-nav-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="4" r="1.5"/><circle cx="12" cy="4" r="1.5"/><circle cx="8" cy="12" r="1.5"/><path d="M5.3 4.8l1.9 5.7M10.7 4.8l-1.9 5.7"/></svg>Dev Flow</button>
         </div>
       </aside>
       <main class="settings-main">
@@ -518,6 +543,24 @@
           <section class="settings-page" id="page-permissions"><h1 class="settings-page-title">Permissions</h1><p class="settings-page-lead">Review how Rózsa asks before running tools.</p></section>
           <section class="settings-page" id="page-tools"><h1 class="settings-page-title">Tools</h1><p class="settings-page-lead">Registered tools and their capabilities.</p></section>
           <section class="settings-page" id="page-models"><h1 class="settings-page-title">Models</h1><p class="settings-page-lead">Model providers and available models.</p></section>
+          <section class="settings-page dev-flow-settings-page" id="page-dev-flow">
+            <h1 class="settings-page-title" tabindex="-1">Dev Flow</h1>
+            <div class="dev-flow-version">Version 0.3.9</div>
+            <p class="settings-page-lead">Connect Rózsa to this project's task and issue workflow through the detected <code>dow</code> CLI.</p>
+            <h2 class="settings-section-title">Overview</h2>
+            <div class="dev-flow-settings-list" aria-label="Dev Flow overview">
+              <div class="settings-field"><span class="settings-field-label">Dashboard Availability</span><span class="dev-flow-ready"><span aria-hidden="true"></span>Ready</span></div>
+              <div class="settings-field"><span class="settings-field-label">Dashboard address</span><code class="setting-value">http://127.0.0.1:43117</code></div>
+              <div class="settings-field"><span class="settings-field-label">Memory Use</span><span class="setting-value">38 MiB</span></div>
+              <div class="settings-field dev-flow-path-row"><label class="settings-field-label" for="prototypeDowPath">Path</label><div class="settings-field-control"><input id="prototypeDowPath" class="dev-flow-path-input" value="/Users/xinyue/.local/bin/dow"><button class="settings-secondary-button" type="button" onclick="choosePrototypeDowPath()">Choose…</button></div></div>
+            </div>
+            <h2 class="settings-section-title dev-flow-settings-heading">Settings</h2>
+            <div class="dev-flow-settings-list" aria-label="Dev Flow settings">
+              <div class="settings-field"><span class="settings-field-label">Enable Dev Flow</span><button class="settings-toggle on" id="prototypeDevFlowMaster" type="button" aria-label="Enable Dev Flow" aria-pressed="true" onclick="togglePrototypeDevFlowMaster()"></button></div>
+              <div class="settings-field dev-flow-dependent"><span class="settings-field-label">Show status in sidebar</span><button class="settings-toggle on" id="prototypeDevFlowSidebarToggle" type="button" aria-label="Show Dev Flow status in sidebar" aria-pressed="true" onclick="togglePrototypeSetting(this, 'prototypeDevFlowStatus')"></button></div>
+              <div class="settings-field dev-flow-dependent"><span class="settings-field-label">Show Dashboard button</span><button class="settings-toggle on" id="prototypeDashboardToggle" type="button" aria-label="Show Dashboard button" aria-pressed="true" onclick="togglePrototypeSetting(this, 'prototypeDashboardButton')"></button></div>
+            </div>
+          </section>
         </div>
       </main>
     </div>

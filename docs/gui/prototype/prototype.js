@@ -297,6 +297,8 @@ document.addEventListener('keydown', function(e) {
   }
   // Escape 关闭弹窗
   if (e.key === 'Escape') {
+    closeDevFlowDetail();
+    collapseErrorTray();
     closeSettings();
   }
 });
@@ -355,7 +357,13 @@ function switchSettingsPage(page, button) {
     if (active) active.classList.add('active');
   }
   const pane = document.getElementById('page-' + page);
-  if (pane) pane.classList.add('active');
+  if (pane) {
+    pane.classList.add('active');
+    const main = document.querySelector('.settings-main');
+    if (main) main.scrollTop = 0;
+    const title = pane.querySelector('.settings-page-title');
+    if (title) title.focus({ preventScroll: true });
+  }
 }
 
 function filterSettingsNav(query) {
@@ -366,6 +374,137 @@ function filterSettingsNav(query) {
     items.forEach(item => { item.hidden = needle !== '' && !matching.includes(item); });
     group.hidden = needle !== '' && matching.length === 0;
   });
+}
+
+let devFlowDetailTimer = null;
+let devFlowDetailPinned = false;
+let errorTrayPinned = false;
+let errorTrayTimer = null;
+
+function showDevFlowDetail() {
+  clearTimeout(devFlowDetailTimer);
+  const detail = document.getElementById('devFlowDetail');
+  if (detail) detail.hidden = false;
+}
+
+function scheduleDevFlowDetail() {
+  clearTimeout(devFlowDetailTimer);
+  devFlowDetailTimer = setTimeout(showDevFlowDetail, 260);
+}
+
+function keepDevFlowDetail() {
+  clearTimeout(devFlowDetailTimer);
+}
+
+function leaveDevFlowTrigger() {
+  clearTimeout(devFlowDetailTimer);
+  if (!devFlowDetailPinned) devFlowDetailTimer = setTimeout(closeDevFlowDetail, 100);
+}
+
+function leaveDevFlowDetail() {
+  if (!devFlowDetailPinned) devFlowDetailTimer = setTimeout(closeDevFlowDetail, 100);
+}
+
+function toggleDevFlowDetail(event) {
+  event?.preventDefault();
+  const detail = document.getElementById('devFlowDetail');
+  if (!detail) return;
+  if (devFlowDetailPinned && !detail.hidden) {
+    closeDevFlowDetail();
+    return;
+  }
+  devFlowDetailPinned = true;
+  showDevFlowDetail();
+}
+
+function closeDevFlowDetail() {
+  clearTimeout(devFlowDetailTimer);
+  devFlowDetailPinned = false;
+  const detail = document.getElementById('devFlowDetail');
+  if (detail) detail.hidden = true;
+}
+
+function togglePrototypeSetting(button, targetId) {
+  if (button.disabled) return;
+  const enabled = !button.classList.contains('on');
+  button.classList.toggle('on', enabled);
+  button.setAttribute('aria-pressed', String(enabled));
+  const target = document.getElementById(targetId);
+  if (target) target.hidden = !enabled;
+}
+
+function togglePrototypeDevFlowMaster() {
+  const master = document.getElementById('prototypeDevFlowMaster');
+  const enabled = !master.classList.contains('on');
+  master.classList.toggle('on', enabled);
+  master.setAttribute('aria-pressed', String(enabled));
+  document.querySelectorAll('.dev-flow-dependent').forEach(row => {
+    row.classList.toggle('disabled', !enabled);
+    const button = row.querySelector('button');
+    if (button) button.disabled = !enabled;
+  });
+  ['prototypeDevFlowSidebarToggle', 'prototypeDashboardToggle'].forEach(id => {
+    const button = document.getElementById(id);
+    const targetId = id === 'prototypeDevFlowSidebarToggle' ? 'prototypeDevFlowStatus' : 'prototypeDashboardButton';
+    const target = document.getElementById(targetId);
+    if (target && button) target.hidden = !enabled || !button.classList.contains('on');
+  });
+  if (!enabled) closeDevFlowDetail();
+}
+
+function openPrototypeDashboard() {
+  const button = document.getElementById('prototypeDashboardButton');
+  if (!button) return;
+  button.classList.add('active');
+  button.title = 'Dashboard opened at http://127.0.0.1:43117';
+  setTimeout(() => button.classList.remove('active'), 700);
+}
+
+function choosePrototypeDowPath() {
+  const input = document.getElementById('prototypeDowPath');
+  if (input) input.select();
+}
+
+function showErrorTray() {
+  clearTimeout(errorTrayTimer);
+  const tray = document.getElementById('unresolvedErrorTray');
+  if (!tray) return;
+  tray.classList.add('expanded');
+  tray.setAttribute('aria-expanded', 'true');
+}
+
+function leaveErrorTray() {
+  clearTimeout(errorTrayTimer);
+  if (!errorTrayPinned) errorTrayTimer = setTimeout(collapseErrorTray, 100);
+}
+
+function collapseErrorTray() {
+  clearTimeout(errorTrayTimer);
+  errorTrayPinned = false;
+  const tray = document.getElementById('unresolvedErrorTray');
+  if (!tray) return;
+  tray.classList.remove('expanded');
+  tray.setAttribute('aria-expanded', 'false');
+}
+
+function toggleErrorTray() {
+  const tray = document.getElementById('unresolvedErrorTray');
+  if (!tray) return;
+  if (errorTrayPinned && tray.classList.contains('expanded')) {
+    collapseErrorTray();
+    return;
+  }
+  errorTrayPinned = true;
+  showErrorTray();
+}
+
+function expirePrototypeErrorToast(toast) {
+  toast.remove();
+  const count = document.querySelector('#unresolvedErrorTray .error-count');
+  const label = document.querySelector('#unresolvedErrorTray .error-tray-copy strong');
+  const next = (Number.parseInt(count?.textContent || '0', 10) || 0) + 1;
+  if (count) count.textContent = String(next);
+  if (label) label.textContent = `${next} unresolved errors`;
 }
 
 function setThemeMode(mode) {
@@ -930,3 +1069,6 @@ function applyPrototypeSceneFromLocation() {
 
 window.addEventListener('hashchange', applyPrototypeSceneFromLocation);
 applyPrototypeSceneFromLocation();
+document.querySelectorAll('[data-prototype-toast]').forEach(toast => {
+  setTimeout(() => expirePrototypeErrorToast(toast), 6000);
+});

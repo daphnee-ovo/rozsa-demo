@@ -1,9 +1,5 @@
 # Contributing to Rózsa
 
-## Before You Start
-
-Read `AGENTS.md` for project-specific development rules. If you use an agent, run it from the repository root so it picks up these rules automatically.
-
 ## Development Tools
 
 Development and synchronization tools live in `devtools/`.

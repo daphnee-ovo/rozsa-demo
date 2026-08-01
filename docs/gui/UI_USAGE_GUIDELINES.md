@@ -109,7 +109,7 @@ Rózsa 的界面气质是：冷静、精确、递归、专注、安静但有能�
 
 - 会话列表：会话名、状态点、最近时间。
 - 状态区域：分支、diff 摘要、小时限额、本周限额、工具调用计数。
-- 设置入口：位于底部，作为稳定锚点。
+- Dashboard 与设置入口：Dashboard 位于 Settings 上方；Settings 仍是底部稳定锚点。
 
 使用规则：
 
@@ -117,6 +117,11 @@ Rózsa 的界面气质是：冷静、精确、递归、专注、安静但有能�
 - 状态点必须有语义：运行中、待查看、等待审批等。
 - 限额进度条显示百分比与标签；接近上限时使用低饱和警示，不使用高亮警报色。
 - 工具计数 chip 只显示真实工具名和数量，例如 Bash、Read、Edit、Write。
+- 检测到并启用 Dev Flow 时，不增加独立标题；状态摘要直接写成 `3 Tasks · 1 Issue`，
+  数量始终只统计未关闭项。正在执行项使用 `● T001 <title>` 的单行截断形式，空间
+  不足时以 `more <count>` 收束。
+- 摘要、执行项和 `more` 在短暂 hover delay 后显示只读详情，移开即收起；click
+  固定详情，再次 click 或 Escape 关闭。hover 不得因指针轻微经过而频繁抖动。
 
 ### 主区域
 
@@ -307,6 +312,12 @@ tool call 是 Rózsa GUI 的核心组件，应像对话中的轻量命令行记�
 - Tool 使用可编辑单选 combobox：输入前缀过滤，Tab 补全，也可展开列表选择。
 - Permission mode 在两个 scope 都直接展示当前生效的 on-request、auto-approve 或
   yolo，不显示 “Use default” 或 “Inherit” 作为第四种伪模式。
+- Dev Flow pane 与其他 pane 使用同一背景、字号、标题和表单行。版本位于标题下；
+  description 后显示 Overview（Dashboard Availability、address、Memory Use、Path）
+  和 Settings（Enable Dev Flow、sidebar status、Dashboard button）。Path 只保留一个
+  可编辑位置与 Choose action，不重复展示 executable。
+- 未检测到 `dow` 时显示安装建议；自动安装与 system prompt 注入保持 TODO，不伪装为
+  已实现。主开关关闭时依赖项禁用并变灰，重新开启必须恢复可操作状态。
 
 规则：
 
@@ -335,6 +346,9 @@ tool call 是 Rózsa GUI 的核心组件，应像对话中的轻量命令行记�
 - 不依赖颜色作为唯一状态表达，必须配合文案、图标或位置。
 - 状态变化不能造成布局大幅跳动。
 - 可展开元素必须有 hover、focus 和 chevron / 透明度提示。
+- notification toast 固定在应用右上角并向下堆叠，每条独立计时 6 秒；普通 info 和
+  success 默认不通知。error 到时不丢失，而是折叠为带圆圈的 `!` 和未解决数量。
+  error 入口 hover 自动展开、移开收起，click 可固定；错误在确认解决前一直保留。
 
 ## 7. 内容与语气
 
@@ -400,7 +414,7 @@ thinking 展开。修改写入全局配置根目录的 `key_bindings.json`（默
 当前交互状态的控制在页面中只读展示。
 
 Settings navigation 的固定顺序是 Skills、Tools、Extensions、General、Appearance、
-Keyboard shortcuts。Skills 和 Tools 都提供 Global/Project 子页；每项可设为继承、
+Keyboard shortcuts、Permissions、Dev Flow。Skills 和 Tools 都提供 Global/Project 子页；每项可设为继承、
 启用或禁用，分别写入对应配置根的 `settings.json`。项目项按名称覆盖全局项。
 这两类能力只在新 session 创建时重新装载；已有 session 使用 `/reload` 应用变更。
 Tools 列表必须来自实际注册的 core tool 元数据，不能由前端维护第二份静态清单。
@@ -452,6 +466,7 @@ Home 相对 pattern；规范化后不得逃逸 Home。`*` 与正则元字符复�
 - [ ] 设置面板控件是否低对比、不突兀？
 - [ ] 输入框是否提示支持 Markdown？
 - [ ] 小时限额、本周限额、工具计数和状态点是否可见？
+- [ ] Dev Flow 摘要、只读详情、Dashboard、设置依赖态和 unresolved error 是否符合约定？
 - [ ] 是否没有紫色渐变、emoji、重卡片、假指标和模板化占位？
 - [ ] 是否所有交互都有 hover / focus / active 状态？
 - [ ] 是否所有图标按钮都有可访问名称？
@@ -471,3 +486,7 @@ Home 相对 pattern；规范化后不得逃逸 Home。`*` 与正则元字符复�
 - 暗色模式：必须保持 Rózsa 的温暖气质，不变成黑色终端。
 - 移动端：应重排信息架构，不能简单压缩桌面三栏。
 - 高级主题：不应暴露为产品内设计旋钮，除非它是真实用户设置。
+
+相关文档：[`GUI 架构`](./ARCHITECTURE.md)、[`GUI 术语`](./TERMINOLOGY.md)、
+[`前端术语`](./FRONTEND_TERMINOLOGY.md)、
+[`Dev Flow GUI integration`](./DEV_FLOW_INTEGRATION.md)。
