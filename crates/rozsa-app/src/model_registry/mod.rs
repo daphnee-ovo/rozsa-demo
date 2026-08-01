@@ -1,6 +1,12 @@
 // FrameworkTree
 // mod.rs
 // ├── struct ProviderAvailable
+// ├── enum ModelConfigDiagnosticSeverity
+// ├── struct ModelConfigDiagnostic
+// ├── impl ModelConfigDiagnostic
+// ├── notification_id()
+// ├── error()
+// ├── missing_environment()
 // ├── enum ModelRegistryError
 // ├── struct RegistryModelCost
 // ├── impl RegistryModelCost
@@ -19,9 +25,12 @@
 // ├── provider_available()
 // ├── provider_ids()
 // ├── impl ModelRegistry
+// ├── empty()
 // ├── load_from_dirs()
+// ├── load_from_dirs_with_diagnostics()
 // ├── load_from_dir()
 // ├── apply_dir()
+// ├── apply_dir_with_diagnostics()
 // ├── from_generated_json()
 // ├── all()
 // ├── all_json()
@@ -39,6 +48,7 @@
 // ├── merge_openai_compatible_discovered_models()
 // ├── apply_models_config()
 // ├── apply_models_config_with_source()
+// ├── missing_environment_diagnostics()
 // ├── validate_config()
 // ├── provider_ids()
 // ├── apply_provider_overrides()
@@ -104,6 +114,60 @@ pub struct ProviderAvailable {
     pub configured: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+}
+
+/// Severity of a model configuration diagnostic surfaced to the GUI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelConfigDiagnosticSeverity {
+    Error,
+    Warning,
+}
+
+/// A model configuration problem that can be shown through the unified app
+/// notification layer without preventing unrelated model files from loading.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelConfigDiagnostic {
+    pub path: PathBuf,
+    pub severity: ModelConfigDiagnosticSeverity,
+    pub provider: Option<String>,
+    pub reference: Option<String>,
+    pub message: String,
+    pub hint: String,
+}
+
+impl ModelConfigDiagnostic {
+    pub fn notification_id(&self) -> String {
+        let severity = match self.severity {
+            ModelConfigDiagnosticSeverity::Error => "error",
+            ModelConfigDiagnosticSeverity::Warning => "warning",
+        };
+        let provider = self.provider.as_deref().unwrap_or("file");
+        format!("model-config:{severity}:{}:{provider}", self.path.display())
+    }
+
+    fn error(path: &Path, error: impl std::fmt::Display) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            severity: ModelConfigDiagnosticSeverity::Error,
+            provider: None,
+            reference: None,
+            message: error.to_string(),
+            hint: "Fix the JSON/schema error in this file, then restart Rózsa. Other valid model configurations remain available.".to_string(),
+        }
+    }
+
+    fn missing_environment(path: &Path, provider: &str, reference: &str) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            severity: ModelConfigDiagnosticSeverity::Warning,
+            provider: Some(provider.to_string()),
+            reference: Some(reference.to_string()),
+            message: format!(
+                "Provider `{provider}` references `{reference}`, but that environment variable could not be resolved."
+            ),
+            hint: "Check the variable name and set it in the Rózsa process environment or ~/.rozsa/.env, then restart Rózsa.".to_string(),
+        }
+    }
 }
 
 /// Error returned when generated or user-provided model metadata cannot be loaded.
@@ -273,6 +337,7 @@ pub struct ModelRegistry {
     model_config_paths: HashMap<String, PathBuf>,
     /// Provider-level apiKey from models.json (raw value, not resolved).
     provider_api_keys: HashMap<String, String>,
+    provider_api_key_paths: HashMap<String, PathBuf>,
 }
 
 /// Rust registry containing generated image model metadata.
@@ -332,22 +397,43 @@ impl ImageModelRegistry {
 }
 
 impl ModelRegistry {
-    /// Load models from multiple directories (later directories override earlier ones).
-    /// Typical order: user-level (`~/.rozsa/models/`) then project-level (`.rozsa/models/`).
-    /// Project-level takes priority because it's loaded last.
-    pub fn load_from_dirs(dirs: &[&Path]) -> Result<Self, ModelRegistryError> {
-        let mut registry = Self {
+    fn empty() -> Self {
+        Self {
             models: Vec::new(),
             user_configured_model_keys: HashSet::new(),
             model_config_paths: HashMap::new(),
             provider_api_keys: HashMap::new(),
-        };
+            provider_api_key_paths: HashMap::new(),
+        }
+    }
+
+    /// Load models from multiple directories (later directories override earlier ones).
+    /// Typical order: user-level (`~/.rozsa/models/`) then project-level (`.rozsa/models/`).
+    /// Project-level takes priority because it's loaded last.
+    pub fn load_from_dirs(dirs: &[&Path]) -> Result<Self, ModelRegistryError> {
+        let mut registry = Self::empty();
 
         for dir in dirs {
             registry.apply_dir(dir)?;
         }
 
         Ok(registry)
+    }
+
+    /// Load model files while retaining valid entries and collecting problems
+    /// for the GUI notification layer.
+    pub fn load_from_dirs_with_diagnostics(
+        dirs: &[&Path],
+    ) -> Result<(Self, Vec<ModelConfigDiagnostic>), ModelRegistryError> {
+        let mut registry = Self::empty();
+        let mut diagnostics = Vec::new();
+
+        for dir in dirs {
+            registry.apply_dir_with_diagnostics(dir, &mut diagnostics)?;
+        }
+        diagnostics.extend(registry.missing_environment_diagnostics());
+
+        Ok((registry, diagnostics))
     }
 
     /// Load models from a single directory of JSON config files.
@@ -380,6 +466,51 @@ impl ModelRegistry {
         Ok(())
     }
 
+    fn apply_dir_with_diagnostics(
+        &mut self,
+        dir: &Path,
+        diagnostics: &mut Vec<ModelConfigDiagnostic>,
+    ) -> Result<(), ModelRegistryError> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+
+        let read_dir = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(error) => {
+                diagnostics.push(ModelConfigDiagnostic::error(
+                    dir,
+                    ModelRegistryError::ModelsJsonRead {
+                        path: dir.display().to_string(),
+                        message: error.to_string(),
+                    },
+                ));
+                return Ok(());
+            }
+        };
+        let mut entries = Vec::new();
+        for entry in read_dir {
+            match entry {
+                Ok(entry) if is_models_config_path(&entry.path()) => entries.push(entry),
+                Ok(_) => {}
+                Err(error) => diagnostics.push(ModelConfigDiagnostic::error(
+                    dir,
+                    format!("Failed to read a model configuration entry: {error}"),
+                )),
+            }
+        }
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
+            let path = entry.path();
+            if let Err(error) = self.apply_models_config_file(&path) {
+                diagnostics.push(ModelConfigDiagnostic::error(&path, error));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Load model metadata from generated JSON text.
     pub fn from_generated_json(input: &str) -> Result<Self, ModelRegistryError> {
         Ok(Self {
@@ -387,6 +518,7 @@ impl ModelRegistry {
             user_configured_model_keys: HashSet::new(),
             model_config_paths: HashMap::new(),
             provider_api_keys: HashMap::new(),
+            provider_api_key_paths: HashMap::new(),
         })
     }
 
@@ -698,6 +830,11 @@ impl ModelRegistry {
         config: ModelsConfig,
         source: Option<&Path>,
     ) -> Result<(), ModelRegistryError> {
+        let configured_provider_keys = config
+            .providers
+            .iter()
+            .filter_map(|(provider, config)| config.api_key.as_ref().map(|_| provider.clone()))
+            .collect::<Vec<_>>();
         let configured_keys = config
             .providers
             .iter()
@@ -720,11 +857,36 @@ impl ModelRegistry {
             .collect::<Vec<_>>();
         self.apply_models_config(config)?;
         if let Some(source) = source {
+            for provider in configured_provider_keys {
+                self.provider_api_key_paths
+                    .insert(provider, source.to_path_buf());
+            }
             for key in configured_keys {
                 self.model_config_paths.insert(key, source.to_path_buf());
             }
         }
         Ok(())
+    }
+
+    fn missing_environment_diagnostics(&self) -> Vec<ModelConfigDiagnostic> {
+        self.provider_api_keys
+            .iter()
+            .filter_map(|(provider, reference)| {
+                if !reference.starts_with('$')
+                    || rozsa_model::credentials::resolve_config_value(reference).is_ok()
+                {
+                    return None;
+                }
+                let path = self
+                    .provider_api_key_paths
+                    .get(provider)
+                    .cloned()
+                    .unwrap_or_else(|| PathBuf::from("models.json"));
+                Some(ModelConfigDiagnostic::missing_environment(
+                    &path, provider, reference,
+                ))
+            })
+            .collect()
     }
 
     fn validate_config(&self, config: &ModelsConfig) -> Result<(), ModelRegistryError> {

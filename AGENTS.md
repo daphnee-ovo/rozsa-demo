@@ -21,6 +21,13 @@ Dependency direction is `rozsa-cli` / `rozsa-gui` → `rozsa-app` → `rozsa-cor
 
 The active product is implemented entirely in the five Rust crates above. Do not introduce dependencies on retired terminal, TypeScript, or process-bridge implementations.
 
+## Cross-Platform Compatibility
+
+- Multi-system compatibility applies to every crate and module, not only `rozsa-gui` or UI components.
+- New and changed behavior must preserve macOS, Linux, and Windows support where the module is applicable.
+- Keep operating-system-specific paths, environment discovery, process control, file permissions, shell integration, and native APIs behind explicit platform adapters or `cfg` boundaries; do not assume macOS behavior in shared model, core, app, or CLI code.
+- Add platform-specific fixtures or tests when behavior differs by operating system, and keep the common path deterministic and safe.
+
 ## Documentation
 
 - Keep code, `Related Docs`, and Markdown backlinks synchronized.
@@ -85,5 +92,5 @@ If rebase conflicts occur:
 - New GUI elements must preserve the established visual and interaction language.
 - If the prototype conflicts with an explicit user requirement, the user requirement wins. Obtain approval before modifying the prototype to restore product/prototype consistency.
 - Shared prototype CSS and JavaScript may be extracted when doing so improves scene reuse without changing behavior.
-- Components that interact with the operating system, such as native file pickers, must support macOS, Linux, and Windows.
+- GUI components that interact with the operating system, such as native file pickers, must support macOS, Linux, and Windows in addition to the cross-platform requirements above.
 - Use Gaussian blur to make hierarchical relationships feel more elegant.

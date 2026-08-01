@@ -47,7 +47,14 @@ pub async fn run(args: &Args) -> Result<()> {
 
     // Resolve model from registry: user-level then project-level (project overrides user)
     let [user_models_dir, project_models_dir] = config_roots.model_dirs();
-    let registry = ModelRegistry::load_from_dirs(&[&user_models_dir, &project_models_dir])?;
+    let (registry, model_config_diagnostics) = if prompt.is_none() {
+        ModelRegistry::load_from_dirs_with_diagnostics(&[&user_models_dir, &project_models_dir])?
+    } else {
+        (
+            ModelRegistry::load_from_dirs(&[&user_models_dir, &project_models_dir])?,
+            Vec::new(),
+        )
+    };
 
     let model = if let Some(ref model_arg) = args.model {
         registry.find_by_id(model_arg)
@@ -289,6 +296,7 @@ pub async fn run(args: &Args) -> Result<()> {
             config_roots,
             settings_manager,
             model_registry: Some(Arc::new(registry)),
+            model_config_diagnostics,
             session_dir,
             session_dirs,
             global_settings_path: Some(global_settings_path),

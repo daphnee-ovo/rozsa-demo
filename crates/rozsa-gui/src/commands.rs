@@ -62,7 +62,9 @@
 // ├── emit_theme_state()
 // ├── spawn_codex_oauth_model_refresh()
 // ├── refresh_codex_oauth_models()
+// ├── publish_model_config_diagnostics()
 // ├── list_models()
+// ├── auth_json_provider_is_available()
 // ├── switch_model()
 // ├── auth_login()
 // ├── auth_logout()
@@ -110,6 +112,7 @@
 // ├── active_session_summary()
 // ├── create_new_session()
 // ├── switch_model_reference()
+// ├── emit_model_state()
 // ├── parse_thinking_effort()
 // ├── set_thinking_effort()
 // ├── compact_active_session()
@@ -154,6 +157,7 @@
 //
 // Tauri IPC 命令。多会话架构：操作都针对当前活跃 tab。
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -174,10 +178,13 @@ use rozsa_app::themes::{self, ThemeDefinition, ThemeMode, ThemeStore, ThemeSumma
 use rozsa_app::tools::AskUserQuestionAnswer;
 use rozsa_core::messages::AgentMessage;
 use rozsa_model::types::{
-    AssistantMessage, ContentBlock, Message, Provider, StopReason, ThinkingEffort, Usage,
+    AssistantMessage, ContentBlock, Message, StopReason, ThinkingEffort, Usage,
 };
 
-use crate::notifications::{AppNotificationEvent, NotificationSeverity, emit_notification};
+use crate::notifications::{
+    AppNotificationEvent, NotificationSeverity, emit_notification,
+    reconcile_model_config_notifications,
+};
 use crate::state::{
     GuiState, SessionTab, UiSnapshot, cancel_pending_user_questions, deny_pending_approvals,
     find_tab_index_by_session, permission_pending_key, respond_pending_user_question,
@@ -608,7 +615,7 @@ pub async fn dispatch_slash_command(
             if args.is_empty() {
                 return slash_action("modelPicker");
             }
-            switch_model_reference(&state, &args).await?;
+            switch_model_reference(&state, &app, &args).await?;
             emit_info(&app, &format!("Model: {args}"));
         }
         "settings" => return slash_action("settings"),
@@ -2204,11 +2211,13 @@ async fn refresh_codex_oauth_models(
         return Ok(());
     }
 
-    let refreshed_registry = ModelRegistry::load_from_dirs(&[&models_dir, &project_models_dir])
-        .map_err(|error| error.to_string())?;
+    let (refreshed_registry, diagnostics) =
+        ModelRegistry::load_from_dirs_with_diagnostics(&[&models_dir, &project_models_dir])
+            .map_err(|error| error.to_string())?;
     let Some(shared_registry) = state.model_registry.as_ref() else {
         return Ok(());
     };
+    publish_model_config_diagnostics(app, state, &diagnostics).await?;
     let models_changed = {
         let current_registry = shared_registry
             .read()
@@ -2226,34 +2235,89 @@ async fn refresh_codex_oauth_models(
     Ok(())
 }
 
+async fn publish_model_config_diagnostics(
+    app: &AppHandle,
+    state: &GuiState,
+    diagnostics: &[rozsa_app::model_registry::ModelConfigDiagnostic],
+) -> Result<(), String> {
+    let active_ids = state.model_config_notification_ids.lock().await.clone();
+    let (events, next_ids) = reconcile_model_config_notifications(&active_ids, diagnostics);
+    for event in events {
+        emit_notification(app, event)?;
+    }
+    *state.model_config_notification_ids.lock().await = next_ids;
+    *state.model_config_diagnostics.lock().await = diagnostics.to_vec();
+    Ok(())
+}
+
 #[tauri::command]
-pub async fn list_models(state: State<'_, GuiState>) -> Result<Vec<ModelListEntry>, String> {
+pub async fn list_models(
+    state: State<'_, GuiState>,
+    app: AppHandle,
+) -> Result<Vec<ModelListEntry>, String> {
+    let diagnostics = state.model_config_diagnostics.lock().await.clone();
+    if let Err(error) = publish_model_config_diagnostics(&app, state.inner(), &diagnostics).await {
+        eprintln!("[rozsa-gui][models] failed to publish configuration diagnostics: {error}");
+    }
     let registry = state
         .model_registry
         .as_ref()
         .ok_or("No model registry available")?;
-    let registry = registry
-        .read()
-        .map_err(|_| "Model registry lock is poisoned")?;
-    let provider_available = registry.provider_available();
-
-    Ok(registry
-        .all()
+    let (models, provider_available) = {
+        let registry = registry
+            .read()
+            .map_err(|_| "Model registry lock is poisoned")?;
+        (registry.all(), registry.provider_available())
+    };
+    let auth_path = state.config_roots.model_dirs()[0].join("auth.json");
+    let oauth_providers = models
         .iter()
+        .map(|model| model.provider.as_str())
+        .filter(|provider| matches!(*provider, "anthropic" | "codex-oauth" | "github-copilot"))
+        .collect::<HashSet<_>>();
+    let mut auth_json_available = HashSet::new();
+    for provider in oauth_providers {
+        if auth_json_provider_is_available(&auth_path, provider).await {
+            auth_json_available.insert(provider.to_string());
+        }
+    }
+
+    Ok(models
+        .into_iter()
         .filter(|model| {
-            model.provider != Provider::AmazonBedrock
-                || provider_available
+            if matches!(
+                model.provider.as_str(),
+                "anthropic" | "codex-oauth" | "github-copilot"
+            ) {
+                auth_json_available.contains(model.provider.as_str())
+            } else {
+                provider_available
                     .get(model.provider.as_str())
                     .is_some_and(|availability| availability.configured)
+            }
         })
         .map(|m| ModelListEntry {
-            id: m.id.clone(),
-            name: m.name.clone(),
+            id: m.id,
+            name: m.name,
             provider: m.provider.display_name(),
             reasoning: m.reasoning,
-            thinking_effort_map: m.thinking_effort_map.clone(),
+            thinking_effort_map: m.thinking_effort_map,
         })
         .collect())
+}
+
+async fn auth_json_provider_is_available(auth_path: &Path, provider: &str) -> bool {
+    let auth_path_text = auth_path.to_string_lossy();
+    let has_credential =
+        rozsa_model::credentials::resolve_auth_json_api_key_pub(auth_path_text.as_ref(), provider)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+    has_credential
+        && (provider != "codex-oauth"
+            || rozsa_model::credentials::read_account_id(auth_path_text.as_ref(), provider)
+                .is_some())
 }
 
 #[tauri::command]
@@ -2282,23 +2346,30 @@ pub async fn switch_model(
         }
     };
 
-    // 更新共享 model
-    *state.shared.model.lock().await = model.clone();
     {
         let mut settings = state.runtime_settings.lock().await;
         settings.default_model = Some(model.id.clone());
         settings.default_provider = Some(model.provider.as_str().to_string());
     }
+    // Keep the shared locks short and use the same order as get_settings.
+    *state.shared.model.lock().await = model.clone();
     persist_settings(&state).await?;
 
-    // 同步到所有 active sessions
-    let tabs = state.tabs.lock().await;
-    for tab in tabs.iter() {
-        if let SessionTab::Active { agent, .. } = tab {
-            agent.set_model(model.clone()).await;
-        }
+    // Snapshot the agents before awaiting so the global tabs lock is never
+    // held while an agent waits for its runtime lock.
+    let agents = {
+        let tabs = state.tabs.lock().await;
+        tabs.iter()
+            .filter_map(|tab| match tab {
+                SessionTab::Active { agent, .. } => Some(agent.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    for agent in agents {
+        agent.set_model(model.clone()).await;
     }
-    crate::events::emit_sidebar_state(&app, state.inner()).await
+    emit_model_state(&app, state.inner()).await
 }
 
 // --- 认证 ---
@@ -3015,6 +3086,7 @@ async fn create_new_session(
 
 async fn switch_model_reference(
     state: &State<'_, GuiState>,
+    app: &AppHandle,
     reference: &str,
 ) -> Result<(), String> {
     let model = {
@@ -3041,21 +3113,40 @@ async fn switch_model_reference(
         }
     };
 
-    *state.shared.model.lock().await = model.clone();
     {
         let mut settings = state.runtime_settings.lock().await;
         settings.default_model = Some(model.id.clone());
         settings.default_provider = Some(model.provider.as_str().to_string());
     }
+    *state.shared.model.lock().await = model.clone();
     persist_settings(state).await?;
 
-    let tabs = state.tabs.lock().await;
-    for tab in tabs.iter() {
-        if let SessionTab::Active { agent, .. } = tab {
-            agent.set_model(model.clone()).await;
-        }
+    let agents = {
+        let tabs = state.tabs.lock().await;
+        tabs.iter()
+            .filter_map(|tab| match tab {
+                SessionTab::Active { agent, .. } => Some(agent.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    for agent in agents {
+        agent.set_model(model.clone()).await;
     }
-    Ok(())
+    emit_model_state(app, state).await
+}
+
+async fn emit_model_state(app: &AppHandle, state: &GuiState) -> Result<(), String> {
+    let active_index = *state.active_tab.lock().await;
+    let snapshot = {
+        let tabs = state.tabs.lock().await;
+        tabs.get(active_index)
+            .map(|tab| UiSnapshot::from_tab(tab, &state.shared))
+    };
+    if let Some(snapshot) = snapshot {
+        crate::events::emit_main(app, "ui-state", &snapshot)?;
+    }
+    crate::events::emit_sidebar_state(app, state).await
 }
 
 fn parse_thinking_effort(value: &str) -> Result<ThinkingEffort, String> {

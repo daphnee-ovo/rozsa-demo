@@ -70,7 +70,7 @@
 // 每个 session tab 有三种状态：Idle → Loaded → Active
 // 只有 Active 状态的 session 有独立的 AgentSession 后端。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, RwLock};
@@ -80,7 +80,7 @@ use serde::Serialize;
 use tokio::sync::Mutex;
 
 use rozsa_app::agent_session::{AgentSession, AgentSessionConfig};
-use rozsa_app::model_registry::ModelRegistry;
+use rozsa_app::model_registry::{ModelConfigDiagnostic, ModelRegistry};
 use rozsa_app::permissions::{PendingApprovals, PermissionResponse, TrustGroup, TrustLevel};
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::tools::{
@@ -297,6 +297,11 @@ pub struct GuiState {
     /// Dev-flow runtime registry, activity wiring, and diagnostics.
     pub dev_flow: Arc<crate::dev_flow::DevFlowRuntime>,
     pub model_registry: Option<Arc<RwLock<ModelRegistry>>>,
+    /// Stable IDs for currently active model configuration notifications.
+    pub model_config_notification_ids: Arc<Mutex<HashSet<String>>>,
+    /// Latest model configuration diagnostics, replayed when the WebView
+    /// first requests the model list after its notification listeners exist.
+    pub model_config_diagnostics: Arc<Mutex<Vec<ModelConfigDiagnostic>>>,
     pub session_dir: Option<PathBuf>,
     pub session_dirs: Vec<PathBuf>,
     pub config_roots: rozsa_app::config_paths::ConfigRoots,

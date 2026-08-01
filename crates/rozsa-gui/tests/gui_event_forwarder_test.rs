@@ -129,6 +129,8 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
             ),
         ),
         model_registry: None,
+        model_config_notification_ids: Arc::new(Mutex::new(std::collections::HashSet::new())),
+        model_config_diagnostics: Arc::new(Mutex::new(Vec::new())),
         session_dir: None,
         session_dirs: vec![],
         config_roots: rozsa_app::config_paths::ConfigRoots::from_roots(

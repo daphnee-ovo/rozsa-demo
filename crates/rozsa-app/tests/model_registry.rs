@@ -1,4 +1,6 @@
-use rozsa_app::model_registry::{ImageModelRegistry, ModelRegistry, RegistryModelCost};
+use rozsa_app::model_registry::{
+    ImageModelRegistry, ModelConfigDiagnosticSeverity, ModelRegistry, RegistryModelCost,
+};
 use rozsa_model::providers::openai_completions::DiscoveredModel;
 
 fn generated_json() -> &'static str {
@@ -405,4 +407,75 @@ fn migrates_plaintext_api_key_into_private_rozsa_env() {
             None => std::env::remove_var("ROZSA_CONFIG_DIR"),
         }
     }
+}
+
+#[test]
+fn tolerant_loading_reports_invalid_file_and_keeps_valid_models() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("invalid.json"), r#"{"providers": {"#).unwrap();
+    std::fs::write(
+        directory.path().join("valid.json"),
+        r#"{
+            "providers": {
+                "valid-provider": {
+                    "baseUrl": "https://valid.example.com/v1",
+                    "apiKey": "$PATH",
+                    "api": "openai-completions",
+                    "models": [{ "id": "valid-model" }]
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let (registry, diagnostics) =
+        ModelRegistry::load_from_dirs_with_diagnostics(&[directory.path()]).unwrap();
+    assert!(registry.find("valid-provider", "valid-model").is_some());
+    let diagnostic = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.path.ends_with("invalid.json"))
+        .unwrap();
+    assert_eq!(diagnostic.severity, ModelConfigDiagnosticSeverity::Error);
+    assert!(diagnostic.message.contains("Failed to parse models.json"));
+    assert!(diagnostic.hint.contains("Fix the JSON/schema error"));
+}
+
+#[test]
+fn tolerant_loading_warns_when_model_environment_reference_is_missing() {
+    let directory = tempfile::tempdir().unwrap();
+    let reference = "$ROZSA_MODEL_DIAGNOSTIC_MISSING_7B3F";
+    std::fs::write(
+        directory.path().join("missing-env.json"),
+        format!(
+            r#"{{
+                "providers": {{
+                    "missing-provider": {{
+                        "baseUrl": "https://missing.example.com/v1",
+                        "apiKey": "{reference}",
+                        "api": "openai-completions",
+                        "models": [{{ "id": "missing-model" }}]
+                    }}
+                }}
+            }}"#
+        ),
+    )
+    .unwrap();
+
+    let (registry, diagnostics) =
+        ModelRegistry::load_from_dirs_with_diagnostics(&[directory.path()]).unwrap();
+    let diagnostic = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.provider.as_deref() == Some("missing-provider"))
+        .unwrap();
+    assert_eq!(diagnostic.severity, ModelConfigDiagnosticSeverity::Warning);
+    assert_eq!(diagnostic.reference.as_deref(), Some(reference));
+    assert!(diagnostic.message.contains("could not be resolved"));
+    assert!(diagnostic.hint.contains("~/.rozsa/.env"));
+    assert!(
+        !registry
+            .provider_available()
+            .get("missing-provider")
+            .unwrap()
+            .configured
+    );
 }

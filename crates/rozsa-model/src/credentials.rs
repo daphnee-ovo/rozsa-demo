@@ -1,3 +1,65 @@
+// FrameworkTree
+// credentials.rs
+// ├── enum ShellSyntax
+// ├── private_env_path()
+// ├── validate_config_value()
+// ├── resolve_config_value()
+// ├── resolve_config_value_from_env_file()
+// ├── resolve_environment_variable()
+// ├── resolve_environment_variable_from_shell_file()
+// ├── resolve_environment_variable_from_shell_file_with_syntax()
+// ├── ensure_private_env_value()
+// ├── ensure_private_env_value_at()
+// ├── resolve_environment_variable_from_env_file()
+// ├── resolve_environment_variable_from_default_shell()
+// ├── default_shell_startup_files()
+// ├── shell_syntax_for_path()
+// ├── parse_shell_environment_assignment()
+// ├── parse_posix_environment_assignment()
+// ├── parse_fish_environment_assignment()
+// ├── parse_shell_environment_value()
+// ├── parse_private_env()
+// ├── parse_private_env_value()
+// ├── write_private_env_atomically()
+// ├── restrict_private_env_permissions()
+// ├── validate_environment_name()
+// ├── non_empty_process_env()
+// ├── home_dir()
+// ├── resolve_request_options()
+// ├── struct ModelsConfig
+// ├── struct ProviderConfig
+// ├── resolve_auth_json_api_key()
+// ├── resolve_auth_json_api_key_pub()
+// ├── read_account_id()
+// ├── read_account_id_from_credential()
+// ├── now_ms()
+// ├── struct OAuthCredential
+// ├── struct RefreshTokenResponse
+// ├── struct CopilotTokenResponse
+// ├── parse_oauth_credential()
+// ├── take_string()
+// ├── oauth_to_value()
+// ├── refresh_oauth_credential()
+// ├── refresh_anthropic_oauth()
+// ├── refresh_openai_codex_oauth()
+// ├── refresh_github_copilot_oauth()
+// ├── normalize_domain()
+// ├── auth_lock_path()
+// ├── acquire_auth_lock()
+// ├── release_auth_lock()
+// ├── store_oauth_credentials()
+// ├── remove_stored_credentials()
+// ├── write_auth_json()
+// ├── resolve_headers_or_throw()
+// ├── resolve_config_value_or_throw()
+// ├── strip_json_comments()
+// ├── strip_trailing_commas()
+// ├── mod tests
+// ├── jwt_with_payload()
+// ├── read_account_id_prefers_stored_camel_case_value()
+// ├── read_account_id_accepts_stored_snake_case_value()
+// └── read_account_id_derives_from_id_token()
+
 //! Request credential and header resolution for Rust-owned model execution.
 
 use std::collections::HashMap;
@@ -17,6 +79,12 @@ const ROZSA_CONFIG_DIR_ENV: &str = "ROZSA_CONFIG_DIR";
 const PRIVATE_ENV_FILE_NAME: &str = ".env";
 
 static PRIVATE_ENV_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShellSyntax {
+    Posix,
+    Fish,
+}
 
 /// Return the private environment file used by Rózsa.
 pub fn private_env_path() -> Result<PathBuf, String> {
@@ -51,16 +119,19 @@ pub fn validate_config_value(config: &str, description: &str) -> Result<(), Stri
     Ok(())
 }
 
-/// Resolve a model configuration value using the process environment and the
-/// private Rózsa environment file.
+/// Resolve a model configuration value using the process environment, the
+/// private Rózsa environment file, and literal values from the default shell.
 pub fn resolve_config_value(config: &str) -> Result<String, String> {
     validate_config_value(config, "configuration value")?;
-    if !config.starts_with('$') {
+    let Some(name) = config.strip_prefix('$') else {
         return Ok(config.to_string());
-    }
+    };
 
-    let env_path = private_env_path()?;
-    resolve_config_value_from_env_file(config, &env_path)
+    resolve_environment_variable(name)?.ok_or_else(|| {
+        format!(
+            "Environment variable `{name}` is not set in the process environment, private Rózsa environment file, or default shell startup files"
+        )
+    })
 }
 
 /// Resolve a model configuration value against an explicit private env file.
@@ -89,7 +160,57 @@ pub fn resolve_environment_variable(name: &str) -> Result<Option<String>, String
     }
 
     let env_path = private_env_path()?;
-    resolve_environment_variable_from_env_file(name, &env_path)
+    if let Some(value) = resolve_environment_variable_from_env_file(name, &env_path)? {
+        return Ok(Some(value));
+    }
+
+    Ok(resolve_environment_variable_from_default_shell(name))
+}
+
+/// Resolve a variable from a shell startup file without executing the file.
+///
+/// The syntax is inferred from the file name. Only literal assignments are
+/// read; shell expressions and command substitutions are ignored.
+pub fn resolve_environment_variable_from_shell_file(
+    name: &str,
+    shell_file: &Path,
+) -> Result<Option<String>, String> {
+    resolve_environment_variable_from_shell_file_with_syntax(
+        name,
+        shell_file,
+        shell_syntax_for_path(shell_file),
+    )
+}
+
+fn resolve_environment_variable_from_shell_file_with_syntax(
+    name: &str,
+    shell_file: &Path,
+    syntax: ShellSyntax,
+) -> Result<Option<String>, String> {
+    validate_environment_name(name, "environment variable")?;
+    let content = match fs::read_to_string(shell_file) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read shell environment file `{}`: {error}",
+                shell_file.display()
+            ));
+        }
+    };
+
+    let mut value = None;
+    for line in content.lines() {
+        let Some((assignment_name, assignment_value)) =
+            parse_shell_environment_assignment(line, syntax)
+        else {
+            continue;
+        };
+        if assignment_name == name {
+            value = Some(assignment_value);
+        }
+    }
+    Ok(value.filter(|value| !value.is_empty()))
 }
 
 /// Ensure a private environment variable exists in an explicit env file.
@@ -171,6 +292,138 @@ fn resolve_environment_variable_from_env_file(
         }
     };
     Ok(values.get(name).filter(|value| !value.is_empty()).cloned())
+}
+
+fn resolve_environment_variable_from_default_shell(name: &str) -> Option<String> {
+    let home = home_dir()?;
+    let mut value = None;
+    for (shell_file, syntax) in default_shell_startup_files(&home) {
+        if let Ok(Some(shell_value)) =
+            resolve_environment_variable_from_shell_file_with_syntax(name, &shell_file, syntax)
+        {
+            value = Some(shell_value);
+        }
+    }
+    value
+}
+
+fn default_shell_startup_files(home: &Path) -> Vec<(PathBuf, ShellSyntax)> {
+    let shell_name = std::env::var_os("SHELL")
+        .and_then(|shell| {
+            PathBuf::from(shell)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "windows") {
+                "windows".to_string()
+            } else if cfg!(target_os = "macos") {
+                "zsh".to_string()
+            } else {
+                "bash".to_string()
+            }
+        });
+
+    match shell_name.as_str() {
+        "bash" => vec![
+            (home.join(".bash_profile"), ShellSyntax::Posix),
+            (home.join(".bash_login"), ShellSyntax::Posix),
+            (home.join(".profile"), ShellSyntax::Posix),
+            (home.join(".bashrc"), ShellSyntax::Posix),
+        ],
+        "fish" => vec![(
+            home.join(".config").join("fish").join("config.fish"),
+            ShellSyntax::Fish,
+        )],
+        "windows" => Vec::new(),
+        _ => vec![
+            (home.join(".zshenv"), ShellSyntax::Posix),
+            (home.join(".zprofile"), ShellSyntax::Posix),
+            (home.join(".zshrc"), ShellSyntax::Posix),
+            (home.join(".profile"), ShellSyntax::Posix),
+        ],
+    }
+}
+
+fn shell_syntax_for_path(path: &Path) -> ShellSyntax {
+    if path.file_name().and_then(|name| name.to_str()) == Some("config.fish") {
+        return ShellSyntax::Fish;
+    }
+    ShellSyntax::Posix
+}
+
+fn parse_shell_environment_assignment(line: &str, syntax: ShellSyntax) -> Option<(&str, String)> {
+    match syntax {
+        ShellSyntax::Posix => parse_posix_environment_assignment(line),
+        ShellSyntax::Fish => parse_fish_environment_assignment(line),
+    }
+}
+
+fn parse_posix_environment_assignment(line: &str) -> Option<(&str, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+    let assignment = trimmed.strip_prefix("export ").unwrap_or(trimmed);
+    let (raw_name, raw_value) = assignment.split_once('=')?;
+    let name = raw_name.trim();
+    if validate_environment_name(name, "shell environment variable").is_err() {
+        return None;
+    }
+    let value = parse_shell_environment_value(raw_value.trim())?;
+    Some((name, value))
+}
+
+fn parse_fish_environment_assignment(line: &str) -> Option<(&str, String)> {
+    let trimmed = line.trim();
+    let rest = trimmed.strip_prefix("set ")?.trim_start();
+    let mut cursor = rest;
+    let mut exported = false;
+    loop {
+        let token_end = cursor.find(char::is_whitespace).unwrap_or(cursor.len());
+        let token = &cursor[..token_end];
+        if token.starts_with('-') {
+            exported |= token == "--export" || token.contains('x');
+            cursor = cursor[token_end..].trim_start();
+            continue;
+        }
+        if !exported || token.is_empty() {
+            return None;
+        }
+        let name = token;
+        validate_environment_name(name, "shell environment variable").ok()?;
+        let raw_value = cursor[token_end..].trim_start();
+        return Some((name, parse_shell_environment_value(raw_value)?));
+    }
+}
+
+fn parse_shell_environment_value(raw: &str) -> Option<String> {
+    if raw.contains("$(")
+        || raw.contains('`')
+        || raw.contains(';')
+        || raw.contains('|')
+        || raw.contains('&')
+        || raw.contains('<')
+        || raw.contains('>')
+        || raw.contains('(')
+        || raw.contains(')')
+        || raw.contains('$')
+    {
+        return None;
+    }
+    if raw.starts_with('"') {
+        return serde_json::from_str(raw).ok();
+    }
+    if raw.starts_with('\'') {
+        return raw
+            .strip_prefix('\'')
+            .and_then(|value| value.strip_suffix('\''))
+            .map(str::to_string);
+    }
+    Some(
+        raw.split_once(" #")
+            .map_or_else(|| raw.to_string(), |(value, _)| value.to_string()),
+    )
 }
 
 fn parse_private_env(content: &str, path: &Path) -> Result<HashMap<String, String>, String> {

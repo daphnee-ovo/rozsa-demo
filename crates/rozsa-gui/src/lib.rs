@@ -45,7 +45,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rozsa_app::config_paths::ConfigRoots;
-use rozsa_app::model_registry::ModelRegistry;
+use rozsa_app::model_registry::{ModelConfigDiagnostic, ModelRegistry};
 use rozsa_app::permissions::PendingApprovals;
 use rozsa_app::settings::SettingsManager;
 use rozsa_app::tools::{AskUserQuestionRequest, AskUserQuestionRequestSender};
@@ -66,6 +66,7 @@ pub struct GuiConfig {
     pub config_roots: ConfigRoots,
     pub settings_manager: SettingsManager,
     pub model_registry: Option<Arc<ModelRegistry>>,
+    pub model_config_diagnostics: Vec<ModelConfigDiagnostic>,
     pub session_dir: PathBuf,
     pub session_dirs: Vec<PathBuf>,
     pub global_settings_path: Option<PathBuf>,
@@ -170,6 +171,12 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         model_registry: config
             .model_registry
             .map(|registry| Arc::new(std::sync::RwLock::new((*registry).clone()))),
+        model_config_notification_ids: Arc::new(tokio::sync::Mutex::new(
+            std::collections::HashSet::new(),
+        )),
+        model_config_diagnostics: Arc::new(tokio::sync::Mutex::new(
+            config.model_config_diagnostics,
+        )),
         session_dir: Some(config.session_dir),
         session_dirs: config.session_dirs,
         config_roots: config.config_roots,

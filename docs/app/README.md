@@ -362,6 +362,7 @@ pub struct SessionMeta {
 2. 合并 `models.json`（用户配置，支持 provider overrides / model overrides / custom models）
 3. 动态发现 NVIDIA 模型（当 `NVIDIA_API_KEY` 配置时）
 4. 解析 API key（`$NAME` 环境变量引用、models.json `apiKey` 字段和全局 `~/.rozsa/.env`；禁止 shell command）
+5. 通过统一 `app-notification` 事件报告模型配置诊断：规范错误为 `ERROR`，无法解析的 `$NAME` 为 `WARNING`
 
 **核心 API**：
 ```rust

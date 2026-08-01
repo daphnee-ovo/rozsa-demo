@@ -16,9 +16,13 @@
 // ├── error_list_supports_hover_focus_pin_and_escape()
 // └── notification_accessibility_does_not_rely_on_color_alone()
 
+use rozsa_app::model_registry::{ModelConfigDiagnostic, ModelConfigDiagnosticSeverity};
 use rozsa_gui::notifications::{
-    APP_NOTIFICATION_EVENT, AppNotificationEvent, NotificationSeverity,
+    APP_NOTIFICATION_EVENT, AppNotificationEvent, NotificationSeverity, model_config_notification,
+    reconcile_model_config_notifications,
 };
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::process::Command;
 
 fn run_notification_behavior_harness(assertions: &str) {
@@ -372,4 +376,47 @@ fn notification_accessibility_does_not_rely_on_color_alone() {
     assert!(js.contains("setAttribute('role', severity === 'error' ? 'alert' : 'status')"));
     assert!(html.contains(".notification-error { border-color: var(--error); }"));
     assert!(js.contains("aria-label=\"Dismiss notification\""));
+}
+
+#[test]
+fn model_config_diagnostics_map_to_shared_notifications_and_resolve() {
+    let error = ModelConfigDiagnostic {
+        path: PathBuf::from("/tmp/broken.json"),
+        severity: ModelConfigDiagnosticSeverity::Error,
+        provider: None,
+        reference: None,
+        message: "Failed to parse models.json".to_string(),
+        hint: "Fix the JSON/schema error".to_string(),
+    };
+    let warning = ModelConfigDiagnostic {
+        path: PathBuf::from("/Users/test/.rozsa/models/deepseek.json"),
+        severity: ModelConfigDiagnosticSeverity::Warning,
+        provider: Some("deepseek".to_string()),
+        reference: Some("$DEEPSEEK_API_KEY".to_string()),
+        message: "environment variable could not be resolved".to_string(),
+        hint: "Check the variable name".to_string(),
+    };
+
+    assert_eq!(
+        model_config_notification(&error),
+        AppNotificationEvent::Upsert {
+            id: error.notification_id(),
+            severity: NotificationSeverity::Error,
+            title: "Model configuration error".to_string(),
+            message:
+                "Failed to parse models.json File: /tmp/broken.json Hint: Fix the JSON/schema error"
+                    .to_string(),
+            timeout_ms: 6_000,
+        }
+    );
+
+    let mut active_ids = HashSet::new();
+    active_ids.insert(error.notification_id());
+    let (events, next_ids) = reconcile_model_config_notifications(&active_ids, &[warning.clone()]);
+    assert!(events.contains(&AppNotificationEvent::Resolve {
+        id: error.notification_id(),
+    }));
+    assert!(events.contains(&model_config_notification(&warning)));
+    assert!(!next_ids.contains(&error.notification_id()));
+    assert!(next_ids.contains(&warning.notification_id()));
 }

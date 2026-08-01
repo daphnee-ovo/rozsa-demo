@@ -241,12 +241,25 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
 ## apiKey 格式
 
 - 环境变量引用：`"apiKey": "$DEEPSEEK_API_KEY"` — 只有以 `$` 开头的值才会读取环境变量。
-- 进程环境优先：Rózsa 先读取进程环境；未找到时再读取 `~/.rozsa/.env`。`.env` 只由 Rózsa 读取，不会自动导出到 shell。
+- 环境变量查找顺序：Rózsa 先读取进程环境，再读取 `~/.rozsa/.env`，最后在 Unix 系统读取默认 shell 启动文件中的字面量赋值。macOS 默认读取 zsh 启动文件；bash 读取 `.bash_profile`、`.bash_login`、`.profile`、`.bashrc`；fish 读取 `~/.config/fish/config.fish`。Windows 使用用户/系统环境变量的进程继承，不解析 PowerShell profile。`.env` 只由 Rózsa 读取，不会自动导出到 shell。
 - 直接值：`"apiKey": "sk-xxx"` — 仅用于迁移已有配置。首次读取文件配置时，Rózsa 会把值写入 `~/.rozsa/.env`，并将配置改写成生成的 `$ROZSA_...` 引用。
 - 未加 `$` 的名称（如 `"DEEPSEEK_API_KEY"`）会被当作明文值，不再被当作环境变量名。
 - Shell 命令已禁止：任何以 `!` 开头的值都会被拒绝，Rózsa 不会执行配置中的命令。
 
 `.env` 使用普通 `NAME=VALUE` 格式。Rózsa 写入的环境变量默认保存在全局 `~/.rozsa/.env`，不会写入项目级 model config；迁移和写入采用原子替换，并使用仅用户可读的权限。设置 `ROZSA_CONFIG_DIR` 时，私有环境文件位于该目录下的 `.env`。
+
+Unix shell 启动文件只解析静态赋值：POSIX shell 使用 `NAME=value` 或 `export NAME=value`，fish 使用 `set -gx NAME value`。Rózsa 不会执行启动文件、命令替换或 `!` 命令。Windows 请通过系统/用户环境变量设置 API key，或写入 `~/.rozsa/.env`。
+
+## 配置诊断
+
+GUI 启动和重新加载模型目录时，会通过统一应用通知显示配置问题：
+
+- `ERROR`：JSON 语法、字段结构、协议或凭据引用格式不符合规范。通知会显示具体错误原因、配置文件路径和修复提示；该文件会被跳过，其他有效模型仍可使用。
+- `WARNING`：配置文件本身有效，但 `$NAME` 引用的环境变量无法解析。通知会显示 provider、变量引用和配置文件路径；请检查变量名，并在 Rózsa 进程环境或 `~/.rozsa/.env` 中设置。
+
+环境变量缺失不会被当作 JSON 配置错误，也不会阻止其他模型加载。修复后重启 Rózsa，已解决的通知会自动收起。
+
+GUI 的 model 选择列表只显示当前能够完成认证的模型。配置文件有效但凭据缺失或 `$NAME` 无法解析的模型会继续出现在诊断通知中，但不会出现在可选列表；通过 `auth.json` 登录的 Anthropic、Codex OAuth 和 GitHub Copilot 模型在凭据可用时仍会显示。
 
 ## 相关代码
 

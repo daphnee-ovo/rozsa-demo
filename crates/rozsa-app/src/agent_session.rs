@@ -1765,8 +1765,9 @@ pub(crate) fn resolve_configured_model_api_key(
     let roots =
         crate::config_paths::ConfigRoots::discover(cwd).map_err(|error| anyhow::anyhow!(error))?;
     let [global_models_dir, project_models_dir] = roots.model_dirs();
-    let registry = ModelRegistry::load_from_dirs(&[&global_models_dir, &project_models_dir])
-        .map_err(|error| anyhow::anyhow!(error))?;
+    let (registry, _) =
+        ModelRegistry::load_from_dirs_with_diagnostics(&[&global_models_dir, &project_models_dir])
+            .map_err(|error| anyhow::anyhow!(error))?;
     let Some(reference) = registry.provider_api_key_reference(model.provider.as_str()) else {
         return Ok(None);
     };
