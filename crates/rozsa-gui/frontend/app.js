@@ -353,14 +353,14 @@ function renderState(snap) {
       : (questions.length ? 'question' : (isStreaming ? 'running' : 'idle'));
   }
   if (snap.streamUpdate) {
-    renderMessages(snap.messages, true, snap.sessionId || null, snap.turnActivity, snap.turnSummaries, snap.devFlowPresentations);
+    renderMessages(snap.messages, true, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
     return;
   }
   updateHeader(snap);
   updateContextUsage(snap.contextUsage);
   updateQuotaVisibility(snap.model);
   if (!nativeSplitMode) updateSidebar(snap);
-  renderMessages(snap.messages, snap.isStreaming, snap.sessionId || null, snap.turnActivity, snap.turnSummaries, snap.devFlowPresentations);
+  renderMessages(snap.messages, snap.isStreaming, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
   renderRunningMessages(snap.queuedMessages, snap.steeringConversation);
   updateAbortButton();
   if (!nativeSplitMode) renderSessionList();
@@ -551,7 +551,7 @@ function updateAbortButton() {
 
 // =============== Message Rendering ===============
 
-function renderMessages(messages, streaming, sessionId = null, turnActivity = null, turnSummaries = [], devFlowPresentations = {}) {
+function renderMessages(messages, streaming, sessionId = null, turnActivity = null, turnSummaries = []) {
   const container = document.getElementById('chatMessages');
   if (!container) return;
   const sessionChanged = renderedMessageSessionId !== sessionId;
@@ -613,7 +613,7 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
   );
   const keys = visibleMessages.map((raw, index) => JSON.stringify(raw) +
     JSON.stringify(activityForVisibleIndex(index)) + ':' + (thinkingDurationForIndex(index) ?? '') +
-    devFlowPresentationRenderKey(raw, devFlowPresentations));
+    bashPresentationRenderKey(raw, toolResultMap));
   const sameSession = renderedMessageSessionId === sessionId;
   let firstChanged = -1;
   if (sameSession) {
@@ -666,7 +666,6 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
         activityForVisibleIndex(i),
         thinkingDurationForIndex(i),
         isThinkingExpanded(sessionId, i),
-        devFlowPresentations,
       ));
     }
   }
@@ -687,16 +686,16 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
   else if (shouldStickToBottom) scrollChatToBottom(container);
 }
 
-function devFlowPresentationRenderKey(raw, presentations) {
+function bashPresentationRenderKey(raw, toolResultMap) {
   const content = raw && raw.message && raw.message.content;
   if (!Array.isArray(content)) return '';
-  const relevant = {};
-  for (const block of content) {
-    if (block.type === 'toolCall' && block.id && presentations && presentations[block.id]) {
-      relevant[block.id] = presentations[block.id];
-    }
-  }
-  return JSON.stringify(relevant);
+  return JSON.stringify(content
+    .filter(block => block.type === 'toolCall' && block.id)
+    .map(block => parseDevFlowBashPresentation(
+      block,
+      toolResultMap[block.id] || null,
+      devFlowTitleForItem,
+    )));
 }
 
 function countTools(messages) {
@@ -770,7 +769,7 @@ function restoreSessionViewState(sessionId, container, savedView) {
   });
 }
 
-function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false, devFlowPresentations = {}) {
+function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false) {
   const div = document.createElement('div');
 
   if (raw.kind === 'custom') {
@@ -832,10 +831,11 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
       trackTool(tc.name);
       // 通过 tc.id 查找对应的 toolResult
       const result = toolResultMap && tc.id ? toolResultMap[tc.id] : null;
-      const devFlowPresentation = tc.id ? devFlowPresentations[tc.id] : null;
+      const devFlowPresentation = parseDevFlowBashPresentation(tc, result, devFlowTitleForItem);
+      if (devFlowPresentation && tc.id) requestDevFlowTitles(tc.id, devFlowPresentation);
       const tcStatus = result ? (result.isError ? 's-error' : 's-success') : 's-running';
       const toolTitle = devFlowPresentation
-        ? formatDevFlowToolTitle(devFlowPresentation)
+        ? formatBashDevFlowTitle(devFlowPresentation)
         : formatToolTitle(tc);
       const resultOutput = result ? result.output : '';
       const bodyOutput = resultOutput || formatToolArgs(tc);
@@ -852,7 +852,7 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
         toolBody = renderDiffView(delta.patch);
         toolBodyClass = ' diff-view';
       } else if (devFlowPresentation && result) {
-        toolBody = renderDevFlowToolEvidence(tc, result);
+        toolBody = renderBashToolEvidence(tc, result);
         toolBodyClass = ' dev-flow-tool-evidence';
       }
 
@@ -912,7 +912,217 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
   return div;
 }
 
-function formatDevFlowToolTitle(presentation) {
+function parseDevFlowBashPresentation(toolCall, result, titleLookup = null) {
+  if (!toolCall || !result || typeof toolCall.name !== 'string' ||
+      toolCall.name.toLowerCase() !== 'bash') return null;
+  if (result.toolName && typeof result.toolName === 'string' &&
+      result.toolName.toLowerCase() !== 'bash') return null;
+  const details = result.details && typeof result.details === 'object' ? result.details : {};
+  if (result.isError || details.success === false || details.exit_code !== 0 || details.truncated === true) {
+    return null;
+  }
+  const command = toolCall.arguments && typeof toolCall.arguments.command === 'string'
+    ? toolCall.arguments.command
+    : '';
+  const parsed = parseDevFlowBashCommand(command);
+  if (!parsed) return null;
+  const { words, stageCount } = parsed;
+  if (!words.length || !isDevFlowExecutable(words[0])) return null;
+  const args = words.slice(1);
+  let action;
+  let expectedKind = null;
+  let ids;
+  if (args[0] === 'task' && args[1] === 'create') {
+    action = 'created';
+    expectedKind = 'task';
+    ids = parseCreatedDevFlowIds(result.output, expectedKind);
+  } else if (args[0] === 'issue' && args[1] === 'create') {
+    action = 'created';
+    expectedKind = 'issue';
+    ids = parseCreatedDevFlowIds(result.output, expectedKind);
+  } else if (args[0] === 'claim') {
+    action = 'claimed';
+    ids = parseDevFlowArgumentIds(args.slice(1), null, true);
+  } else if (args[0] === 'task' && args[1] === 'done') {
+    action = 'completed';
+    expectedKind = 'task';
+    ids = parseDevFlowArgumentIds(args.slice(2), expectedKind, false);
+  } else if (args[0] === 'issue' && args[1] === 'close') {
+    action = 'closed';
+    expectedKind = 'issue';
+    ids = parseDevFlowArgumentIds(args.slice(2), expectedKind, false);
+  } else {
+    return null;
+  }
+  if (!ids || (!expectedKind && !ids.length) || (stageCount > 1 && action !== 'created')) return null;
+  return {
+    action,
+    items: ids.map(({ kind, id }) => ({
+      kind: expectedKind || kind,
+      id,
+      shortId: devFlowShortId(id),
+      title: typeof titleLookup === 'function' ? titleLookup(expectedKind || kind, id) : null,
+    })),
+  };
+}
+
+function parseDevFlowBashCommand(command) {
+  if (typeof command !== 'string' || !command.trim()) return null;
+  const withoutStderrRedirect = command.replace(/\s+2>&1\s*$/, '').trim();
+  if (!withoutStderrRedirect || /[;&`]/.test(withoutStderrRedirect) || withoutStderrRedirect.includes('$(')) {
+    return null;
+  }
+  const stages = splitDevFlowPipeline(withoutStderrRedirect);
+  if (!stages) return null;
+  const tokens = tokenizeDevFlowStage(stages[stages.length - 1]);
+  if (!tokens) return null;
+  const words = [];
+  for (let index = 0; index < tokens.length; index++) {
+    if (tokens[index] === '<') {
+      if (typeof tokens[index + 1] !== 'string' || !tokens[index + 1]) return null;
+      index++;
+    } else {
+      words.push(tokens[index]);
+    }
+  }
+  return { words, stageCount: stages.length };
+}
+
+function splitDevFlowPipeline(command) {
+  const stages = [''];
+  let quote = null;
+  let escaped = false;
+  for (const char of command) {
+    if (escaped) {
+      stages[stages.length - 1] += char;
+      escaped = false;
+      continue;
+    }
+    if (quote === '\'') {
+      stages[stages.length - 1] += char;
+      if (char === '\'') quote = null;
+      continue;
+    }
+    if (quote === '"') {
+      stages[stages.length - 1] += char;
+      if (char === '"') quote = null;
+      else if (char === '\\') escaped = true;
+      continue;
+    }
+    if (char === '\\') {
+      stages[stages.length - 1] += char;
+      escaped = true;
+    } else if (char === '\'' || char === '"') {
+      stages[stages.length - 1] += char;
+      quote = char;
+    } else if (char === '|') {
+      if (!stages[stages.length - 1].trim()) return null;
+      stages.push('');
+    } else {
+      stages[stages.length - 1] += char;
+    }
+  }
+  if (quote || escaped || !stages[stages.length - 1].trim()) return null;
+  return stages;
+}
+
+function tokenizeDevFlowStage(stage) {
+  const tokens = [];
+  let word = '';
+  let started = false;
+  let quote = null;
+  let escaped = false;
+  const flush = () => {
+    if (started) {
+      tokens.push(word);
+      word = '';
+      started = false;
+    }
+  };
+  for (const char of stage) {
+    if (escaped) {
+      word += char;
+      started = true;
+      escaped = false;
+      continue;
+    }
+    if (quote === '\'') {
+      if (char === '\'') quote = null;
+      else word += char;
+      started = true;
+      continue;
+    }
+    if (quote === '"') {
+      if (char === '"') quote = null;
+      else if (char === '\\') escaped = true;
+      else word += char;
+      started = true;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+    } else if (char === '\'' || char === '"') {
+      quote = char;
+      started = true;
+    } else if (char === '<') {
+      flush();
+      tokens.push('<');
+    } else if (char === '>' || char === '&') {
+      return null;
+    } else if (/\s/.test(char)) {
+      flush();
+    } else {
+      word += char;
+      started = true;
+    }
+  }
+  if (quote || escaped) return null;
+  flush();
+  return tokens;
+}
+
+function isDevFlowExecutable(value) {
+  return value === 'dow' || /(?:^|[\\/])dow$/.test(value);
+}
+
+function parseCreatedDevFlowIds(output, expectedKind) {
+  const matches = String(output || '').match(/\b(?:TASK-T|ISSUE-I)\d+\b/gi) || [];
+  const ids = matches.map(normalizeDevFlowId).filter(Boolean);
+  if (!ids.length || ids.some(item => item.kind !== expectedKind)) return null;
+  return ids;
+}
+
+function parseDevFlowArgumentIds(args, expectedKind, allowTimeout) {
+  const ids = [];
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (allowTimeout && arg === '--timeout') {
+      const value = Number(args[++index]);
+      if (!Number.isInteger(value) || value <= 0) return null;
+      continue;
+    }
+    if (arg === '-H' || arg === '--human') continue;
+    const parsed = normalizeDevFlowId(arg);
+    if (!parsed || (expectedKind && parsed.kind !== expectedKind)) return null;
+    ids.push(parsed);
+  }
+  return ids.length ? ids : null;
+}
+
+function normalizeDevFlowId(value) {
+  const match = String(value || '').match(/^(TASK-T|T|ISSUE-I|I)(\d+)$/i);
+  if (!match || Number(match[2]) <= 0) return null;
+  const kind = match[1].toUpperCase().startsWith('I') ? 'issue' : 'task';
+  const prefix = kind === 'issue' ? 'ISSUE-I' : 'TASK-T';
+  const id = prefix + String(Number(match[2])).padStart(3, '0');
+  return { kind, id };
+}
+
+function devFlowShortId(id) {
+  return String(id).replace(/^(?:TASK|ISSUE)-/, '');
+}
+
+function formatBashDevFlowTitle(presentation) {
   const action = {
     created: 'Created',
     claimed: 'Claimed',
@@ -927,7 +1137,7 @@ function formatDevFlowToolTitle(presentation) {
   return { name: action, arg };
 }
 
-function renderDevFlowToolEvidence(toolCall, result) {
+function renderBashToolEvidence(toolCall, result) {
   const details = result.details || {};
   const command = toolCall.arguments && toolCall.arguments.command
     ? toolCall.arguments.command
@@ -947,12 +1157,140 @@ function renderDevFlowToolEvidence(toolCall, result) {
       : '');
 }
 
+const DEV_FLOW_TITLE_CACHE_LIMIT = 64;
+const DEV_FLOW_TITLE_RESPONSE_LIMIT = 2 * 1024 * 1024;
+const DEV_FLOW_TITLE_TIMEOUT_MS = 1500;
+const devFlowTitleCache = new Map();
+const devFlowTitleRequests = new Map();
+let devFlowTitleSettingsRequest = null;
+
+function devFlowTitleCacheKey(kind, id) {
+  const dashboardUrl = typeof devFlowSettings !== 'undefined'
+    ? devFlowSettings?.project?.dashboardUrl || ''
+    : '';
+  return dashboardUrl + '|' + kind + ':' + id;
+}
+
+function devFlowTitleForItem(kind, id) {
+  const key = devFlowTitleCacheKey(kind, id);
+  return devFlowTitleCache.has(key) ? devFlowTitleCache.get(key) : null;
+}
+
+function rememberDevFlowTitle(key, title) {
+  devFlowTitleCache.delete(key);
+  devFlowTitleCache.set(key, title || null);
+  while (devFlowTitleCache.size > DEV_FLOW_TITLE_CACHE_LIMIT) {
+    devFlowTitleCache.delete(devFlowTitleCache.keys().next().value);
+  }
+}
+
+function devFlowTitleEndpoint(kind) {
+  const rawUrl = typeof devFlowSettings !== 'undefined'
+    ? devFlowSettings?.project?.dashboardUrl
+    : null;
+  if (!rawUrl) return null;
+  try {
+    const base = new URL(rawUrl);
+    const loopback = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(base.hostname);
+    if (base.protocol !== 'http:' || !loopback) return null;
+    const path = kind === 'issue' ? 'api/v1/issues' : 'api/v1/tasks';
+    return new URL(path, rawUrl.endsWith('/') ? rawUrl : rawUrl + '/');
+  } catch (_) {
+    return null;
+  }
+}
+
+function ensureDevFlowTitleSettings() {
+  if (typeof devFlowSettings !== 'undefined' && devFlowSettings !== null) return null;
+  if (typeof invoke !== 'function') return null;
+  if (!devFlowTitleSettingsRequest) {
+    devFlowTitleSettingsRequest = invoke('get_dev_flow_settings')
+      .then(snapshot => {
+        devFlowSettings = snapshot;
+        return snapshot;
+      })
+      .catch(() => null)
+      .finally(() => {
+        devFlowTitleSettingsRequest = null;
+      });
+  }
+  return devFlowTitleSettingsRequest;
+}
+
+function fetchDevFlowTitleItems(endpoint) {
+  if (typeof fetch !== 'function') return Promise.resolve(null);
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), DEV_FLOW_TITLE_TIMEOUT_MS) : null;
+  return fetch(endpoint.toString(), {
+    method: 'GET',
+    signal: controller ? controller.signal : undefined,
+  }).then(response => {
+    if (!response.ok) throw new Error('Dev Flow title lookup failed: ' + response.status);
+    return response.text();
+  }).then(text => {
+    if (text.length > DEV_FLOW_TITLE_RESPONSE_LIMIT) throw new Error('Dev Flow title response is too large');
+    const payload = JSON.parse(text);
+    return Array.isArray(payload?.items) ? payload.items : [];
+  }).catch(() => null).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function requestDevFlowTitles(toolCallId, presentation) {
+  const missing = presentation.items.filter(item => !item.title);
+  for (const item of missing) {
+    const cacheKey = devFlowTitleCacheKey(item.kind, item.id);
+    if (devFlowTitleCache.has(cacheKey)) {
+      item.title = devFlowTitleCache.get(cacheKey);
+      continue;
+    }
+    const endpoint = devFlowTitleEndpoint(item.kind);
+    if (!endpoint) {
+      const settingsRequest = ensureDevFlowTitleSettings();
+      if (settingsRequest) {
+        settingsRequest.then(() => {
+          if (devFlowTitleEndpoint(item.kind)) requestDevFlowTitles(toolCallId, presentation);
+        });
+      }
+      continue;
+    }
+    const requestKey = endpoint.toString();
+    let request = devFlowTitleRequests.get(requestKey);
+    if (!request) {
+      request = fetchDevFlowTitleItems(endpoint);
+      devFlowTitleRequests.set(requestKey, request);
+      request.finally(() => devFlowTitleRequests.delete(requestKey));
+    }
+    request.then(items => {
+      const found = Array.isArray(items)
+        ? items.find(candidate => normalizeDevFlowId(candidate?.id)?.id === item.id)
+        : null;
+      const title = found && typeof found.title === 'string' ? found.title : null;
+      rememberDevFlowTitle(cacheKey, title);
+      item.title = title;
+      updateDevFlowToolCard(toolCallId, presentation);
+    });
+  }
+}
+
+function updateDevFlowToolCard(toolCallId, presentation) {
+  const card = [...document.querySelectorAll('.dev-flow-tool-call')]
+    .find(element => element.dataset.toolCallId === toolCallId);
+  if (!card) return;
+  const title = formatBashDevFlowTitle(presentation);
+  const name = card.querySelector('.tool-name');
+  const arg = card.querySelector('.tool-call-args');
+  if (name) name.textContent = title.name;
+  if (arg) arg.textContent = title.arg;
+}
+
 function formatToolArgs(tc) {
   if (!tc.arguments) return '';
   if (typeof tc.arguments === 'string') return tc.arguments;
   // Show key fields for known tools
   const args = tc.arguments;
-  if (tc.name === 'Bash' && args.command) return args.command;
+  const toolName = typeof tc.name === 'string' ? tc.name.toLowerCase() : '';
+  if (toolName === 'bash' && args.command) return args.command;
   if (tc.name === 'Read' && args.file_path) return args.file_path;
   if (tc.name === 'Write' && args.file_path) return args.file_path;
   if (tc.name === 'Edit' && args.file_path) return args.file_path + ' (edit)';
@@ -963,7 +1301,9 @@ function formatToolTitle(tc) {
   const name = tc.name || 'Tool';
   const args = tc.arguments || {};
   if (typeof args === 'string') return { name, arg: args };
-  if (name === 'Bash' && args.command) return { name, arg: args.command };
+  if (typeof name === 'string' && name.toLowerCase() === 'bash' && args.command) {
+    return { name, arg: args.command };
+  }
   if (name === 'Read') return { name, arg: args.file_path || args.path || '' };
   if (name === 'Write') return { name, arg: args.file_path || args.path || '' };
   if (name === 'Edit') return { name, arg: args.file_path || args.path || '' };
