@@ -75,6 +75,7 @@
 // ├── thinking_effort_unavailable_event()
 // ├── unsupported_effort_message()
 // ├── struct ResolvedCredentials
+// ├── resolve_configured_model_api_key()
 // ├── resolve_credentials()
 // ├── oauth_auth_provider_id()
 // ├── is_oauth_custom_provider()
@@ -832,7 +833,7 @@ impl AgentSession {
         let Some(model) = small_model else {
             return Ok(None);
         };
-        let credentials = resolve_credentials(&model).await?;
+        let credentials = resolve_credentials(&model, &self.static_config.cwd).await?;
         let context = rozsa_model::types::Context {
             system_prompt: Some(
                 "Create a concise session title for the user's coding task. \
@@ -963,7 +964,7 @@ impl AgentSession {
         let thinking_effort = runtime.thinking_effort;
         drop(runtime);
 
-        let credentials = resolve_credentials(&model).await?;
+        let credentials = resolve_credentials(&model, &self.static_config.cwd).await?;
         let model_stream = self.model_stream.clone();
         let summarize_fn = |content: String| {
             let model = model.clone();
@@ -1275,7 +1276,7 @@ impl AgentSession {
             level => Some(level),
         };
 
-        let credentials = resolve_credentials(&model).await?;
+        let credentials = resolve_credentials(&model, &self.static_config.cwd).await?;
 
         let stream_options = SimpleStreamOptions {
             base: StreamOptions {
@@ -1756,8 +1757,34 @@ struct ResolvedCredentials {
     headers: Option<std::collections::HashMap<String, String>>,
 }
 
-/// Resolve request credentials from environment variables, then OAuth auth.json fallback.
-async fn resolve_credentials(model: &Model) -> Result<ResolvedCredentials> {
+/// Resolve a configured provider API key without putting it into model metadata.
+pub(crate) fn resolve_configured_model_api_key(
+    model: &Model,
+    cwd: &Path,
+) -> Result<Option<String>> {
+    let roots =
+        crate::config_paths::ConfigRoots::discover(cwd).map_err(|error| anyhow::anyhow!(error))?;
+    let [global_models_dir, project_models_dir] = roots.model_dirs();
+    let registry = ModelRegistry::load_from_dirs(&[&global_models_dir, &project_models_dir])
+        .map_err(|error| anyhow::anyhow!(error))?;
+    let Some(reference) = registry.provider_api_key_reference(model.provider.as_str()) else {
+        return Ok(None);
+    };
+    rozsa_model::credentials::resolve_config_value(reference)
+        .map(Some)
+        .map_err(|error| anyhow::anyhow!(error))
+}
+
+/// Resolve request credentials from model config, environment variables, then
+/// OAuth auth.json fallback.
+async fn resolve_credentials(model: &Model, cwd: &Path) -> Result<ResolvedCredentials> {
+    if let Some(api_key) = resolve_configured_model_api_key(model, cwd)? {
+        return Ok(ResolvedCredentials {
+            api_key: Some(api_key),
+            headers: None,
+        });
+    }
+
     use rozsa_model::types::Provider;
 
     // 1. Try environment variable first
@@ -1776,14 +1803,15 @@ async fn resolve_credentials(model: &Model) -> Result<ResolvedCredentials> {
         Provider::Custom(_) => Some("LLM_API_KEY"),
         _ => None,
     };
-    if let Some(var) = env_var
-        && let Ok(key) = std::env::var(var)
-        && !key.is_empty()
-    {
-        return Ok(ResolvedCredentials {
-            api_key: Some(key),
-            headers: None,
-        });
+    if let Some(var) = env_var {
+        if let Some(key) = rozsa_model::credentials::resolve_environment_variable(var)
+            .map_err(|error| anyhow::anyhow!(error))?
+        {
+            return Ok(ResolvedCredentials {
+                api_key: Some(key),
+                headers: None,
+            });
+        }
     }
 
     // 2. Try auth.json only for OAuth providers.

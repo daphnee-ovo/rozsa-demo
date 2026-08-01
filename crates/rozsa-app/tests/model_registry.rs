@@ -319,3 +319,90 @@ fn merges_discovered_nvidia_models() {
         Some("max_tokens")
     );
 }
+
+#[test]
+fn rejects_shell_command_api_key_configuration() {
+    let mut registry = ModelRegistry::from_generated_json(generated_json()).unwrap();
+
+    let error = registry
+        .apply_models_config_json(
+            r#"{
+                "providers": {
+                    "custom-provider": {
+                        "baseUrl": "https://custom.example.com/v1",
+                        "apiKey": "!printf should-not-run",
+                        "api": "openai-completions",
+                        "models": [{ "id": "custom-model" }]
+                    }
+                }
+            }"#,
+        )
+        .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("Shell command credential references are disabled")
+    );
+}
+
+#[test]
+fn migrates_plaintext_api_key_into_private_rozsa_env() {
+    let directory = tempfile::tempdir().unwrap();
+    let config_directory = directory.path().join("rozsa-config");
+    let models_path = directory.path().join("custom.json");
+    let original_config_dir = std::env::var_os("ROZSA_CONFIG_DIR");
+    unsafe {
+        std::env::set_var("ROZSA_CONFIG_DIR", &config_directory);
+    }
+
+    std::fs::write(
+        &models_path,
+        r#"{
+            "providers": {
+                "custom-provider": {
+                    "baseUrl": "https://custom.example.com/v1",
+                    "apiKey": "sk-project-secret",
+                    "api": "openai-completions",
+                    "models": [{ "id": "custom-model" }]
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let registry = ModelRegistry::load_from_dir(directory.path()).unwrap();
+    let reference = registry
+        .provider_api_key_reference("custom-provider")
+        .unwrap()
+        .to_string();
+    assert!(reference.starts_with("$ROZSA_CUSTOM_PROVIDER_API_KEY_"));
+    assert_eq!(
+        rozsa_model::credentials::resolve_config_value(&reference).unwrap(),
+        "sk-project-secret"
+    );
+    assert!(
+        !std::fs::read_to_string(&models_path)
+            .unwrap()
+            .contains("sk-project-secret")
+    );
+    let env_content = std::fs::read_to_string(config_directory.join(".env")).unwrap();
+    assert!(env_content.contains("sk-project-secret"));
+
+    let second_registry = ModelRegistry::load_from_dir(directory.path()).unwrap();
+    assert_eq!(
+        second_registry
+            .provider_api_key_reference("custom-provider")
+            .unwrap(),
+        reference
+    );
+    let second_env_content = std::fs::read_to_string(config_directory.join(".env")).unwrap();
+    assert_eq!(env_content, second_env_content);
+
+    unsafe {
+        match original_config_dir {
+            Some(value) => std::env::set_var("ROZSA_CONFIG_DIR", value),
+            None => std::env::remove_var("ROZSA_CONFIG_DIR"),
+        }
+    }
+}

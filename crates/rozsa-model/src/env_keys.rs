@@ -36,7 +36,9 @@ pub fn get_env_api_key(provider: &Provider) -> Option<String> {
 }
 
 fn env(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|v| !v.is_empty())
+    crate::credentials::resolve_environment_variable(key)
+        .ok()
+        .flatten()
 }
 
 fn home_dir() -> Option<std::path::PathBuf> {

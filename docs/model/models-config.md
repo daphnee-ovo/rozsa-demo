@@ -10,7 +10,7 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
   "providers": {
     "<provider-name>": {
       "baseUrl": "https://api.example.com/v1",
-      "apiKey": "ENV_VAR_NAME 或直接值",
+      "apiKey": "$ENV_VAR_NAME 或直接值",
       "api": "openai-completions",
       "models": [
         {
@@ -38,7 +38,7 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `baseUrl` | 自定义 provider 必填 | API endpoint |
-| `apiKey` | 自定义 provider 必填 | API key 值，或以 `!` 开头表示 shell 命令 |
+| `apiKey` | 自定义 provider 必填 | `$NAME` 环境变量引用，或直接值；禁止 shell 命令 |
 | `api` | 自定义 provider 必填 | 协议类型（见下方） |
 | `headers` | 否 | 额外 HTTP headers |
 | `compat` | 否 | 兼容性标志 |
@@ -97,7 +97,7 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
   "providers": {
     "anthropic": {
       "baseUrl": "https://api.anthropic.com",
-      "apiKey": "ANTHROPIC_API_KEY",
+      "apiKey": "$ANTHROPIC_API_KEY",
       "api": "anthropic-messages",
       "models": [
         {
@@ -122,7 +122,7 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
   "providers": {
     "deepseek": {
       "baseUrl": "https://api.deepseek.com/v1",
-      "apiKey": "DEEPSEEK_API_KEY",
+      "apiKey": "$DEEPSEEK_API_KEY",
       "api": "openai-completions",
       "models": [
         {
@@ -156,7 +156,7 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
   "providers": {
     "minimax": {
       "baseUrl": "https://api.minimax.chat/v1",
-      "apiKey": "MINIMAX_API_KEY",
+      "apiKey": "$MINIMAX_API_KEY",
       "api": "openai-completions",
       "models": [
         {
@@ -203,7 +203,7 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
   "providers": {
     "openrouter": {
       "baseUrl": "https://openrouter.ai/api/v1",
-      "apiKey": "OPENROUTER_API_KEY",
+      "apiKey": "$OPENROUTER_API_KEY",
       "api": "openai-completions",
       "headers": {
         "HTTP-Referer": "https://rozsa.dev",
@@ -240,9 +240,13 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
 
 ## apiKey 格式
 
-- 环境变量名：`"apiKey": "DEEPSEEK_API_KEY"` — 运行时读取 `$DEEPSEEK_API_KEY`
-- 直接值：`"apiKey": "sk-xxx"` — 不推荐，明文存储
-- Shell 命令：`"apiKey": "!pass show deepseek/api-key"` — 以 `!` 开头，运行时执行命令获取
+- 环境变量引用：`"apiKey": "$DEEPSEEK_API_KEY"` — 只有以 `$` 开头的值才会读取环境变量。
+- 进程环境优先：Rózsa 先读取进程环境；未找到时再读取 `~/.rozsa/.env`。`.env` 只由 Rózsa 读取，不会自动导出到 shell。
+- 直接值：`"apiKey": "sk-xxx"` — 仅用于迁移已有配置。首次读取文件配置时，Rózsa 会把值写入 `~/.rozsa/.env`，并将配置改写成生成的 `$ROZSA_...` 引用。
+- 未加 `$` 的名称（如 `"DEEPSEEK_API_KEY"`）会被当作明文值，不再被当作环境变量名。
+- Shell 命令已禁止：任何以 `!` 开头的值都会被拒绝，Rózsa 不会执行配置中的命令。
+
+`.env` 使用普通 `NAME=VALUE` 格式。Rózsa 写入的环境变量默认保存在全局 `~/.rozsa/.env`，不会写入项目级 model config；迁移和写入采用原子替换，并使用仅用户可读的权限。设置 `ROZSA_CONFIG_DIR` 时，私有环境文件位于该目录下的 `.env`。
 
 ## 相关代码
 

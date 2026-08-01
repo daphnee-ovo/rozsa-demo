@@ -2,8 +2,9 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
-use std::process::Command;
+use std::fs::OpenOptions;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
@@ -11,6 +12,324 @@ use serde_json::{Map, Value, json};
 
 use crate::providers::common::provider_id;
 use crate::types::{Model, SimpleStreamOptions};
+
+const ROZSA_CONFIG_DIR_ENV: &str = "ROZSA_CONFIG_DIR";
+const PRIVATE_ENV_FILE_NAME: &str = ".env";
+
+static PRIVATE_ENV_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+/// Return the private environment file used by Rózsa.
+pub fn private_env_path() -> Result<PathBuf, String> {
+    if let Some(path) = std::env::var_os(ROZSA_CONFIG_DIR_ENV) {
+        if path.is_empty() {
+            return Err(format!("{ROZSA_CONFIG_DIR_ENV} must not be empty"));
+        }
+        return Ok(PathBuf::from(path).join(PRIVATE_ENV_FILE_NAME));
+    }
+
+    home_dir()
+        .map(|home| home.join(".rozsa").join(PRIVATE_ENV_FILE_NAME))
+        .ok_or_else(|| "Cannot determine the Rózsa home directory for ~/.rozsa/.env".to_string())
+}
+
+/// Validate a value used as an API key or header configuration value.
+///
+/// Values beginning with `$` are environment-variable references. Values
+/// beginning with `!` are rejected rather than interpreted as commands.
+pub fn validate_config_value(config: &str, description: &str) -> Result<(), String> {
+    if config.is_empty() {
+        return Err(format!("{description} must not be empty"));
+    }
+    if config.starts_with('!') {
+        return Err(format!(
+            "Shell command credential references are disabled for {description}; use `$NAME` or a literal value"
+        ));
+    }
+    if let Some(name) = config.strip_prefix('$') {
+        validate_environment_name(name, description)?;
+    }
+    Ok(())
+}
+
+/// Resolve a model configuration value using the process environment and the
+/// private Rózsa environment file.
+pub fn resolve_config_value(config: &str) -> Result<String, String> {
+    validate_config_value(config, "configuration value")?;
+    if !config.starts_with('$') {
+        return Ok(config.to_string());
+    }
+
+    let env_path = private_env_path()?;
+    resolve_config_value_from_env_file(config, &env_path)
+}
+
+/// Resolve a model configuration value against an explicit private env file.
+/// This is also useful for isolated callers and tests.
+pub fn resolve_config_value_from_env_file(config: &str, env_path: &Path) -> Result<String, String> {
+    validate_config_value(config, "configuration value")?;
+    let Some(name) = config.strip_prefix('$') else {
+        return Ok(config.to_string());
+    };
+
+    resolve_environment_variable_from_env_file(name, env_path)?.ok_or_else(|| {
+        format!(
+            "Environment variable `{name}` is not set in the process environment or `{}`",
+            env_path.display()
+        )
+    })
+}
+
+/// Resolve an environment variable without exporting private values to the
+/// process environment. The process environment takes precedence so callers
+/// can explicitly override a private value.
+pub fn resolve_environment_variable(name: &str) -> Result<Option<String>, String> {
+    validate_environment_name(name, "environment variable")?;
+    if let Some(value) = non_empty_process_env(name) {
+        return Ok(Some(value));
+    }
+
+    let env_path = private_env_path()?;
+    resolve_environment_variable_from_env_file(name, &env_path)
+}
+
+/// Ensure a private environment variable exists in an explicit env file.
+/// Existing values are never overwritten silently.
+pub fn ensure_private_env_value(name: &str, value: &str) -> Result<(), String> {
+    let env_path = private_env_path()?;
+    ensure_private_env_value_at(&env_path, name, value)
+}
+
+/// Ensure a private environment variable exists in an explicit env file.
+/// Existing values are never overwritten silently.
+pub fn ensure_private_env_value_at(env_path: &Path, name: &str, value: &str) -> Result<(), String> {
+    validate_environment_name(name, "private environment variable")?;
+    if value.is_empty() {
+        return Err(format!(
+            "private environment variable `{name}` must not be empty"
+        ));
+    }
+
+    let _lock = PRIVATE_ENV_WRITE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "private environment file lock is poisoned".to_string())?;
+    let (existing, existed) = match fs::read_to_string(env_path) {
+        Ok(content) => (content, true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (String::new(), false),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read private environment file `{}`: {error}",
+                env_path.display()
+            ));
+        }
+    };
+    if existed {
+        restrict_private_env_permissions(env_path)?;
+    }
+    let values = parse_private_env(&existing, env_path)?;
+    if let Some(current) = values.get(name) {
+        if current == value {
+            return Ok(());
+        }
+        return Err(format!(
+            "Private environment variable `{name}` already has a different value in `{}`",
+            env_path.display()
+        ));
+    }
+
+    let mut updated = existing;
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str(name);
+    updated.push('=');
+    updated.push_str(
+        &serde_json::to_string(value)
+            .map_err(|error| format!("Failed to encode private environment value: {error}"))?,
+    );
+    updated.push('\n');
+    write_private_env_atomically(env_path, &updated)
+}
+
+fn resolve_environment_variable_from_env_file(
+    name: &str,
+    env_path: &Path,
+) -> Result<Option<String>, String> {
+    validate_environment_name(name, "environment variable")?;
+    if let Some(value) = non_empty_process_env(name) {
+        return Ok(Some(value));
+    }
+
+    let values = match fs::read_to_string(env_path) {
+        Ok(content) => parse_private_env(&content, env_path)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read private environment file `{}`: {error}",
+                env_path.display()
+            ));
+        }
+    };
+    Ok(values.get(name).filter(|value| !value.is_empty()).cloned())
+}
+
+fn parse_private_env(content: &str, path: &Path) -> Result<HashMap<String, String>, String> {
+    let mut values = HashMap::new();
+    for (line_index, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let assignment = trimmed.strip_prefix("export ").unwrap_or(trimmed);
+        let Some((name, raw_value)) = assignment.split_once('=') else {
+            return Err(format!(
+                "Invalid private environment entry at {}:{}: expected NAME=VALUE",
+                path.display(),
+                line_index + 1
+            ));
+        };
+        let name = name.trim();
+        validate_environment_name(
+            name,
+            &format!(
+                "private environment entry at {}:{}",
+                path.display(),
+                line_index + 1
+            ),
+        )?;
+        values.insert(
+            name.to_string(),
+            parse_private_env_value(raw_value.trim(), path, line_index + 1)?,
+        );
+    }
+    Ok(values)
+}
+
+fn parse_private_env_value(raw: &str, path: &Path, line: usize) -> Result<String, String> {
+    if raw.starts_with('"') {
+        return serde_json::from_str(raw).map_err(|error| {
+            format!(
+                "Invalid quoted private environment value at {}:{line}: {error}",
+                path.display()
+            )
+        });
+    }
+    if raw.starts_with('\'') {
+        if raw.len() >= 2 && raw.ends_with('\'') {
+            return Ok(raw[1..raw.len() - 1].to_string());
+        }
+        return Err(format!(
+            "Invalid quoted private environment value at {}:{line}",
+            path.display()
+        ));
+    }
+    Ok(raw.to_string())
+}
+
+fn write_private_env_atomically(path: &Path, content: &str) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| {
+        format!(
+            "Cannot determine parent directory for private environment file `{}`",
+            path.display()
+        )
+    })?;
+    fs::create_dir_all(parent).map_err(|error| {
+        format!(
+            "Failed to create private environment directory `{}`: {error}",
+            parent.display()
+        )
+    })?;
+
+    let temporary = path.with_file_name(format!(
+        ".{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("rozsa-env")
+    ));
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temporary).map_err(|error| {
+        format!(
+            "Failed to open temporary private environment file `{}`: {error}",
+            temporary.display()
+        )
+    })?;
+    std::io::Write::write_all(&mut file, content.as_bytes()).map_err(|error| {
+        format!(
+            "Failed to write temporary private environment file `{}`: {error}",
+            temporary.display()
+        )
+    })?;
+    file.sync_all().map_err(|error| {
+        format!(
+            "Failed to flush temporary private environment file `{}`: {error}",
+            temporary.display()
+        )
+    })?;
+    #[cfg(unix)]
+    std::fs::set_permissions(
+        &temporary,
+        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to secure temporary private environment file `{}`: {error}",
+            temporary.display()
+        )
+    })?;
+    fs::rename(&temporary, path).map_err(|error| {
+        format!(
+            "Failed to replace private environment file `{}`: {error}",
+            path.display()
+        )
+    })
+}
+
+fn restrict_private_env_permissions(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+            .map_err(|error| {
+                format!(
+                    "Failed to secure private environment file `{}`: {error}",
+                    path.display()
+                )
+            })?;
+    }
+    Ok(())
+}
+
+fn validate_environment_name(name: &str, description: &str) -> Result<(), String> {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return Err(format!(
+            "Invalid {description}: `$` must be followed by an environment variable name"
+        ));
+    };
+    if !(first == '_' || first.is_ascii_alphabetic())
+        || !chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    {
+        return Err(format!(
+            "Invalid {description}: environment variable names must match [A-Za-z_][A-Za-z0-9_]*"
+        ));
+    }
+    Ok(())
+}
+
+fn non_empty_process_env(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
 
 /// Resolve `models.json` request auth and headers into stream options before provider execution.
 pub async fn resolve_request_options(
@@ -515,40 +834,13 @@ fn resolve_headers_or_throw(
 }
 
 fn resolve_config_value_or_throw(config: &str, description: &str) -> Result<String, String> {
-    if let Some(value) = resolve_config_value(config) {
-        return Ok(value);
+    validate_config_value(config, description)?;
+    if let Some(name) = config.strip_prefix('$') {
+        return resolve_environment_variable(name)
+            .map_err(|error| format!("Failed to resolve {description}: {error}"))?
+            .ok_or_else(|| format!("Failed to resolve {description}"));
     }
-    if let Some(command) = config.strip_prefix('!') {
-        return Err(format!(
-            "Failed to resolve {description} from shell command: {command}"
-        ));
-    }
-    Err(format!("Failed to resolve {description}"))
-}
-
-fn resolve_config_value(config: &str) -> Option<String> {
-    if let Some(command) = config.strip_prefix('!') {
-        return execute_command(command);
-    }
-    std::env::var(config)
-        .ok()
-        .filter(|value| !value.is_empty())
-        .or_else(|| Some(config.to_string()))
-}
-
-fn execute_command(command: &str) -> Option<String> {
-    let output = if cfg!(windows) {
-        Command::new("cmd").args(["/C", command]).output().ok()?
-    } else {
-        Command::new("sh").args(["-c", command]).output().ok()?
-    };
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8(output.stdout)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    Ok(config.to_string())
 }
 
 pub(crate) fn strip_json_comments(input: &str) -> String {

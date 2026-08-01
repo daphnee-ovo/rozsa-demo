@@ -31,6 +31,7 @@
 // ├── first_available()
 // ├── is_user_configured()
 // ├── model_config_path()
+// ├── provider_api_key_reference()
 // ├── persist_thinking_effort()
 // ├── apply_models_config_json()
 // ├── apply_models_config_file()
@@ -58,6 +59,9 @@
 // ├── merge_json_objects()
 // ├── merge_nested_object()
 // ├── nvidia_openai_compat()
+// ├── migrate_plaintext_api_keys()
+// ├── generated_private_api_key_name()
+// ├── write_models_config_atomically()
 // ├── provider_from_str()
 // ├── is_models_config_path()
 // ├── model_key()
@@ -69,8 +73,7 @@
 //! Rust model metadata registry.
 //!
 //! This module owns generated model metadata and `models.json` metadata merging.
-//! Credential resolution, OAuth, and shell-command key expansion intentionally
-//! remain outside this module.
+//! Credential resolution and OAuth intentionally remain outside this module.
 //!
 //! Related docs: `docs/model/supported-providers.md`.
 
@@ -87,10 +90,13 @@ use rozsa_model::types::Provider;
 use rozsa_model::types::{CacheRetention, StreamOptions, Transport};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 const DEFAULT_MAX_TOKENS: usize = 16_384;
+
+static MODEL_CONFIG_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Auth availability for a single provider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -437,6 +443,14 @@ impl ModelRegistry {
             .map(PathBuf::as_path)
     }
 
+    /// Return the provider-level API key reference from the loaded config.
+    ///
+    /// The value is intentionally kept separate from `Model`: model metadata is
+    /// sent to the GUI, while credentials must only enter request options.
+    pub fn provider_api_key_reference(&self, provider: &str) -> Option<&str> {
+        self.provider_api_keys.get(provider).map(String::as_str)
+    }
+
     /// Atomically persist one learned provider-facing thinking effort value.
     pub fn persist_thinking_effort(
         &self,
@@ -445,8 +459,7 @@ impl ModelRegistry {
         effort: rozsa_model::types::ThinkingEffort,
         value: Option<&str>,
     ) -> Result<(), ModelRegistryError> {
-        static WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        let _write_lock = WRITE_LOCK
+        let _write_lock = MODEL_CONFIG_WRITE_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()
             .expect("thinking effort configuration write lock must not be poisoned");
@@ -538,8 +551,13 @@ impl ModelRegistry {
                 message: error.to_string(),
             })?;
         let input = strip_json_comments(&input);
-        let config: ModelsConfig =
+        let mut document: Value =
             serde_json::from_str(&input).map_err(ModelRegistryError::ModelsJsonParse)?;
+        if migrate_plaintext_api_keys(path, &mut document)? {
+            write_models_config_atomically(path, &document)?;
+        }
+        let config: ModelsConfig =
+            serde_json::from_value(document).map_err(ModelRegistryError::ModelsJsonParse)?;
         self.apply_models_config_with_source(config, Some(path))
     }
 
@@ -712,6 +730,22 @@ impl ModelRegistry {
     fn validate_config(&self, config: &ModelsConfig) -> Result<(), ModelRegistryError> {
         let built_in_providers = self.provider_ids();
         for (provider_name, provider_config) in &config.providers {
+            if let Some(api_key) = provider_config.api_key.as_deref() {
+                rozsa_model::credentials::validate_config_value(
+                    api_key,
+                    &format!("Provider {provider_name} apiKey"),
+                )
+                .map_err(ModelRegistryError::InvalidModelsJson)?;
+            }
+            if let Some(headers) = provider_config.headers.as_ref() {
+                for (name, value) in headers {
+                    rozsa_model::credentials::validate_config_value(
+                        value,
+                        &format!("Provider {provider_name} header `{name}`"),
+                    )
+                    .map_err(ModelRegistryError::InvalidModelsJson)?;
+                }
+            }
             let is_built_in = built_in_providers.contains(provider_name);
             let has_models = provider_config
                 .models
@@ -833,21 +867,26 @@ impl ModelRegistry {
         for provider_name in self.provider_ids() {
             // 1. Check models.json apiKey for this provider
             if let Some(api_key) = self.provider_api_keys.get(&provider_name) {
-                let source = if api_key.starts_with('!') {
-                    "models_json_command"
-                } else if std::env::var(api_key).is_ok() {
-                    "environment"
+                let (configured, source) = if api_key.starts_with('$') {
+                    (
+                        rozsa_model::credentials::resolve_config_value(api_key).is_ok(),
+                        "models_json_env",
+                    )
+                } else if api_key.starts_with('!') {
+                    (false, "invalid")
                 } else {
-                    "models_json_key"
+                    (!api_key.is_empty(), "models_json_key")
                 };
                 result.insert(
-                    provider_name,
+                    provider_name.clone(),
                     ProviderAvailable {
-                        configured: true,
-                        source: Some(source.to_string()),
+                        configured,
+                        source: configured.then(|| source.to_string()),
                     },
                 );
-                continue;
+                if configured || api_key.starts_with('$') || api_key.starts_with('!') {
+                    continue;
+                }
             }
 
             // 2. Check known env vars via get_env_api_key
@@ -1099,6 +1138,105 @@ fn nvidia_openai_compat(provider: &str, base_url: &str) -> Option<Value> {
         "supportsReasoningEffort": false,
         "maxTokensField": "max_tokens"
     }))
+}
+
+fn migrate_plaintext_api_keys(
+    path: &Path,
+    document: &mut Value,
+) -> Result<bool, ModelRegistryError> {
+    let providers = document
+        .get_mut("providers")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            ModelRegistryError::InvalidModelsJson(
+                "models.json must contain an object-valued providers field.".to_string(),
+            )
+        })?;
+    let mut migrated = false;
+    let mut env_path = None;
+
+    for (provider, provider_value) in providers {
+        let provider_object = provider_value.as_object_mut().ok_or_else(|| {
+            ModelRegistryError::InvalidModelsJson(format!(
+                "Provider {provider} must be a JSON object."
+            ))
+        })?;
+        let Some(api_key_value) = provider_object.get("apiKey") else {
+            continue;
+        };
+        let api_key = api_key_value.as_str().ok_or_else(|| {
+            ModelRegistryError::InvalidModelsJson(format!(
+                "Provider {provider} apiKey must be a string."
+            ))
+        })?;
+        rozsa_model::credentials::validate_config_value(
+            api_key,
+            &format!("Provider {provider} apiKey"),
+        )
+        .map_err(ModelRegistryError::InvalidModelsJson)?;
+        if api_key.starts_with('$') {
+            continue;
+        }
+
+        let env_name = generated_private_api_key_name(path, provider);
+        let env_path = if let Some(path) = env_path.clone() {
+            path
+        } else {
+            let path = rozsa_model::credentials::private_env_path()
+                .map_err(ModelRegistryError::InvalidModelsJson)?;
+            env_path = Some(path.clone());
+            path
+        };
+        rozsa_model::credentials::ensure_private_env_value_at(&env_path, &env_name, api_key)
+            .map_err(ModelRegistryError::InvalidModelsJson)?;
+        provider_object.insert("apiKey".to_string(), Value::String(format!("${env_name}")));
+        migrated = true;
+    }
+
+    Ok(migrated)
+}
+
+fn generated_private_api_key_name(path: &Path, provider: &str) -> String {
+    let provider_slug = provider
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let provider_slug = if provider_slug.is_empty() {
+        "MODEL".to_string()
+    } else {
+        provider_slug
+    };
+    let seed = format!("{}:{provider}", path.display());
+    let digest = format!("{:x}", Sha256::digest(seed.as_bytes()));
+    format!("ROZSA_{provider_slug}_API_KEY_{}", &digest[..12])
+}
+
+fn write_models_config_atomically(path: &Path, document: &Value) -> Result<(), ModelRegistryError> {
+    let _write_lock = MODEL_CONFIG_WRITE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("model configuration write lock must not be poisoned");
+    let temporary = path.with_extension("json.tmp");
+    let serialized = serde_json::to_string_pretty(document).map_err(|error| {
+        ModelRegistryError::ModelsJsonRead {
+            path: path.display().to_string(),
+            message: format!("failed to serialize migrated model config: {error}"),
+        }
+    })?;
+    fs::write(&temporary, serialized).map_err(|error| ModelRegistryError::ModelsJsonRead {
+        path: temporary.display().to_string(),
+        message: error.to_string(),
+    })?;
+    fs::rename(&temporary, path).map_err(|error| ModelRegistryError::ModelsJsonRead {
+        path: path.display().to_string(),
+        message: error.to_string(),
+    })
 }
 
 fn provider_from_str(name: &str) -> Option<Provider> {

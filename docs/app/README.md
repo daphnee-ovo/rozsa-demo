@@ -361,7 +361,7 @@ pub struct SessionMeta {
 1. 加载 `models.generated.json`（checked-in 元数据）
 2. 合并 `models.json`（用户配置，支持 provider overrides / model overrides / custom models）
 3. 动态发现 NVIDIA 模型（当 `NVIDIA_API_KEY` 配置时）
-4. 解析 API key（env var / models.json `apiKey` 字段 / shell command `!cmd`）
+4. 解析 API key（`$NAME` 环境变量引用、models.json `apiKey` 字段和全局 `~/.rozsa/.env`；禁止 shell command）
 
 **核心 API**：
 ```rust
@@ -385,7 +385,7 @@ pub fn provider_available(&self) -> HashMap<String, ProviderAvailable>
 ```rust
 pub struct ProviderAvailable {
     pub configured: bool,       // 是否配置了 API key
-    pub source: Option<String>, // "environment" / "models_json_key" / "models_json_command"
+    pub source: Option<String>, // "environment" / "models_json_env" / "models_json_key"
 }
 ```
 

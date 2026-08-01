@@ -318,14 +318,22 @@ impl SubagentManager {
                 tools: tool_schemas,
             };
 
-            let loop_config = build_loop_config(
+            let loop_config = match build_loop_config(
                 &self.shared,
                 &rt.model,
                 rt.thinking_effort,
                 rt.tools.clone(),
                 rt.scope.clone(),
                 self.shared.cwd.clone(),
-            );
+            ) {
+                Ok(config) => config,
+                Err(error) => {
+                    rt.info.status = SubagentStatus::Error;
+                    rt.info.last_error = Some(error.clone());
+                    let _ = rt.status_tx.send(SubagentStatus::Error);
+                    return Err(error);
+                }
+            };
 
             (context, loop_config, cancel_token, vec![user_msg])
         };
@@ -439,17 +447,18 @@ fn build_loop_config(
     tools: Vec<Arc<dyn Tool>>,
     scope: SubagentScope,
     cwd: PathBuf,
-) -> AgentLoopConfig {
+) -> Result<AgentLoopConfig, String> {
     let reasoning = match thinking_effort {
         ThinkingEffort::Off => None,
         level => Some(level),
     };
+    let api_key = resolve_api_key(model, &cwd)?;
 
     let stream_options = SimpleStreamOptions {
         base: StreamOptions {
             temperature: None,
             max_tokens: Some(model.max_tokens),
-            api_key: resolve_api_key(model),
+            api_key,
             transport: Transport::Auto,
             cache_retention: CacheRetention::Short,
             session_id: None,
@@ -505,7 +514,7 @@ fn build_loop_config(
         }))
     };
 
-    AgentLoopConfig {
+    Ok(AgentLoopConfig {
         model: model.clone(),
         reasoning,
         stream_options,
@@ -522,7 +531,7 @@ fn build_loop_config(
         pre_tool_use,
         post_tool_use: None,
         tools,
-    }
+    })
 }
 
 async fn drain_subagent_stream(
@@ -570,7 +579,13 @@ async fn drain_subagent_stream(
     }
 }
 
-fn resolve_api_key(model: &Model) -> Option<String> {
+fn resolve_api_key(model: &Model, cwd: &std::path::Path) -> Result<Option<String>, String> {
+    if let Some(api_key) = crate::agent_session::resolve_configured_model_api_key(model, cwd)
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(Some(api_key));
+    }
+
     use rozsa_model::types::Provider;
     let env_var = match &model.provider {
         Provider::Anthropic => "ANTHROPIC_API_KEY",
@@ -583,10 +598,11 @@ fn resolve_api_key(model: &Model) -> Option<String> {
         Provider::Mistral => "MISTRAL_API_KEY",
         Provider::Together => "TOGETHER_API_KEY",
         Provider::HuggingFace => "HF_TOKEN",
-        Provider::Custom(_) => return std::env::var("LLM_API_KEY").ok(),
-        _ => return None,
+        Provider::Custom(_) => "LLM_API_KEY",
+        _ => return Ok(None),
     };
-    std::env::var(env_var).ok()
+    rozsa_model::credentials::resolve_environment_variable(env_var)
+        .map_err(|error| error.to_string())
 }
 
 fn current_timestamp_ms() -> i64 {
