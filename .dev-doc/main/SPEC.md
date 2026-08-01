@@ -482,45 +482,27 @@ have explicit disabled/loading/error UI. Successful opening is silent.
 
 ### 8. Structured Bash result presentation
 
-`dev_flow::command` uses a conservative finite-state scanner that respects
-single/double quotes and escapes. It rejects unclosed quoting and top-level
-`&&`, `||`, `;`, newline lists, background execution, loops, substitutions used
-as the final executable, and indirect scripts.
+The GUI frontend derives this presentation directly from the existing assistant
+`ToolCall` and matching Bash `ToolResult` already present in the session
+messages. This is a display transformation only: it must not execute commands,
+add session metadata, or require a GUI snapshot field dedicated to presentation.
 
-Accept:
+For a successful, non-truncated Bash result, the frontend may recognize the
+small supported `dow` action set: `task create`, `issue create`, `claim`,
+`task done`, and `issue close`. Unsupported, failed, or incomplete commands
+remain generic Bash tool calls. The collapsed summary shows the action, entity,
+short ID, and optional title; expansion preserves the original command,
+stdout/stderr, exit code, duration, timeout, truncation, and file-delta details.
 
-- standalone `dow task create`, `dow issue create`, `dow claim <ids...>`,
-  `dow task done <ids...>`, and `dow issue close <ids...>`;
-- a single pipeline whose final stage is exactly Task/Issue create;
-- stdin redirection into Task/Issue create;
-- `dow` or the validated absolute executable as the final executable.
+If an ID needs a title, the GUI may use one bounded read-only GET against the
+already available Dev-flow status data and render `Details unavailable` when
+the lookup does not complete. This title enrichment is separate from the
+Dev-flow status/sidebar/dashboard presentation and must not introduce session
+record persistence or app-layer presentation state.
 
-The producer stages before create are not interpreted. Recognition requires
-Bash `details.success == true`, `exit_code == 0`, and `truncated == false`;
-`ToolResultMessage.is_error` alone is insufficient for Bash.
-
-Create IDs are parsed from stdout as one canonical full ID per line. Other IDs
-come from command arguments and normalize to full IDs internally and short
-`T001`/`I001` labels in the UI. Resolve titles from the project snapshot.
-Create performs bounded read refreshes for up to two seconds to cover the
-dashboard watcher debounce. Missing enrichment renders the confirmed action and
-ID with `Details unavailable`.
-
-Store `DevFlowToolPresentation` by tool-call ID in GUI live state and include it
-in `UiSnapshot`. After recognizing a completed action, persist a typed,
-non-message `DevFlowPresentationRecord` in the session log containing the tool
-call ID, execution-time canonical root, full `DevFlowRevisionKey`, action, IDs,
-confirmed titles if any, and timestamp. The entry is backward-compatible
-session metadata and is excluded from visible chat rendering.
-
-On session activation, rebuild presentations from these records plus the
-persisted assistant ToolCalls and Bash ToolResults without re-execution. A later
-snapshot may fill a missing title only when its project key exactly matches the
-recorded execution-time key; switching cwd or branch never associates an old
-action with new-project data. The specialized collapsed card replaces only the
-generic summary; expansion always preserves the original command, the Bash
-tool's combined stdout/stderr output, exit code, duration, timeout, truncation,
-and file-delta details.
+Session activation and restoration recompute the card from persisted messages
+without re-executing Bash. The Dev-flow status/sidebar/dashboard data flow is
+independent of this Bash tool-call card.
 
 ### 9. Notification center
 

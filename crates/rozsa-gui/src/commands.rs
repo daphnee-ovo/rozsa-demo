@@ -142,8 +142,6 @@
 // ├── ensure_codex_oauth_models_config()
 // ├── codex_oauth_model()
 // ├── load_session_messages()
-// ├── load_session_presentations()
-// ├── refresh_dev_flow_presentations()
 // ├── load_session_summary()
 // ├── activate_session()
 // ├── struct SessionListEntry
@@ -288,11 +286,7 @@ pub async fn send_message(
     let session_id = tab.session_id();
     let (agent, spawn_forwarder) = match tab {
         SessionTab::Active { agent, .. } => (agent.clone(), false),
-        SessionTab::Loaded {
-            path,
-            messages,
-            dev_flow_presentations,
-        } => {
+        SessionTab::Loaded { path, messages } => {
             // 升级为 Active：创建 AgentSession
             let agent = activate_session(path, &state).await?;
             let path_owned = path.clone();
@@ -303,7 +297,6 @@ pub async fn send_message(
                 agent: agent_arc.clone(),
                 live: crate::state::LiveState {
                     messages: std::mem::take(messages),
-                    dev_flow_presentations: std::mem::take(dev_flow_presentations),
                     completed_summary,
                     ..Default::default()
                 },
@@ -314,7 +307,6 @@ pub async fn send_message(
             // 从 Idle 直接激活（加载历史 + 创建 agent）
             let path_owned = path.clone();
             let messages = load_session_messages(&path_owned)?;
-            let dev_flow_presentations = load_session_presentations(&path_owned)?;
             let agent = activate_session(&path_owned, &state).await?;
             let completed_summary = load_session_summary(&path_owned);
             let agent_arc = std::sync::Arc::new(agent);
@@ -323,7 +315,6 @@ pub async fn send_message(
                 agent: agent_arc.clone(),
                 live: crate::state::LiveState {
                     messages,
-                    dev_flow_presentations,
                     completed_summary,
                     ..Default::default()
                 },
@@ -360,9 +351,6 @@ pub async fn send_message(
             .append_custom(INTERACTION_STARTED.to_string(), None)
             .map_err(|error| error.to_string())?;
     }
-    // A newly created session is lazy: the first append materializes its
-    // JSONL file. Refresh persisted Dev Flow records only after that append.
-    refresh_dev_flow_presentations(&state, idx).await?;
     {
         let mut tabs = state.tabs.lock().await;
         if let Some(SessionTab::Active { live, .. }) = tabs.get_mut(idx) {
@@ -1220,11 +1208,9 @@ pub async fn switch_session(
     } else {
         // 创建新的 Loaded tab（加载历史消息用于显示，不启动 agent）
         let messages = load_session_messages(&path)?;
-        let dev_flow_presentations = load_session_presentations(&path)?;
         tabs.push(SessionTab::Loaded {
             path: path.clone(),
             messages,
-            dev_flow_presentations,
         });
         tabs.len() - 1
     };
@@ -1254,12 +1240,6 @@ pub async fn switch_session(
     drop(tabs);
     if let Some(cwd) = cwd {
         state.dev_flow.switch_to_session(&session_id, cwd).await;
-        refresh_dev_flow_presentations(&state, target_idx).await?;
-        let tabs = state.tabs.lock().await;
-        if let Some(tab) = tabs.get(target_idx) {
-            let snapshot = UiSnapshot::from_tab(tab, &state.shared);
-            let _ = crate::events::emit_main(&app, "ui-state", snapshot);
-        }
     }
     crate::events::emit_sidebar_state(&app, state.inner()).await?;
 
@@ -3783,64 +3763,6 @@ fn load_session_messages(path: &str) -> Result<Vec<AgentMessage>, String> {
             }
         })
         .collect())
-}
-
-fn load_session_presentations(
-    path: &str,
-) -> Result<std::collections::HashMap<String, rozsa_app::dev_flow::DevFlowToolPresentation>, String>
-{
-    let manager = SessionManager::open(path).map_err(|error| error.to_string())?;
-    let records = manager
-        .dev_flow_presentation_records()
-        .map_err(|error| error.to_string())?;
-    Ok(rozsa_app::dev_flow::rebuild_dev_flow_presentations(
-        records,
-        &manager.context_messages(),
-        None,
-    ))
-}
-
-async fn refresh_dev_flow_presentations(
-    state: &State<'_, GuiState>,
-    tab_index: usize,
-) -> Result<(), String> {
-    let (path, session_id) = {
-        let tabs = state.tabs.lock().await;
-        let tab = tabs.get(tab_index).ok_or("No session tab")?;
-        (tab.path().to_owned(), tab.session_id())
-    };
-    let manager = SessionManager::open(&path).map_err(|error| error.to_string())?;
-    let records = manager
-        .dev_flow_presentation_records()
-        .map_err(|error| error.to_string())?;
-    let messages = manager.context_messages();
-    let session_state = state.dev_flow.session_state(&session_id).await;
-    let snapshot = match session_state
-        .as_ref()
-        .and_then(|state| state.service.as_ref())
-    {
-        Some(service) => service.snapshot().read().await.clone(),
-        None => None,
-    };
-    let enrichment = session_state
-        .as_ref()
-        .zip(snapshot.as_ref())
-        .map(|(state, snapshot)| (&state.project, snapshot));
-    let presentations =
-        rozsa_app::dev_flow::rebuild_dev_flow_presentations(records, &messages, enrichment);
-    let mut tabs = state.tabs.lock().await;
-    let Some(tab) = tabs.get_mut(tab_index).filter(|tab| tab.path() == path) else {
-        return Ok(());
-    };
-    match tab {
-        SessionTab::Loaded {
-            dev_flow_presentations,
-            ..
-        } => *dev_flow_presentations = presentations,
-        SessionTab::Active { live, .. } => live.dev_flow_presentations = presentations,
-        SessionTab::Idle { .. } => {}
-    }
-    Ok(())
 }
 
 fn load_session_summary(path: &str) -> Option<crate::turn_diff::TurnActivity> {

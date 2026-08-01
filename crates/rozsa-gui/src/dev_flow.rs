@@ -26,7 +26,6 @@
 // ├── sidebar_snapshot()
 // ├── dashboard_url()
 // ├── detail()
-// ├── capture_tool_presentation()
 // ├── session_state()
 // ├── last_stop_at()
 // ├── active_sessions()
@@ -68,7 +67,6 @@
 // ├── validate_detail_request()
 // ├── project_identity()
 // ├── sidebar_snapshot_from_state()
-// ├── enrich_presentation_titles()
 // ├── summarize_work()
 // ├── short_dev_flow_id()
 // ├── task_status_label()
@@ -97,16 +95,14 @@ use async_trait::async_trait;
 use rozsa_app::dev_flow::dashboard::{DashboardTiming, ReconnectBackoff};
 use rozsa_app::dev_flow::registry::{DashboardServiceControl, ServiceShutdownOutcome};
 use rozsa_app::dev_flow::{
-    BashExecutionEvidence, CommandExecutionError, CommandOutput, DashboardClient, DashboardProcess,
+    CommandExecutionError, CommandOutput, DashboardClient, DashboardProcess,
     DashboardServiceFactory, DevFlowAvailability, DevFlowError, DevFlowIssueStatus,
-    DevFlowPresentationAction, DevFlowPresentationItemKind, DevFlowPresentationRecord,
     DevFlowProjectKey, DevFlowRegistry, DevFlowRevisionKey, DevFlowServiceHandle, DevFlowSnapshot,
-    DevFlowTaskStatus, DevFlowToolPresentation, DiscoveryCommandRunner, DiscoveryEnvironment,
-    DowDiscoveryError, DowInstallSource, ProjectCommandRunner, SessionDevFlowState,
-    SystemCommandRunner, discover_dow_with, recognize_dow_bash, start_dashboard,
+    DevFlowTaskStatus, DiscoveryCommandRunner, DiscoveryEnvironment, DowDiscoveryError,
+    DowInstallSource, ProjectCommandRunner, SessionDevFlowState, SystemCommandRunner,
+    discover_dow_with, start_dashboard,
 };
 use rozsa_app::settings::DevFlowSettings;
-use rozsa_model::types::{ContentBlock, ToolResultMessage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::time::{MissedTickBehavior, sleep};
@@ -615,77 +611,6 @@ impl DevFlowRuntime {
             availability: current.availability.clone(),
             availability_message: current.availability_message.clone(),
         })
-    }
-
-    /// Convert one confirmed Bash result into a project-bound presentation
-    /// record. Create actions briefly wait for the existing dashboard watcher
-    /// to publish titles; no command is re-executed.
-    pub async fn capture_tool_presentation(
-        &self,
-        session_id: &str,
-        tool_call_id: &str,
-        result: &ToolResultMessage,
-    ) -> Option<DevFlowPresentationRecord> {
-        if result.is_error {
-            return None;
-        }
-        let details = result.details.as_object()?;
-        let command = details.get("command")?.as_str()?;
-        let exit_code = details
-            .get("exit_code")
-            .and_then(serde_json::Value::as_i64)
-            .and_then(|value| i32::try_from(value).ok());
-        let stdout = result
-            .content
-            .iter()
-            .filter_map(|block| match block {
-                ContentBlock::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let evidence = BashExecutionEvidence {
-            success: details
-                .get("success")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false),
-            exit_code,
-            truncated: details
-                .get("truncated")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(true),
-            stdout,
-        };
-        let executable = self.inner.diagnostics.lock().await.executable.clone();
-        let mut presentation = recognize_dow_bash(command, executable.as_deref(), &evidence)?;
-        let state = self.session_state(session_id).await?;
-        let wait_for_titles = presentation.action == DevFlowPresentationAction::Created;
-        let deadline = Instant::now() + Duration::from_secs(2);
-        loop {
-            let snapshot = match &state.service {
-                Some(service) => service.snapshot().read().await.clone(),
-                None => None,
-            };
-            if let Some(snapshot) = snapshot {
-                enrich_presentation_titles(&mut presentation, &snapshot);
-            }
-            if !wait_for_titles
-                || presentation.items.iter().all(|item| item.title.is_some())
-                || Instant::now() >= deadline
-                || state.service.is_none()
-            {
-                break;
-            }
-            sleep(Duration::from_millis(100)).await;
-        }
-        presentation.details_unavailable =
-            presentation.items.iter().any(|item| item.title.is_none());
-        Some(DevFlowPresentationRecord::new(
-            tool_call_id.to_owned(),
-            &state.project,
-            presentation,
-            result.timestamp,
-        ))
     }
 
     /// Current registry state for one associated session, if any.
@@ -1412,29 +1337,6 @@ fn sidebar_snapshot_from_state(
         availability_message,
         dashboard_ready: state.service.is_some(),
         show_sidebar_status,
-    }
-}
-
-fn enrich_presentation_titles(
-    presentation: &mut DevFlowToolPresentation,
-    snapshot: &DevFlowSnapshot,
-) {
-    for item in &mut presentation.items {
-        if item.title.is_some() {
-            continue;
-        }
-        item.title = match item.kind {
-            DevFlowPresentationItemKind::Task => snapshot
-                .tasks
-                .iter()
-                .find(|task| task.id == item.id)
-                .map(|task| task.title.clone()),
-            DevFlowPresentationItemKind::Issue => snapshot
-                .issues
-                .iter()
-                .find(|issue| issue.id == item.id)
-                .map(|issue| issue.title.clone()),
-        };
     }
 }
 

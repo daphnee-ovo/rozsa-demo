@@ -1,10 +1,12 @@
+// FrameworkTree
+// agent_session_restore_test.rs
+// ├── test_model()
+// ├── done_event()
+// └── restored_session_messages_are_sent_to_the_next_model_request()
+
 use std::sync::{Arc, Mutex};
 
 use rozsa_app::agent_session::{AgentSession, AgentSessionConfig, ModelStream};
-use rozsa_app::dev_flow::{
-    DevFlowPresentationAction, DevFlowPresentationItem, DevFlowPresentationItemKind,
-    DevFlowPresentationRecord, DevFlowProjectKey, DevFlowRevisionKey, DevFlowToolPresentation,
-};
 use rozsa_app::resources::LoadedResources;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::SettingsManager;
@@ -105,26 +107,6 @@ async fn restored_session_messages_are_sent_to_the_next_model_request() {
             is_error: false,
             timestamp: 3,
         }))
-        .unwrap();
-    manager
-        .append_dev_flow_presentation(&DevFlowPresentationRecord::new(
-            "call-1".to_string(),
-            &DevFlowProjectKey {
-                root: temp.path().to_path_buf(),
-                revision: DevFlowRevisionKey::NamedBranch("main".to_string()),
-            },
-            DevFlowToolPresentation {
-                action: DevFlowPresentationAction::Created,
-                items: vec![DevFlowPresentationItem {
-                    kind: DevFlowPresentationItemKind::Task,
-                    id: "TASK-T001".to_string(),
-                    short_id: "T001".to_string(),
-                    title: Some("Persisted task".to_string()),
-                }],
-                details_unavailable: false,
-            },
-            4,
-        ))
         .unwrap();
     drop(manager);
 

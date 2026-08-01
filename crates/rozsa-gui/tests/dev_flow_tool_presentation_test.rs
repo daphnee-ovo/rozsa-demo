@@ -1,75 +1,8 @@
 // FrameworkTree
 // dev_flow_tool_presentation_test.rs
-// ├── presentation()
-// ├── ui_snapshot_serializes_presentations_by_tool_call_id()
-// ├── frontend_renders_structured_summary_and_complete_raw_evidence()
-// └── runtime_capture_is_bounded_persisted_and_never_reexecutes()
+// └── frontend_renders_structured_summary_and_complete_raw_evidence()
 
-use std::collections::HashMap;
 use std::process::Command;
-
-use rozsa_app::dev_flow::{
-    DevFlowPresentationAction, DevFlowPresentationItem, DevFlowPresentationItemKind,
-    DevFlowToolPresentation,
-};
-use rozsa_gui::state::{ContextUsage, RuntimeState, TurnActivity, UiSnapshot};
-
-fn presentation(action: DevFlowPresentationAction) -> DevFlowToolPresentation {
-    DevFlowToolPresentation {
-        action,
-        items: vec![DevFlowPresentationItem {
-            kind: DevFlowPresentationItemKind::Task,
-            id: "TASK-T001".to_owned(),
-            short_id: "T001".to_owned(),
-            title: Some("Implement integration".to_owned()),
-        }],
-        details_unavailable: false,
-    }
-}
-
-#[test]
-fn ui_snapshot_serializes_presentations_by_tool_call_id() {
-    let snapshot = UiSnapshot {
-        session_id: "session".to_owned(),
-        turn_id: 1,
-        messages: Vec::new(),
-        dev_flow_presentations: HashMap::from([(
-            "call-1".to_owned(),
-            presentation(DevFlowPresentationAction::Created),
-        )]),
-        is_streaming: false,
-        model: None,
-        thinking_effort: "off".to_owned(),
-        session_name: None,
-        cwd: "/tmp/project".to_owned(),
-        git: None,
-        context_usage: ContextUsage {
-            percent: 0.0,
-            tokens: 0,
-            context_window: 0,
-            input_tokens: 0,
-            uncached_input_tokens: 0,
-            cached_input_tokens: 0,
-            output_tokens: 0,
-        },
-        runtime_state: RuntimeState {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            session_total_tokens: 0,
-        },
-        turn_activity: TurnActivity::default(),
-        turn_summaries: Vec::new(),
-        queued_messages: Vec::new(),
-        steering_conversation: Vec::new(),
-        stream_update: false,
-    };
-    let value = serde_json::to_value(snapshot).unwrap();
-    assert_eq!(value["devFlowPresentations"]["call-1"]["action"], "created");
-    assert_eq!(
-        value["devFlowPresentations"]["call-1"]["items"][0]["shortId"],
-        "T001"
-    );
-}
 
 #[test]
 fn frontend_renders_structured_summary_and_complete_raw_evidence() {
@@ -113,30 +46,4 @@ for (const expected of ['$ dow task create &lt; request.json','exit 0','42ms','t
         "frontend behavior failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-}
-
-#[test]
-fn runtime_capture_is_bounded_persisted_and_never_reexecutes() {
-    let runtime = include_str!("../src/dev_flow.rs");
-    let events = include_str!("../src/events.rs");
-    let commands = include_str!("../src/commands.rs");
-    let frontend = include_str!("../frontend/app.js");
-    let html = include_str!("../frontend/index.html");
-
-    assert!(runtime.contains("pub async fn capture_tool_presentation"));
-    assert!(runtime.contains("Duration::from_secs(2)"));
-    assert!(runtime.contains("recognize_dow_bash(command"));
-    assert!(events.contains("append_dev_flow_presentation(&record)"));
-    assert!(events.contains("live.dev_flow_presentations"));
-    assert!(commands.contains("rebuild_dev_flow_presentations"));
-    assert!(commands.contains("manager.context_messages()"));
-    assert!(frontend.contains("snap.devFlowPresentations"));
-    assert!(frontend.contains("renderDevFlowToolEvidence(tc, result)"));
-    assert!(html.contains(".dev-flow-tool-evidence"));
-    for forbidden in ["Command::new(\"dow\")", "Command::new(command)"] {
-        assert!(
-            !runtime.contains(forbidden),
-            "capture must not re-execute Bash"
-        );
-    }
 }

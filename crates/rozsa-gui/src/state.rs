@@ -70,7 +70,7 @@
 // 每个 session tab 有三种状态：Idle → Loaded → Active
 // 只有 Active 状态的 session 有独立的 AgentSession 后端。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, RwLock};
@@ -244,7 +244,6 @@ pub enum SessionTab {
     Loaded {
         path: String,
         messages: Vec<AgentMessage>,
-        dev_flow_presentations: HashMap<String, rozsa_app::dev_flow::DevFlowToolPresentation>,
     },
     /// 发过消息，有活跃的独立 agent backend
     Active {
@@ -568,7 +567,6 @@ impl SharedResources {
 #[derive(Default)]
 pub struct LiveState {
     pub messages: Vec<AgentMessage>,
-    pub dev_flow_presentations: HashMap<String, rozsa_app::dev_flow::DevFlowToolPresentation>,
     pub is_streaming: bool,
     pub turn_base: usize,
     pub turn_id: u64,
@@ -739,7 +737,6 @@ pub struct UiSnapshot {
     pub session_id: String,
     pub turn_id: u64,
     pub messages: Vec<serde_json::Value>,
-    pub dev_flow_presentations: HashMap<String, rozsa_app::dev_flow::DevFlowToolPresentation>,
     pub is_streaming: bool,
     pub model: Option<ModelInfo>,
     pub thinking_effort: String,
@@ -844,14 +841,6 @@ impl UiSnapshot {
                 _ => 0,
             },
             messages,
-            dev_flow_presentations: match tab {
-                SessionTab::Loaded {
-                    dev_flow_presentations,
-                    ..
-                } => dev_flow_presentations.clone(),
-                SessionTab::Active { live, .. } => live.dev_flow_presentations.clone(),
-                SessionTab::Idle { .. } => HashMap::new(),
-            },
             is_streaming: tab.is_streaming(),
             model: Some(model_info),
             thinking_effort: thinking_str,

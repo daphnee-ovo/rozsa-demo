@@ -11,7 +11,6 @@
 // ├── emit_sidebar_state()
 // ├── emit_gui_scene_snapshot()
 // ├── spawn_event_forwarder_for_session()
-// ├── spawn_dev_flow_presentation_capture()
 // ├── spawn_permission_listener()
 // └── spawn_user_question_listener()
 
@@ -324,13 +323,6 @@ pub fn spawn_event_forwarder_for_session<R: Runtime>(
                                     .on_successful_bash(&session_id, cwd)
                                     .await;
                             }
-                            spawn_dev_flow_presentation_capture(
-                                app.clone(),
-                                gui_state.clone(),
-                                session_id.clone(),
-                                tool_call_id.clone(),
-                                result.clone(),
-                            );
                         }
                         _ => {}
                     }
@@ -377,61 +369,6 @@ pub fn spawn_event_forwarder_for_session<R: Runtime>(
                     );
                 }
             }
-        }
-    });
-}
-
-fn spawn_dev_flow_presentation_capture<R: Runtime>(
-    app: AppHandle<R>,
-    state: GuiState,
-    session_id: String,
-    tool_call_id: String,
-    result: rozsa_model::types::ToolResultMessage,
-) {
-    tokio::spawn(async move {
-        let Some(record) = state
-            .dev_flow
-            .capture_tool_presentation(&session_id, &tool_call_id, &result)
-            .await
-        else {
-            return;
-        };
-        let presentation = record.presentation.clone();
-        let agent = {
-            let tabs = state.tabs.lock().await;
-            find_tab_index_by_session(&tabs, &session_id)
-                .and_then(|index| tabs.get(index))
-                .and_then(|tab| match tab {
-                    SessionTab::Active { agent, .. } => Some(agent.clone()),
-                    _ => None,
-                })
-        };
-        let Some(agent) = agent else {
-            return;
-        };
-        if let Err(error) = agent
-            .session_manager()
-            .await
-            .append_dev_flow_presentation(&record)
-        {
-            tracing::warn!(%error, %tool_call_id, "failed to persist Dev-flow presentation");
-            return;
-        }
-        let active_snapshot = {
-            let active = *state.active_tab.lock().await;
-            let mut tabs = state.tabs.lock().await;
-            let Some(index) = find_tab_index_by_session(&tabs, &session_id) else {
-                return;
-            };
-            let Some(SessionTab::Active { live, .. }) = tabs.get_mut(index) else {
-                return;
-            };
-            live.dev_flow_presentations
-                .insert(tool_call_id, presentation);
-            (index == active).then(|| UiSnapshot::from_tab(&tabs[index], &state.shared))
-        };
-        if let Some(snapshot) = active_snapshot {
-            let _ = emit_main(&app, "ui-state", snapshot);
         }
     });
 }
