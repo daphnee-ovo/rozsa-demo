@@ -3,6 +3,10 @@
 // ├── struct CompactionSettings
 // ├── impl CompactionSettings
 // ├── default()
+// ├── impl CompactionSettings
+// ├── validate()
+// ├── resolve_token_limits()
+// ├── struct CompactionTokenLimits
 // ├── struct RetrySettings
 // ├── impl RetrySettings
 // ├── default()
@@ -37,18 +41,73 @@ use std::path::PathBuf;
 #[serde(rename_all = "camelCase")]
 pub struct CompactionSettings {
     pub enabled: bool,
-    pub threshold_tokens: u64,
-    pub target_tokens: u64,
+    pub trigger_ratio: f64,
+    pub target_ratio: f64,
 }
 
 impl Default for CompactionSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            threshold_tokens: 16384,
-            target_tokens: 20000,
+            trigger_ratio: 0.85,
+            target_ratio: 0.30,
         }
     }
+}
+
+impl CompactionSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.trigger_ratio.is_finite()
+            || !(0.0..=1.0).contains(&self.trigger_ratio)
+            || self.trigger_ratio == 0.0
+        {
+            return Err(format!(
+                "compaction trigger ratio must be greater than 0 and at most 1: {}",
+                self.trigger_ratio
+            ));
+        }
+        if !self.target_ratio.is_finite()
+            || !(0.0..=1.0).contains(&self.target_ratio)
+            || self.target_ratio == 0.0
+        {
+            return Err(format!(
+                "compaction target ratio must be greater than 0 and at most 1: {}",
+                self.target_ratio
+            ));
+        }
+        if self.target_ratio >= self.trigger_ratio {
+            return Err(format!(
+                "compaction target ratio must be less than trigger ratio: target={}, trigger={}",
+                self.target_ratio, self.trigger_ratio
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn resolve_token_limits(
+        &self,
+        context_window: usize,
+    ) -> Result<CompactionTokenLimits, String> {
+        self.validate()?;
+        if context_window == 0 {
+            return Err("model context window must be greater than zero".to_string());
+        }
+
+        let context_window = context_window as f64;
+        let threshold_tokens = (context_window * self.trigger_ratio).ceil() as u64;
+        let target_tokens = (context_window * self.target_ratio).floor() as u64;
+
+        Ok(CompactionTokenLimits {
+            threshold_tokens,
+            target_tokens: target_tokens.min(threshold_tokens.saturating_sub(1)),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompactionTokenLimits {
+    pub threshold_tokens: u64,
+    pub target_tokens: u64,
 }
 
 /// Retry settings
@@ -351,9 +410,9 @@ pub struct PartialCompactionSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub threshold_tokens: Option<u64>,
+    pub trigger_ratio: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_tokens: Option<u64>,
+    pub target_ratio: Option<f64>,
 }
 
 /// Partial retry settings

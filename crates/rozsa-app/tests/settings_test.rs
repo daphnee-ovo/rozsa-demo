@@ -1,5 +1,8 @@
 // FrameworkTree
 // settings_test.rs
+// ├── compaction_defaults_use_ratios_and_not_persisted_token_counts()
+// ├── invalid_compaction_ratio_order_is_rejected_when_loading_settings()
+// ├── compaction_settings_reject_invalid_ratios()
 // ├── automatic_session_naming_defaults_on_and_can_be_disabled()
 // ├── dev_flow_defaults_are_enabled_without_a_custom_executable()
 // ├── dev_flow_settings_are_global_and_ignore_project_and_local_values()
@@ -8,7 +11,52 @@
 
 use std::path::PathBuf;
 
-use rozsa_app::settings::{DevFlowSettings, Settings, SettingsManager};
+use rozsa_app::settings::{CompactionSettings, DevFlowSettings, Settings, SettingsManager};
+
+#[test]
+fn compaction_defaults_use_ratios_and_not_persisted_token_counts() {
+    let settings = Settings::default();
+    assert_eq!(settings.compaction.trigger_ratio, 0.85);
+    assert_eq!(settings.compaction.target_ratio, 0.30);
+
+    let serialized = serde_json::to_value(settings).unwrap();
+    assert_eq!(serialized["compaction"]["triggerRatio"], 0.85);
+    assert_eq!(serialized["compaction"]["targetRatio"], 0.30);
+    assert!(serialized["compaction"].get("thresholdTokens").is_none());
+    assert!(serialized["compaction"].get("targetTokens").is_none());
+}
+
+#[test]
+fn invalid_compaction_ratio_order_is_rejected_when_loading_settings() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{"compaction":{"triggerRatio":0.3,"targetRatio":0.7}}"#,
+    )
+    .unwrap();
+
+    let error = match SettingsManager::load(path, None, None) {
+        Ok(_) => panic!("invalid compaction ratios should be rejected"),
+        Err(error) => error,
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("target ratio must be less than trigger ratio")
+    );
+}
+
+#[test]
+fn compaction_settings_reject_invalid_ratios() {
+    let mut settings = CompactionSettings::default();
+    settings.target_ratio = 0.85;
+    assert!(settings.validate().is_err());
+
+    settings.trigger_ratio = 1.1;
+    settings.target_ratio = 0.3;
+    assert!(settings.validate().is_err());
+}
 
 #[test]
 fn automatic_session_naming_defaults_on_and_can_be_disabled() {

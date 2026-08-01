@@ -155,8 +155,8 @@ fn merge_compaction(
         None => base.clone(),
         Some(o) => CompactionSettings {
             enabled: o.enabled.unwrap_or(base.enabled),
-            threshold_tokens: o.threshold_tokens.unwrap_or(base.threshold_tokens),
-            target_tokens: o.target_tokens.unwrap_or(base.target_tokens),
+            trigger_ratio: o.trigger_ratio.unwrap_or(base.trigger_ratio),
+            target_ratio: o.target_ratio.unwrap_or(base.target_ratio),
         },
     }
 }

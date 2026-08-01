@@ -132,6 +132,7 @@
 // ├── move_to_trash()
 // ├── persist_settings()
 // ├── parse_positive_u64()
+// ├── parse_ratio()
 // ├── parse_optional_u64()
 // ├── parse_optional_u32()
 // ├── append_prompt_error()
@@ -1666,8 +1667,8 @@ pub async fn get_settings(
         hide_thinking: rt.hide_thinking,
         transport: rt.transport.clone(),
         auto_compact: rt.compaction.enabled,
-        compaction_threshold_tokens: rt.compaction.threshold_tokens,
-        compaction_target_tokens: rt.compaction.target_tokens,
+        compaction_trigger_ratio: rt.compaction.trigger_ratio,
+        compaction_target_ratio: rt.compaction.target_ratio,
         retry_timeout_ms: rt.retry.timeout_ms,
         retry_max_retries: rt.retry.max_retries,
         retry_max_delay_ms: rt.retry.max_retry_delay_ms,
@@ -1906,20 +1907,29 @@ pub async fn update_setting(
             persist_settings(&state).await?;
             Ok(())
         }
-        "compaction_threshold_tokens" => {
-            let parsed = parse_positive_u64("compaction threshold", &value)?;
-            state
-                .runtime_settings
-                .lock()
-                .await
-                .compaction
-                .threshold_tokens = parsed;
+        "compaction_trigger_ratio" => {
+            let parsed = parse_ratio("compaction trigger ratio", &value)?;
+            let mut settings = state.runtime_settings.lock().await;
+            let mut compaction = settings.compaction.clone();
+            compaction.trigger_ratio = parsed;
+            compaction
+                .validate()
+                .map_err(|message| message.to_string())?;
+            settings.compaction = compaction;
+            drop(settings);
             persist_settings(&state).await?;
             Ok(())
         }
-        "compaction_target_tokens" => {
-            let parsed = parse_positive_u64("compaction target", &value)?;
-            state.runtime_settings.lock().await.compaction.target_tokens = parsed;
+        "compaction_target_ratio" => {
+            let parsed = parse_ratio("compaction target ratio", &value)?;
+            let mut settings = state.runtime_settings.lock().await;
+            let mut compaction = settings.compaction.clone();
+            compaction.target_ratio = parsed;
+            compaction
+                .validate()
+                .map_err(|message| message.to_string())?;
+            settings.compaction = compaction;
+            drop(settings);
             persist_settings(&state).await?;
             Ok(())
         }
@@ -3593,6 +3603,17 @@ fn parse_positive_u64(label: &str, value: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("{label} must be greater than zero"))
 }
 
+fn parse_ratio(label: &str, value: &str) -> Result<f64, String> {
+    let parsed = value
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| format!("Invalid {label}: {value}"))?;
+    if !parsed.is_finite() || parsed <= 0.0 || parsed > 1.0 {
+        return Err(format!("{label} must be greater than 0 and at most 1"));
+    }
+    Ok(parsed)
+}
+
 fn parse_optional_u64(label: &str, value: &str) -> Result<Option<u64>, String> {
     let value = value.trim();
     if value.is_empty() {
@@ -3867,8 +3888,8 @@ pub struct SettingsSnapshot {
     pub hide_thinking: bool,
     pub transport: String,
     pub auto_compact: bool,
-    pub compaction_threshold_tokens: u64,
-    pub compaction_target_tokens: u64,
+    pub compaction_trigger_ratio: f64,
+    pub compaction_target_ratio: f64,
     pub retry_timeout_ms: Option<u64>,
     pub retry_max_retries: Option<u32>,
     pub retry_max_delay_ms: Option<u64>,

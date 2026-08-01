@@ -139,6 +139,10 @@ impl SettingsManager {
             .appearance
             .validate()
             .map_err(|message| SettingsError::Invalid { message })?;
+        resolved
+            .compaction
+            .validate()
+            .map_err(|message| SettingsError::Invalid { message })?;
 
         Ok(Self {
             global_path,
@@ -176,6 +180,10 @@ impl SettingsManager {
         self.resolved = resolved;
         self.resolved
             .appearance
+            .validate()
+            .map_err(|message| SettingsError::Invalid { message })?;
+        self.resolved
+            .compaction
             .validate()
             .map_err(|message| SettingsError::Invalid { message })?;
         Ok(())

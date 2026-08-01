@@ -617,9 +617,25 @@ impl SessionManager {
     ///
     /// Session metadata entries are intentionally excluded. The returned
     /// order is the order the agent should see when continuing the branch.
+    /// After compaction, only the branch beginning at the latest compaction's
+    /// first kept entry is active; older messages remain in the append-only
+    /// file for audit/history but must not be restored into the provider prompt.
     pub fn context_messages(&self) -> Vec<Message> {
-        self.entries()
+        let entries = self.entries();
+        let start_index = entries
+            .iter()
+            .rposition(|entry| matches!(entry, SessionEntry::Compaction(_)))
+            .and_then(|compaction_index| match &entries[compaction_index] {
+                SessionEntry::Compaction(compaction) => entries
+                    .iter()
+                    .position(|entry| entry.id() == compaction.first_kept_entry_id),
+                _ => None,
+            })
+            .unwrap_or(0);
+
+        entries
             .into_iter()
+            .skip(start_index)
             .filter_map(|entry| match entry {
                 SessionEntry::Message(message) => Some(message.message),
                 _ => None,

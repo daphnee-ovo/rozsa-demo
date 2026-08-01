@@ -1,3 +1,9 @@
+// FrameworkTree
+// context_window_display_test.rs
+// ├── assistant_with_usage()
+// ├── context_usage_uses_the_latest_prompt_not_cumulative_session_usage()
+// └── settings_ui_uses_compaction_ratios()
+
 use rozsa_core::messages::AgentMessage;
 use rozsa_gui::state::context_usage_from_messages;
 use rozsa_model::types::{Api, AssistantMessage, Provider, StopReason, Usage};
@@ -38,4 +44,17 @@ fn context_usage_uses_the_latest_prompt_not_cumulative_session_usage() {
     assert_eq!(usage.cached_input_tokens, 3_000);
     assert_eq!(usage.output_tokens, 800);
     assert!((usage.percent - (15_000.0 / 128_000.0 * 100.0)).abs() < f64::EPSILON);
+}
+
+#[test]
+fn settings_ui_uses_compaction_ratios() {
+    let commands = include_str!("../src/commands.rs");
+    let app = include_str!("../frontend/app.js");
+    let html = include_str!("../frontend/index.html");
+
+    assert!(commands.contains("compaction_trigger_ratio"));
+    assert!(commands.contains("compaction_target_ratio"));
+    assert!(app.contains("settingsCompactionTriggerRatio"));
+    assert!(app.contains("settingsCompactionTargetRatio"));
+    assert!(html.contains("min=\"0\" max=\"1\" step=\"0.01\""));
 }

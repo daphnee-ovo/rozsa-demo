@@ -4090,10 +4090,10 @@ function renderGeneralSettings(settings) {
     wireSettingSwitch('settingsAutoCompact', enabled => saveSetting('auto_compact', String(enabled)));
   }
 
-  wireNumberSetting('settingsCompactionThreshold', settings.compaction_threshold_tokens,
-    'compaction_threshold_tokens');
-  wireNumberSetting('settingsCompactionTarget', settings.compaction_target_tokens,
-    'compaction_target_tokens');
+  wireNumberSetting('settingsCompactionTriggerRatio', settings.compaction_trigger_ratio,
+    'compaction_trigger_ratio');
+  wireNumberSetting('settingsCompactionTargetRatio', settings.compaction_target_ratio,
+    'compaction_target_ratio');
 
   const namingSwitch = document.getElementById('settingsAutoSessionNaming');
   if (namingSwitch) {

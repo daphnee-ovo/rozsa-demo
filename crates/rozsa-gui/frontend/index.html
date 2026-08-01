@@ -3557,8 +3557,8 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
           <div class="setting-item"><span class="setting-label">Default send mode while running</span><select class="setting-select" id="settingsRunningSendMode" aria-label="Default send mode while running"><option value="queue">Queue</option><option value="steer">Steer</option></select></div>
           <div class="setting-item"><span class="setting-label">Block images</span><button class="setting-toggle" id="settingsBlockImages" type="button" role="switch" aria-checked="false" aria-label="Block images"></button></div>
           <div class="setting-item"><span class="setting-label">Hide thinking blocks</span><button class="setting-toggle" id="settingsHideThinking" type="button" role="switch" aria-checked="false" aria-label="Hide thinking blocks"></button></div>
-          <div class="setting-item"><span class="setting-label">Compaction threshold</span><input class="setting-input" id="settingsCompactionThreshold" type="number" min="1"></div>
-          <div class="setting-item"><span class="setting-label">Compaction target</span><input class="setting-input" id="settingsCompactionTarget" type="number" min="1"></div>
+          <div class="setting-item"><span class="setting-label">Compaction trigger ratio</span><input class="setting-input" id="settingsCompactionTriggerRatio" type="number" min="0" max="1" step="0.01"></div>
+          <div class="setting-item"><span class="setting-label">Compaction target ratio</span><input class="setting-input" id="settingsCompactionTargetRatio" type="number" min="0" max="1" step="0.01"></div>
         </div>
         <div class="settings-group">
           <div class="settings-group-label">Models</div>

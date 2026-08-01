@@ -1,3 +1,27 @@
+// FrameworkTree
+// mod.rs
+// ├── struct CompactionTrigger
+// ├── impl CompactionTrigger
+// ├── default()
+// ├── struct CompactionPlan
+// ├── struct CompactionResult
+// ├── struct CompactionEngine
+// ├── impl CompactionEngine
+// ├── new()
+// ├── should_compact()
+// ├── prepare()
+// ├── prepare_with_context()
+// ├── execute()
+// ├── impl CompactionEngine
+// ├── default()
+// ├── estimate_entry_tokens()
+// ├── estimate_tokens()
+// ├── adjust_to_safe_boundary()
+// ├── entry_text_content()
+// ├── has_image_content()
+// ├── serialize_without_images()
+// └── strip_image_data()
+
 use std::future::Future;
 
 use rozsa_model::types::{ContentBlock, Message};
@@ -127,7 +151,10 @@ impl CompactionEngine {
 
         Ok(CompactionResult {
             summary,
-            removed_count: plan.entries_to_remove.len(),
+            removed_count: entries[..plan.cut_point_index]
+                .iter()
+                .filter(|entry| matches!(entry, SessionEntry::Message(_)))
+                .count(),
         })
     }
 }

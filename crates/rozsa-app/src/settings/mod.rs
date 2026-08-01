@@ -9,7 +9,7 @@ pub mod schema;
 pub mod storage;
 
 pub use schema::{
-    AppearanceSettings, CompactionSettings, DevFlowSettings, PartialSettings, PermissionSettings,
-    RetrySettings, Settings,
+    AppearanceSettings, CompactionSettings, CompactionTokenLimits, DevFlowSettings,
+    PartialSettings, PermissionSettings, RetrySettings, Settings,
 };
 pub use storage::{CapabilityKind, PermissionRuleKind, SettingsManager, SettingsScope};

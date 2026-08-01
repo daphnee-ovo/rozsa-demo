@@ -951,9 +951,17 @@ impl AgentSession {
             .unwrap()
             .resolved()
             .clone();
+        let runtime = self.runtime.lock().await;
+        let model = runtime.model.clone();
+        let thinking_effort = runtime.thinking_effort;
+        drop(runtime);
+        let token_limits = settings
+            .compaction
+            .resolve_token_limits(model.context_window)
+            .map_err(anyhow::Error::msg)?;
         let engine = CompactionEngine::new(CompactionTrigger {
-            threshold_tokens: settings.compaction.threshold_tokens,
-            target_tokens: settings.compaction.target_tokens,
+            threshold_tokens: token_limits.threshold_tokens,
+            target_tokens: token_limits.target_tokens,
         });
 
         let entries = self.session_manager.lock().await.entries();
@@ -963,12 +971,6 @@ impl AgentSession {
         let Some(plan) = plan else {
             anyhow::bail!("Nothing to compact — token usage below threshold");
         };
-
-        // Build summarize function using the current model
-        let runtime = self.runtime.lock().await;
-        let model = runtime.model.clone();
-        let thinking_effort = runtime.thinking_effort;
-        drop(runtime);
 
         let credentials = resolve_credentials(&model, &self.static_config.cwd).await?;
         let model_stream = self.model_stream.clone();
@@ -1051,20 +1053,26 @@ impl AgentSession {
             None,
         )?;
 
-        // Rebuild messages: keep only messages from cut_point_index onwards
-        // plus prepend a summary message
+        // Rebuild from the exact persisted entry boundary. The old code used
+        // `messages.len() - removed_count`, but removed_count counted metadata
+        // entries as well as messages. That could leave a ToolResult without
+        // its preceding Assistant tool call in the next provider prompt.
+        let kept_messages =
+            entries[plan.cut_point_index..]
+                .iter()
+                .filter_map(|entry| match entry {
+                    crate::session::manager::SessionEntry::Message(message) => {
+                        Some(AgentMessage::standard(message.message.clone()))
+                    }
+                    _ => None,
+                });
         let mut messages = self.messages.lock().await;
-        let kept_count = messages.len().saturating_sub(result.removed_count);
-        let kept_messages: Vec<AgentMessage> =
-            messages.iter().rev().take(kept_count).cloned().collect();
         let summary_msg = AgentMessage::custom(
             "compaction_summary".to_string(),
             serde_json::json!({ "summary": &result.summary }),
             current_timestamp_ms(),
         );
-        *messages = std::iter::once(summary_msg)
-            .chain(kept_messages.into_iter().rev())
-            .collect();
+        *messages = std::iter::once(summary_msg).chain(kept_messages).collect();
         drop(messages);
 
         Ok(result)
@@ -1081,8 +1089,13 @@ impl AgentSession {
         if !settings.compaction.enabled {
             return Ok(());
         }
+        let context_window = self.runtime.lock().await.model.context_window;
+        let token_limits = settings
+            .compaction
+            .resolve_token_limits(context_window)
+            .map_err(anyhow::Error::msg)?;
         let context_tokens = self.latest_context_tokens().await;
-        if context_tokens < settings.compaction.threshold_tokens {
+        if context_tokens < token_limits.threshold_tokens {
             return Ok(());
         }
         self.compact().await.map(|_| ())
@@ -1303,8 +1316,13 @@ impl AgentSession {
             tool_choice: None,
         };
 
-        // Compaction threshold from settings
-        let compaction_threshold = settings.compaction.threshold_tokens;
+        // Resolve the configured ratio against the active model's context
+        // window only at execution time.
+        let compaction_threshold = settings
+            .compaction
+            .resolve_token_limits(model.context_window)
+            .map_err(anyhow::Error::msg)?
+            .threshold_tokens;
         let compaction_enabled = settings.compaction.enabled;
 
         // Clone queues and state for closure capture
