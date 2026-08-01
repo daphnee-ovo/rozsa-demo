@@ -336,7 +336,6 @@ pub async fn send_message(
         .dev_flow
         .session_started(&session_id, agent.current_cwd().await)
         .await;
-    refresh_dev_flow_presentations(&state, idx).await?;
     if spawn_forwarder {
         crate::events::spawn_event_forwarder_for_session(
             app.clone(),
@@ -360,6 +359,9 @@ pub async fn send_message(
             .append_custom(INTERACTION_STARTED.to_string(), None)
             .map_err(|error| error.to_string())?;
     }
+    // A newly created session is lazy: the first append materializes its
+    // JSONL file. Refresh persisted Dev Flow records only after that append.
+    refresh_dev_flow_presentations(&state, idx).await?;
     {
         let mut tabs = state.tabs.lock().await;
         if let Some(SessionTab::Active { live, .. }) = tabs.get_mut(idx) {
