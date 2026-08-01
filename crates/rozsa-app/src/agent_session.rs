@@ -69,6 +69,9 @@
 // ├── default_model_stream()
 // ├── model_stream_with_thinking_effort_fallback()
 // ├── forward_model_stream()
+// ├── supported_thinking_efforts()
+// ├── normalize_thinking_effort()
+// ├── thinking_effort_rank()
 // ├── thinking_effort_attempt_values()
 // ├── remember_thinking_effort()
 // ├── persist_thinking_effort()
@@ -282,6 +285,7 @@ impl AgentSession {
             pre_tool_use,
             model_stream,
         } = config;
+        let thinking_effort = normalize_thinking_effort(&model, thinking_effort);
         let restored_messages = session_manager
             .context_messages()
             .into_iter()
@@ -772,7 +776,9 @@ impl AgentSession {
 
     /// Update the model for subsequent turns.
     pub async fn set_model(&self, model: Model) {
-        self.runtime.lock().await.model = model;
+        let mut runtime = self.runtime.lock().await;
+        runtime.thinking_effort = normalize_thinking_effort(&model, runtime.thinking_effort);
+        runtime.model = model;
     }
 
     /// Update the thinking effort for subsequent turns.
@@ -1669,6 +1675,57 @@ async fn forward_model_stream(
     let mut inner = attempt_stream(model, context, options);
     while let Some(event) = inner.next().await {
         sender.push(event);
+    }
+}
+
+const THINKING_EFFORT_ORDER: [ThinkingEffort; 6] = [
+    ThinkingEffort::Off,
+    ThinkingEffort::Low,
+    ThinkingEffort::Medium,
+    ThinkingEffort::High,
+    ThinkingEffort::XHigh,
+    ThinkingEffort::Max,
+];
+
+/// Return the logical thinking efforts that the model explicitly supports.
+pub fn supported_thinking_efforts(model: &Model) -> Vec<ThinkingEffort> {
+    if !model.reasoning {
+        return vec![ThinkingEffort::Off];
+    }
+
+    THINKING_EFFORT_ORDER
+        .into_iter()
+        .filter(|effort| {
+            *effort == ThinkingEffort::Off
+                || !matches!(
+                    model
+                        .thinking_effort_map
+                        .as_ref()
+                        .and_then(|map| map.get(effort)),
+                    Some(None)
+                )
+        })
+        .collect()
+}
+
+/// Clamp an effort to the nearest supported lower effort for a model.
+pub fn normalize_thinking_effort(model: &Model, requested: ThinkingEffort) -> ThinkingEffort {
+    let requested_rank = thinking_effort_rank(requested);
+    supported_thinking_efforts(model)
+        .into_iter()
+        .filter(|effort| thinking_effort_rank(*effort) <= requested_rank)
+        .max_by_key(|effort| thinking_effort_rank(*effort))
+        .unwrap_or(ThinkingEffort::Off)
+}
+
+fn thinking_effort_rank(effort: ThinkingEffort) -> usize {
+    match effort {
+        ThinkingEffort::Off => 0,
+        ThinkingEffort::Low => 1,
+        ThinkingEffort::Medium => 2,
+        ThinkingEffort::High => 3,
+        ThinkingEffort::XHigh => 4,
+        ThinkingEffort::Max => 5,
     }
 }
 

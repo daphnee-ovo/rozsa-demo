@@ -167,7 +167,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
-use rozsa_app::agent_session::AgentSession;
+use rozsa_app::agent_session::{AgentSession, normalize_thinking_effort};
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_app::permissions::{PermissionMode, PermissionResponse};
 use rozsa_app::session::manager::SessionManager;
@@ -634,10 +634,13 @@ pub async fn dispatch_slash_command(
         }
         "thinking" => {
             let effort = parse_thinking_effort(&args)?;
-            set_thinking_effort(&state, effort).await?;
+            let applied_effort = set_thinking_effort(&state, effort).await?;
             emit_info(
                 &app,
-                &format!("Thinking effort: {}", format!("{effort:?}").to_lowercase()),
+                &format!(
+                    "Thinking effort: {}",
+                    format!("{applied_effort:?}").to_lowercase()
+                ),
             );
         }
         "login" => {
@@ -1884,7 +1887,7 @@ pub async fn update_setting(
     match key.as_str() {
         "thinking" => {
             use rozsa_model::types::ThinkingEffort;
-            let effort = match value.as_str() {
+            let requested = match value.as_str() {
                 "off" => ThinkingEffort::Off,
                 "low" | "light" | "minimal" => ThinkingEffort::Low,
                 "medium" => ThinkingEffort::Medium,
@@ -1893,20 +1896,7 @@ pub async fn update_setting(
                 "max" => ThinkingEffort::Max,
                 _ => return Err(format!("Invalid thinking effort: {value}")),
             };
-            *state.shared.thinking_effort.lock().await = effort;
-            // 同步到所有 active sessions
-            let tabs = state.tabs.lock().await;
-            for tab in tabs.iter() {
-                if let SessionTab::Active { agent, .. } = tab {
-                    agent.set_thinking_effort(effort).await;
-                }
-            }
-            drop(tabs);
-            {
-                let mut s = state.runtime_settings.lock().await;
-                s.default_thinking_effort = Some(effort);
-            }
-            persist_settings(&state).await?;
+            set_thinking_effort(&state, requested).await?;
             Ok(())
         }
         "auto_compact" => {
@@ -2347,14 +2337,18 @@ pub async fn switch_model(
             model
         }
     };
+    let current_effort = *state.shared.thinking_effort.lock().await;
+    let effort = normalize_thinking_effort(&model, current_effort);
 
     {
         let mut settings = state.runtime_settings.lock().await;
         settings.default_model = Some(model.id.clone());
         settings.default_provider = Some(model.provider.as_str().to_string());
+        settings.default_thinking_effort = Some(effort);
     }
     // Keep the shared locks short and use the same order as get_settings.
     *state.shared.model.lock().await = model.clone();
+    *state.shared.thinking_effort.lock().await = effort;
     persist_settings(&state).await?;
 
     // Snapshot the agents before awaiting so the global tabs lock is never
@@ -2370,6 +2364,7 @@ pub async fn switch_model(
     };
     for agent in agents {
         agent.set_model(model.clone()).await;
+        agent.set_thinking_effort(effort).await;
     }
     emit_model_state(&app, state.inner()).await
 }
@@ -3114,13 +3109,17 @@ async fn switch_model_reference(
                 .ok_or_else(|| format!("Model not found: {reference}"))?
         }
     };
+    let current_effort = *state.shared.thinking_effort.lock().await;
+    let effort = normalize_thinking_effort(&model, current_effort);
 
     {
         let mut settings = state.runtime_settings.lock().await;
         settings.default_model = Some(model.id.clone());
         settings.default_provider = Some(model.provider.as_str().to_string());
+        settings.default_thinking_effort = Some(effort);
     }
     *state.shared.model.lock().await = model.clone();
+    *state.shared.thinking_effort.lock().await = effort;
     persist_settings(state).await?;
 
     let agents = {
@@ -3134,6 +3133,7 @@ async fn switch_model_reference(
     };
     for agent in agents {
         agent.set_model(model.clone()).await;
+        agent.set_thinking_effort(effort).await;
     }
     emit_model_state(app, state).await
 }
@@ -3167,21 +3167,29 @@ fn parse_thinking_effort(value: &str) -> Result<ThinkingEffort, String> {
 
 async fn set_thinking_effort(
     state: &State<'_, GuiState>,
-    effort: ThinkingEffort,
-) -> Result<(), String> {
+    requested: ThinkingEffort,
+) -> Result<ThinkingEffort, String> {
+    let model = state.shared.model.lock().await.clone();
+    let effort = normalize_thinking_effort(&model, requested);
     *state.shared.thinking_effort.lock().await = effort;
-    let tabs = state.tabs.lock().await;
-    for tab in tabs.iter() {
-        if let SessionTab::Active { agent, .. } = tab {
-            agent.set_thinking_effort(effort).await;
-        }
+    let agents = {
+        let tabs = state.tabs.lock().await;
+        tabs.iter()
+            .filter_map(|tab| match tab {
+                SessionTab::Active { agent, .. } => Some(agent.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    for agent in agents {
+        agent.set_thinking_effort(effort).await;
     }
-    drop(tabs);
     {
         let mut settings = state.runtime_settings.lock().await;
         settings.default_thinking_effort = Some(effort);
     }
-    persist_settings(state).await
+    persist_settings(state).await?;
+    Ok(effort)
 }
 
 async fn compact_active_session(state: &State<'_, GuiState>) -> Result<(), String> {

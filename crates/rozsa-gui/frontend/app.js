@@ -2259,8 +2259,8 @@ function selectModel(idx) {
 }
 
 function thinkingModel() {
-  const modelId = currentSettings?.model_id
-    || document.getElementById('modelSelector')?.textContent
+  const modelId = document.getElementById('modelSelector')?.textContent?.trim()
+    || currentSettings?.model_id
     || '';
   return models.find(model => model.id === modelId);
 }
@@ -2269,7 +2269,20 @@ function supportedThinkingEfforts() {
   const model = thinkingModel();
   if (!model || !model.reasoning) return THINKING_EFFORT_OPTIONS.slice(0, 1);
   const unavailable = model.thinkingEffortMap || {};
-  return THINKING_EFFORT_OPTIONS.filter(option => unavailable[option.value] !== null);
+  return THINKING_EFFORT_OPTIONS.filter(option =>
+    option.value === 'off' || unavailable[option.value] !== null
+  );
+}
+
+function normalizeThinkingEffort(options, requested) {
+  if (!options.length) return THINKING_EFFORT_OPTIONS[0];
+  const requestedIndex = THINKING_EFFORT_OPTIONS.findIndex(option => option.value === requested);
+  const rank = requestedIndex < 0 ? 0 : requestedIndex;
+  for (let index = options.length - 1; index >= 0; index -= 1) {
+    const optionRank = THINKING_EFFORT_OPTIONS.findIndex(option => option.value === options[index].value);
+    if (optionRank <= rank) return options[index];
+  }
+  return options[0];
 }
 
 function renderThinkingEffortPicker(effort) {
@@ -2287,8 +2300,8 @@ function renderThinkingEffortPicker(effort) {
       || document.getElementById('thinkingEffort')?.textContent
       || 'off'
   ).toLowerCase();
-  const selectedIndex = Math.max(0, options.findIndex(option => option.value === requested));
-  const selected = options[selectedIndex];
+  const selected = normalizeThinkingEffort(options, requested);
+  const selectedIndex = Math.max(0, options.indexOf(selected));
   const progress = options.length > 1 ? (selectedIndex / (options.length - 1)) * 100 : 0;
 
   title.textContent = options.length > 1 ? 'Thinking effort' : 'Thinking unavailable for this model';
@@ -2883,23 +2896,31 @@ function renderDevFlowSettings() {
   const enabled = document.getElementById('devFlowEnabled');
   const sidebarStatus = document.getElementById('devFlowSidebarStatus');
   const dashboardButton = document.getElementById('devFlowDashboardButton');
+  const dashboardAddress = document.getElementById('devFlowDashboardAddress');
   const pathInput = document.getElementById('devFlowExecutablePath');
   const pickExecutable = document.getElementById('devFlowPickExecutable');
   if (!s) return;
   setSettingSwitch(enabled, s.enabled);
   setSettingSwitch(sidebarStatus, s.showSidebarStatus);
   setSettingSwitch(dashboardButton, s.showDashboardButton);
-  setDevFlowText('devFlowVersion', s.cli.available
-    ? 'Version ' + (s.cli.version || 'unknown')
-    : 'Not detected');
+  setDevFlowText('devFlowVersion', s.cli.available ? (s.cli.version || 'unknown') : 'unknown');
   const availability = !s.cli.available
     ? 'Unavailable'
     : s.project
       ? s.project.availability.charAt(0).toUpperCase() + s.project.availability.slice(1)
       : 'No active project';
   setDevFlowText('devFlowDashboardAvailability', availability);
-  setDevFlowText('devFlowDashboardAddress', s.project?.dashboardUrl || 'Unavailable');
-  setDevFlowText('devFlowMemoryUse', formatDevFlowMemory(s.project?.memoryUseBytes));
+  const statusElement = document.getElementById('devFlowDashboardStatus');
+  if (statusElement) statusElement.classList.toggle('is-ready', availability.toLowerCase() === 'ready');
+  const dashboardUrl = s.project?.dashboardUrl || '';
+  setDevFlowText('devFlowDashboardAddressText', dashboardUrl.replace(/^https?:\/\//, '') || 'Unavailable');
+  if (dashboardAddress) {
+    dashboardAddress.disabled = !dashboardUrl;
+    dashboardAddress.title = dashboardUrl ? 'Open Dev Flow dashboard' : 'Dashboard unavailable';
+  }
+  const memoryParts = formatDevFlowMemory(s.project?.memoryUseBytes).split(' ');
+  setDevFlowText('devFlowMemoryAmount', memoryParts[0] || 'Unavailable');
+  setDevFlowText('devFlowMemoryUnit', memoryParts[1] || '');
   if (pathInput) pathInput.value = s.executablePath || s.cli.executable || 'Not detected';
   const dependentDisabled = devFlowDependentControlsDisabled(s);
   // The master switch must remain available even when the disabled runtime has
@@ -2908,8 +2929,7 @@ function renderDevFlowSettings() {
   setDevFlowDependentControlDisabled(sidebarStatus, dependentDisabled);
   setDevFlowDependentControlDisabled(dashboardButton, dependentDisabled);
   setDevFlowDependentControlDisabled(pickExecutable, false);
-  const useAutomatic = document.getElementById('devFlowUseAutomatic');
-  if (useAutomatic) useAutomatic.hidden = !s.executablePath;
+  setDevFlowDependentControlDisabled(pathInput, false);
   const missing = document.getElementById('devFlowMissing');
   if (missing) missing.hidden = s.cli.available;
 }
@@ -2953,8 +2973,29 @@ function wireDevFlowSettings() {
     );
   });
   const pickExecutable = document.getElementById('devFlowPickExecutable');
-  const useAutomatic = document.getElementById('devFlowUseAutomatic');
+  const dashboardAddress = document.getElementById('devFlowDashboardAddress');
+  const pathInput = document.getElementById('devFlowExecutablePath');
   const rescan = document.getElementById('devFlowRescan');
+  if (dashboardAddress) {
+    dashboardAddress.onclick = async () => {
+      try {
+        await invoke('open_dev_flow_dashboard');
+      } catch (e) {
+        showDevFlowSettingsError('dev-flow.dashboard-open', 'Could not open Dashboard', e);
+      }
+    };
+  }
+  if (pathInput) {
+    pathInput.addEventListener('blur', () => {
+      const path = pathInput.value.trim();
+      const currentPath = devFlowSettings?.executablePath || devFlowSettings?.cli?.executable || '';
+      if (path === currentPath) return;
+      void updateDevFlowSettings(
+        'set_dev_flow_executable_path', { path: path || null }, { executablePath: path || null },
+        'dev-flow.settings-executable', 'Could not update executable'
+      );
+    });
+  }
   if (pickExecutable) {
     pickExecutable.onclick = async () => {
       try {
@@ -2968,12 +3009,6 @@ function wireDevFlowSettings() {
         showDevFlowSettingsError('dev-flow.settings-picker', 'Could not choose executable', e);
       }
     };
-  }
-  if (useAutomatic) {
-    useAutomatic.onclick = () => void updateDevFlowSettings(
-      'set_dev_flow_executable_path', { path: null }, { executablePath: null },
-      'dev-flow.settings-executable', 'Could not restore automatic discovery'
-    );
   }
   if (rescan) {
     rescan.onclick = () => void updateDevFlowSettings(

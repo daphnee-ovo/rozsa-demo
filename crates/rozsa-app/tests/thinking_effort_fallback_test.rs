@@ -3,7 +3,8 @@ use std::fs;
 use std::sync::{Arc, Mutex};
 
 use rozsa_app::agent_session::{
-    ModelStream, model_stream_with_thinking_effort_fallback, thinking_effort_attempt_values,
+    ModelStream, model_stream_with_thinking_effort_fallback, normalize_thinking_effort,
+    supported_thinking_efforts, thinking_effort_attempt_values,
 };
 use rozsa_app::model_registry::ModelRegistry;
 use rozsa_model::event_stream::{EventStream, create_event_stream};
@@ -91,6 +92,61 @@ fn attempt_value(model: &Model, effort: ThinkingEffort) -> String {
         .and_then(|map| map.get(&effort))
         .and_then(Clone::clone)
         .unwrap()
+}
+
+#[test]
+fn supported_efforts_follow_model_config_and_fall_back_downward() {
+    let temp = tempdir().unwrap();
+    let _path = write_models_config(temp.path());
+    let model = ModelRegistry::load_from_dir(temp.path())
+        .unwrap()
+        .resolve("demo", "demo-reasoner")
+        .unwrap();
+
+    let mut max_to_xhigh = model.clone();
+    max_to_xhigh.thinking_effort_map = Some(HashMap::from([
+        (ThinkingEffort::Max, None),
+        (ThinkingEffort::XHigh, Some("xhigh".to_string())),
+    ]));
+    assert_eq!(
+        supported_thinking_efforts(&max_to_xhigh),
+        vec![
+            ThinkingEffort::Off,
+            ThinkingEffort::Low,
+            ThinkingEffort::Medium,
+            ThinkingEffort::High,
+            ThinkingEffort::XHigh,
+        ]
+    );
+    assert_eq!(
+        normalize_thinking_effort(&max_to_xhigh, ThinkingEffort::Max),
+        ThinkingEffort::XHigh
+    );
+
+    let mut max_to_high = model;
+    max_to_high.thinking_effort_map = Some(HashMap::from([
+        (ThinkingEffort::Max, None),
+        (ThinkingEffort::XHigh, None),
+        (ThinkingEffort::High, Some("high".to_string())),
+    ]));
+    assert_eq!(
+        normalize_thinking_effort(&max_to_high, ThinkingEffort::Max),
+        ThinkingEffort::High
+    );
+    assert_eq!(
+        normalize_thinking_effort(&max_to_high, ThinkingEffort::XHigh),
+        ThinkingEffort::High
+    );
+
+    max_to_high.reasoning = false;
+    assert_eq!(
+        supported_thinking_efforts(&max_to_high),
+        vec![ThinkingEffort::Off]
+    );
+    assert_eq!(
+        normalize_thinking_effort(&max_to_high, ThinkingEffort::Max),
+        ThinkingEffort::Off
+    );
 }
 
 #[tokio::test]

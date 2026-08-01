@@ -34,3 +34,14 @@ fn thinking_block_uses_typography_without_card_chrome() {
     assert!(content.contains("border: 0"));
     assert!(!source.contains(".thinking-header:hover"));
 }
+
+#[test]
+fn thinking_effort_picker_uses_model_support_and_compacts_missing_levels() {
+    let source = include_str!("../frontend/app.js");
+
+    assert!(source.contains("option.value === 'off' || unavailable[option.value] !== null"));
+    assert!(source.contains("function normalizeThinkingEffort(options, requested)"));
+    assert!(source.contains("slider.max = String(Math.max(0, options.length - 1))"));
+    assert!(source.contains("const selected = normalizeThinkingEffort(options, requested)"));
+    assert!(source.contains("document.getElementById('modelSelector')?.textContent?.trim()"));
+}

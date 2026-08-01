@@ -64,7 +64,9 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
 
 ### 思考强度与自动学习
 
-界面与配置使用统一名称 **thinking effort**。逻辑档位固定为：`off`、`low`、`medium`、`high`、`xhigh`、`max`。未配置 `thinkingEffortMap` 的模型默认可选择全部六档。
+界面与配置使用统一名称 **thinking effort**。逻辑档位固定为：`off`、`low`、`medium`、`high`、`xhigh`、`max`。`reasoning: false` 的模型只能使用 `off`；支持 reasoning 且未配置 `thinkingEffortMap` 的模型默认可选择全部六档。界面的 slider 只显示当前模型实际可用的档位，并会将被禁用的档位压缩掉，不保留空位。
+
+切换模型时，如果当前 thinking effort 在新模型上不可用，Rózsa 会按档位顺序向下回退到最近的可用档位：`max` → `xhigh` → `high` → `medium` → `low` → `off`。例如当前为 `max` 时，新模型支持 `xhigh` 就切换到 `xhigh`，否则继续回退到 `high`。
 
 `low` 的 provider 请求值依次尝试 `low`、`light`、`minimal`；其他非关闭档只尝试其同名值。只有 provider 明确以 HTTP 400 或 422 表示该思考强度不受支持时，Rózsa 才会进行上述重试。认证、配额、网络、模型不存在等错误不会触发重试，也不会改写配置。
 
