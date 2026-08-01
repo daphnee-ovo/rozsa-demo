@@ -19,15 +19,18 @@
 // ├── enum ServiceShutdownOutcome
 // ├── trait DashboardServiceControl
 // ├── trait MemoryReader
+// ├── child_rss_bytes_batch()
 // ├── struct SystemMemoryReader
 // ├── impl SystemMemoryReader
 // ├── total_physical_memory_bytes()
 // ├── child_rss_bytes()
+// ├── child_rss_bytes_batch()
 // ├── trait DashboardServiceFactory
 // ├── struct SessionDevFlowState
 // ├── struct SessionBinding
 // ├── enum ServiceState
 // ├── struct ServiceEntry
+// ├── struct ServiceUsageInput
 // ├── struct SweepReport
 // ├── struct ShutdownAllReport
 // ├── struct RegistryDiagnostics
@@ -49,6 +52,7 @@
 // ├── shutdown_all()
 // ├── sweep()
 // ├── diagnostics()
+// ├── project_usage_bytes()
 // ├── probe_selected()
 // ├── rescan_after_successful_bash()
 // ├── session_state()
@@ -56,10 +60,12 @@
 // ├── service_count()
 // ├── impl RegistryState
 // ├── next_seq()
+// ├── replace_session_binding()
 // ├── record_stop()
 // ├── refresh_stop_times()
 // ├── is_current_or_active()
-// ├── usage_and_budget()
+// ├── usage_inputs()
+// ├── measure_usage()
 // ├── estimate_snapshot_bytes()
 // ├── estimate_task_bytes()
 // ├── estimate_issue_bytes()
@@ -264,6 +270,12 @@ pub trait DashboardServiceControl: Send + Sync {
 pub trait MemoryReader: Send + Sync {
     fn total_physical_memory_bytes(&self) -> Option<u64>;
     fn child_rss_bytes(&self, pid: u32) -> Option<u64>;
+
+    fn child_rss_bytes_batch(&self, pids: &[u32]) -> HashMap<u32, u64> {
+        pids.iter()
+            .filter_map(|pid| self.child_rss_bytes(*pid).map(|bytes| (*pid, bytes)))
+            .collect()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -289,6 +301,24 @@ impl MemoryReader for SystemMemoryReader {
             ProcessRefreshKind::everything(),
         );
         system.process(pid).map(|process| process.memory())
+    }
+
+    fn child_rss_bytes_batch(&self, pids: &[u32]) -> HashMap<u32, u64> {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+        let pids = pids.iter().copied().map(Pid::from_u32).collect::<Vec<_>>();
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&pids),
+            true,
+            ProcessRefreshKind::everything(),
+        );
+        pids.into_iter()
+            .filter_map(|pid| {
+                system
+                    .process(pid)
+                    .map(|process| (pid.as_u32(), process.memory()))
+            })
+            .collect()
     }
 }
 
@@ -323,6 +353,12 @@ struct ServiceEntry {
     last_used_seq: u64,
     last_stop_at: Option<SystemTime>,
     state: ServiceState,
+}
+
+struct ServiceUsageInput {
+    state: ServiceState,
+    pid: Option<u32>,
+    snapshot: Arc<RwLock<Option<DevFlowSnapshot>>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -427,86 +463,103 @@ impl DevFlowRegistry {
         let project = resolve_project_with(&cwd, self.runner.as_ref()).await?;
         let availability =
             probe_project(&project, &self.dow_executable, self.runner.as_ref()).await;
+        let _lifecycle_guard = self.sweep_lock.lock().await;
+        let provisional = SessionDevFlowState {
+            project: project.clone(),
+            availability: availability.clone(),
+            service: None,
+        };
+        {
+            let mut registry = self.state.lock().await;
+            registry.replace_session_binding(session_id.clone(), cwd.clone(), provisional.clone());
+        }
 
-        let mut registry = self.state.lock().await;
+        let mut insert_service = false;
+        let mut start_error = None;
         let service = if availability == DevFlowAvailability::Ready {
             let existing = {
+                let mut registry = self.state.lock().await;
                 let seq = registry.next_seq();
-                match registry.services.get_mut(&project) {
-                    Some(entry) => {
-                        entry.last_used_seq = seq;
-                        if entry.state == ServiceState::Protected {
-                            let alive = match &entry.handle.control {
-                                Some(control) => control.is_alive().await,
-                                None => false,
-                            };
-                            if alive {
-                                entry.state = ServiceState::Live;
-                                Some(entry.handle.clone())
-                            } else {
+                registry.services.get_mut(&project).map(|entry| {
+                    entry.last_used_seq = seq;
+                    (
+                        entry.handle.clone(),
+                        entry.state,
+                        entry.handle.control.clone(),
+                    )
+                })
+            };
+            match existing {
+                Some((handle, ServiceState::Live, _)) => Some(handle),
+                Some((handle, ServiceState::Protected, control)) => {
+                    let alive = match control {
+                        Some(control) => control.is_alive().await,
+                        None => false,
+                    };
+                    if alive {
+                        if let Some(entry) = self.state.lock().await.services.get_mut(&project) {
+                            entry.state = ServiceState::Live;
+                        }
+                        Some(handle)
+                    } else {
+                        self.state.lock().await.services.remove(&project);
+                        insert_service = true;
+                        match self.factory.start(&project).await {
+                            Ok(service) => Some(service),
+                            Err(error) => {
+                                start_error = Some(error);
                                 None
                             }
-                        } else {
-                            Some(entry.handle.clone())
                         }
                     }
-                    None => None,
                 }
-            };
-            if let Some(handle) = existing {
-                Some(handle)
-            } else {
-                registry.services.remove(&project);
-                match self.factory.start(&project).await {
-                    Ok(service) => {
-                        let seq = registry.next_seq();
-                        registry.services.insert(
-                            project.clone(),
-                            ServiceEntry {
-                                last_used_seq: seq,
-                                last_stop_at: None,
-                                state: ServiceState::Live,
-                                handle: service.clone(),
-                            },
-                        );
-                        Some(service)
-                    }
-                    Err(error) => {
-                        let state = SessionDevFlowState {
-                            project: project.clone(),
-                            availability: DevFlowAvailability::DashboardStartFailed(error),
-                            service: None,
-                        };
-                        registry.sessions.insert(
-                            session_id,
-                            SessionBinding {
-                                cwd,
-                                state: state.clone(),
-                                active: false,
-                                last_stop_at: None,
-                            },
-                        );
-                        return Ok(state);
+                None => {
+                    insert_service = true;
+                    match self.factory.start(&project).await {
+                        Ok(service) => Some(service),
+                        Err(error) => {
+                            start_error = Some(error);
+                            None
+                        }
                     }
                 }
             }
         } else {
             None
         };
-        let state = SessionDevFlowState {
-            project,
-            availability,
-            service,
+
+        let availability = if let Some(error) = start_error {
+            DevFlowAvailability::DashboardStartFailed(error)
+        } else {
+            availability
         };
-        registry.sessions.insert(
-            session_id,
-            SessionBinding {
-                cwd,
-                state: state.clone(),
-                active: false,
-                last_stop_at: None,
-            },
-        );
+        let state = SessionDevFlowState {
+            project: project.clone(),
+            availability,
+            service: service.clone(),
+        };
+        let mut registry = self.state.lock().await;
+        let session_is_current = registry
+            .sessions
+            .get(&session_id)
+            .is_some_and(|binding| binding.cwd == cwd && binding.state.project == project);
+        if session_is_current {
+            if insert_service && let Some(service) = service {
+                let seq = registry.next_seq();
+                registry.services.insert(
+                    project,
+                    ServiceEntry {
+                        last_used_seq: seq,
+                        last_stop_at: None,
+                        state: ServiceState::Live,
+                        handle: service,
+                    },
+                );
+            }
+            if let Some(binding) = registry.sessions.get_mut(&session_id) {
+                binding.state = state.clone();
+            }
+        }
         Ok(state)
     }
 
@@ -514,6 +567,7 @@ impl DevFlowRegistry {
         let mut registry = self.state.lock().await;
         if let Some(binding) = registry.sessions.get_mut(session_id) {
             binding.active = true;
+            binding.last_stop_at = None;
         }
     }
 
@@ -570,10 +624,11 @@ impl DevFlowRegistry {
                     .services
                     .get(&project)
                     .expect("shutdown candidate exists");
-                match &entry.handle.control {
-                    Some(control) => control.shutdown(NO_CLIENT_SHUTDOWN_WINDOW).await,
-                    None => ServiceShutdownOutcome::Exited,
-                }
+                entry.handle.control.clone()
+            };
+            let outcome = match outcome {
+                Some(control) => control.shutdown(NO_CLIENT_SHUTDOWN_WINDOW).await,
+                None => ServiceShutdownOutcome::Exited,
             };
 
             let mut registry = self.state.lock().await;
@@ -609,14 +664,17 @@ impl DevFlowRegistry {
         };
 
         loop {
-            let next = {
+            let usage_inputs = {
                 let mut registry = self.state.lock().await;
                 registry.refresh_stop_times();
-                let (usage, budget, _) = registry.usage_and_budget(self.memory.as_ref()).await;
-                report.usage_bytes = usage;
-                report.budget_bytes = budget;
-                report.over_budget = budget.is_some_and(|budget| usage > budget);
-
+                registry.usage_inputs()
+            };
+            let (usage, budget, _) = measure_usage(usage_inputs, self.memory.as_ref()).await;
+            report.usage_bytes = usage;
+            report.budget_bytes = budget;
+            report.over_budget = budget.is_some_and(|budget| usage > budget);
+            let next = {
+                let registry = self.state.lock().await;
                 let mut candidates = registry
                     .services
                     .iter()
@@ -653,23 +711,68 @@ impl DevFlowRegistry {
                     .services
                     .get(&project)
                     .expect("sweep candidate exists");
-                match &entry.handle.control {
-                    Some(control) => control.shutdown(NO_CLIENT_SHUTDOWN_WINDOW).await,
-                    None => ServiceShutdownOutcome::Exited,
-                }
+                entry.handle.control.clone()
+            };
+            let outcome = match outcome {
+                Some(control) => control.shutdown(NO_CLIENT_SHUTDOWN_WINDOW).await,
+                None => ServiceShutdownOutcome::Exited,
             };
 
             let mut registry = self.state.lock().await;
-            let Some(entry) = registry.services.get_mut(&project) else {
+            if !registry.services.contains_key(&project) {
                 continue;
-            };
+            }
             match outcome {
                 ServiceShutdownOutcome::Exited => {
+                    let required_again = registry.is_current_or_active(&project);
                     registry.services.remove(&project);
-                    report.reclaimed.push(project);
+                    drop(registry);
+                    if required_again {
+                        match self.factory.start(&project).await {
+                            Ok(service) => {
+                                let mut registry = self.state.lock().await;
+                                let seq = registry.next_seq();
+                                registry.services.insert(
+                                    project.clone(),
+                                    ServiceEntry {
+                                        handle: service.clone(),
+                                        last_used_seq: seq,
+                                        last_stop_at: None,
+                                        state: ServiceState::Live,
+                                    },
+                                );
+                                for binding in registry
+                                    .sessions
+                                    .values_mut()
+                                    .filter(|binding| binding.state.project == project)
+                                {
+                                    binding.state.availability = DevFlowAvailability::Ready;
+                                    binding.state.service = Some(service.clone());
+                                }
+                            }
+                            Err(error) => {
+                                let mut registry = self.state.lock().await;
+                                for binding in registry
+                                    .sessions
+                                    .values_mut()
+                                    .filter(|binding| binding.state.project == project)
+                                {
+                                    binding.state.availability =
+                                        DevFlowAvailability::DashboardStartFailed(error.clone());
+                                    binding.state.service = None;
+                                }
+                            }
+                        }
+                    } else {
+                        report.reclaimed.push(project);
+                    }
                 }
                 ServiceShutdownOutcome::StillRunning => {
-                    entry.state = ServiceState::Protected;
+                    registry
+                        .services
+                        .get_mut(&project)
+                        .expect("sweep service exists")
+                        .state = ServiceState::Protected;
                     report.protected.push(project);
                 }
             }
@@ -682,10 +785,11 @@ impl DevFlowRegistry {
                     .services
                     .get(&project)
                     .expect("protected service exists");
-                match &entry.handle.control {
-                    Some(control) => control.shutdown(Duration::ZERO).await,
-                    None => ServiceShutdownOutcome::Exited,
-                }
+                entry.handle.control.clone()
+            };
+            let outcome = match outcome {
+                Some(control) => control.shutdown(Duration::ZERO).await,
+                None => ServiceShutdownOutcome::Exited,
             };
             let mut registry = self.state.lock().await;
             if registry
@@ -699,10 +803,11 @@ impl DevFlowRegistry {
             }
         }
 
-        let (usage, budget, _) = {
+        let usage_inputs = {
             let registry = self.state.lock().await;
-            registry.usage_and_budget(self.memory.as_ref()).await
+            registry.usage_inputs()
         };
+        let (usage, budget, _) = measure_usage(usage_inputs, self.memory.as_ref()).await;
         report.usage_bytes = usage;
         report.budget_bytes = budget;
         report.over_budget = budget.is_some_and(|budget| usage > budget);
@@ -710,31 +815,57 @@ impl DevFlowRegistry {
     }
 
     pub async fn diagnostics(&self) -> RegistryDiagnostics {
-        let mut registry = self.state.lock().await;
-        registry.refresh_stop_times();
+        let (live_services, protected_services, active_sessions, usage_inputs) = {
+            let mut registry = self.state.lock().await;
+            registry.refresh_stop_times();
+            (
+                registry
+                    .services
+                    .values()
+                    .filter(|entry| entry.state == ServiceState::Live)
+                    .count(),
+                registry
+                    .services
+                    .values()
+                    .filter(|entry| entry.state == ServiceState::Protected)
+                    .count(),
+                registry
+                    .sessions
+                    .values()
+                    .filter(|binding| binding.active)
+                    .count(),
+                registry.usage_inputs(),
+            )
+        };
         let (usage, budget, protected_usage) =
-            registry.usage_and_budget(self.memory.as_ref()).await;
+            measure_usage(usage_inputs, self.memory.as_ref()).await;
         RegistryDiagnostics {
-            live_services: registry
-                .services
-                .values()
-                .filter(|entry| entry.state == ServiceState::Live)
-                .count(),
-            protected_services: registry
-                .services
-                .values()
-                .filter(|entry| entry.state == ServiceState::Protected)
-                .count(),
-            active_sessions: registry
-                .sessions
-                .values()
-                .filter(|binding| binding.active)
-                .count(),
+            live_services,
+            protected_services,
+            active_sessions,
             usage_bytes: usage,
             budget_bytes: budget,
             over_budget: budget.is_some_and(|budget| usage > budget),
             protected_usage_bytes: protected_usage,
         }
+    }
+
+    /// Memory currently owned by one project dashboard service, including
+    /// child RSS and the registry's project-local cache estimate.
+    pub async fn project_usage_bytes(&self, project: &DevFlowProjectKey) -> Option<u64> {
+        let input = {
+            let registry = self.state.lock().await;
+            registry
+                .services
+                .get(project)
+                .map(|entry| ServiceUsageInput {
+                    state: entry.state,
+                    pid: entry.handle.pid,
+                    snapshot: entry.handle.snapshot.clone(),
+                })
+        }?;
+        let (usage, _, _) = measure_usage(vec![input], self.memory.as_ref()).await;
+        Some(usage)
     }
 
     pub async fn probe_selected(
@@ -809,6 +940,28 @@ impl RegistryState {
         self.last_used_seq
     }
 
+    fn replace_session_binding(
+        &mut self,
+        session_id: String,
+        cwd: PathBuf,
+        state: SessionDevFlowState,
+    ) {
+        let (active, last_stop_at) = self
+            .sessions
+            .get(&session_id)
+            .map(|binding| (binding.active, binding.last_stop_at))
+            .unwrap_or((false, None));
+        self.sessions.insert(
+            session_id,
+            SessionBinding {
+                cwd,
+                state,
+                active,
+                last_stop_at,
+            },
+        );
+    }
+
     fn record_stop(&mut self, project: &DevFlowProjectKey, stopped_at: SystemTime) {
         if let Some(entry) = self.services.get_mut(project) {
             entry.last_stop_at = Some(
@@ -843,27 +996,46 @@ impl RegistryState {
             .any(|binding| binding.active && binding.state.project == *project)
     }
 
-    async fn usage_and_budget(&self, memory: &dyn MemoryReader) -> (u64, Option<u64>, u64) {
-        let mut usage = 0u64;
-        let mut protected_usage = 0u64;
-        for entry in self.services.values() {
-            let mut bytes = REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE;
-            if let Some(pid) = entry.handle.pid {
-                bytes += memory.child_rss_bytes(pid).unwrap_or(0);
-            }
-            if let Some(snapshot) = entry.handle.snapshot.read().await.as_ref() {
-                bytes += estimate_snapshot_bytes(snapshot);
-            }
-            usage += bytes;
-            if entry.state == ServiceState::Protected {
-                protected_usage += bytes;
-            }
-        }
-        let budget = memory
-            .total_physical_memory_bytes()
-            .map(DevFlowRegistry::memory_budget);
-        (usage, budget, protected_usage)
+    fn usage_inputs(&self) -> Vec<ServiceUsageInput> {
+        self.services
+            .values()
+            .map(|entry| ServiceUsageInput {
+                state: entry.state,
+                pid: entry.handle.pid,
+                snapshot: entry.handle.snapshot.clone(),
+            })
+            .collect()
     }
+}
+
+async fn measure_usage(
+    entries: Vec<ServiceUsageInput>,
+    memory: &dyn MemoryReader,
+) -> (u64, Option<u64>, u64) {
+    let pids = entries
+        .iter()
+        .filter_map(|entry| entry.pid)
+        .collect::<Vec<_>>();
+    let rss = memory.child_rss_bytes_batch(&pids);
+    let mut usage = 0u64;
+    let mut protected_usage = 0u64;
+    for entry in entries {
+        let mut bytes = REGISTRY_FIXED_OVERHEAD_BYTES_PER_SERVICE;
+        if let Some(pid) = entry.pid {
+            bytes += rss.get(&pid).copied().unwrap_or(0);
+        }
+        if let Some(snapshot) = entry.snapshot.read().await.as_ref() {
+            bytes += estimate_snapshot_bytes(snapshot);
+        }
+        usage += bytes;
+        if entry.state == ServiceState::Protected {
+            protected_usage += bytes;
+        }
+    }
+    let budget = memory
+        .total_physical_memory_bytes()
+        .map(DevFlowRegistry::memory_budget);
+    (usage, budget, protected_usage)
 }
 
 fn estimate_snapshot_bytes(snapshot: &DevFlowSnapshot) -> u64 {

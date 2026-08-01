@@ -36,6 +36,7 @@ fn dev_flow_defaults_are_enabled_without_a_custom_executable() {
     assert_eq!(Settings::default().dev_flow, DevFlowSettings::default());
     assert!(Settings::default().dev_flow.enabled);
     assert!(Settings::default().dev_flow.show_sidebar_status);
+    assert!(Settings::default().dev_flow.show_dashboard_button);
     assert!(Settings::default().dev_flow.executable_path.is_none());
 }
 
@@ -47,7 +48,7 @@ fn dev_flow_settings_are_global_and_ignore_project_and_local_values() {
     let local = temp.path().join("local.json");
     std::fs::write(
         &global,
-        r#"{"devFlow":{"enabled":false,"showSidebarStatus":false,"executablePath":"/global/dow"}}"#,
+        r#"{"devFlow":{"enabled":false,"showSidebarStatus":false,"showDashboardButton":false,"executablePath":"/global/dow"}}"#,
     )
     .unwrap();
     std::fs::write(
@@ -64,6 +65,7 @@ fn dev_flow_settings_are_global_and_ignore_project_and_local_values() {
         &DevFlowSettings {
             enabled: false,
             show_sidebar_status: false,
+            show_dashboard_button: false,
             executable_path: Some(PathBuf::from("/global/dow")),
         }
     );
@@ -82,6 +84,7 @@ fn typed_dev_flow_updates_preserve_unrelated_global_fields() {
 
     manager.set_dev_flow_enabled(false).unwrap();
     manager.set_dev_flow_sidebar_status(false).unwrap();
+    manager.set_dev_flow_dashboard_button(false).unwrap();
     manager
         .set_dev_flow_executable_path(Some(PathBuf::from("/custom/dow")))
         .unwrap();
@@ -92,6 +95,7 @@ fn typed_dev_flow_updates_preserve_unrelated_global_fields() {
     assert_eq!(persisted["unknownFutureField"]["keep"], true);
     assert_eq!(persisted["devFlow"]["enabled"], false);
     assert_eq!(persisted["devFlow"]["showSidebarStatus"], false);
+    assert_eq!(persisted["devFlow"]["showDashboardButton"], false);
     assert_eq!(persisted["devFlow"]["executablePath"], "/custom/dow");
     assert_eq!(
         manager.dev_flow_settings().executable_path,

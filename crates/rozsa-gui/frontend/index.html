@@ -883,6 +883,13 @@ body.hide-thinking .thinking-block { display: none; }
   opacity: 1;
   overflow-y: auto;
 }
+.dev-flow-tool-call .tool-name { font-weight: 600; }
+.dev-flow-tool-evidence { display: grid; gap: 6px; }
+.dev-flow-tool-evidence pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dev-flow-tool-command { color: var(--fg); overflow-wrap: anywhere; }
+.dev-flow-tool-meta { color: var(--muted); font-family: var(--font-ui); font-size: 10.5px; }
+.dev-flow-tool-deltas { display: grid; gap: 3px; }
+.dev-flow-tool-deltas > span { color: var(--fg); font-family: var(--font-ui); font-weight: 500; }
 
 /* 运行时摘要卡片 */
 .changes-card { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: color-mix(in oklch, var(--surface) 92%, var(--code-bg)); padding: 10px 12px; }
@@ -1666,22 +1673,15 @@ body.hide-thinking .thinking-block { display: none; }
   margin-bottom: 20px;
 }
 .settings-group { margin-bottom: 20px; }
-.dev-flow-diagnostics {
-  display: grid;
-  gap: 4px;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--border, #00000026) 60%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--code-bg, #00000008) 70%, transparent);
-  font-size: 12px;
-  word-break: break-all;
-}
-.dev-flow-diagnostic-row { display: flex; gap: 8px; justify-content: space-between; }
-.dev-flow-diagnostic-label { color: var(--muted); flex: none; }
-.setting-radio-row { display: inline-flex; gap: 14px; align-items: center; }
-.setting-radio { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
-.dev-flow-install-list { margin: 8px 0 0; padding-left: 18px; }
-.dev-flow-install-list li { margin: 4px 0; }
+.dev-flow-heading { margin-bottom: 20px; }
+.dev-flow-heading .settings-pane-title { margin-bottom: 3px; }
+.dev-flow-version { color: var(--muted); font-size: 11.5px; }
+.dev-flow-description { max-width: 620px; margin: 9px 0 0; }
+.dev-flow-missing { margin-top: 12px; }
+.dev-flow-install-list { margin: 7px 0 10px; padding-left: 18px; color: var(--muted); font-size: 11.5px; }
+.dev-flow-install-list li { margin: 3px 0; }
+.dev-flow-settings-rows .setting-item + .setting-item { border-top: 1px solid var(--border); }
+.dev-flow-value { min-width: 0; max-width: 62%; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
 .settings-group-label {
   font-size: 10px;
   font-weight: 600;
@@ -1749,7 +1749,20 @@ body.hide-thinking .thinking-block { display: none; }
 .setting-item:hover { background: oklch(99% 0.001 350); }
 .setting-item.is-disabled { opacity: .42; }
 .setting-item.is-disabled:hover { background: transparent; }
+.setting-item.is-disabled { pointer-events: none; }
 .setting-label { font-size: 13px; color: var(--fg); }
+.dev-flow-path-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(68%, 520px);
+}
+.dev-flow-path-control .setting-input { flex: 1; min-width: 0; }
+@media (max-width: 640px) {
+  .dev-flow-value { max-width: 56%; }
+  .dev-flow-path-item { align-items: flex-start; flex-direction: column; }
+  .dev-flow-path-control { align-items: stretch; flex-direction: column; width: 100%; }
+}
 .setting-stack {
   display: grid;
   gap: 6px;
@@ -3000,7 +3013,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
   bottom: 0;
   left: 0;
   z-index: 110;
-  width: clamp(280px, 30vw, 420px);
+  width: clamp(320px, 38vw, 560px);
   border-right: 1px solid var(--border);
   background: var(--bg);
   box-shadow: 10px 0 24px rgba(0, 0, 0, 0.08);
@@ -3068,7 +3081,7 @@ body.native-split-main .settings-dialog { background: var(--bg); }
 .dev-flow-detail-item.focus { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
 .dev-flow-detail-item-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .dev-flow-detail-item-id { flex: none; color: var(--accent); font: 10.5px var(--font-mono); }
-.dev-flow-detail-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
+.dev-flow-detail-item-title { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 500; line-height: 1.35; }
 .dev-flow-detail-item-status {
   flex: none;
   padding: 1px 7px;
@@ -3080,6 +3093,22 @@ body.native-split-main .settings-dialog { background: var(--bg); }
 .dev-flow-detail-item-status.in-progress { border-color: var(--accent); color: var(--accent); }
 .dev-flow-detail-item-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font: 10.5px var(--font-mono); }
 .dev-flow-detail-item-desc { color: var(--muted); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.dev-flow-detail-disclosure { color: var(--muted); font-size: 11.5px; }
+.dev-flow-detail-disclosure summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--fg);
+}
+.dev-flow-detail-disclosure-body {
+  margin: 6px 0 2px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--code-bg);
+  font: 10.5px/1.5 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
 .dev-flow-detail-empty { padding: 18px 16px; color: var(--muted); font-size: 12px; }
 @media (max-width: 720px) {
   .dev-flow-detail {
@@ -3575,31 +3604,32 @@ body.native-split-main .settings-dialog { background: var(--bg); }
         </template>
       </div>
       <div class="settings-pane" id="pane-dev-flow">
-        <div class="settings-pane-title">Dev Flow</div>
-        <div class="settings-group">
-          <div class="settings-group-label">Integration</div>
+        <div class="dev-flow-heading">
+          <div class="settings-pane-title">Dev Flow</div>
+          <div class="dev-flow-version" id="devFlowVersion">Checking installation…</div>
+          <p class="setting-note dev-flow-description">Connects this project to the optional <code>dow</code> workflow service for read-only work status and its dashboard.</p>
+          <div class="dev-flow-missing" id="devFlowMissing" hidden>
+            <p class="setting-note">Dev Flow was not detected. Install it to enable project status and dashboard access:</p>
+            <ul class="dev-flow-install-list">
+              <li><code>brew install daphnee-ovo/tap/dev-flow</code></li>
+              <li><code>npm install -g @xin_yue/dev-flow</code></li>
+              <li><code>cargo install dev-flow</code></li>
+            </ul>
+            <button type="button" id="devFlowRescan">Check again</button>
+          </div>
+        </div>
+        <div class="settings-group dev-flow-settings-rows">
+          <div class="settings-group-label">Overview</div>
+          <div class="setting-item"><span class="setting-label">Dashboard Availability</span><span class="dev-flow-value" id="devFlowDashboardAvailability">Unavailable</span></div>
+          <div class="setting-item"><span class="setting-label">Dashboard address</span><span class="dev-flow-value" id="devFlowDashboardAddress">Unavailable</span></div>
+          <div class="setting-item"><span class="setting-label">Memory Use</span><span class="dev-flow-value" id="devFlowMemoryUse">Unavailable</span></div>
+          <div class="setting-item dev-flow-path-item"><span class="setting-label">Path</span><span class="dev-flow-path-control"><input class="setting-input" id="devFlowExecutablePath" type="text" aria-label="Resolved dow executable path" readonly spellcheck="false"><button type="button" id="devFlowPickExecutable">Choose…</button><button type="button" id="devFlowUseAutomatic" hidden>Use automatic</button></span></div>
+        </div>
+        <div class="settings-group dev-flow-settings-rows">
+          <div class="settings-group-label">Settings</div>
           <div class="setting-item"><span class="setting-label">Enable Dev Flow</span><button class="setting-toggle" id="devFlowEnabled" type="button" role="switch" aria-checked="false" aria-label="Enable Dev Flow integration"></button></div>
-          <div class="setting-item"><span class="setting-label">Show status in sidebar</span><button class="setting-toggle" id="devFlowSidebarStatus" type="button" role="switch" aria-checked="false" aria-label="Show Dev Flow status in sidebar"></button></div>
-        </div>
-        <div class="settings-group">
-          <div class="settings-group-label">CLI</div>
-          <div class="dev-flow-diagnostics" id="devFlowCliDiagnostics"></div>
-          <div class="setting-item"><span class="setting-label">Executable</span><span class="setting-radio-row"><label class="setting-radio"><input type="radio" name="devFlowSource" value="auto" id="devFlowSourceAuto" checked> Auto</label><label class="setting-radio"><input type="radio" name="devFlowSource" value="custom" id="devFlowSourceCustom"> Custom</label></span></div>
-          <div class="setting-item"><input class="setting-input" id="devFlowExecutablePath" type="text" placeholder="/absolute/path/to/dow" aria-label="Custom dow executable path" spellcheck="false"></div>
-          <div class="setting-item"><button type="button" id="devFlowRescan">Rescan</button></div>
-        </div>
-        <div class="settings-group">
-          <div class="settings-group-label">Project</div>
-          <div class="dev-flow-diagnostics" id="devFlowProjectDiagnostics"></div>
-        </div>
-        <div class="settings-group dev-flow-install">
-          <div class="settings-group-label">Install</div>
-          <p class="setting-note">dev-flow (dow) is optional. When the CLI is missing, install it with one of the official commands:</p>
-          <ul class="dev-flow-install-list">
-            <li><code>brew install daphnee-ovo/tap/dev-flow</code></li>
-            <li><code>npm install -g @xin_yue/dev-flow</code></li>
-            <li><code>cargo install dev-flow</code></li>
-          </ul>
+          <div class="setting-item"><span class="setting-label">Show Dev Flow status in sidebar</span><button class="setting-toggle" id="devFlowSidebarStatus" type="button" role="switch" aria-checked="false" aria-label="Show Dev Flow status in sidebar"></button></div>
+          <div class="setting-item"><span class="setting-label">Show Dashboard button</span><button class="setting-toggle" id="devFlowDashboardButton" type="button" role="switch" aria-checked="false" aria-label="Show Dev Flow Dashboard button"></button></div>
         </div>
       </div>
     </div>

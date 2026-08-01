@@ -446,6 +446,7 @@ GUI 视觉设计和交互规范见 [UI_USAGE_GUIDELINES.md](./UI_USAGE_GUIDELINE
 ## 相关文档
 
 - [UI 使用规范](./UI_USAGE_GUIDELINES.md) — GUI 视觉设计和交互规范
+- [Dev Flow GUI integration](./DEV_FLOW_INTEGRATION.md) — Settings、sidebar、runtime ownership 与 adapter 边界
 - [GUI 术语表](./TERMINOLOGY.md) — session、permission、输入、tool/diff 和窗口层的共同词汇与文字图
 - [Agent Session](../../crates/rozsa-app/src/agent_session.rs) — Agent 会话管理
 - [Permission System](../../crates/rozsa-app/src/permissions/mod.rs) — 权限系统实现

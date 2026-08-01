@@ -6,9 +6,10 @@
 // ├── snapshot_json()
 // ├── fast_timing()
 // ├── snapshot_adapter_accepts_unknown_fields_and_uses_only_data_get()
-// ├── polluted_item_ids_are_normalized_to_canonical_identity()
 // ├── invalid_update_preserves_the_last_good_snapshot_as_stale()
 // ├── missing_required_fields_and_invalid_ids_are_incompatible()
+// ├── polluted_item_ids_are_normalized_to_canonical_identity()
+// ├── ambiguous_item_id_suffixes_are_incompatible()
 // ├── oversized_content_length_is_rejected_before_body_read()
 // ├── sse_supports_comments_crlf_and_complete_update_events()
 // ├── response_header_deadline_is_enforced()
@@ -18,6 +19,7 @@
 // ├── reconnect_backoff_is_bounded_and_reports_at_the_defined_threshold()
 // ├── non_loopback_or_redirectable_base_urls_are_rejected()
 // ├── failed_startup_kills_and_reaps_the_owned_child()
+// ├── stalled_initial_snapshot_respects_the_startup_deadline()
 // ├── startup_window_starts_at_spawn_not_before()
 // └── free_dashboard_port()
 
@@ -236,7 +238,9 @@ async fn polluted_item_ids_are_normalized_to_canonical_identity() {
             "updated": "2026-07-31 03:18"
         },
         "tasks": [
-            {"id": "TASK-T007", "title": "sidebar task", "status": "pending"}
+            {"id": "TASK-T007", "title": "sidebar task", "status": "pending"},
+            {"id": "TASK-T008 generated title", "title": "space suffix", "status": "pending"},
+            {"id": "TASK-T009: generated title", "title": "colon suffix", "status": "pending"}
         ],
         "issues": [
             {"id": "ISSUE-I001：Test TASK-T002 fail", "title": "running 12 tests", "status": "closed"},
@@ -255,10 +259,50 @@ async fn polluted_item_ids_are_normalized_to_canonical_identity() {
     let snapshot = client.fetch_snapshot().await.expect("snapshot decodes");
     assert_eq!(snapshot.tasks[0].id, "TASK-T007");
     assert_eq!(snapshot.tasks[0].title, "sidebar task");
+    assert_eq!(snapshot.tasks[1].id, "TASK-T008");
+    assert_eq!(snapshot.tasks[2].id, "TASK-T009");
     assert_eq!(snapshot.issues.len(), 2);
     assert_eq!(snapshot.issues[0].id, "ISSUE-I001");
     assert_eq!(snapshot.issues[0].title, "running 12 tests");
     assert_eq!(snapshot.issues[1].id, "ISSUE-I002");
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn ambiguous_item_id_suffixes_are_incompatible() {
+    let letter_suffix = serde_json::json!({
+        "status": {},
+        "tasks": [{"id": "TASK-T001evil", "title": "bad", "status": "pending"}],
+        "issues": []
+    })
+    .to_string();
+    let underscore_suffix = serde_json::json!({
+        "status": {},
+        "tasks": [],
+        "issues": [{"id": "ISSUE-I001_title", "title": "bad", "status": "open"}]
+    })
+    .to_string();
+    let (url, _, server) = spawn_server(vec![
+        ResponsePlan {
+            delay: Duration::ZERO,
+            response: json_response(&letter_suffix),
+            hold_open: Duration::ZERO,
+        },
+        ResponsePlan {
+            delay: Duration::ZERO,
+            response: json_response(&underscore_suffix),
+            hold_open: Duration::ZERO,
+        },
+    ])
+    .await;
+    let client = DashboardClient::with_timing(url, fast_timing()).unwrap();
+
+    for _ in 0..2 {
+        assert!(matches!(
+            client.fetch_snapshot().await,
+            Err(DevFlowError::IncompatibleApi(_))
+        ));
+    }
     server.await.unwrap();
 }
 
@@ -479,6 +523,60 @@ async fn failed_startup_kills_and_reaps_the_owned_child() {
     .await;
 
     assert!(matches!(result, Err(DevFlowError::StartupTimeout { .. })));
+    let pid = std::fs::read_to_string(pid_file).unwrap();
+    let status = std::process::Command::new("/bin/kill")
+        .args(["-0", pid.trim()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(!status.success(), "owned child was not reaped");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stalled_initial_snapshot_respects_the_startup_deadline() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::Instant;
+
+    let temp = tempfile::tempdir().unwrap();
+    let script = temp.path().join("fake-dow");
+    let pid_file = temp.path().join("pid");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\necho $$ > '{}'\nexec python3 -c 'import socket,sys,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind((\"127.0.0.1\",int(sys.argv[1]))); s.listen(1); s.accept(); time.sleep(60)' \"$3\"\n",
+            pid_file.display()
+        ),
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&script).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&script, permissions).unwrap();
+    let port = free_dashboard_port().await;
+    let timing = DashboardTiming {
+        request_timeout: Duration::from_secs(2),
+        startup_timeout: Duration::from_millis(200),
+        startup_poll_interval: Duration::from_millis(5),
+        ..fast_timing()
+    };
+
+    let started = Instant::now();
+    let result = start_dashboard(
+        &script,
+        temp.path(),
+        port..=port,
+        timing,
+        &CancellationToken::new(),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert!(matches!(result, Err(DevFlowError::StartupTimeout { .. })));
+    assert!(
+        elapsed < Duration::from_millis(1500),
+        "startup request deadline plus mandatory child reaping was exceeded: {elapsed:?}"
+    );
     let pid = std::fs::read_to_string(pid_file).unwrap();
     let status = std::process::Command::new("/bin/kill")
         .args(["-0", pid.trim()])

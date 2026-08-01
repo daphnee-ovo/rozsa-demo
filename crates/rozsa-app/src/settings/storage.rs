@@ -23,6 +23,7 @@
 // ├── dev_flow_settings()
 // ├── set_dev_flow_enabled()
 // ├── set_dev_flow_sidebar_status()
+// ├── set_dev_flow_dashboard_button()
 // ├── set_dev_flow_executable_path()
 // ├── set_dev_flow_field()
 // ├── project_path()
@@ -249,6 +250,13 @@ impl SettingsManager {
 
     pub fn set_dev_flow_sidebar_status(&mut self, enabled: bool) -> Result<(), SettingsError> {
         self.set_dev_flow_field("showSidebarStatus", Some(serde_json::Value::Bool(enabled)))
+    }
+
+    pub fn set_dev_flow_dashboard_button(&mut self, enabled: bool) -> Result<(), SettingsError> {
+        self.set_dev_flow_field(
+            "showDashboardButton",
+            Some(serde_json::Value::Bool(enabled)),
+        )
     }
 
     pub fn set_dev_flow_executable_path(

@@ -55,5 +55,5 @@ plutil -lint "$contents_dir/Info.plist" >/dev/null
 
 if "$launch_app"; then
   pkill -x rozsa 2>/dev/null || true
-  open -n "$app_bundle"
+  open -n "$app_bundle" --args "$project_dir"
 fi

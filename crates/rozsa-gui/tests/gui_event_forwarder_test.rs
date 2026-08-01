@@ -141,6 +141,7 @@ async fn forwards_ui_state_and_tool_events_with_the_source_session_id() {
         permission_controller: Arc::new(PermissionController::new(PermissionMode::OnRequest)),
         global_settings_path: None,
         runtime_settings: Arc::new(Mutex::new(settings_manager.resolved().clone())),
+        dev_flow_settings_update: Arc::new(Mutex::new(())),
         quota_summary: Arc::new(Mutex::new(None)),
     };
     let app = tauri::test::mock_app();

@@ -288,16 +288,23 @@ A Dashboard action appears immediately above Settings.
 
 The Dev-flow tab remains visible even when the CLI is missing. It shows:
 
-- CLI detection, version, resolved executable, and rescan action;
-- current project readiness, dashboard URL, last synchronization, and resource
-  usage diagnostics;
+- version beneath the title plus a concise description and missing-CLI guidance;
+- a flat Overview using normal Settings rows for dashboard availability,
+  dashboard address, measured current-project memory use, and one executable
+  Path row with native selection;
 - an integration master switch;
 - a dependent “Show project status in sidebar” switch;
-- automatic discovery or a custom absolute executable path with file selection;
+- a dependent “Show Dashboard button” switch;
+- a quiet way to return a custom Path to automatic discovery;
 - official Homebrew, npm, and Cargo installation commands when `dow` is absent.
 
-The custom executable path is global-only. Integration and sidebar preferences
-use the existing settings merge model. When a compatible CLI exists, both
+The page does not use a gray diagnostics card or a duplicate Auto/Custom
+Executable section. Automatic installation/setup and integration-owned prompt
+injection are future TODOs requiring a coordinated Rózsa/dev-flow contract. The
+custom executable path is global-only. Integration, sidebar, and Dashboard
+button preferences use the existing settings merge model. Mutations are
+serialized and publish sidebar state immediately so rapid toggles cannot leave
+stale disabled controls or visibility. When a compatible CLI exists, all three
 switches default to enabled. An uninitialized project is watched lightly without
 starting a dashboard. Creation of a valid `.dev-doc/STATUS.yaml`, including from
 `dow init` executed during a conversation or in another terminal, starts the

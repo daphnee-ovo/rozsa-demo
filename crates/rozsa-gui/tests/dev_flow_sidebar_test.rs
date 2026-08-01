@@ -35,16 +35,19 @@
 // ├── environment()
 // ├── no_notifier()
 // ├── write_status()
+// ├── run_sidebar_behavior_harness()
 // ├── runtime_with()
 // ├── ready_runtime()
 // ├── sidebar_snapshot_counts_open_work_and_claimed_rows_once()
 // ├── empty_ready_project_shows_zero_counts_and_stale_flag()
+// ├── settings_diagnostics_report_live_dashboard_and_snapshot_metadata()
 // ├── uninitialized_project_reports_not_initialized_without_counts()
 // ├── detail_rejects_stale_wrong_project_and_invalid_targets()
 // ├── dashboard_url_returns_loopback_only_when_ready()
 // ├── dashboard_url_fails_explicitly_for_uninitialized_projects()
 // ├── loopback_url_validation_is_restricted()
 // ├── short_ids_normalize_canonical_task_and_issue_ids()
+// ├── sidebar_row_budget_adapts_without_sacrificing_sessions_space()
 // └── sidebar_and_detail_static_contracts()
 
 //! Dev-flow sidebar tests: open/claimed summary counts, read-only detail
@@ -53,6 +56,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -292,10 +296,10 @@ fn task(id: &str, title: &str, status: DevFlowTaskStatus) -> DevFlowTask {
         task_type: Some("feat".to_owned()),
         refs: Some("SPEC-AC-001".to_owned()),
         depends_on: vec!["TASK-T001".to_owned()],
-        done_when: vec![],
-        files_create: vec![],
-        files_modify: vec![],
-        files_test: vec![],
+        done_when: vec!["acceptance passes".to_owned()],
+        files_create: vec!["src/new.rs".to_owned()],
+        files_modify: vec!["src/lib.rs".to_owned()],
+        files_test: vec!["tests/lib_test.rs".to_owned()],
     }
 }
 
@@ -306,8 +310,8 @@ fn issue(id: &str, title: &str, status: DevFlowIssueStatus) -> DevFlowIssue {
         status,
         severity: Some("P1".to_owned()),
         description: Some("issue description".to_owned()),
-        files_create: vec![],
-        files_modify: vec![],
+        files_create: vec!["docs/issue.md".to_owned()],
+        files_modify: vec!["src/issue.rs".to_owned()],
     }
 }
 
@@ -367,6 +371,119 @@ fn write_status(root: &Path, branch: &str) {
     let directory = root.join(".dev-doc").join(branch);
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(directory.join("STATUS.yaml"), "phase: DEV\n").unwrap();
+}
+
+fn run_sidebar_behavior_harness(assertions: &str) {
+    let source = include_str!("../frontend/sidebar.js");
+    let start = source.find("function renderDevFlowClaimedRows()").unwrap();
+    let end = source[start..]
+        .find("function applySidebarThemeState(snapshot)")
+        .unwrap()
+        + start;
+    let harness = r#"
+class FakeElement {
+  constructor(id = '') {
+    this.id = id; this.children = []; this.hidden = false; this.textContent = '';
+    this.title = ''; this.className = ''; this.style = {}; this.onclick = null;
+    this.onpointerenter = null; this.onpointerleave = null;
+    this.attributes = new Map(); this.observed = false;
+  }
+  append(...children) { this.children.push(...children); }
+  appendChild(child) { this.children.push(child); return child; }
+  replaceChildren(...children) { this.children = children; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getBoundingClientRect() {
+    if (this.id === 'sidebarStatusSection') {
+      return { height: 100 + claimed.children.length * rowHeight + (more.hidden ? 0 : rowHeight) };
+    }
+    if (this.id === 'sidebarDevFlowClaimed') return { height: claimed.children.length * rowHeight };
+    if (this.id === 'sidebarDevFlowMore') return { height: rowHeight };
+    if (this.id === 'sidebarBottom') return { height: 40 };
+    if (this.className === 'dev-flow-claimed-row') return { height: rowHeight };
+    return { height: 0 };
+  }
+}
+let rowHeight = 20;
+let createdProbes = 0;
+const claimed = new FakeElement('sidebarDevFlowClaimed');
+const more = new FakeElement('sidebarDevFlowMore'); more.hidden = true;
+const status = new FakeElement('sidebarStatusSection');
+const main = new FakeElement('mainSidebarScene');
+const bottom = new FakeElement('sidebarBottom');
+const dashboard = new FakeElement('sidebarDevFlowDashboard');
+const ids = new Map([
+  ['sidebarDevFlowClaimed', claimed], ['sidebarDevFlowMore', more],
+  ['sidebarStatusSection', status], ['mainSidebarScene', main],
+  ['sidebarDevFlowDashboard', dashboard],
+]);
+const body = { classList: { contains: () => false } };
+const document = {
+  body,
+  fonts: { addEventListener: () => {} },
+  getElementById: id => ids.get(id) || null,
+  querySelector: selector => selector === '.sidebar-bottom' ? bottom : null,
+  createElement: tag => {
+    const element = new FakeElement();
+    if (tag === 'button') createdProbes += 1;
+    return element;
+  },
+};
+const window = { innerHeight: 300 };
+let nextTimer = 1;
+const delayedCallbacks = new Map();
+function setTimeout(callback, delay) {
+  const id = nextTimer++;
+  delayedCallbacks.set(id, { callback, delay });
+  return id;
+}
+function clearTimeout(id) { delayedCallbacks.delete(id); }
+function runDelayed(milliseconds) {
+  const due = Array.from(delayedCallbacks.entries())
+    .filter(([, timer]) => timer.delay <= milliseconds);
+  due.forEach(([id, timer]) => { delayedCallbacks.delete(id); timer.callback(); });
+}
+class ResizeObserver { constructor(callback) { this.callback = callback; } observe(element) { element.observed = true; } }
+const sidebarDevFlowResizeObserver = new ResizeObserver(() => invalidateDevFlowRowMetrics());
+let sidebarDevFlow = null;
+let sidebarLastDevFlowLayoutKey = '';
+let sidebarDevFlowRowHeight = 0;
+let sidebarDevFlowMeasureProbe = null;
+let sidebarDevFlowResizePending = false;
+const SIDEBAR_SESSIONS_MIN_PX = 96;
+function requestAnimationFrame(callback) { callback(); }
+const sidebarInvocations = [];
+const sidebarInvoke = async (name, args) => { sidebarInvocations.push({ name, args }); };
+const sidebarEvents = [];
+const sidebarEmit = async name => { sidebarEvents.push(name); };
+const DEV_FLOW_HOVER_DELAY_MS = 180;
+let sidebarDevFlowHoverTimer = null;
+let sidebarDevFlowHoverElement = null;
+let sidebarDevFlowDetailPinned = false;
+function check(condition, message) { if (!condition) throw new Error(message); }
+function items(count) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: 'TASK-T' + String(index + 1).padStart(3, '0'),
+    shortId: 'T' + String(index + 1).padStart(3, '0'),
+    title: 'A very long claimed task title ' + index,
+  }));
+}
+"#;
+    let mut script = String::with_capacity(harness.len() + end - start + assertions.len());
+    script.push_str(harness);
+    script.push_str(&source[start..end]);
+    script.push_str(assertions);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("sidebar_behavior_test.js");
+    std::fs::write(&path, script).unwrap();
+    let output = Command::new("node")
+        .arg(&path)
+        .output()
+        .expect("Node.js is required for frontend behavior tests");
+    assert!(
+        output.status.success(),
+        "sidebar behavior harness failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn runtime_with(project: &Path, factory: &FakeFactory) -> Arc<DevFlowRuntime> {
@@ -468,6 +585,27 @@ async fn empty_ready_project_shows_zero_counts_and_stale_flag() {
 }
 
 #[tokio::test]
+async fn settings_diagnostics_report_live_dashboard_and_snapshot_metadata() {
+    let project = tempfile::tempdir().unwrap();
+    let factory = FakeFactory::default();
+    factory.set_snapshot(project.path(), empty_snapshot(12), "http://127.0.0.1:9812/");
+    let (runtime, _key) = ready_runtime(project.path(), &factory).await;
+    runtime
+        .switch_to_session("s1", project.path().to_path_buf())
+        .await;
+
+    let diagnostics = runtime.diagnostics(&DevFlowSettings::default()).await;
+    let project = diagnostics.project.expect("active project diagnostics");
+    assert_eq!(
+        project.dashboard_url.as_deref(),
+        Some("http://127.0.0.1:9812/")
+    );
+    assert_eq!(project.snapshot_revision, Some(12));
+    assert_eq!(project.last_sync_unix_ms, Some(0));
+    assert!(project.memory_use_bytes.is_some());
+}
+
+#[tokio::test]
 async fn uninitialized_project_reports_not_initialized_without_counts() {
     let project = tempfile::tempdir().unwrap();
     let factory = FakeFactory::default();
@@ -531,7 +669,17 @@ async fn detail_rejects_stale_wrong_project_and_invalid_targets() {
     assert_eq!(payload.items[0].short_id, "T010");
     assert_eq!(payload.items[1].short_id, "T011");
     assert_eq!(payload.items[1].status, "in-progress");
+    assert_eq!(payload.items[1].done_when, vec!["acceptance passes"]);
+    assert_eq!(payload.items[1].files_create, vec!["src/new.rs"]);
+    assert_eq!(payload.items[1].files_modify, vec!["src/lib.rs"]);
+    assert_eq!(payload.items[1].files_test, vec!["tests/lib_test.rs"]);
     assert_eq!(payload.items[2].kind, "issue");
+    assert_eq!(
+        payload.items[2].description.as_deref(),
+        Some("issue description")
+    );
+    assert_eq!(payload.items[2].files_create, vec!["docs/issue.md"]);
+    assert_eq!(payload.items[2].files_modify, vec!["src/issue.rs"]);
 
     // Stale revision is rejected before the main view renders anything.
     let stale = runtime
@@ -580,6 +728,23 @@ async fn detail_rejects_stale_wrong_project_and_invalid_targets() {
         )
         .await;
     assert!(invalid.unwrap_err().contains("target is invalid"));
+
+    // A syntactically valid focus must still identify open work from the same
+    // validated snapshot.
+    let missing = runtime
+        .detail(
+            "s1",
+            &DevFlowDetailRequest {
+                project_key: sidebar.project.project_key.clone(),
+                revision: sidebar.revision,
+                target: DevFlowDetailTarget {
+                    kind: "item".to_owned(),
+                    id: Some("TASK-T999".to_owned()),
+                },
+            },
+        )
+        .await;
+    assert!(missing.unwrap_err().contains("does not exist"));
 }
 
 #[tokio::test]
@@ -639,6 +804,61 @@ fn short_ids_normalize_canonical_task_and_issue_ids() {
 }
 
 #[test]
+fn sidebar_row_budget_adapts_without_sacrificing_sessions_space() {
+    run_sidebar_behavior_harness(
+        r#"
+sidebarDevFlow = {
+  availability: 'ready',
+  claimed: items(5),
+  project: { projectKey: 'test-project' },
+  revision: 7,
+};
+renderDevFlowClaimedRows();
+check(claimed.children.length === 1, '300px height must leave 96px for Sessions and show one row');
+check(!more.hidden && more.textContent === 'more 4', 'remaining rows must be summarized exactly');
+check(claimed.children[0].children[2].textContent.includes('very long'), 'narrow-width title content must remain intact for CSS ellipsis');
+claimed.children[0].onpointerenter();
+check(sidebarInvocations.length === 0, 'hover must wait before requesting detail');
+runDelayed(179);
+check(sidebarInvocations.length === 0, 'hover duration must filter pointer sweeps');
+runDelayed(180);
+check(sidebarInvocations.length === 1 && sidebarInvocations[0].name === 'dev_flow_detail', 'sustained hover must request item detail');
+claimed.children[0].onpointerleave();
+check(sidebarEvents.includes('dev-flow-detail-dismiss'), 'hover preview must close when the pointer leaves');
+claimed.children[0].onclick();
+check(sidebarInvocations.length === 2, 'click must request detail immediately');
+claimed.children[0].onpointerleave();
+check(sidebarEvents.length === 1, 'click must pin detail across pointer leave');
+
+window.innerHeight = 360;
+invalidateDevFlowRowMetrics();
+check(claimed.children.length === 5 && more.hidden, 'taller windows must consume all available row slots');
+
+sidebarDevFlow.claimed = [];
+sidebarLastDevFlowLayoutKey = '';
+renderDevFlowClaimedRows();
+check(claimed.children.length === 0 && more.hidden, 'zero claimed work must render no rows or more link');
+
+sidebarDevFlow.claimed = items(5);
+rowHeight = 30;
+invalidateDevFlowRowMetrics();
+check(claimed.children.length === 2 && more.textContent === 'more 3', 'font metric changes must invalidate the row-height cache');
+invalidateDevFlowRowMetrics();
+check(main.children.length === 1, 'stable resize must reuse one persistent measurement probe');
+
+updateDevFlowDashboardButton(null);
+check(dashboard.disabled && dashboard.title === 'Dev-flow is disabled', 'missing integration state must disable Dashboard');
+for (const availability of ['starting', 'loading', 'error']) {
+  updateDevFlowDashboardButton({ availability, availabilityMessage: availability + ' state' });
+  check(dashboard.disabled && dashboard.title === availability + ' state', availability + ' must remain explicit');
+}
+updateDevFlowDashboardButton({ availability: 'ready' });
+check(!dashboard.disabled && dashboard.title === 'Open dev-flow dashboard', 'ready state must enable Dashboard');
+"#,
+    );
+}
+
+#[test]
 fn sidebar_and_detail_static_contracts() {
     let sidebar_html = include_str!("../frontend/sidebar.html");
     let sidebar_js = include_str!("../frontend/sidebar.js");
@@ -675,7 +895,15 @@ fn sidebar_and_detail_static_contracts() {
     assert!(sidebar_js.contains("SIDEBAR_SESSIONS_MIN_PX"));
     assert!(sidebar_js.contains("sidebarStatusSection"));
     assert!(sidebar_js.contains("sidebarInvoke('dev_flow_detail'"));
+    assert!(sidebar_js.contains("const DEV_FLOW_HOVER_DELAY_MS = 180;"));
+    assert!(sidebar_js.contains("element.onpointerenter = () =>"));
+    assert!(sidebar_js.contains("element.onpointerleave = () =>"));
+    assert!(sidebar_js.contains("sidebarEmit('dev-flow-detail-dismiss')"));
+    assert!(app_js.contains("listen('dev-flow-detail-dismiss'"));
     assert!(sidebar_js.contains("sidebarInvoke('open_dev_flow_dashboard'"));
+    assert!(sidebar_js.contains("snapshot.showDevFlowDashboard"));
+    assert!(sidebar_js.contains("button.hidden = !visible;"));
+    assert!(sidebar_html.contains(".sidebar-action[hidden] { display: none; }"));
     assert!(sidebar_html.contains("min-height: var(--dev-flow-sessions-min, 96px)"));
 
     // The main view owns the read-only overlay with focus, Escape, outside
@@ -696,8 +924,14 @@ fn sidebar_and_detail_static_contracts() {
     assert!(index_html.contains("@media (max-width: 720px)"));
     assert!(app_js.contains("listen('dev-flow-detail'"));
     assert!(app_js.contains("payload.revision < baseline"));
+    assert!(app_js.contains("DEV_FLOW_DETAIL_BASELINE_LIMIT = 32"));
+    assert!(app_js.contains("devFlowDetailBaselines.size > DEV_FLOW_DETAIL_BASELINE_LIMIT"));
+    assert!(app_js.contains("item.filesModify"));
+    assert!(app_js.contains("item.doneWhen"));
     assert!(app_js.contains("event.key === 'Escape'"));
     assert!(app_js.contains("closest('#devFlowDetail')"));
+    assert!(app_js.contains("document.getElementById('devFlowDetailClose')"));
+    assert!(app_js.contains("addEventListener('click', closeDevFlowDetail)"));
 
     // The typed IPC commands exist, are registered, and never mutate work.
     for command in ["dev_flow_detail", "open_dev_flow_dashboard"] {
@@ -714,7 +948,7 @@ fn sidebar_and_detail_static_contracts() {
     assert!(capabilities.contains("opener:allow-open-url"));
     assert!(capabilities.contains("http://127.0.0.1:*/*"));
     assert!(
-        dev_flow.contains("pub const DASHBOARD_OPEN_PREFIX: &str = \"dev-flow.open:\""),
+        dev_flow.contains("pub const DASHBOARD_OPEN_PREFIX: &str = \"dev-flow.dashboard-open:\""),
         "stable open-error ID"
     );
 }

@@ -9,6 +9,7 @@
 // ├── struct InputHighlightRange
 // ├── autocomplete_input()
 // ├── pick_attachment()
+// ├── pick_dev_flow_executable()
 // ├── pick_any_attachment()
 // ├── pick_any_attachment_macos()
 // ├── dispatch_slash_command()
@@ -46,6 +47,7 @@
 // ├── get_dev_flow_settings()
 // ├── set_dev_flow_enabled()
 // ├── set_dev_flow_sidebar_status()
+// ├── set_dev_flow_dashboard_button()
 // ├── set_dev_flow_executable_path()
 // ├── rescan_dev_flow()
 // ├── dev_flow_detail()
@@ -136,6 +138,8 @@
 // ├── ensure_codex_oauth_models_config()
 // ├── codex_oauth_model()
 // ├── load_session_messages()
+// ├── load_session_presentations()
+// ├── refresh_dev_flow_presentations()
 // ├── load_session_summary()
 // ├── activate_session()
 // ├── struct SessionListEntry
@@ -276,7 +280,11 @@ pub async fn send_message(
     let session_id = tab.session_id();
     let (agent, spawn_forwarder) = match tab {
         SessionTab::Active { agent, .. } => (agent.clone(), false),
-        SessionTab::Loaded { path, messages } => {
+        SessionTab::Loaded {
+            path,
+            messages,
+            dev_flow_presentations,
+        } => {
             // 升级为 Active：创建 AgentSession
             let agent = activate_session(path, &state).await?;
             let path_owned = path.clone();
@@ -287,6 +295,7 @@ pub async fn send_message(
                 agent: agent_arc.clone(),
                 live: crate::state::LiveState {
                     messages: std::mem::take(messages),
+                    dev_flow_presentations: std::mem::take(dev_flow_presentations),
                     completed_summary,
                     ..Default::default()
                 },
@@ -297,6 +306,7 @@ pub async fn send_message(
             // 从 Idle 直接激活（加载历史 + 创建 agent）
             let path_owned = path.clone();
             let messages = load_session_messages(&path_owned)?;
+            let dev_flow_presentations = load_session_presentations(&path_owned)?;
             let agent = activate_session(&path_owned, &state).await?;
             let completed_summary = load_session_summary(&path_owned);
             let agent_arc = std::sync::Arc::new(agent);
@@ -305,6 +315,7 @@ pub async fn send_message(
                 agent: agent_arc.clone(),
                 live: crate::state::LiveState {
                     messages,
+                    dev_flow_presentations,
                     completed_summary,
                     ..Default::default()
                 },
@@ -318,6 +329,7 @@ pub async fn send_message(
         .dev_flow
         .session_started(&session_id, agent.current_cwd().await)
         .await;
+    refresh_dev_flow_presentations(&state, idx).await?;
     if spawn_forwarder {
         crate::events::spawn_event_forwarder_for_session(
             app.clone(),
@@ -509,6 +521,18 @@ pub async fn pick_attachment(app: AppHandle, mode: String) -> Result<Option<Stri
         AttachmentPickMode::Any => return pick_any_attachment(app).await,
     };
     Ok(path.map(|path| path.to_string()))
+}
+
+#[tauri::command]
+pub async fn pick_dev_flow_executable(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    Ok(app
+        .dialog()
+        .file()
+        .set_title("Choose dow executable")
+        .blocking_pick_file()
+        .map(|path| path.to_string()))
 }
 
 async fn pick_any_attachment(app: AppHandle) -> Result<Option<String>, String> {
@@ -1183,9 +1207,11 @@ pub async fn switch_session(
     } else {
         // 创建新的 Loaded tab（加载历史消息用于显示，不启动 agent）
         let messages = load_session_messages(&path)?;
+        let dev_flow_presentations = load_session_presentations(&path)?;
         tabs.push(SessionTab::Loaded {
             path: path.clone(),
             messages,
+            dev_flow_presentations,
         });
         tabs.len() - 1
     };
@@ -1215,6 +1241,12 @@ pub async fn switch_session(
     drop(tabs);
     if let Some(cwd) = cwd {
         state.dev_flow.switch_to_session(&session_id, cwd).await;
+        refresh_dev_flow_presentations(&state, target_idx).await?;
+        let tabs = state.tabs.lock().await;
+        if let Some(tab) = tabs.get(target_idx) {
+            let snapshot = UiSnapshot::from_tab(tab, &state.shared);
+            let _ = crate::events::emit_main(&app, "ui-state", snapshot);
+        }
     }
     crate::events::emit_sidebar_state(&app, state.inner()).await?;
 
@@ -1658,35 +1690,68 @@ pub async fn get_dev_flow_settings(
 }
 
 #[tauri::command]
-pub async fn set_dev_flow_enabled(state: State<'_, GuiState>, enabled: bool) -> Result<(), String> {
+pub async fn set_dev_flow_enabled(
+    app: AppHandle,
+    state: State<'_, GuiState>,
+    enabled: bool,
+) -> Result<crate::dev_flow::DevFlowSettingsSnapshot, String> {
+    let _update = state.dev_flow_settings_update.lock().await;
     let settings = {
         let mut runtime = state.runtime_settings.lock().await;
         runtime.dev_flow.enabled = enabled;
         runtime.dev_flow.clone()
     };
     persist_settings(&state).await?;
-    state.dev_flow.reconfigure(&settings).await
+    state.dev_flow.reconfigure(&settings).await?;
+    crate::events::emit_sidebar_state(&app, state.inner()).await?;
+    Ok(state.dev_flow.diagnostics(&settings).await)
 }
 
 #[tauri::command]
 pub async fn set_dev_flow_sidebar_status(
+    app: AppHandle,
     state: State<'_, GuiState>,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<crate::dev_flow::DevFlowSettingsSnapshot, String> {
+    let _update = state.dev_flow_settings_update.lock().await;
     state
         .runtime_settings
         .lock()
         .await
         .dev_flow
         .show_sidebar_status = enabled;
-    persist_settings(&state).await
+    persist_settings(&state).await?;
+    crate::events::emit_sidebar_state(&app, state.inner()).await?;
+    let settings = state.runtime_settings.lock().await.dev_flow.clone();
+    Ok(state.dev_flow.diagnostics(&settings).await)
+}
+
+#[tauri::command]
+pub async fn set_dev_flow_dashboard_button(
+    app: AppHandle,
+    state: State<'_, GuiState>,
+    enabled: bool,
+) -> Result<crate::dev_flow::DevFlowSettingsSnapshot, String> {
+    let _update = state.dev_flow_settings_update.lock().await;
+    state
+        .runtime_settings
+        .lock()
+        .await
+        .dev_flow
+        .show_dashboard_button = enabled;
+    persist_settings(&state).await?;
+    crate::events::emit_sidebar_state(&app, state.inner()).await?;
+    let settings = state.runtime_settings.lock().await.dev_flow.clone();
+    Ok(state.dev_flow.diagnostics(&settings).await)
 }
 
 #[tauri::command]
 pub async fn set_dev_flow_executable_path(
+    app: AppHandle,
     state: State<'_, GuiState>,
     path: Option<String>,
-) -> Result<(), String> {
+) -> Result<crate::dev_flow::DevFlowSettingsSnapshot, String> {
+    let _update = state.dev_flow_settings_update.lock().await;
     let settings = {
         let mut runtime = state.runtime_settings.lock().await;
         runtime.dev_flow.executable_path = match path {
@@ -1702,13 +1767,21 @@ pub async fn set_dev_flow_executable_path(
         runtime.dev_flow.clone()
     };
     persist_settings(&state).await?;
-    state.dev_flow.reconfigure(&settings).await
+    state.dev_flow.reconfigure(&settings).await?;
+    crate::events::emit_sidebar_state(&app, state.inner()).await?;
+    Ok(state.dev_flow.diagnostics(&settings).await)
 }
 
 #[tauri::command]
-pub async fn rescan_dev_flow(state: State<'_, GuiState>) -> Result<(), String> {
+pub async fn rescan_dev_flow(
+    app: AppHandle,
+    state: State<'_, GuiState>,
+) -> Result<crate::dev_flow::DevFlowSettingsSnapshot, String> {
+    let _update = state.dev_flow_settings_update.lock().await;
     let settings = state.runtime_settings.lock().await.dev_flow.clone();
-    state.dev_flow.reconfigure(&settings).await
+    state.dev_flow.reconfigure(&settings).await?;
+    crate::events::emit_sidebar_state(&app, state.inner()).await?;
+    Ok(state.dev_flow.diagnostics(&settings).await)
 }
 
 /// Read-only dev-flow detail request from the sidebar. The payload is
@@ -3588,6 +3661,64 @@ fn load_session_messages(path: &str) -> Result<Vec<AgentMessage>, String> {
             }
         })
         .collect())
+}
+
+fn load_session_presentations(
+    path: &str,
+) -> Result<std::collections::HashMap<String, rozsa_app::dev_flow::DevFlowToolPresentation>, String>
+{
+    let manager = SessionManager::open(path).map_err(|error| error.to_string())?;
+    let records = manager
+        .dev_flow_presentation_records()
+        .map_err(|error| error.to_string())?;
+    Ok(rozsa_app::dev_flow::rebuild_dev_flow_presentations(
+        records,
+        &manager.context_messages(),
+        None,
+    ))
+}
+
+async fn refresh_dev_flow_presentations(
+    state: &State<'_, GuiState>,
+    tab_index: usize,
+) -> Result<(), String> {
+    let (path, session_id) = {
+        let tabs = state.tabs.lock().await;
+        let tab = tabs.get(tab_index).ok_or("No session tab")?;
+        (tab.path().to_owned(), tab.session_id())
+    };
+    let manager = SessionManager::open(&path).map_err(|error| error.to_string())?;
+    let records = manager
+        .dev_flow_presentation_records()
+        .map_err(|error| error.to_string())?;
+    let messages = manager.context_messages();
+    let session_state = state.dev_flow.session_state(&session_id).await;
+    let snapshot = match session_state
+        .as_ref()
+        .and_then(|state| state.service.as_ref())
+    {
+        Some(service) => service.snapshot().read().await.clone(),
+        None => None,
+    };
+    let enrichment = session_state
+        .as_ref()
+        .zip(snapshot.as_ref())
+        .map(|(state, snapshot)| (&state.project, snapshot));
+    let presentations =
+        rozsa_app::dev_flow::rebuild_dev_flow_presentations(records, &messages, enrichment);
+    let mut tabs = state.tabs.lock().await;
+    let Some(tab) = tabs.get_mut(tab_index).filter(|tab| tab.path() == path) else {
+        return Ok(());
+    };
+    match tab {
+        SessionTab::Loaded {
+            dev_flow_presentations,
+            ..
+        } => *dev_flow_presentations = presentations,
+        SessionTab::Active { live, .. } => live.dev_flow_presentations = presentations,
+        SessionTab::Idle { .. } => {}
+    }
+    Ok(())
 }
 
 fn load_session_summary(path: &str) -> Option<crate::turn_diff::TurnActivity> {

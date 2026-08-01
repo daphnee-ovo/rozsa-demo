@@ -1,8 +1,64 @@
+// FrameworkTree
+// dev_flow_runtime_wiring_test.rs
+// ├── enum FakeRevision
+// ├── struct FakeStatus
+// ├── impl FakeStatus
+// ├── default()
+// ├── success()
+// ├── failure()
+// ├── struct FakeRunnerState
+// ├── struct FakeRunner
+// ├── impl FakeRunner
+// ├── add_git_project()
+// ├── set_branch()
+// ├── set_status()
+// ├── impl FakeRunner
+// ├── run()
+// ├── struct FakeDiscoveryRunner
+// ├── impl FakeDiscoveryRunner
+// ├── set_found()
+// ├── impl FakeDiscoveryRunner
+// ├── run()
+// ├── struct FakeControlState
+// ├── struct FakeControl
+// ├── impl FakeControl
+// ├── shutdown()
+// ├── is_alive()
+// ├── struct FakeFactoryState
+// ├── struct FakeFactory
+// ├── impl FakeFactory
+// ├── starts()
+// ├── shutdown_calls()
+// ├── snapshot()
+// ├── impl FakeFactory
+// ├── start()
+// ├── environment()
+// ├── notifier()
+// ├── no_notifier()
+// ├── write_status()
+// ├── system_runtime_and_late_attachment_share_one_sidebar_refresh_slot()
+// ├── session_start_and_finish_track_active_state_and_exact_stop_time()
+// ├── disable_stops_owned_children_and_reenable_restarts_services()
+// ├── invalid_custom_path_fails_without_falling_back()
+// ├── branch_change_rescan_and_switch_reassociate_sessions()
+// ├── late_init_becomes_ready_via_probe()
+// ├── cli_error_notification_resolves_on_recovery()
+// ├── routine_ready_emits_no_extra_notification()
+// ├── dashboard_start_failure_uses_per_project_error_id()
+// ├── repeated_project_failure_updates_the_same_notification_id()
+// ├── struct FailingFactory
+// ├── impl FailingFactory
+// ├── start()
+// ├── struct UpdatingFailingFactory
+// ├── impl UpdatingFailingFactory
+// └── start()
+
 //! Runtime wiring tests: settings adoption, session activity signals, rescan
 //! triggers, and stable notification IDs for the GUI dev-flow runtime.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -16,7 +72,8 @@ use rozsa_app::dev_flow::{
 use rozsa_app::settings::DevFlowSettings;
 use rozsa_gui::dev_flow::{
     CLI_ERROR_ID, DASHBOARD_START_PREFIX, DashboardFactoryProvider, DevFlowRuntime,
-    NotificationSink, SharedNotificationSink,
+    NotificationSink, SharedNotificationSink, SharedSidebarRefreshSink, SidebarRefreshSink,
+    system_runtime,
 };
 use rozsa_gui::notifications::AppNotificationEvent;
 
@@ -319,6 +376,27 @@ fn write_status(root: &Path, branch: &str) {
 }
 
 #[tokio::test]
+async fn system_runtime_and_late_attachment_share_one_sidebar_refresh_slot() {
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let shared: SharedSidebarRefreshSink = Arc::new(StdMutex::new(None));
+    let runtime = system_runtime(
+        no_notifier(),
+        Arc::new(FakeRunner::default()),
+        shared.clone(),
+    );
+    let refreshes_for_sink = refreshes.clone();
+    let sink: SidebarRefreshSink = Arc::new(move || {
+        refreshes_for_sink.fetch_add(1, Ordering::SeqCst);
+    });
+
+    runtime.attach_sidebar_refresh(sink);
+    shared.lock().unwrap().clone().expect("attached refresh")();
+
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    runtime.shutdown();
+}
+
+#[tokio::test]
 async fn session_start_and_finish_track_active_state_and_exact_stop_time() {
     let project = tempfile::tempdir().unwrap();
     write_status(project.path(), "main");
@@ -384,6 +462,14 @@ async fn disable_stops_owned_children_and_reenable_restarts_services() {
 
     settings.enabled = false;
     runtime.reconfigure(&settings).await.unwrap();
+    let disabled_diagnostics = runtime.diagnostics(&settings).await;
+    assert!(disabled_diagnostics.cli.available);
+    assert_eq!(disabled_diagnostics.cli.version.as_deref(), Some("1.2.3"));
+    assert_eq!(
+        factory.starts().len(),
+        1,
+        "diagnostics must not start a service"
+    );
     assert_eq!(factory.shutdown_calls().len(), 1);
     assert!(runtime.session_state("s1").await.is_none());
     assert_eq!(runtime.active_sessions().await, 0);
@@ -391,10 +477,20 @@ async fn disable_stops_owned_children_and_reenable_restarts_services() {
     settings.enabled = true;
     runtime.reconfigure(&settings).await.unwrap();
     assert_eq!(factory.starts().len(), 2);
+    assert_eq!(runtime.active_sessions().await, 1);
     assert_eq!(
         runtime.session_state("s1").await.unwrap().availability,
         DevFlowAvailability::Ready
     );
+
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(5_100_000);
+    runtime.session_finished("s1", stopped_at).await;
+    settings.enabled = false;
+    runtime.reconfigure(&settings).await.unwrap();
+    settings.enabled = true;
+    runtime.reconfigure(&settings).await.unwrap();
+    assert_eq!(runtime.active_sessions().await, 0);
+    assert_eq!(runtime.last_stop_at("s1").await, Some(stopped_at));
 }
 
 #[tokio::test]
@@ -416,6 +512,7 @@ async fn invalid_custom_path_fails_without_falling_back() {
     let mut settings = DevFlowSettings {
         enabled: true,
         show_sidebar_status: true,
+        show_dashboard_button: true,
         executable_path: Some(PathBuf::from("/missing/dow-binary")),
     };
     runtime.reconfigure(&settings).await.unwrap();
@@ -478,6 +575,7 @@ async fn branch_change_rescan_and_switch_reassociate_sessions() {
     runtime
         .switch_to_session("s1", project.path().to_path_buf())
         .await;
+    assert_eq!(runtime.active_sessions().await, 2);
     assert_eq!(
         runtime.session_state("s1").await.unwrap().project.revision,
         rozsa_app::dev_flow::DevFlowRevisionKey::NamedBranch("main".to_owned())
@@ -498,6 +596,7 @@ async fn branch_change_rescan_and_switch_reassociate_sessions() {
         runtime.session_state("s2").await.unwrap().project.revision,
         rozsa_app::dev_flow::DevFlowRevisionKey::NamedBranch("feature".to_owned())
     );
+    assert_eq!(runtime.active_sessions().await, 2);
 
     // The two-second selected-project probe detects the same change.
     write_status(project.path(), "beta");
@@ -507,6 +606,13 @@ async fn branch_change_rescan_and_switch_reassociate_sessions() {
         runtime.session_state("s1").await.unwrap().project.revision,
         rozsa_app::dev_flow::DevFlowRevisionKey::NamedBranch("beta".to_owned())
     );
+    assert_eq!(runtime.active_sessions().await, 2);
+
+    let stopped_at = UNIX_EPOCH + Duration::from_secs(5_200_000);
+    runtime.session_finished("s2", stopped_at).await;
+    runtime.probe_once().await;
+    assert_eq!(runtime.active_sessions().await, 1);
+    assert_eq!(runtime.last_stop_at("s2").await, Some(stopped_at));
 
     // Session switching re-evaluates identity and protects the new project.
     let other = tempfile::tempdir().unwrap();
@@ -689,12 +795,69 @@ async fn dashboard_start_failure_uses_per_project_error_id() {
     let _ = factory;
 }
 
+#[tokio::test]
+async fn repeated_project_failure_updates_the_same_notification_id() {
+    let (notifier, mut rx) = notifier();
+    let project = tempfile::tempdir().unwrap();
+    write_status(project.path(), "main");
+    let runner = Arc::new(FakeRunner::default());
+    runner.add_git_project(project.path(), "main", &"m".repeat(40));
+    let discovery = FakeDiscoveryRunner::default();
+    discovery.set_found("dow 1.2.3");
+    let (environment, _dow_dir) = environment();
+    let factory = UpdatingFailingFactory::default();
+    let provider: DashboardFactoryProvider = {
+        let factory = factory.clone();
+        Arc::new(move |_executable| Arc::new(factory.clone()))
+    };
+    let runtime = DevFlowRuntime::new(notifier, runner, Arc::new(discovery), environment, provider);
+    let settings = DevFlowSettings::default();
+    runtime.reconfigure(&settings).await.unwrap();
+    runtime
+        .session_started("s1", project.path().to_path_buf())
+        .await;
+    let first = rx.recv().await.expect("first failure notification");
+
+    runtime.reconfigure(&settings).await.unwrap();
+    let second = loop {
+        let event = rx.recv().await.expect("updated failure notification");
+        if matches!(event, AppNotificationEvent::Upsert { .. }) {
+            break event;
+        }
+    };
+
+    let unpack = |event| match event {
+        AppNotificationEvent::Upsert { id, message, .. } => (id, message),
+        other => panic!("expected upsert, got {other:?}"),
+    };
+    let (first_id, first_message) = unpack(first);
+    let (second_id, second_message) = unpack(second);
+    assert_eq!(first_id, second_id, "the project owns one stable error ID");
+    assert_ne!(
+        first_message, second_message,
+        "new failure detail is emitted"
+    );
+}
+
 struct FailingFactory;
 
 #[async_trait]
 impl DashboardServiceFactory for FailingFactory {
     async fn start(&self, _project: &DevFlowProjectKey) -> Result<DevFlowServiceHandle, String> {
         Err("boom".to_string())
+    }
+}
+
+#[derive(Clone, Default)]
+struct UpdatingFailingFactory {
+    attempts: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl DashboardServiceFactory for UpdatingFailingFactory {
+    async fn start(&self, _project: &DevFlowProjectKey) -> Result<DevFlowServiceHandle, String> {
+        let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
+        Err(format!("failure attempt {attempt}"))
     }
 }
 

@@ -83,6 +83,9 @@ fn merge_dev_flow(
             show_sidebar_status: overlay
                 .show_sidebar_status
                 .unwrap_or(base.show_sidebar_status),
+            show_dashboard_button: overlay
+                .show_dashboard_button
+                .unwrap_or(base.show_dashboard_button),
             executable_path: overlay
                 .executable_path
                 .clone()

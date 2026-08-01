@@ -17,8 +17,8 @@ reusable notification center without coupling GUI code to dev-flow API details.
   and resource accounting.
 - Open Task/Issue counts, claimed work rows, responsive read-only detail UI, and
   a Dashboard action in the sidebar.
-- A dedicated Dev-flow settings pane with automatic/custom CLI selection,
-  diagnostics, installation guidance, and dependent enablement.
+- A dedicated Dev-flow settings pane with one resolved CLI Path control, a flat
+  project Overview, installation guidance, and dependent enablement.
 - Structured presentation for supported successful create, claim, task-done,
   and issue-close Bash calls while preserving raw execution details.
 - A general app notification center with independent timers and unresolved-error
@@ -216,11 +216,12 @@ Add typed settings with serde defaults:
 struct DevFlowSettings {
     enabled: bool,                 // default true
     show_sidebar_status: bool,     // default true
+    show_dashboard_button: bool,   // default true
     executable_path: Option<PathBuf>, // None = automatic
 }
 ```
 
-All three settings are global application settings. This matches the master
+All four settings are global application settings. This matches the master
 switch's process-wide ownership semantics and prevents one project-scoped value
 from ambiguously enabling or stopping services shared by several sessions.
 `SettingsManager` gains field-preserving typed Dev-flow update methods instead
@@ -259,12 +260,37 @@ The settings pane uses dedicated typed commands:
 get_dev_flow_settings
 set_dev_flow_enabled
 set_dev_flow_sidebar_status
+set_dev_flow_dashboard_button
 set_dev_flow_executable_path
 rescan_dev_flow
 ```
 
-It remains visible when `dow` is missing and shows the official Homebrew, npm,
-and Cargo commands without executing them.
+All Dev-flow setting mutations are serialized by the backend and return the
+authoritative post-mutation snapshot. The frontend coalesces rapid interactions
+and ignores stale completions, so an earlier request cannot overwrite a newer
+master-switch intent. Master/sidebar/dashboard visibility mutations publish a
+fresh sidebar snapshot immediately.
+
+The pane remains visible when `dow` is missing and shows the official Homebrew,
+npm, and Cargo commands without executing them. Automatic installation/setup
+and Dev-flow-specific system-prompt injection are deferred in `docs/TODO.md`
+because both require a coordinated Rózsa/dev-flow contract. The master switch
+must not claim to control either feature until that contract is implemented.
+
+The pane uses the same title, typography, spacing, hairline separation, toggle,
+input, and button components as the other Settings tabs. It has no gray
+diagnostic-card background. The header combines `Dev Flow` with the detected
+version and a short description. A flat `Overview` group contains Dashboard
+Availability, Dashboard address, current-project Memory Use, and one Path row.
+The Path row shows the resolved executable and a native `Choose…` action; a
+custom selection additionally exposes a quiet `Use automatic path` action.
+There is no second Executable/Auto/Custom block and no duplicated CLI summary.
+
+The `Settings` group contains exactly the master switch, `Show Dev Flow status
+in sidebar`, and `Show Dashboard button`. Behavior switches are dependent on
+the master switch and compatible CLI, while Path recovery and missing-CLI
+guidance remain usable. When `dow` is missing, the header recommends installation
+and exposes `Check again`; it does not expose a nonfunctional install button.
 
 ### 4. Project identity and service registry
 
@@ -575,11 +601,12 @@ Rust file whose symbol structure changes; never edit generated trees manually.
   Task/Issue cards with short ID and title when available; reload reconstructs
   them from persisted execution-time project/revision records without execution
   or cross-project enrichment, and expansion preserves raw Bash evidence.
-- SPEC-AC-011: Dev-flow Settings exposes CLI/version/path/project diagnostics,
-  master/sidebar switches, Auto/custom path, rescan, and official install
-  commands; dependent controls disable when the master switch or CLI is
-  unavailable. Tests prove global scope, disable cleanup, valid executable
-  replacement/restart, and invalid-custom-path failure without fallback.
+- SPEC-AC-011: Dev-flow Settings matches the shared Settings visual language;
+  its header shows version/description, its flat Overview shows availability,
+  address, measured current-project memory and one editable Path row, and its
+  Settings group contains master/sidebar/dashboard switches without duplicated
+  executable controls or a gray diagnostic card. Missing-CLI guidance remains
+  actionable without pretending automatic installation exists.
 - SPEC-AC-012: Notification tests prove downward stacking, independent six-second
   timers, per-toast hover pause, upward reflow, deduplication, hover/focus error
   expansion, click pinning, and automatic unresolved-count reduction on Resolve.
@@ -594,6 +621,15 @@ Rust file whose symbol structure changes; never edit generated trees manually.
 - SPEC-AC-015: Relevant focused Cargo/frontend tests, formatting, clippy, real
   isolated contract verification, responsive macOS GUI validation, generated
   FrameworkTrees, and synchronized GUI docs/prototype all pass before delivery.
+- SPEC-AC-016: Rapid master-switch changes are serialized/latest-authoritative;
+  dependent controls always recover after re-enable, setting failures remain
+  visible, and master/sidebar/dashboard mutations immediately publish correct
+  sidebar visibility without requiring a session event or restart.
+- SPEC-AC-017: The master switch controls currently implemented integration
+  behavior (service ownership, status rows, Dashboard action, notifications and
+  tool presentation) without claiming prompt/setup behavior that remains in
+  `docs/TODO.md`. Current-project memory comes from measured dashboard RSS plus
+  owned snapshot/cache overhead and is formatted in MiB.
 
 ## Risks
 

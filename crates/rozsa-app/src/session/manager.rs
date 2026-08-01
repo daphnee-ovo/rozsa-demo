@@ -28,6 +28,7 @@
 // ├── append_model_change()
 // ├── append_thinking_effort_change()
 // ├── append_custom()
+// ├── append_dev_flow_presentation()
 // ├── append_label()
 // ├── leaf_id()
 // ├── session_id()
@@ -37,6 +38,7 @@
 // ├── copy_context_messages_from()
 // ├── copy_context_messages_from_path()
 // ├── latest_custom()
+// ├── dev_flow_presentation_records()
 // ├── append_session_info()
 // ├── open()
 // ├── delete()
@@ -56,6 +58,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+
+use crate::dev_flow::{DEV_FLOW_PRESENTATION_CUSTOM_TYPE, DevFlowPresentationRecord};
 
 const SESSION_VERSION: u32 = 3;
 
@@ -542,6 +546,16 @@ impl SessionManager {
         self.append_entry(entry)
     }
 
+    /// Persist a typed, non-message Dev-flow presentation record.
+    pub fn append_dev_flow_presentation(
+        &mut self,
+        record: &DevFlowPresentationRecord,
+    ) -> Result<String> {
+        let payload = serde_json::to_value(record)
+            .context("Failed to serialize Dev-flow presentation record")?;
+        self.append_custom(DEV_FLOW_PRESENTATION_CUSTOM_TYPE.to_string(), Some(payload))
+    }
+
     /// Append a label entry as child of current leaf.
     ///
     /// # Arguments
@@ -638,6 +652,30 @@ impl SessionManager {
             })
             .max_by(|left, right| left.base.timestamp.cmp(&right.base.timestamp))
             .cloned()
+    }
+
+    /// Return typed Dev-flow records on the active branch in append order.
+    /// Unknown custom metadata remains ignored for backward compatibility;
+    /// malformed records of the recognized type fail transparently.
+    pub fn dev_flow_presentation_records(&self) -> Result<Vec<DevFlowPresentationRecord>> {
+        self.entries()
+            .into_iter()
+            .filter_map(|entry| match entry {
+                SessionEntry::Custom(custom)
+                    if custom.custom_type == DEV_FLOW_PRESENTATION_CUSTOM_TYPE =>
+                {
+                    Some(
+                        custom.data.ok_or_else(|| {
+                            anyhow::anyhow!("Dev-flow presentation record has no data")
+                        }),
+                    )
+                }
+                _ => None,
+            })
+            .map(|value| {
+                serde_json::from_value(value?).context("Invalid Dev-flow presentation record")
+            })
+            .collect()
     }
 
     /// Append a session_info entry recording the user-facing display name.

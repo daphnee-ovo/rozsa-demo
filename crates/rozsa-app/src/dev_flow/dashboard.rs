@@ -625,9 +625,9 @@ impl TryFrom<DashboardIssueDto> for DevFlowIssue {
 
 /// Extracts the canonical item id (`TASK-T007`, `ISSUE-I001`) from the
 /// dashboard value. The real dow dashboard may append title text after the id
-/// when an issue entry is malformed; the leading prefix plus digits remain the
-/// authoritative identity and trailing junk is ignored. A value without the
-/// expected prefix or with no digits is still rejected as incompatible.
+/// when an issue entry is malformed. Only a known title delimiter (whitespace,
+/// `:`, or `：`) may follow the canonical digits; arbitrary suffixes are rejected
+/// so two distinct source values cannot silently collapse to one identity.
 fn normalize_id(id: &str, prefix: &str) -> Result<String, DevFlowError> {
     let Some(rest) = id.strip_prefix(prefix) else {
         return Err(DevFlowError::IncompatibleApi(format!(
@@ -636,6 +636,17 @@ fn normalize_id(id: &str, prefix: &str) -> Result<String, DevFlowError> {
     };
     let digits: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
     if digits.is_empty() {
+        return Err(DevFlowError::IncompatibleApi(format!(
+            "invalid item id `{id}`"
+        )));
+    }
+    let suffix = &rest[digits.len()..];
+    if !suffix.is_empty()
+        && !suffix
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_whitespace() || matches!(ch, ':' | '：'))
+    {
         return Err(DevFlowError::IncompatibleApi(format!(
             "invalid item id `{id}`"
         )));
@@ -834,8 +845,9 @@ pub async fn start_dashboard_with_delay(
                     stderr: String::from_utf8_lossy(&stderr.lock().await).into_owned(),
                 });
             }
-            match client.fetch_snapshot_cancellable(cancellation).await {
-                Ok(initial_snapshot) => {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match timeout(remaining, client.fetch_snapshot_cancellable(cancellation)).await {
+                Ok(Ok(initial_snapshot)) => {
                     return Ok(DashboardProcess {
                         child,
                         process_group,
@@ -846,11 +858,21 @@ pub async fn start_dashboard_with_delay(
                         port,
                     });
                 }
-                Err(DevFlowError::Cancelled) => {
+                Ok(Err(DevFlowError::Cancelled)) => {
                     cleanup_child(&mut child, &mut process_group, stderr_task).await;
                     return Err(DevFlowError::Cancelled);
                 }
-                Err(_) => sleep(timing.startup_poll_interval).await,
+                Ok(Err(_)) => {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    sleep(timing.startup_poll_interval.min(remaining)).await;
+                }
+                Err(_) => {
+                    cleanup_child(&mut child, &mut process_group, stderr_task).await;
+                    return Err(DevFlowError::StartupTimeout {
+                        timeout: timing.startup_timeout,
+                        stderr: String::from_utf8_lossy(&stderr.lock().await).into_owned(),
+                    });
+                }
             }
         }
     }

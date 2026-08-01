@@ -63,6 +63,7 @@ button { font: inherit; }
 .quota-bar-fill.warn { background: var(--warning); }
 .sidebar-bottom { padding: 8px 6px; }
 .sidebar-action, .settings-back, .settings-tab { width: 100%; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; text-align: left; }
+.sidebar-action[hidden] { display: none; }
 .sidebar-action:hover, .settings-back:hover, .settings-tab:hover, .settings-tab.active { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--fg); }
 .settings-scene { padding: 54px 14px 20px; }
 .settings-back { margin-bottom: 18px; }
@@ -96,7 +97,7 @@ body.native-fullscreen .sidebar-scene { padding-top: 0; }
     </div>
   </div>
   <div class="sidebar-bottom">
-    <button class="sidebar-action" id="sidebarDevFlowDashboard" type="button" onclick="openDevFlowDashboard()" disabled>Dashboard</button>
+    <button class="sidebar-action" id="sidebarDevFlowDashboard" type="button" onclick="openDevFlowDashboard()" disabled hidden>Dashboard</button>
     <button class="sidebar-action" type="button" onclick="openSidebarSettings()">Settings</button>
   </div>
 </section>

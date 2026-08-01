@@ -6,6 +6,14 @@
 
 ## Deferred product work
 
+- **Dev-flow automatic installation and Rózsa setup** — define a signed,
+  failure-transparent install/setup contract across Rózsa and dev-flow before
+  making the missing-CLI recommendation actionable. The current Settings UI
+  must not imply that installation is already available.
+- **Dev-flow system-prompt injection** — coordinate the prompt fragment,
+  compatibility/version handshake, ownership, session-refresh semantics and
+  disable behavior with dev-flow. Until then, `Enable Dev Flow` controls only
+  implemented runtime/UI integration and must not claim to modify prompts.
 - **Model metadata reduction** — evaluate whether embedded model API and pricing metadata should be reduced or sourced differently, without weakening offline model selection.
 - **Graph diff rendering** — decide whether graph views should render file diffs and define the interaction and performance contract first.
 - **Codex OAuth compatibility review** — periodically compare the supported OpenAI Codex OAuth flow with the upstream Codex implementation and record any deliberate behavior changes.

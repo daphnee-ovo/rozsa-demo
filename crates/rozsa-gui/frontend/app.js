@@ -233,6 +233,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('question-request', ev => showUserQuestion(ev.payload));
   await listen('error', ev => showError(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
   await listen('dev-flow-detail', ev => showDevFlowDetail(ev.payload));
+  await listen('dev-flow-detail-dismiss', () => closeDevFlowDetail());
   await listen('app-notification', ev => {
     const payload = ev.payload;
     if (payload && payload.type === 'upsert') {
@@ -352,14 +353,14 @@ function renderState(snap) {
       : (questions.length ? 'question' : (isStreaming ? 'running' : 'idle'));
   }
   if (snap.streamUpdate) {
-    renderMessages(snap.messages, true, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
+    renderMessages(snap.messages, true, snap.sessionId || null, snap.turnActivity, snap.turnSummaries, snap.devFlowPresentations);
     return;
   }
   updateHeader(snap);
   updateContextUsage(snap.contextUsage);
   updateQuotaVisibility(snap.model);
   if (!nativeSplitMode) updateSidebar(snap);
-  renderMessages(snap.messages, snap.isStreaming, snap.sessionId || null, snap.turnActivity, snap.turnSummaries);
+  renderMessages(snap.messages, snap.isStreaming, snap.sessionId || null, snap.turnActivity, snap.turnSummaries, snap.devFlowPresentations);
   renderRunningMessages(snap.queuedMessages, snap.steeringConversation);
   updateAbortButton();
   if (!nativeSplitMode) renderSessionList();
@@ -550,7 +551,7 @@ function updateAbortButton() {
 
 // =============== Message Rendering ===============
 
-function renderMessages(messages, streaming, sessionId = null, turnActivity = null, turnSummaries = []) {
+function renderMessages(messages, streaming, sessionId = null, turnActivity = null, turnSummaries = [], devFlowPresentations = {}) {
   const container = document.getElementById('chatMessages');
   if (!container) return;
   const sessionChanged = renderedMessageSessionId !== sessionId;
@@ -611,7 +612,8 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
     sessionId,
   );
   const keys = visibleMessages.map((raw, index) => JSON.stringify(raw) +
-    JSON.stringify(activityForVisibleIndex(index)) + ':' + (thinkingDurationForIndex(index) ?? ''));
+    JSON.stringify(activityForVisibleIndex(index)) + ':' + (thinkingDurationForIndex(index) ?? '') +
+    devFlowPresentationRenderKey(raw, devFlowPresentations));
   const sameSession = renderedMessageSessionId === sessionId;
   let firstChanged = -1;
   if (sameSession) {
@@ -664,6 +666,7 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
         activityForVisibleIndex(i),
         thinkingDurationForIndex(i),
         isThinkingExpanded(sessionId, i),
+        devFlowPresentations,
       ));
     }
   }
@@ -682,6 +685,18 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
   if (turnActivityKey) renderedTurnActivityKey = turnActivityKey;
   if (restoringScroll) restoreSessionViewState(sessionId, container, savedView);
   else if (shouldStickToBottom) scrollChatToBottom(container);
+}
+
+function devFlowPresentationRenderKey(raw, presentations) {
+  const content = raw && raw.message && raw.message.content;
+  if (!Array.isArray(content)) return '';
+  const relevant = {};
+  for (const block of content) {
+    if (block.type === 'toolCall' && block.id && presentations && presentations[block.id]) {
+      relevant[block.id] = presentations[block.id];
+    }
+  }
+  return JSON.stringify(relevant);
 }
 
 function countTools(messages) {
@@ -755,7 +770,7 @@ function restoreSessionViewState(sessionId, container, savedView) {
   });
 }
 
-function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false) {
+function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false, devFlowPresentations = {}) {
   const div = document.createElement('div');
 
   if (raw.kind === 'custom') {
@@ -817,8 +832,11 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
       trackTool(tc.name);
       // 通过 tc.id 查找对应的 toolResult
       const result = toolResultMap && tc.id ? toolResultMap[tc.id] : null;
+      const devFlowPresentation = tc.id ? devFlowPresentations[tc.id] : null;
       const tcStatus = result ? (result.isError ? 's-error' : 's-success') : 's-running';
-      const toolTitle = formatToolTitle(tc);
+      const toolTitle = devFlowPresentation
+        ? formatDevFlowToolTitle(devFlowPresentation)
+        : formatToolTitle(tc);
       const resultOutput = result ? result.output : '';
       const bodyOutput = resultOutput || formatToolArgs(tc);
       const delta = result && Array.isArray(result.details.file_deltas) ? result.details.file_deltas[0] : null;
@@ -833,9 +851,13 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
       } else if (delta && tc.name.toLowerCase() === 'edit' && typeof delta.patch === 'string') {
         toolBody = renderDiffView(delta.patch);
         toolBodyClass = ' diff-view';
+      } else if (devFlowPresentation && result) {
+        toolBody = renderDevFlowToolEvidence(tc, result);
+        toolBodyClass = ' dev-flow-tool-evidence';
       }
 
       body += '<div class="tool-call' + (isToolCallExpanded(tc.id) ? ' expanded' : '') +
+        (devFlowPresentation ? ' dev-flow-tool-call' : '') +
         '" data-tool-call-id="' + escapeHtml(tc.id || '') + '" data-session-id="' +
         escapeHtml(activeSessionId || '') + '" onclick="toggleToolCall(this)">' +
         '<div class="tool-track"><div class="tool-icon">' + toolIcon(tc.name) + '</div>' +
@@ -888,6 +910,41 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
   }
 
   return div;
+}
+
+function formatDevFlowToolTitle(presentation) {
+  const action = {
+    created: 'Created',
+    claimed: 'Claimed',
+    completed: 'Completed',
+    closed: 'Closed',
+  }[presentation.action] || 'Dev-flow';
+  const items = Array.isArray(presentation.items) ? presentation.items : [];
+  const arg = items.map(item => {
+    const kind = item.kind === 'issue' ? 'Issue' : 'Task';
+    return kind + ' ' + (item.shortId || item.id || '') + ' ' + (item.title || 'Details unavailable');
+  }).join(' · ');
+  return { name: action, arg };
+}
+
+function renderDevFlowToolEvidence(toolCall, result) {
+  const details = result.details || {};
+  const command = toolCall.arguments && toolCall.arguments.command
+    ? toolCall.arguments.command
+    : '';
+  const facts = [
+    details.exit_code !== undefined && details.exit_code !== null ? 'exit ' + details.exit_code : 'exit unavailable',
+    Number.isFinite(details.duration_ms) ? details.duration_ms + 'ms' : 'duration unavailable',
+    Number.isFinite(details.timeout_ms) ? 'timeout ' + details.timeout_ms + 'ms' : 'timeout unavailable',
+    details.truncated ? 'truncated' : 'not truncated',
+  ];
+  const deltas = Array.isArray(details.file_deltas) ? details.file_deltas : [];
+  return '<div class="dev-flow-tool-command">$ ' + escapeHtml(command) + '</div>' +
+    '<div class="dev-flow-tool-meta">' + facts.map(escapeHtml).join(' · ') + '</div>' +
+    '<pre>' + escapeHtml(result.output || '') + '</pre>' +
+    (deltas.length
+      ? '<div class="dev-flow-tool-deltas"><span>File delta</span><pre>' + escapeHtml(JSON.stringify(deltas, null, 2)) + '</pre></div>'
+      : '');
 }
 
 function formatToolArgs(tc) {
@@ -2765,117 +2822,164 @@ async function loadSettings() {
 }
 
 let devFlowSettings = null;
+let devFlowSettingsRevision = 0;
 
-async function loadDevFlowSettings() {
-  try {
-    devFlowSettings = await invoke('get_dev_flow_settings');
-  } catch (e) {
-    console.warn('dev-flow settings:', e);
-    devFlowSettings = null;
-  }
+function acceptDevFlowSettingsSnapshot(revision, snapshot) {
+  if (revision !== devFlowSettingsRevision) return false;
+  devFlowSettings = snapshot;
   renderDevFlowSettings();
+  return true;
 }
 
-function devFlowAddRow(container, label, value) {
-  const row = document.createElement('div');
-  row.className = 'dev-flow-diagnostic-row';
-  const name = document.createElement('span');
-  name.className = 'dev-flow-diagnostic-label';
-  name.textContent = label;
-  const text = document.createElement('span');
-  text.textContent = value == null ? '—' : String(value);
-  row.append(name, text);
-  container.appendChild(row);
+async function loadDevFlowSettings() {
+  const revision = ++devFlowSettingsRevision;
+  try {
+    const snapshot = await invoke('get_dev_flow_settings');
+    if (!acceptDevFlowSettingsSnapshot(revision, snapshot)) return;
+    resolveNotification('dev-flow.settings-load');
+  } catch (e) {
+    if (revision !== devFlowSettingsRevision) return;
+    console.warn('dev-flow settings:', e);
+    devFlowSettings = null;
+    showDevFlowSettingsError('dev-flow.settings-load', 'Could not load settings', e);
+  }
+  if (revision === devFlowSettingsRevision && !devFlowSettings) renderDevFlowSettings();
+}
+
+function showDevFlowSettingsError(id, title, error) {
+  upsertNotification({
+    id,
+    severity: 'error',
+    title,
+    message: String(error),
+    timeoutMs: NOTIFICATION_TIMEOUT_MS,
+  });
+}
+
+function setDevFlowDependentControlDisabled(control, disabled) {
+  if (!control) return;
+  control.disabled = disabled;
+  control.setAttribute('aria-disabled', String(disabled));
+  const item = control.closest('.setting-item');
+  if (item) item.classList.toggle('is-disabled', disabled);
+}
+
+function setDevFlowText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
+}
+
+function formatDevFlowMemory(bytes) {
+  if (!Number.isFinite(bytes)) return 'Unavailable';
+  return (bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0) + ' MiB';
+}
+
+function devFlowDependentControlsDisabled(settings) {
+  return !settings.enabled || !settings.cli.available;
 }
 
 function renderDevFlowSettings() {
   const s = devFlowSettings;
   const enabled = document.getElementById('devFlowEnabled');
   const sidebarStatus = document.getElementById('devFlowSidebarStatus');
-  const cli = document.getElementById('devFlowCliDiagnostics');
-  const project = document.getElementById('devFlowProjectDiagnostics');
-  const auto = document.getElementById('devFlowSourceAuto');
-  const custom = document.getElementById('devFlowSourceCustom');
+  const dashboardButton = document.getElementById('devFlowDashboardButton');
   const pathInput = document.getElementById('devFlowExecutablePath');
+  const pickExecutable = document.getElementById('devFlowPickExecutable');
   if (!s) return;
   setSettingSwitch(enabled, s.enabled);
-  setSettingSwitch(sidebarStatus, s.show_sidebar_status);
-  if (cli) {
-    cli.replaceChildren();
-    if (s.cli.available) {
-      devFlowAddRow(cli, 'Executable', s.cli.executable);
-      devFlowAddRow(cli, 'Version', s.cli.version);
-      devFlowAddRow(cli, 'Source', s.cli.source);
-    } else {
-      devFlowAddRow(cli, 'CLI', s.cli.error || 'Not found');
-    }
+  setSettingSwitch(sidebarStatus, s.showSidebarStatus);
+  setSettingSwitch(dashboardButton, s.showDashboardButton);
+  setDevFlowText('devFlowVersion', s.cli.available
+    ? 'Version ' + (s.cli.version || 'unknown')
+    : 'Not detected');
+  const availability = !s.cli.available
+    ? 'Unavailable'
+    : s.project
+      ? s.project.availability.charAt(0).toUpperCase() + s.project.availability.slice(1)
+      : 'No active project';
+  setDevFlowText('devFlowDashboardAvailability', availability);
+  setDevFlowText('devFlowDashboardAddress', s.project?.dashboardUrl || 'Unavailable');
+  setDevFlowText('devFlowMemoryUse', formatDevFlowMemory(s.project?.memoryUseBytes));
+  if (pathInput) pathInput.value = s.executablePath || s.cli.executable || 'Not detected';
+  const dependentDisabled = devFlowDependentControlsDisabled(s);
+  // The master switch must remain available even when the disabled runtime has
+  // not performed CLI discovery yet; enabling it is what triggers discovery.
+  setDevFlowDependentControlDisabled(enabled, false);
+  setDevFlowDependentControlDisabled(sidebarStatus, dependentDisabled);
+  setDevFlowDependentControlDisabled(dashboardButton, dependentDisabled);
+  setDevFlowDependentControlDisabled(pickExecutable, false);
+  const useAutomatic = document.getElementById('devFlowUseAutomatic');
+  if (useAutomatic) useAutomatic.hidden = !s.executablePath;
+  const missing = document.getElementById('devFlowMissing');
+  if (missing) missing.hidden = s.cli.available;
+}
+
+async function updateDevFlowSettings(command, args, optimistic, errorId, errorTitle) {
+  const revision = ++devFlowSettingsRevision;
+  const previous = devFlowSettings;
+  if (devFlowSettings && optimistic) {
+    devFlowSettings = { ...devFlowSettings, ...optimistic };
+    renderDevFlowSettings();
   }
-  if (project) {
-    project.replaceChildren();
-    if (s.project) {
-      devFlowAddRow(project, 'Root', s.project.root);
-      devFlowAddRow(project, 'Revision', s.project.revision);
-      devFlowAddRow(project, 'Availability', s.project.availability);
-      if (s.project.message) devFlowAddRow(project, 'Detail', s.project.message);
-    } else {
-      devFlowAddRow(project, 'Status', 'No active session');
-    }
+  try {
+    const snapshot = await invoke(command, args || {});
+    if (!acceptDevFlowSettingsSnapshot(revision, snapshot)) return;
+    resolveNotification(errorId);
+  } catch (e) {
+    if (revision !== devFlowSettingsRevision) return;
+    devFlowSettings = previous;
+    renderDevFlowSettings();
+    showDevFlowSettingsError(errorId, errorTitle, e);
   }
-  if (auto) auto.checked = !s.executable_path;
-  if (custom) custom.checked = !!s.executable_path;
-  if (pathInput) pathInput.value = s.executable_path || '';
-  const install = document.querySelector('.dev-flow-install');
-  if (install) install.hidden = !!s.cli.available;
 }
 
 function wireDevFlowSettings() {
-  wireSettingSwitch('devFlowEnabled', async enabled => {
-    try {
-      await invoke('set_dev_flow_enabled', { enabled });
-    } catch (e) {
-      showError('Failed to update Dev Flow: ' + String(e));
-    }
-    await loadDevFlowSettings();
+  wireSettingSwitch('devFlowEnabled', enabled => {
+    void updateDevFlowSettings(
+      'set_dev_flow_enabled', { enabled }, { enabled },
+      'dev-flow.settings-enabled', 'Could not update integration'
+    );
   });
-  wireSettingSwitch('devFlowSidebarStatus', async enabled => {
-    try {
-      await invoke('set_dev_flow_sidebar_status', { enabled });
-    } catch (e) {
-      showError('Failed to update Dev Flow: ' + String(e));
-    }
-    await loadDevFlowSettings();
+  wireSettingSwitch('devFlowSidebarStatus', enabled => {
+    void updateDevFlowSettings(
+      'set_dev_flow_sidebar_status', { enabled }, { showSidebarStatus: enabled },
+      'dev-flow.settings-sidebar', 'Could not update sidebar status'
+    );
   });
-  const auto = document.getElementById('devFlowSourceAuto');
-  const custom = document.getElementById('devFlowSourceCustom');
-  const pathInput = document.getElementById('devFlowExecutablePath');
+  wireSettingSwitch('devFlowDashboardButton', enabled => {
+    void updateDevFlowSettings(
+      'set_dev_flow_dashboard_button', { enabled }, { showDashboardButton: enabled },
+      'dev-flow.settings-dashboard', 'Could not update Dashboard button'
+    );
+  });
+  const pickExecutable = document.getElementById('devFlowPickExecutable');
+  const useAutomatic = document.getElementById('devFlowUseAutomatic');
   const rescan = document.getElementById('devFlowRescan');
-  const applyPath = async () => {
-    const useCustom = custom && custom.checked;
-    const path = useCustom && pathInput ? pathInput.value.trim() : null;
-    if (useCustom && !path) {
-      showError('Enter an absolute path to the dow executable');
-      await loadDevFlowSettings();
-      return;
-    }
-    try {
-      await invoke('set_dev_flow_executable_path', { path });
-    } catch (e) {
-      showError('Failed to update Dev Flow executable: ' + String(e));
-    }
-    await loadDevFlowSettings();
-  };
-  if (auto) auto.onchange = applyPath;
-  if (custom) custom.onchange = applyPath;
-  if (pathInput) pathInput.onchange = applyPath;
-  if (rescan) {
-    rescan.onclick = async () => {
+  if (pickExecutable) {
+    pickExecutable.onclick = async () => {
       try {
-        await invoke('rescan_dev_flow');
+        const path = await invoke('pick_dev_flow_executable');
+        if (!path) return;
+        await updateDevFlowSettings(
+          'set_dev_flow_executable_path', { path }, { executablePath: path },
+          'dev-flow.settings-executable', 'Could not update executable'
+        );
       } catch (e) {
-        showError('Failed to rescan Dev Flow: ' + String(e));
+        showDevFlowSettingsError('dev-flow.settings-picker', 'Could not choose executable', e);
       }
-      await loadDevFlowSettings();
     };
+  }
+  if (useAutomatic) {
+    useAutomatic.onclick = () => void updateDevFlowSettings(
+      'set_dev_flow_executable_path', { path: null }, { executablePath: null },
+      'dev-flow.settings-executable', 'Could not restore automatic discovery'
+    );
+  }
+  if (rescan) {
+    rescan.onclick = () => void updateDevFlowSettings(
+      'rescan_dev_flow', {}, null,
+      'dev-flow.settings-rescan', 'Could not check for Dev Flow'
+    );
   }
 }
 
@@ -4663,7 +4767,16 @@ function showError(message) {
 // ============ 通知中心：主视图全局 toast 层 ============
 const NOTIFICATION_TIMEOUT_MS = 6000;
 // ============ Dev-flow 只读详情浮层 ============
+const DEV_FLOW_DETAIL_BASELINE_LIMIT = 32;
 const devFlowDetailBaselines = new Map();
+
+function rememberDevFlowDetailBaseline(projectKey, revision) {
+  devFlowDetailBaselines.delete(projectKey);
+  devFlowDetailBaselines.set(projectKey, revision);
+  while (devFlowDetailBaselines.size > DEV_FLOW_DETAIL_BASELINE_LIMIT) {
+    devFlowDetailBaselines.delete(devFlowDetailBaselines.keys().next().value);
+  }
+}
 let devFlowDetailOpen = false;
 
 function showDevFlowDetail(payload) {
@@ -4673,7 +4786,7 @@ function showDevFlowDetail(payload) {
   // The main view rejects stale or out-of-order events for a project it has
   // already rendered at a newer snapshot revision.
   if (payload.revision < baseline) return;
-  devFlowDetailBaselines.set(projectKey, payload.revision);
+  rememberDevFlowDetailBaseline(projectKey, payload.revision);
   renderDevFlowDetail(payload);
   openDevFlowDetailPanel();
 }
@@ -4741,6 +4854,40 @@ function renderDevFlowDetail(payload) {
       desc.textContent = item.description;
       row.appendChild(desc);
     }
+    const files = [];
+    (item.filesCreate || []).forEach(file => files.push('CREATE: ' + file));
+    (item.filesModify || []).forEach(file => files.push('MODIFY: ' + file));
+    (item.filesTest || []).forEach(file => files.push('TEST: ' + file));
+    if (files.length) {
+      const fileDetails = document.createElement('details');
+      fileDetails.className = 'dev-flow-detail-disclosure';
+      const fileSummary = document.createElement('summary');
+      fileSummary.textContent = 'Files (' + files.length + ')';
+      const fileList = document.createElement('div');
+      fileList.className = 'dev-flow-detail-disclosure-body';
+      files.forEach(file => {
+        const entry = document.createElement('div');
+        entry.textContent = file;
+        fileList.appendChild(entry);
+      });
+      fileDetails.append(fileSummary, fileList);
+      row.appendChild(fileDetails);
+    }
+    if (item.doneWhen && item.doneWhen.length) {
+      const doneDetails = document.createElement('details');
+      doneDetails.className = 'dev-flow-detail-disclosure';
+      const doneSummary = document.createElement('summary');
+      doneSummary.textContent = 'Done when (' + item.doneWhen.length + ')';
+      const doneList = document.createElement('ul');
+      doneList.className = 'dev-flow-detail-disclosure-body';
+      item.doneWhen.forEach(criterion => {
+        const entry = document.createElement('li');
+        entry.textContent = criterion;
+        doneList.appendChild(entry);
+      });
+      doneDetails.append(doneSummary, doneList);
+      row.appendChild(doneDetails);
+    }
     if (payload.focusId && payload.focusId === item.id) {
       row.classList.add('focus');
     }
@@ -4769,6 +4916,9 @@ function closeDevFlowDetail() {
   overlay.hidden = true;
   devFlowDetailOpen = false;
 }
+
+document.getElementById('devFlowDetailClose')
+  ?.addEventListener('click', closeDevFlowDetail);
 
 document.addEventListener('pointerdown', event => {
   if (devFlowDetailOpen && !event.target.closest('#devFlowDetail')) {
@@ -4826,6 +4976,17 @@ function notificationIcon(severity) {
   return 'i';
 }
 
+function applyNotificationPresentation(toast, severity, title, message) {
+  toast.element.className = 'notification-toast notification-' + severity;
+  toast.element.setAttribute('role', severity === 'error' ? 'alert' : 'status');
+  toast.element.querySelector('.notification-icon').textContent = notificationIcon(severity);
+  toast.element.querySelector('.notification-title').textContent = title;
+  toast.element.querySelector('.notification-message').textContent = message;
+  toast.severity = severity;
+  toast.title = title;
+  toast.message = message;
+}
+
 function showNotification(message) {
   legacyNotificationCounter += 1;
   upsertNotification({
@@ -4847,22 +5008,24 @@ function upsertNotification(payload) {
     : NOTIFICATION_TIMEOUT_MS;
   const existing = notificationToasts.get(id);
   if (existing) {
-    existing.element.querySelector('.notification-title').textContent = title;
-    existing.element.querySelector('.notification-message').textContent = message;
-    existing.element.className = 'notification-toast notification-' + severity;
-    existing.severity = severity;
-    existing.title = title;
-    existing.message = message;
+    applyNotificationPresentation(existing, severity, title, message);
     existing.remainingMs = timeoutMs;
     existing.expiresAt = performance.now() + timeoutMs;
     clearTimeout(existing.timer);
-    existing.timer = setTimeout(() => expireNotification(id), timeoutMs);
+    existing.timer = null;
+    if (!existing.paused) {
+      existing.timer = setTimeout(() => expireNotification(id), timeoutMs);
+    }
     return;
   }
   if (unresolvedErrors.has(id)) {
-    unresolvedErrors.set(id, { title, message });
+    if (severity === 'error') {
+      unresolvedErrors.set(id, { title, message });
+      updateNotificationErrorTray();
+      return;
+    }
+    unresolvedErrors.delete(id);
     updateNotificationErrorTray();
-    return;
   }
   const element = document.createElement('div');
   element.className = 'notification-toast notification-' + severity;
@@ -4887,7 +5050,9 @@ function upsertNotification(payload) {
     severity,
     title,
     message,
+    paused: false,
   };
+  applyNotificationPresentation(toast, severity, title, message);
   notificationToasts.set(id, toast);
   toast.expiresAt = performance.now() + timeoutMs;
   toast.timer = setTimeout(() => expireNotification(id), timeoutMs);
@@ -4895,15 +5060,19 @@ function upsertNotification(payload) {
 
 function pauseToastTimer(id) {
   const toast = notificationToasts.get(id);
-  if (!toast || toast.timer == null) return;
-  clearTimeout(toast.timer);
-  toast.timer = null;
-  toast.remainingMs = Math.max(0, toast.expiresAt - performance.now());
+  if (!toast || toast.paused) return;
+  toast.paused = true;
+  if (toast.timer != null) {
+    clearTimeout(toast.timer);
+    toast.timer = null;
+    toast.remainingMs = Math.max(0, toast.expiresAt - performance.now());
+  }
 }
 
 function resumeToastTimer(id) {
   const toast = notificationToasts.get(id);
-  if (!toast || toast.timer != null) return;
+  if (!toast || !toast.paused) return;
+  toast.paused = false;
   if (toast.remainingMs <= 0) {
     expireNotification(id);
     return;

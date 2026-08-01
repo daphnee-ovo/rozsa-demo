@@ -7,15 +7,21 @@
 // Design: ../../../.dev-doc/main/SPEC.md#2-两个持久-webview
 let sidebarInvoke;
 let sidebarListen;
+let sidebarEmit;
 let sidebarSessions = [];
 let sidebarActiveSessionId = null;
 let sidebarDevFlow = null;
-let sidebarLastDevFlowRowLimit = -1;
+let sidebarLastDevFlowLayoutKey = '';
+let sidebarDevFlowRowHeight = 0;
+let sidebarDevFlowMeasureProbe = null;
+let sidebarDevFlowResizePending = false;
 const SIDEBAR_SESSIONS_MIN_PX = 96;
+const DEV_FLOW_HOVER_DELAY_MS = 180;
+let sidebarDevFlowHoverTimer = null;
+let sidebarDevFlowHoverElement = null;
+let sidebarDevFlowDetailPinned = false;
 const sidebarDevFlowResizeObserver = new ResizeObserver(() => {
-  if (sidebarDevFlow && sidebarDevFlow.availability === 'ready') {
-    renderDevFlowClaimedRows();
-  }
+  invalidateDevFlowRowMetrics();
 });
 const sidebarSceneState = { revision: 0, scene: 'main', selectedPane: null };
 const sidebarThemeState = { revision: 0 };
@@ -33,13 +39,14 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   sidebarInvoke = window.__TAURI__.core.invoke;
   sidebarListen = window.__TAURI__.event.listen;
+  sidebarEmit = window.__TAURI__.event.emit;
   await sidebarListen('gui-scene-snapshot', event => applySidebarSceneSnapshot(event.payload));
   await sidebarListen('sidebar-state', event => renderSidebarState(event.payload));
   await sidebarListen('theme-state', event => applySidebarThemeState(event.payload));
   await sidebarListen('native-fullscreen', event => {
     document.body.classList.toggle('native-fullscreen', Boolean(event.payload?.fullscreen));
   });
-  sidebarDevFlowResizeObserver.observe(document.body);
+  setupDevFlowResponsiveLayout();
 
   try {
     const snapshot = await sidebarInvoke('gui_webview_ready', {
@@ -160,24 +167,25 @@ function renderSidebarQuotaWindow(barId, valueId, window, mode) {
 
 function renderSidebarDevFlow(snapshot) {
   const df = snapshot && snapshot.devFlow ? snapshot.devFlow : null;
+  const showDashboard = Boolean(snapshot && snapshot.showDevFlowDashboard);
   sidebarDevFlow = df;
-  sidebarLastDevFlowRowLimit = -1;
+  sidebarLastDevFlowLayoutKey = '';
   const group = document.getElementById('sidebarDevFlowGroup');
   if (!group) return;
   const showSummary = Boolean(df) && df.availability === 'ready' && df.showSidebarStatus;
   group.hidden = !showSummary;
   if (!showSummary) {
-    updateDevFlowDashboardButton(df);
+    updateDevFlowDashboardButton(df, showDashboard);
     return;
   }
   const summary = document.getElementById('sidebarDevFlowSummary');
   if (summary) {
     summary.textContent = devFlowCountLabel(df.openTasks, 'Task') + ' · ' + devFlowCountLabel(df.openIssues, 'Issue');
     summary.classList.toggle('stale', Boolean(df.stale));
-    summary.onclick = () => openDevFlowDetail({ kind: 'summary' });
+    wireDevFlowDetailTrigger(summary, { kind: 'summary' });
   }
   renderDevFlowClaimedRows();
-  updateDevFlowDashboardButton(df);
+  updateDevFlowDashboardButton(df, showDashboard);
 }
 
 function devFlowCountLabel(count, noun) {
@@ -189,17 +197,18 @@ function renderDevFlowClaimedRows() {
   const more = document.getElementById('sidebarDevFlowMore');
   if (!container || !sidebarDevFlow) return;
   const rows = Array.isArray(sidebarDevFlow.claimed) ? sidebarDevFlow.claimed : [];
-  const limit = computeDevFlowRowLimit();
-  if (limit === sidebarLastDevFlowRowLimit) return;
-  sidebarLastDevFlowRowLimit = limit;
+  const layout = computeDevFlowRowLayout(rows.length);
+  const layoutKey = layout.visible + ':' + layout.hidden + ':' + layout.showMore;
+  if (layoutKey === sidebarLastDevFlowLayoutKey) return;
+  sidebarLastDevFlowLayoutKey = layoutKey;
   container.replaceChildren();
-  const visible = rows.slice(0, limit);
+  const visible = rows.slice(0, layout.visible);
   visible.forEach(item => {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'dev-flow-claimed-row';
     row.title = item.title || '';
-    row.onclick = () => openDevFlowDetail({ kind: 'item', id: item.id });
+    wireDevFlowDetailTrigger(row, { kind: 'item', id: item.id });
     const dot = document.createElement('span');
     dot.className = 'dev-flow-claimed-dot';
     dot.setAttribute('aria-hidden', 'true');
@@ -212,21 +221,56 @@ function renderDevFlowClaimedRows() {
     row.append(dot, id, title);
     container.appendChild(row);
   });
-  const hiddenCount = rows.length - visible.length;
   if (more) {
-    more.hidden = hiddenCount <= 0;
-    if (hiddenCount > 0) {
-      more.textContent = 'more ' + hiddenCount;
-      more.onclick = () => openDevFlowDetail({ kind: 'more' });
+    more.hidden = !layout.showMore;
+    if (layout.showMore) {
+      more.textContent = 'more ' + layout.hidden;
+      wireDevFlowDetailTrigger(more, { kind: 'more' });
     }
   }
 }
 
-function computeDevFlowRowLimit() {
+function wireDevFlowDetailTrigger(element, target) {
+  if (!element) return;
+  element.onpointerenter = () => {
+    clearTimeout(sidebarDevFlowHoverTimer);
+    sidebarDevFlowDetailPinned = false;
+    sidebarDevFlowHoverTimer = setTimeout(async () => {
+      sidebarDevFlowHoverTimer = null;
+      sidebarDevFlowHoverElement = element;
+      await openDevFlowDetail(target);
+      if (sidebarDevFlowHoverElement !== element && !sidebarDevFlowDetailPinned) {
+        dismissDevFlowHoverDetail();
+      }
+    }, DEV_FLOW_HOVER_DELAY_MS);
+  };
+  element.onpointerleave = () => {
+    clearTimeout(sidebarDevFlowHoverTimer);
+    sidebarDevFlowHoverTimer = null;
+    if (sidebarDevFlowHoverElement === element) {
+      sidebarDevFlowHoverElement = null;
+      if (!sidebarDevFlowDetailPinned) dismissDevFlowHoverDetail();
+    }
+  };
+  element.onclick = () => {
+    clearTimeout(sidebarDevFlowHoverTimer);
+    sidebarDevFlowHoverTimer = null;
+    const alreadyVisible = sidebarDevFlowHoverElement === element;
+    sidebarDevFlowDetailPinned = true;
+    sidebarDevFlowHoverElement = null;
+    if (!alreadyVisible) void openDevFlowDetail(target);
+  };
+}
+
+function dismissDevFlowHoverDetail() {
+  if (sidebarEmit) void sidebarEmit('dev-flow-detail-dismiss');
+}
+
+function computeDevFlowRowLayout(totalRows) {
   const rowHeight = measureDevFlowRowHeight();
-  if (rowHeight <= 0) return 0;
+  if (rowHeight <= 0) return { visible: 0, hidden: totalRows, showMore: false };
   const statusSection = document.getElementById('sidebarStatusSection');
-  if (!statusSection) return 0;
+  if (!statusSection) return { visible: 0, hidden: totalRows, showMore: false };
   const top = document.body.classList.contains('native-fullscreen') ? 0 : 24;
   const bottom = document.querySelector('.sidebar-bottom')?.getBoundingClientRect().height || 0;
   let base = statusSection.getBoundingClientRect().height;
@@ -235,14 +279,34 @@ function computeDevFlowRowLimit() {
   if (claimed) base -= claimed.getBoundingClientRect().height;
   if (more && !more.hidden) base -= more.getBoundingClientRect().height;
   const budget = window.innerHeight - top - base - bottom - SIDEBAR_SESSIONS_MIN_PX;
-  return Math.max(0, Math.floor(budget / rowHeight));
+  return calculateDevFlowRowLayout(budget, rowHeight, totalRows);
+}
+
+function calculateDevFlowRowLayout(budget, rowHeight, totalRows) {
+  const slots = Math.max(0, Math.floor(budget / rowHeight));
+  if (totalRows <= slots) {
+    return { visible: totalRows, hidden: 0, showMore: false };
+  }
+  if (slots === 0) {
+    return { visible: 0, hidden: totalRows, showMore: false };
+  }
+  const visible = Math.min(totalRows, slots - 1);
+  return { visible, hidden: totalRows - visible, showMore: true };
 }
 
 function measureDevFlowRowHeight() {
+  if (sidebarDevFlowRowHeight > 0) return sidebarDevFlowRowHeight;
+  const probe = ensureDevFlowMeasureProbe();
+  sidebarDevFlowRowHeight = probe.getBoundingClientRect().height;
+  return sidebarDevFlowRowHeight;
+}
+
+function ensureDevFlowMeasureProbe() {
+  if (sidebarDevFlowMeasureProbe) return sidebarDevFlowMeasureProbe;
   const probe = document.createElement('button');
   probe.type = 'button';
   probe.className = 'dev-flow-claimed-row';
-  probe.style.cssText = 'position:absolute;visibility:hidden;left:-10000px;top:0;';
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;left:-10000px;top:0;';
   const dot = document.createElement('span');
   dot.className = 'dev-flow-claimed-dot';
   const id = document.createElement('span');
@@ -252,10 +316,32 @@ function measureDevFlowRowHeight() {
   title.className = 'dev-flow-claimed-title';
   title.textContent = 'Measure';
   probe.append(dot, id, title);
-  document.body.appendChild(probe);
-  const height = probe.getBoundingClientRect().height;
-  probe.remove();
-  return height;
+  document.getElementById('mainSidebarScene')?.appendChild(probe);
+  sidebarDevFlowMeasureProbe = probe;
+  sidebarDevFlowResizeObserver.observe(probe);
+  return probe;
+}
+
+function invalidateDevFlowRowMetrics() {
+  sidebarDevFlowRowHeight = 0;
+  sidebarLastDevFlowLayoutKey = '';
+  if (sidebarDevFlowResizePending) return;
+  sidebarDevFlowResizePending = true;
+  requestAnimationFrame(() => {
+    sidebarDevFlowResizePending = false;
+    if (sidebarDevFlow && sidebarDevFlow.availability === 'ready') {
+      renderDevFlowClaimedRows();
+    }
+  });
+}
+
+function setupDevFlowResponsiveLayout() {
+  const main = document.getElementById('mainSidebarScene');
+  const bottom = document.querySelector('.sidebar-bottom');
+  if (main) sidebarDevFlowResizeObserver.observe(main);
+  if (bottom) sidebarDevFlowResizeObserver.observe(bottom);
+  ensureDevFlowMeasureProbe();
+  document.fonts?.addEventListener('loadingdone', invalidateDevFlowRowMetrics);
 }
 
 async function openDevFlowDetail(target) {
@@ -276,9 +362,10 @@ async function openDevFlowDetail(target) {
   }
 }
 
-function updateDevFlowDashboardButton(df) {
+function updateDevFlowDashboardButton(df, visible = true) {
   const button = document.getElementById('sidebarDevFlowDashboard');
   if (!button) return;
+  button.hidden = !visible;
   const enabled = Boolean(df) && df.availability === 'ready';
   button.disabled = !enabled;
   button.title = !df
@@ -304,6 +391,7 @@ function applySidebarThemeState(snapshot) {
 
 function renderSidebarTheme(snapshot) {
   window.RozsaGuiShared.applyThemeTokens(document.documentElement, snapshot);
+  invalidateDevFlowRowMetrics();
 }
 
 function setSidebarText(id, text) {

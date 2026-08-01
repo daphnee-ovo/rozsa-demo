@@ -1,6 +1,7 @@
 // FrameworkTree
 // dev_flow.rs
 // ├── struct RuntimeDiagnostics
+// ├── struct RuntimeSessionBinding
 // ├── struct DevFlowRuntimeInner
 // ├── struct DynDiscoveryRunner
 // ├── impl DynDiscoveryRunner
@@ -10,6 +11,7 @@
 // ├── assert_send_sync()
 // ├── impl DevFlowRuntime
 // ├── new()
+// ├── new_with_sidebar_refresh()
 // ├── attach_notifier()
 // ├── attach_sidebar_refresh()
 // ├── shutdown()
@@ -24,6 +26,7 @@
 // ├── sidebar_snapshot()
 // ├── dashboard_url()
 // ├── detail()
+// ├── capture_tool_presentation()
 // ├── session_state()
 // ├── last_stop_at()
 // ├── active_sessions()
@@ -64,6 +67,8 @@
 // ├── struct DevFlowDetailPayload
 // ├── validate_detail_request()
 // ├── project_identity()
+// ├── sidebar_snapshot_from_state()
+// ├── enrich_presentation_titles()
 // ├── summarize_work()
 // ├── short_dev_flow_id()
 // ├── task_status_label()
@@ -92,14 +97,16 @@ use async_trait::async_trait;
 use rozsa_app::dev_flow::dashboard::{DashboardTiming, ReconnectBackoff};
 use rozsa_app::dev_flow::registry::{DashboardServiceControl, ServiceShutdownOutcome};
 use rozsa_app::dev_flow::{
-    CommandExecutionError, CommandOutput, DashboardClient, DashboardProcess,
+    BashExecutionEvidence, CommandExecutionError, CommandOutput, DashboardClient, DashboardProcess,
     DashboardServiceFactory, DevFlowAvailability, DevFlowError, DevFlowIssueStatus,
+    DevFlowPresentationAction, DevFlowPresentationItemKind, DevFlowPresentationRecord,
     DevFlowProjectKey, DevFlowRegistry, DevFlowRevisionKey, DevFlowServiceHandle, DevFlowSnapshot,
-    DevFlowTaskStatus, DiscoveryCommandRunner, DiscoveryEnvironment, DowDiscoveryError,
-    DowInstallSource, ProjectCommandRunner, SessionDevFlowState, SystemCommandRunner,
-    discover_dow_with, start_dashboard,
+    DevFlowTaskStatus, DevFlowToolPresentation, DiscoveryCommandRunner, DiscoveryEnvironment,
+    DowDiscoveryError, DowInstallSource, ProjectCommandRunner, SessionDevFlowState,
+    SystemCommandRunner, discover_dow_with, recognize_dow_bash, start_dashboard,
 };
 use rozsa_app::settings::DevFlowSettings;
+use rozsa_model::types::{ContentBlock, ToolResultMessage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::time::{MissedTickBehavior, sleep};
@@ -111,7 +118,7 @@ use crate::state::GuiState;
 pub const CLI_ERROR_ID: &str = "dev-flow.cli";
 pub const DASHBOARD_START_PREFIX: &str = "dev-flow.dashboard-start:";
 pub const CONNECTION_PREFIX: &str = "dev-flow.connection:";
-pub const DASHBOARD_OPEN_PREFIX: &str = "dev-flow.open:";
+pub const DASHBOARD_OPEN_PREFIX: &str = "dev-flow.dashboard-open:";
 
 const DASHBOARD_PORTS: RangeInclusive<u16> = 9800..=9900;
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
@@ -141,6 +148,13 @@ struct RuntimeDiagnostics {
     source: Option<DowInstallSource>,
 }
 
+#[derive(Clone, Debug)]
+struct RuntimeSessionBinding {
+    cwd: PathBuf,
+    active: bool,
+    last_stop_at: Option<SystemTime>,
+}
+
 struct DevFlowRuntimeInner {
     notifier: SharedNotificationSink,
     project_runner: Arc<dyn ProjectCommandRunner>,
@@ -148,11 +162,12 @@ struct DevFlowRuntimeInner {
     discovery_environment: DiscoveryEnvironment,
     factory_provider: DashboardFactoryProvider,
     registry: Mutex<Option<Arc<DevFlowRegistry>>>,
-    sessions: Mutex<HashMap<String, PathBuf>>,
+    reconfigure: Mutex<()>,
+    sessions: Mutex<HashMap<String, RuntimeSessionBinding>>,
     current_session: Mutex<Option<String>>,
     diagnostics: Mutex<RuntimeDiagnostics>,
     sidebar_refresh: SharedSidebarRefreshSink,
-    project_errors: Mutex<std::collections::HashSet<String>>,
+    project_errors: Mutex<HashMap<String, String>>,
     shutdown: CancellationToken,
 }
 
@@ -192,6 +207,27 @@ impl DevFlowRuntime {
         discovery_environment: DiscoveryEnvironment,
         factory_provider: DashboardFactoryProvider,
     ) -> Arc<Self> {
+        Self::new_with_sidebar_refresh(
+            notifier,
+            project_runner,
+            discovery_runner,
+            discovery_environment,
+            factory_provider,
+            Arc::new(std::sync::Mutex::new(None)),
+        )
+    }
+
+    /// Build a runtime around a caller-owned refresh slot. Production uses
+    /// this constructor so dashboard SSE updates and late GUI attachment share
+    /// one sink rather than capturing independent empty slots.
+    fn new_with_sidebar_refresh(
+        notifier: SharedNotificationSink,
+        project_runner: Arc<dyn ProjectCommandRunner>,
+        discovery_runner: Arc<dyn DiscoveryCommandRunner>,
+        discovery_environment: DiscoveryEnvironment,
+        factory_provider: DashboardFactoryProvider,
+        sidebar_refresh: SharedSidebarRefreshSink,
+    ) -> Arc<Self> {
         let inner = Arc::new(DevFlowRuntimeInner {
             notifier,
             project_runner,
@@ -199,11 +235,12 @@ impl DevFlowRuntime {
             discovery_environment,
             factory_provider,
             registry: Mutex::new(None),
+            reconfigure: Mutex::new(()),
             sessions: Mutex::new(HashMap::new()),
             current_session: Mutex::new(None),
             diagnostics: Mutex::new(RuntimeDiagnostics::default()),
-            sidebar_refresh: Arc::new(std::sync::Mutex::new(None)),
-            project_errors: Mutex::new(std::collections::HashSet::new()),
+            sidebar_refresh,
+            project_errors: Mutex::new(HashMap::new()),
             shutdown: CancellationToken::new(),
         });
         let runtime = Arc::new(Self { inner });
@@ -238,10 +275,21 @@ impl DevFlowRuntime {
     pub async fn session_started(&self, session_id: &str, cwd: PathBuf) {
         let changed = {
             let mut sessions = self.inner.sessions.lock().await;
-            let changed = sessions.get(session_id) != Some(&cwd);
-            if changed {
-                sessions.insert(session_id.to_owned(), cwd.clone());
-            }
+            let changed = sessions
+                .get(session_id)
+                .is_none_or(|binding| binding.cwd != cwd);
+            sessions
+                .entry(session_id.to_owned())
+                .and_modify(|binding| {
+                    binding.cwd = cwd.clone();
+                    binding.active = true;
+                    binding.last_stop_at = None;
+                })
+                .or_insert_with(|| RuntimeSessionBinding {
+                    cwd: cwd.clone(),
+                    active: true,
+                    last_stop_at: None,
+                });
             changed
         };
         let Some(registry) = self.inner.registry.lock().await.clone() else {
@@ -255,12 +303,20 @@ impl DevFlowRuntime {
 
     /// Permission or user-question resolution keeps a waiting session active.
     pub async fn session_resumed(&self, session_id: &str) {
+        if let Some(binding) = self.inner.sessions.lock().await.get_mut(session_id) {
+            binding.active = true;
+            binding.last_stop_at = None;
+        }
         if let Some(registry) = self.inner.registry.lock().await.clone() {
             registry.session_active(session_id).await;
         }
     }
 
     pub async fn session_finished(&self, session_id: &str, stopped_at: SystemTime) {
+        if let Some(binding) = self.inner.sessions.lock().await.get_mut(session_id) {
+            binding.active = false;
+            binding.last_stop_at = Some(stopped_at);
+        }
         if let Some(registry) = self.inner.registry.lock().await.clone() {
             registry.session_finished(session_id, stopped_at).await;
         }
@@ -284,7 +340,13 @@ impl DevFlowRuntime {
             .sessions
             .lock()
             .await
-            .insert(session_id.to_owned(), cwd.clone());
+            .entry(session_id.to_owned())
+            .and_modify(|binding| binding.cwd = cwd.clone())
+            .or_insert_with(|| RuntimeSessionBinding {
+                cwd: cwd.clone(),
+                active: false,
+                last_stop_at: None,
+            });
         *self.inner.current_session.lock().await = Some(session_id.to_owned());
         if let Some(registry) = self.inner.registry.lock().await.clone()
             && let Ok(state) = registry.associate_session(session_id.to_owned(), cwd).await
@@ -301,7 +363,13 @@ impl DevFlowRuntime {
             .sessions
             .lock()
             .await
-            .insert(session_id.to_owned(), cwd.clone());
+            .entry(session_id.to_owned())
+            .and_modify(|binding| binding.cwd = cwd.clone())
+            .or_insert_with(|| RuntimeSessionBinding {
+                cwd: cwd.clone(),
+                active: false,
+                last_stop_at: None,
+            });
         if let Some(registry) = self.inner.registry.lock().await.clone()
             && let Ok(states) = registry.rescan_after_successful_bash(&cwd).await
         {
@@ -313,22 +381,71 @@ impl DevFlowRuntime {
     }
 
     pub async fn diagnostics(&self, settings: &DevFlowSettings) -> DevFlowSettingsSnapshot {
-        let diag = self.inner.diagnostics.lock().await.clone();
+        // A disabled integration owns no registry, but Settings must still be
+        // able to report an installed CLI so the master switch can be restored.
+        let diag = if settings.enabled {
+            self.inner.diagnostics.lock().await.clone()
+        } else {
+            match discover_dow_with(
+                settings,
+                &self.inner.discovery_environment,
+                &DynDiscoveryRunner(self.inner.discovery_runner.clone()),
+            )
+            .await
+            {
+                Ok(found) => RuntimeDiagnostics {
+                    cli_error: None,
+                    executable: Some(found.executable),
+                    version: Some(found.version.to_string()),
+                    source: Some(found.source),
+                },
+                Err(error) => RuntimeDiagnostics {
+                    cli_error: Some(error.to_string()),
+                    ..RuntimeDiagnostics::default()
+                },
+            }
+        };
         let project = {
             let current = self.inner.current_session.lock().await.clone();
             let registry = self.inner.registry.lock().await.clone();
             match (current, registry) {
                 (Some(session_id), Some(registry)) => {
-                    registry.session_state(&session_id).await.map(|state| {
+                    if let Some(state) = registry.session_state(&session_id).await {
                         let (availability, message) = availability_label(&state.availability);
-                        DevFlowProjectDiagnostics {
+                        let memory_use_bytes = registry.project_usage_bytes(&state.project).await;
+                        let dashboard_url = state
+                            .service
+                            .as_ref()
+                            .and_then(|service| service.base_url())
+                            .map(ToString::to_string);
+                        let snapshot = match &state.service {
+                            Some(service) => service.snapshot().read().await.clone(),
+                            None => None,
+                        };
+                        Some(DevFlowProjectDiagnostics {
                             session_id,
                             root: Some(state.project.root.to_string_lossy().into_owned()),
                             revision: Some(revision_label(&state.project.revision)),
                             availability,
                             message,
-                        }
-                    })
+                            dashboard_url,
+                            snapshot_revision: snapshot.as_ref().map(|snapshot| snapshot.revision),
+                            last_sync_unix_ms: snapshot
+                                .as_ref()
+                                .and_then(|snapshot| {
+                                    snapshot
+                                        .received_at
+                                        .duration_since(SystemTime::UNIX_EPOCH)
+                                        .ok()
+                                })
+                                .map(|duration| {
+                                    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+                                }),
+                            memory_use_bytes,
+                        })
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             }
@@ -336,6 +453,7 @@ impl DevFlowRuntime {
         DevFlowSettingsSnapshot {
             enabled: settings.enabled,
             show_sidebar_status: settings.show_sidebar_status,
+            show_dashboard_button: settings.show_dashboard_button,
             executable_path: settings
                 .executable_path
                 .as_ref()
@@ -366,29 +484,11 @@ impl DevFlowRuntime {
             Some(service) => service.snapshot().read().await.clone(),
             None => None,
         };
-        let (availability, availability_message) = availability_label(&state.availability);
-        let (open_tasks, open_issues, claimed) = match &snapshot {
-            Some(snapshot) => summarize_work(snapshot),
-            None => (0, 0, Vec::new()),
-        };
-        Some(DevFlowSidebarSnapshot {
-            project: project_identity(&state.project),
-            revision: snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.revision)
-                .unwrap_or(0),
-            open_tasks,
-            open_issues,
-            claimed,
-            stale: snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.stale)
-                .unwrap_or(false),
-            availability,
-            availability_message,
-            dashboard_ready: state.service.is_some(),
+        Some(sidebar_snapshot_from_state(
+            &state,
+            snapshot.as_ref(),
             show_sidebar_status,
-        })
+        ))
     }
 
     /// Loopback dashboard URL for the session's project, starting or reusing
@@ -429,10 +529,6 @@ impl DevFlowRuntime {
         session_id: &str,
         request: &DevFlowDetailRequest,
     ) -> Result<DevFlowDetailPayload, String> {
-        let Some(current) = self.sidebar_snapshot(session_id, true).await else {
-            return Err("dev-flow is unavailable".to_string());
-        };
-        validate_detail_request(&current, request)?;
         let Some(state) = self.session_state(session_id).await else {
             return Err("dev-flow is unavailable".to_string());
         };
@@ -443,6 +539,8 @@ impl DevFlowRuntime {
         let Some(snapshot) = snapshot else {
             return Err("dev-flow dashboard has no snapshot yet".to_string());
         };
+        let current = sidebar_snapshot_from_state(&state, Some(&snapshot), true);
+        validate_detail_request(&current, request)?;
         let (open_tasks, open_issues, _claimed) = summarize_work(&snapshot);
         let mut items = Vec::new();
         let mut claimed_ids = Vec::new();
@@ -462,6 +560,10 @@ impl DevFlowRuntime {
                     task_type: task.task_type.clone(),
                     refs: task.refs.clone(),
                     depends_on: task.depends_on.clone(),
+                    done_when: task.done_when.clone(),
+                    files_create: task.files_create.clone(),
+                    files_modify: task.files_modify.clone(),
+                    files_test: task.files_test.clone(),
                     severity: None,
                     description: None,
                 });
@@ -483,6 +585,10 @@ impl DevFlowRuntime {
                     task_type: None,
                     refs: None,
                     depends_on: Vec::new(),
+                    done_when: Vec::new(),
+                    files_create: issue.files_create.clone(),
+                    files_modify: issue.files_modify.clone(),
+                    files_test: Vec::new(),
                     severity: issue.severity.clone(),
                     description: issue.description.clone(),
                 });
@@ -492,6 +598,11 @@ impl DevFlowRuntime {
             DevFlowDetailTarget { kind, id } if kind == "item" => id.clone(),
             _ => None,
         };
+        if let Some(focus_id) = &focus_id
+            && !items.iter().any(|item| &item.id == focus_id)
+        {
+            return Err("dev-flow detail item does not exist in this snapshot".to_string());
+        }
         Ok(DevFlowDetailPayload {
             project: current.project.clone(),
             revision: snapshot.revision,
@@ -504,6 +615,77 @@ impl DevFlowRuntime {
             availability: current.availability.clone(),
             availability_message: current.availability_message.clone(),
         })
+    }
+
+    /// Convert one confirmed Bash result into a project-bound presentation
+    /// record. Create actions briefly wait for the existing dashboard watcher
+    /// to publish titles; no command is re-executed.
+    pub async fn capture_tool_presentation(
+        &self,
+        session_id: &str,
+        tool_call_id: &str,
+        result: &ToolResultMessage,
+    ) -> Option<DevFlowPresentationRecord> {
+        if result.is_error {
+            return None;
+        }
+        let details = result.details.as_object()?;
+        let command = details.get("command")?.as_str()?;
+        let exit_code = details
+            .get("exit_code")
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok());
+        let stdout = result
+            .content
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let evidence = BashExecutionEvidence {
+            success: details
+                .get("success")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            exit_code,
+            truncated: details
+                .get("truncated")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(true),
+            stdout,
+        };
+        let executable = self.inner.diagnostics.lock().await.executable.clone();
+        let mut presentation = recognize_dow_bash(command, executable.as_deref(), &evidence)?;
+        let state = self.session_state(session_id).await?;
+        let wait_for_titles = presentation.action == DevFlowPresentationAction::Created;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let snapshot = match &state.service {
+                Some(service) => service.snapshot().read().await.clone(),
+                None => None,
+            };
+            if let Some(snapshot) = snapshot {
+                enrich_presentation_titles(&mut presentation, &snapshot);
+            }
+            if !wait_for_titles
+                || presentation.items.iter().all(|item| item.title.is_some())
+                || Instant::now() >= deadline
+                || state.service.is_none()
+            {
+                break;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+        presentation.details_unavailable =
+            presentation.items.iter().any(|item| item.title.is_none());
+        Some(DevFlowPresentationRecord::new(
+            tool_call_id.to_owned(),
+            &state.project,
+            presentation,
+            result.timestamp,
+        ))
     }
 
     /// Current registry state for one associated session, if any.
@@ -531,6 +713,7 @@ impl DevFlowRuntime {
     }
 
     async fn reconfigure_with(&self, settings: &DevFlowSettings) -> Result<(), String> {
+        let _reconfigure_guard = self.inner.reconfigure.lock().await;
         let discovered = if settings.enabled {
             match discover_dow_with(
                 settings,
@@ -549,44 +732,49 @@ impl DevFlowRuntime {
             None
         };
 
-        let mut registry_guard = self.inner.registry.lock().await;
         let adopted = self.inner.diagnostics.lock().await.executable.clone();
-        let restart = match (&discovered, &*registry_guard) {
+        let existing = self.inner.registry.lock().await.clone();
+        let restart = match (&discovered, &existing) {
             (Some(found), Some(_)) => adopted.as_ref() != Some(&found.executable),
             (None, Some(_)) | (Some(_), None) => true,
             (None, None) => false,
         };
-        if restart && let Some(old) = registry_guard.take() {
-            let report = old.shutdown_all().await;
-            tracing::info!(
-                "dev-flow: stopped {} owned dashboard services ({} remain protected)",
-                report.terminated.len(),
-                report.still_running.len()
-            );
+        if restart {
+            let old = self.inner.registry.lock().await.take();
+            if let Some(old) = old {
+                let report = old.shutdown_all().await;
+                tracing::info!(
+                    "dev-flow: stopped {} owned dashboard services ({} remain protected)",
+                    report.terminated.len(),
+                    report.still_running.len()
+                );
+            }
         }
 
         match &discovered {
             Some(found) => {
-                if restart {
+                let registry = if restart {
                     let factory = (self.inner.factory_provider)(&found.executable);
-                    let registry = Arc::new(DevFlowRegistry::new(
+                    Arc::new(DevFlowRegistry::new(
                         found.executable.clone(),
                         self.inner.project_runner.clone(),
                         factory,
-                    ));
-                    let sessions = self.inner.sessions.lock().await.clone();
-                    for (session_id, cwd) in sessions {
-                        if let Ok(state) = registry.associate_session(&session_id, cwd).await {
-                            self.note_state(state).await;
+                    ))
+                } else {
+                    existing.expect("unchanged dev-flow registry exists")
+                };
+                if restart {
+                    *self.inner.registry.lock().await = Some(registry.clone());
+                }
+                let sessions = self.inner.sessions.lock().await.clone();
+                for (session_id, binding) in sessions {
+                    if let Ok(state) = registry.associate_session(&session_id, binding.cwd).await {
+                        if binding.active {
+                            registry.session_active(&session_id).await;
+                        } else if let Some(stopped_at) = binding.last_stop_at {
+                            registry.session_finished(&session_id, stopped_at).await;
                         }
-                    }
-                    *registry_guard = Some(registry);
-                } else if let Some(registry) = registry_guard.as_ref() {
-                    let sessions = self.inner.sessions.lock().await.clone();
-                    for (session_id, cwd) in sessions {
-                        if let Ok(state) = registry.associate_session(&session_id, cwd).await {
-                            self.note_state(state).await;
-                        }
+                        self.note_state(state).await;
                     }
                 }
                 {
@@ -598,7 +786,7 @@ impl DevFlowRuntime {
                 self.resolve_cli_error().await;
             }
             None => {
-                *registry_guard = None;
+                *self.inner.registry.lock().await = None;
                 {
                     let mut diag = self.inner.diagnostics.lock().await;
                     diag.executable = None;
@@ -612,7 +800,6 @@ impl DevFlowRuntime {
                 }
             }
         }
-        drop(registry_guard);
         self.sync_current_project().await;
         Ok(())
     }
@@ -654,7 +841,8 @@ impl DevFlowRuntime {
         let cwd = {
             let current = self.inner.current_session.lock().await.clone();
             let sessions = self.inner.sessions.lock().await;
-            current.and_then(|session_id| sessions.get(&session_id).cloned())
+            current
+                .and_then(|session_id| sessions.get(&session_id).map(|binding| binding.cwd.clone()))
         };
         let Some(cwd) = cwd else {
             return;
@@ -677,7 +865,8 @@ impl DevFlowRuntime {
         let mut errors = self.inner.project_errors.lock().await;
         match &state.availability {
             DevFlowAvailability::DashboardStartFailed(error) => {
-                if errors.insert(id.clone()) {
+                if errors.get(&id) != Some(error) {
+                    errors.insert(id.clone(), error.clone());
                     drop(errors);
                     self.emit(AppNotificationEvent::Upsert {
                         id,
@@ -690,7 +879,7 @@ impl DevFlowRuntime {
                 }
             }
             _ => {
-                if errors.remove(&id) {
+                if errors.remove(&id).is_some() {
                     drop(errors);
                     self.emit(AppNotificationEvent::Resolve { id }).await;
                 }
@@ -700,13 +889,14 @@ impl DevFlowRuntime {
 
     async fn record_cli_error(&self, error: DowDiscoveryError) {
         let message = error.to_string();
-        {
+        let changed = {
             let mut diag = self.inner.diagnostics.lock().await;
-            if diag.cli_error.is_some() {
-                diag.cli_error = Some(message.clone());
-                return;
-            }
+            let changed = diag.cli_error.as_deref() != Some(&message);
             diag.cli_error = Some(message.clone());
+            changed
+        };
+        if !changed {
+            return;
         }
         self.emit(AppNotificationEvent::Upsert {
             id: CLI_ERROR_ID.to_string(),
@@ -743,7 +933,7 @@ impl DevFlowRuntime {
             .await
             .drain()
             .collect::<Vec<_>>();
-        for id in ids {
+        for (id, _) in ids {
             self.emit(AppNotificationEvent::Resolve { id }).await;
         }
     }
@@ -1150,6 +1340,10 @@ pub struct DevFlowDetailItem {
     pub task_type: Option<String>,
     pub refs: Option<String>,
     pub depends_on: Vec<String>,
+    pub done_when: Vec<String>,
+    pub files_create: Vec<String>,
+    pub files_modify: Vec<String>,
+    pub files_test: Vec<String>,
     pub severity: Option<String>,
     pub description: Option<String>,
 }
@@ -1195,6 +1389,52 @@ pub fn project_identity(project: &DevFlowProjectKey) -> DevFlowProjectIdentity {
         project_key: project_hash(project),
         root: project.root.to_string_lossy().into_owned(),
         revision: revision_label(&project.revision),
+    }
+}
+
+fn sidebar_snapshot_from_state(
+    state: &SessionDevFlowState,
+    snapshot: Option<&DevFlowSnapshot>,
+    show_sidebar_status: bool,
+) -> DevFlowSidebarSnapshot {
+    let (availability, availability_message) = availability_label(&state.availability);
+    let (open_tasks, open_issues, claimed) = snapshot
+        .map(summarize_work)
+        .unwrap_or_else(|| (0, 0, Vec::new()));
+    DevFlowSidebarSnapshot {
+        project: project_identity(&state.project),
+        revision: snapshot.map(|snapshot| snapshot.revision).unwrap_or(0),
+        open_tasks,
+        open_issues,
+        claimed,
+        stale: snapshot.map(|snapshot| snapshot.stale).unwrap_or(false),
+        availability,
+        availability_message,
+        dashboard_ready: state.service.is_some(),
+        show_sidebar_status,
+    }
+}
+
+fn enrich_presentation_titles(
+    presentation: &mut DevFlowToolPresentation,
+    snapshot: &DevFlowSnapshot,
+) {
+    for item in &mut presentation.items {
+        if item.title.is_some() {
+            continue;
+        }
+        item.title = match item.kind {
+            DevFlowPresentationItemKind::Task => snapshot
+                .tasks
+                .iter()
+                .find(|task| task.id == item.id)
+                .map(|task| task.title.clone()),
+            DevFlowPresentationItemKind::Issue => snapshot
+                .issues
+                .iter()
+                .find(|issue| issue.id == item.id)
+                .map(|issue| issue.title.clone()),
+        };
     }
 }
 
@@ -1273,6 +1513,7 @@ fn issue_status_label(status: DevFlowIssueStatus) -> String {
 pub struct DevFlowSettingsSnapshot {
     pub enabled: bool,
     pub show_sidebar_status: bool,
+    pub show_dashboard_button: bool,
     pub executable_path: Option<String>,
     pub cli: DevFlowCliDiagnostics,
     pub project: Option<DevFlowProjectDiagnostics>,
@@ -1296,6 +1537,10 @@ pub struct DevFlowProjectDiagnostics {
     pub revision: Option<String>,
     pub availability: String,
     pub message: Option<String>,
+    pub dashboard_url: Option<String>,
+    pub snapshot_revision: Option<u64>,
+    pub last_sync_unix_ms: Option<u64>,
+    pub memory_use_bytes: Option<u64>,
 }
 
 /// System-backed runtime using process discovery, used by the app and tests.
@@ -1304,12 +1549,13 @@ pub fn system_runtime(
     project_runner: Arc<dyn ProjectCommandRunner>,
     sidebar_refresh: SharedSidebarRefreshSink,
 ) -> Arc<DevFlowRuntime> {
-    DevFlowRuntime::new(
+    DevFlowRuntime::new_with_sidebar_refresh(
         notifier.clone(),
         project_runner,
         Arc::new(SystemCommandRunner),
         DiscoveryEnvironment::from_process(),
-        real_factory_provider(notifier, sidebar_refresh),
+        real_factory_provider(notifier, sidebar_refresh.clone()),
+        sidebar_refresh,
     )
 }
 

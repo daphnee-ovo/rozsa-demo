@@ -574,4 +574,4 @@ group 只展示已经接到 `update_setting` 的控件。
 
 如果截图中没有显示某个组件，仍然可以直接使用本表术语。例如：`#queuedMessages` 是 `queue panel`，`#permPanelTrust` 是 `permission trust page`，`#pane-tools` 是 `tools pane`；它们不需要先出现在截图里才算页面术语。
 
-相关文档：[`GUI 运行时术语表`](./TERMINOLOGY.md)、[`GUI 使用规范`](./UI_USAGE_GUIDELINES.md)。
+相关文档：[`GUI 运行时术语表`](./TERMINOLOGY.md)、[`GUI 使用规范`](./UI_USAGE_GUIDELINES.md)、[`Dev Flow GUI integration`](./DEV_FLOW_INTEGRATION.md)。

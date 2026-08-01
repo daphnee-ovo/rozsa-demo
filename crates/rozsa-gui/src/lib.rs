@@ -179,6 +179,7 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
         permission_controller: config.permission_controller,
         global_settings_path: config.global_settings_path,
         runtime_settings: Arc::new(tokio::sync::Mutex::new(runtime_settings)),
+        dev_flow_settings_update: Arc::new(tokio::sync::Mutex::new(())),
         quota_summary: Arc::new(tokio::sync::Mutex::new(None)),
     };
 
@@ -211,8 +212,10 @@ pub async fn run(config: GuiConfig) -> Result<(), Box<dyn std::error::Error>> {
             commands::get_dev_flow_settings,
             commands::set_dev_flow_enabled,
             commands::set_dev_flow_sidebar_status,
+            commands::set_dev_flow_dashboard_button,
             commands::set_dev_flow_executable_path,
             commands::rescan_dev_flow,
+            commands::pick_dev_flow_executable,
             commands::dev_flow_detail,
             commands::open_dev_flow_dashboard,
             commands::get_capability_settings,

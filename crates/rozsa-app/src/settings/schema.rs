@@ -109,6 +109,7 @@ impl Default for PermissionSettings {
 pub struct DevFlowSettings {
     pub enabled: bool,
     pub show_sidebar_status: bool,
+    pub show_dashboard_button: bool,
     pub executable_path: Option<PathBuf>,
 }
 
@@ -117,6 +118,7 @@ impl Default for DevFlowSettings {
         Self {
             enabled: true,
             show_sidebar_status: true,
+            show_dashboard_button: true,
             executable_path: None,
         }
     }
@@ -313,6 +315,8 @@ pub struct PartialDevFlowSettings {
     pub enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_sidebar_status: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_dashboard_button: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executable_path: Option<PathBuf>,
 }

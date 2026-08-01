@@ -70,6 +70,7 @@
 // 每个 session tab 有三种状态：Idle → Loaded → Active
 // 只有 Active 状态的 session 有独立的 AgentSession 后端。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, RwLock};
@@ -243,6 +244,7 @@ pub enum SessionTab {
     Loaded {
         path: String,
         messages: Vec<AgentMessage>,
+        dev_flow_presentations: HashMap<String, rozsa_app::dev_flow::DevFlowToolPresentation>,
     },
     /// 发过消息，有活跃的独立 agent backend
     Active {
@@ -304,6 +306,8 @@ pub struct GuiState {
     pub permission_controller: Arc<rozsa_app::permissions::PermissionController>,
     pub global_settings_path: Option<PathBuf>,
     pub runtime_settings: Arc<Mutex<rozsa_app::settings::Settings>>,
+    /// Serializes Dev-flow settings persistence and runtime reconfiguration.
+    pub dev_flow_settings_update: Arc<Mutex<()>>,
     pub quota_summary: Arc<Mutex<Option<rozsa_model::rate_limit::RateLimitSnapshot>>>,
 }
 
@@ -332,6 +336,7 @@ pub struct SidebarSnapshot {
     pub sessions: Vec<SidebarSessionSnapshot>,
     pub active_session_id: Option<String>,
     pub dev_flow: Option<crate::dev_flow::DevFlowSidebarSnapshot>,
+    pub show_dev_flow_dashboard: bool,
     pub git: Option<GitStatus>,
     pub quota: Option<rozsa_model::rate_limit::RateLimitSnapshot>,
     pub show_quota: bool,
@@ -388,8 +393,10 @@ impl GuiState {
             })
             .collect();
         drop(tabs);
+        let dev_flow_settings = self.runtime_settings.lock().await.dev_flow.clone();
+        let show_dev_flow_dashboard =
+            dev_flow_settings.enabled && dev_flow_settings.show_dashboard_button;
         let dev_flow = {
-            let dev_flow_settings = self.runtime_settings.lock().await.dev_flow.clone();
             if dev_flow_settings.enabled {
                 match &active_session_id {
                     Some(session_id) => {
@@ -413,6 +420,7 @@ impl GuiState {
             sessions,
             active_session_id,
             dev_flow,
+            show_dev_flow_dashboard,
             git: git_status(&self.shared.cwd),
             quota: if show_quota {
                 self.quota_summary.lock().await.clone()
@@ -555,6 +563,7 @@ impl SharedResources {
 #[derive(Default)]
 pub struct LiveState {
     pub messages: Vec<AgentMessage>,
+    pub dev_flow_presentations: HashMap<String, rozsa_app::dev_flow::DevFlowToolPresentation>,
     pub is_streaming: bool,
     pub turn_base: usize,
     pub turn_id: u64,
@@ -725,6 +734,7 @@ pub struct UiSnapshot {
     pub session_id: String,
     pub turn_id: u64,
     pub messages: Vec<serde_json::Value>,
+    pub dev_flow_presentations: HashMap<String, rozsa_app::dev_flow::DevFlowToolPresentation>,
     pub is_streaming: bool,
     pub model: Option<ModelInfo>,
     pub thinking_effort: String,
@@ -829,6 +839,14 @@ impl UiSnapshot {
                 _ => 0,
             },
             messages,
+            dev_flow_presentations: match tab {
+                SessionTab::Loaded {
+                    dev_flow_presentations,
+                    ..
+                } => dev_flow_presentations.clone(),
+                SessionTab::Active { live, .. } => live.dev_flow_presentations.clone(),
+                SessionTab::Idle { .. } => HashMap::new(),
+            },
             is_streaming: tab.is_streaming(),
             model: Some(model_info),
             thinking_effort: thinking_str,
