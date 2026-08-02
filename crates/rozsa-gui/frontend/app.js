@@ -659,6 +659,7 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
   if (firstChanged >= 0) {
     while (container.children.length > firstChanged) container.lastChild.remove();
     for (let i = firstChanged; i < visibleMessages.length; i++) {
+      const assistantGroupPosition = assistantMessageGroupPosition(visibleMessages, i);
       container.appendChild(renderMessage(
         visibleMessages[i],
         toolResultMap,
@@ -666,6 +667,7 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
         activityForVisibleIndex(i),
         thinkingDurationForIndex(i),
         isThinkingExpanded(sessionId, i),
+        assistantGroupPosition !== 'continuation',
       ));
     }
   }
@@ -704,7 +706,10 @@ function countTools(messages) {
     const content = raw && raw.message && raw.message.content;
     if (!Array.isArray(content)) continue;
     for (const block of content) {
-      if (block.type === 'toolCall' && block.name) counts[block.name] = (counts[block.name] || 0) + 1;
+      if (block.type === 'toolCall' && block.name) {
+        const label = toolDisplayLabel(block.name);
+        counts[label] = (counts[label] || 0) + 1;
+      }
     }
   }
   return counts;
@@ -769,7 +774,16 @@ function restoreSessionViewState(sessionId, container, savedView) {
   });
 }
 
-function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false) {
+function isAssistantMessageRaw(raw) {
+  return !!(raw && raw.kind === 'standard' && raw.message && raw.message.role === 'assistant');
+}
+
+function assistantMessageGroupPosition(messages, index) {
+  if (!isAssistantMessageRaw(messages[index])) return 'standalone';
+  return isAssistantMessageRaw(messages[index - 1]) ? 'continuation' : 'start';
+}
+
+function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false, showAssistantIdentity = true) {
   const div = document.createElement('div');
 
   if (raw.kind === 'custom') {
@@ -802,8 +816,10 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
       '<div class="msg-content markdown-body">' + renderMarkdown(text) + '</div></div>';
 
   } else if (role === 'assistant') {
-    div.className = 'msg msg-assistant';
-    let body = '<div class="msg-avatar">R</div><div class="msg-body"><div class="msg-role">Rozsa</div>';
+    div.className = 'msg msg-assistant' + (showAssistantIdentity ? '' : ' msg-assistant-continuation');
+    let body = showAssistantIdentity
+      ? '<div class="msg-avatar">R</div><div class="msg-body"><div class="msg-role">Rozsa</div>'
+      : '<div class="msg-body">';
     const errorMessage = msg.errorMessage || '';
     if (errorMessage) {
       body += '<div class="msg-content msg-error"><pre>' + escapeHtml(errorMessage) + '</pre></div>';
@@ -834,27 +850,8 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
       const devFlowPresentation = parseDevFlowBashPresentation(tc, result, devFlowTitleForItem);
       if (devFlowPresentation && tc.id) requestDevFlowTitles(tc.id, devFlowPresentation);
       const tcStatus = result ? (result.isError ? 's-error' : 's-success') : 's-running';
-      const toolTitle = devFlowPresentation
-        ? formatBashDevFlowTitle(devFlowPresentation)
-        : formatToolTitle(tc);
-      const resultOutput = result ? result.output : '';
-      const bodyOutput = resultOutput || formatToolArgs(tc);
-      const delta = result && Array.isArray(result.details.file_deltas) ? result.details.file_deltas[0] : null;
-      const writeContent = delta && typeof delta.after === 'string'
-        ? delta.after
-        : (tc.arguments && typeof tc.arguments.content === 'string' ? tc.arguments.content : null);
-      let toolBody = escapeHtml(bodyOutput);
-      let toolBodyClass = '';
-      if (tc.name.toLowerCase() === 'write' && writeContent !== null) {
-        toolBody = renderCodeView(writeContent);
-        toolBodyClass = ' code-view';
-      } else if (delta && tc.name.toLowerCase() === 'edit' && typeof delta.patch === 'string') {
-        toolBody = renderDiffView(delta.patch);
-        toolBodyClass = ' diff-view';
-      } else if (devFlowPresentation && result) {
-        toolBody = renderBashToolEvidence(tc, result);
-        toolBodyClass = ' dev-flow-tool-evidence';
-      }
+      const toolTitle = resolveToolTitle(tc, devFlowPresentation);
+      const toolEvidence = renderToolEvidence(tc, result, devFlowPresentation);
 
       body += '<div class="tool-call' + (isToolCallExpanded(tc.id) ? ' expanded' : '') +
         (devFlowPresentation ? ' dev-flow-tool-call' : '') +
@@ -867,8 +864,8 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
         '<span class="tool-name">' + escapeHtml(toolTitle.name) + '</span>' +
         '<span class="tool-call-args">' + escapeHtml(toolTitle.arg) + '</span>' +
         '<span class="tool-call-toggle">▸</span></div></div>' +
-        '<div class="tool-call-body' + toolBodyClass + '">' +
-        (toolBodyClass ? toolBody : '<pre style="white-space:pre-wrap;margin:0;font-size:11.5px">' + toolBody + '</pre>') +
+        '<div class="tool-call-body' + toolEvidence.className + '">' +
+        toolEvidence.html +
         '</div></div>';
     }
 
@@ -890,13 +887,14 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
     div.className = 'msg msg-assistant';
     const text = extractText(content);
     const toolName = msg.toolName || 'tool';
+    const toolLabel = toolDisplayLabel(toolName);
     const status = msg.isError ? 's-error' : 's-success';
     trackTool(toolName);
     const preview = (text || '').slice(0, 150);
     div.innerHTML = '<div class="msg-avatar" style="visibility:hidden">R</div><div class="msg-body">' +
       '<div class="tool-call" onclick="toggleToolCall(this)"><div class="tool-track">' +
       '<div class="tool-icon">' + toolIcon(toolName) + '</div>' +
-      '<span class="tool-name">' + escapeHtml(toolName) + '</span></div>' +
+      '<span class="tool-name">' + escapeHtml(toolLabel) + '</span></div>' +
       '<div class="tool-content"><div class="tool-header">' +
       '<span class="tool-call-status ' + status + '"></span>' +
       '<span class="tool-call-args">' + escapeHtml(preview) + '</span>' +
@@ -1249,6 +1247,274 @@ function renderBashToolEvidence(toolCall, result) {
       : '');
 }
 
+function toolResultDetails(result) {
+  const details = result && result.details;
+  return details && typeof details === 'object' && !Array.isArray(details) ? details : {};
+}
+
+function toolResultOutput(result) {
+  return result && result.output !== undefined && result.output !== null
+    ? String(result.output)
+    : '';
+}
+
+function toolEvidenceMeta(facts) {
+  const values = facts
+    .filter(value => value !== null && value !== undefined && String(value).trim())
+    .map(value => String(value));
+  return values.length
+    ? '<div class="tool-evidence-meta">' + values.map(escapeHtml).join(' · ') + '</div>'
+    : '';
+}
+
+function toolEvidenceOutput(output, label = 'Output') {
+  const text = String(output ?? '');
+  if (!text) return '';
+  return '<div class="tool-evidence-section"><div class="tool-evidence-label">' +
+    escapeHtml(label) + '</div><pre class="tool-evidence-output">' + escapeHtml(text) + '</pre></div>';
+}
+
+function toolEvidencePending(label) {
+  return '<div class="tool-evidence-pending">' + escapeHtml(label) + '</div>';
+}
+
+function toolCallArgs(toolCall) {
+  return toolCall && toolCall.arguments && typeof toolCall.arguments === 'object'
+    ? toolCall.arguments
+    : {};
+}
+
+function toolResultPath(toolCall, details, delta = null) {
+  const args = toolCallArgs(toolCall);
+  return details.file_path || details.path || (delta && delta.path) || args.file_path || args.path || '';
+}
+
+function renderReadToolEvidence(toolCall, result) {
+  const args = toolCallArgs(toolCall);
+  const details = toolResultDetails(result);
+  const path = toolResultPath(toolCall, details);
+  const facts = [
+    path ? 'File ' + path : 'File unavailable',
+    formatReadRange(args) ? 'Requested ' + formatReadRange(args) : '',
+    Number.isFinite(details.total_lines) ? details.total_lines + ' total lines' : '',
+    Number.isFinite(details.output_lines) ? details.output_lines + ' lines shown' : '',
+    details.truncated
+      ? 'truncated' + (details.truncated_by ? ' by ' + details.truncated_by : '')
+      : (result ? 'complete' : ''),
+    details.first_line_exceeds_limit ? 'first line exceeds output limit' : '',
+    result ? 'line numbers preserved from tool output' : '',
+  ];
+  const body = toolEvidenceMeta(facts) + (result
+    ? toolEvidenceOutput(toolResultOutput(result))
+    : toolEvidencePending('Awaiting file contents'));
+  return { html: body, className: ' tool-evidence' };
+}
+
+function renderWriteEditToolEvidence(toolCall, result, mode) {
+  const args = toolCallArgs(toolCall);
+  const details = toolResultDetails(result);
+  const deltas = Array.isArray(details.file_deltas) ? details.file_deltas : [];
+  const delta = deltas[0] || null;
+  const path = toolResultPath(toolCall, details, delta);
+  const status = delta && typeof delta.status === 'string' ? delta.status.toLowerCase() : '';
+  const action = mode === 'write'
+    ? (status === 'added' ? 'created' : (status === 'deleted' ? 'deleted' : 'updated'))
+    : 'edited';
+  const facts = [
+    path ? 'File ' + path : 'File unavailable',
+    action,
+    mode === 'write' && Number.isFinite(details.bytes_written) ? details.bytes_written + ' bytes' : '',
+    mode === 'write' && Number.isFinite(details.line_count) ? details.line_count + ' lines' : '',
+    mode === 'edit' && Number.isFinite(details.replacements) ? details.replacements + ' replacement' + (details.replacements === 1 ? '' : 's') : '',
+    delta && Number.isFinite(delta.added) ? 'delta +' + delta.added + '/-' + (Number.isFinite(delta.deleted) ? delta.deleted : 0) : '',
+    result && result.isError ? 'error' : '',
+  ];
+  let body = toolEvidenceMeta(facts);
+  const output = toolResultOutput(result);
+  body += output ? toolEvidenceOutput(output, 'Result') : '';
+
+  const content = delta && typeof delta.after === 'string'
+    ? delta.after
+    : (typeof args.content === 'string' ? args.content : null);
+  if (mode === 'write' && content !== null) {
+    body += '<div class="tool-evidence-section"><div class="tool-evidence-label">File content</div>' +
+      '<div class="code-view tool-evidence-code-view">' + renderCodeView(content) + '</div></div>';
+  }
+  if (mode === 'edit' && delta && typeof delta.patch === 'string' && delta.patch) {
+    body += '<div class="tool-evidence-section"><div class="tool-evidence-label">Diff</div>' +
+      '<div class="diff-view tool-evidence-diff-view">' + renderDiffView(delta.patch) + '</div></div>';
+  }
+  if (!body) body = toolEvidencePending('Awaiting file result');
+  return { html: body, className: ' tool-evidence' };
+}
+
+function renderSearchToolEvidence(toolCall, result, mode) {
+  const args = toolCallArgs(toolCall);
+  const details = toolResultDetails(result);
+  const isGrep = mode === 'grep';
+  const count = isGrep ? details.total_matches : details.total_results;
+  const limit = isGrep ? details.match_limit_reached : details.result_limit_reached;
+  const facts = [
+    args.pattern ? 'Pattern ' + compactToolText(args.pattern) : 'Pattern unavailable',
+    'Path ' + (args.path || '.'),
+    args.include ? 'Files ' + args.include : '',
+    Number.isFinite(count) ? count + (isGrep ? ' matches' : ' results') : '',
+    details.truncated
+      ? 'truncated' + (Number.isFinite(limit) ? ' at ' + limit : '')
+      : (result ? 'complete' : ''),
+    isGrep && details.lines_truncated ? 'long lines truncated' : '',
+  ];
+  const body = toolEvidenceMeta(facts) + (result
+    ? toolEvidenceOutput(toolResultOutput(result), 'Results')
+    : toolEvidencePending('Awaiting search results'));
+  return { html: body, className: ' tool-evidence' };
+}
+
+function renderLsToolEvidence(toolCall, result) {
+  const args = toolCallArgs(toolCall);
+  const details = toolResultDetails(result);
+  const facts = [
+    'Directory ' + (args.path || '.'),
+    Number.isFinite(details.total_entries) ? details.total_entries + ' total entries' : '',
+    Number.isFinite(details.output_entries) ? details.output_entries + ' entries shown' : '',
+    details.truncated
+      ? 'truncated' + (Number.isFinite(details.entry_limit_reached) ? ' at ' + details.entry_limit_reached : '')
+      : (result ? 'complete' : ''),
+  ];
+  const body = toolEvidenceMeta(facts) + (result
+    ? toolEvidenceOutput(toolResultOutput(result), 'Entries')
+    : toolEvidencePending('Awaiting directory listing'));
+  return { html: body, className: ' tool-evidence' };
+}
+
+function subagentActionLabel(action) {
+  const labels = { spawn: 'Spawn', send: 'Send', wait: 'Wait', interrupt: 'Interrupt', list: 'List' };
+  return labels[normalizeToolName(action)] || 'Subagent';
+}
+
+function subagentModelLabel(info) {
+  const provider = info && info.model_provider ? String(info.model_provider) : '';
+  const model = info && info.model_id ? String(info.model_id) : '';
+  return provider && model ? provider + '/' + model : (model || provider);
+}
+
+function renderSubagentList(items) {
+  if (!items.length) return '<div class="tool-evidence-pending">No subagents</div>';
+  return '<div class="tool-evidence-list">' + items.map(info => {
+    const target = info.name || info.id || 'subagent';
+    const status = info.status ? String(info.status) : 'unknown';
+    const model = subagentModelLabel(info);
+    return '<div class="tool-evidence-row"><span class="tool-evidence-key">' +
+      escapeHtml(target) + '</span><span class="tool-evidence-value">' +
+      escapeHtml([info.id && info.id !== target ? info.id : '', status, model].filter(Boolean).join(' · ')) +
+      '</span></div>';
+  }).join('') + '</div>';
+}
+
+function renderSubagentToolEvidence(toolCall, result) {
+  const args = toolCallArgs(toolCall);
+  const details = toolResultDetails(result);
+  const action = details.action || args.action || '';
+  const target = details.name || details.id || args.name || args.id || '';
+  const facts = [
+    action ? subagentActionLabel(action) : 'Subagent',
+    target ? target : (action === 'list' ? 'all subagents' : ''),
+    details.status ? 'status ' + details.status : '',
+    subagentModelLabel(details) ? 'model ' + subagentModelLabel(details) : '',
+    details.thinking_effort ? 'thinking ' + details.thinking_effort : '',
+  ];
+  let body = toolEvidenceMeta(facts);
+  if (Array.isArray(details.subagents)) body += renderSubagentList(details.subagents);
+  if (result) {
+    body += toolEvidenceOutput(toolResultOutput(result), 'Summary');
+  } else {
+    body += toolEvidencePending('Awaiting subagent result');
+  }
+  return { html: body, className: ' tool-evidence' };
+}
+
+function formatQuestionAnswer(value) {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  return String(value ?? '');
+}
+
+function renderQuestionToolEvidence(toolCall, result) {
+  const args = toolCallArgs(toolCall);
+  const details = toolResultDetails(result);
+  const questions = Array.isArray(args.questions) ? args.questions : [];
+  const answers = details.answers && typeof details.answers === 'object' && !Array.isArray(details.answers)
+    ? details.answers
+    : null;
+  const facts = [
+    questions.length + (questions.length === 1 ? ' question' : ' questions'),
+    result ? (result.isError ? 'error' : (answers ? 'answered' : 'completed')) : 'waiting for answer',
+  ];
+  let body = toolEvidenceMeta(facts);
+  if (questions.length) {
+    body += '<div class="tool-evidence-list">' + questions.map(question =>
+      '<div class="tool-evidence-question"><span class="tool-evidence-key">' +
+      escapeHtml(question.header || 'Question') + '</span><span class="tool-evidence-value">' +
+      escapeHtml(question.question || '') + '</span></div>'
+    ).join('') + '</div>';
+  }
+  if (answers) {
+    body += '<div class="tool-evidence-list tool-evidence-answers">' + Object.entries(answers).map(([header, answer]) =>
+      '<div class="tool-evidence-row"><span class="tool-evidence-key">' + escapeHtml(header) +
+      '</span><span class="tool-evidence-value">' + escapeHtml(formatQuestionAnswer(answer)) + '</span></div>'
+    ).join('') + '</div>';
+  } else if (result && result.isError) {
+    body += toolEvidenceOutput(toolResultOutput(result), 'Error');
+  } else if (result && !answers && toolResultOutput(result)) {
+    body += toolEvidenceOutput(toolResultOutput(result), 'Result (raw fallback)');
+  } else if (!result) {
+    body += toolEvidencePending('The separate question panel is awaiting your answer');
+  }
+  return { html: body, className: ' tool-evidence' };
+}
+
+function renderGenericToolEvidence(toolCall, result) {
+  const label = toolDisplayLabel(toolCall && toolCall.name);
+  if (!result) {
+    return {
+      html: toolEvidenceMeta(['Arguments ' + formatToolArgs(toolCall)]) +
+        toolEvidencePending('Awaiting ' + label + ' result'),
+      className: ' tool-evidence',
+    };
+  }
+  const details = toolResultDetails(result);
+  const facts = [
+    result.isError ? 'error' : 'completed',
+    details.truncated ? 'truncated' : '',
+  ];
+  return {
+    html: toolEvidenceMeta(facts) + toolEvidenceOutput(toolResultOutput(result)),
+    className: ' tool-evidence',
+  };
+}
+
+function renderToolEvidence(toolCall, result, devFlowPresentation) {
+  if (devFlowPresentation && result) {
+    return { html: renderBashToolEvidence(toolCall, result), className: ' dev-flow-tool-evidence' };
+  }
+  const toolName = normalizeToolName(toolCall && toolCall.name);
+  if (toolName === 'bash') {
+    return result
+      ? { html: renderBashToolEvidence(toolCall, result), className: ' dev-flow-tool-evidence' }
+      : renderGenericToolEvidence(toolCall, result);
+  }
+  if (toolName === 'read') return renderReadToolEvidence(toolCall, result);
+  if (toolName === 'write') return renderWriteEditToolEvidence(toolCall, result, 'write');
+  if (toolName === 'edit') return renderWriteEditToolEvidence(toolCall, result, 'edit');
+  if (toolName === 'grep' || toolName === 'find') return renderSearchToolEvidence(toolCall, result, toolName);
+  if (toolName === 'ls') return renderLsToolEvidence(toolCall, result);
+  if (toolName === 'subagent') return renderSubagentToolEvidence(toolCall, result);
+  if (toolName === 'askuserquestion' || toolName === 'ask_user_question') {
+    return renderQuestionToolEvidence(toolCall, result);
+  }
+  return renderGenericToolEvidence(toolCall, result);
+}
+
 const DEV_FLOW_TITLE_CACHE_LIMIT = 64;
 const DEV_FLOW_TITLE_RESPONSE_LIMIT = 2 * 1024 * 1024;
 const DEV_FLOW_TITLE_TIMEOUT_MS = 1500;
@@ -1374,42 +1640,131 @@ function updateDevFlowToolCard(toolCallId, presentation) {
   if (arg) arg.textContent = title.arg;
 }
 
+function normalizeToolName(name) {
+  return typeof name === 'string' ? name.trim().toLowerCase() : '';
+}
+
+function toolDisplayLabel(name) {
+  switch (normalizeToolName(name)) {
+    case 'bash': return 'Bash';
+    case 'read': return 'Read';
+    case 'write': return 'Write';
+    case 'edit': return 'Edit';
+    case 'ls': return 'List';
+    case 'grep': return 'Search';
+    case 'find': return 'Find';
+    case 'subagent': return 'Subagent';
+    case 'askuserquestion':
+    case 'ask_user_question': return 'Question';
+    default: return typeof name === 'string' && name.trim() ? name : 'Tool';
+  }
+}
+
+function compactToolText(value, maxLength = 120) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  return text.slice(0, Math.max(1, maxLength - 1)) + '…';
+}
+
+function formatReadRange(args) {
+  const offset = Number.isInteger(args.offset) && args.offset > 0 ? args.offset : 1;
+  const limit = Number.isInteger(args.limit) && args.limit > 0 ? args.limit : null;
+  if (limit) return 'lines ' + offset + '–' + (offset + limit - 1);
+  if (args.offset) return 'from line ' + offset;
+  return '';
+}
+
+function formatPathSummary(args, fallback = 'current directory') {
+  const path = args.file_path || args.path;
+  return path || fallback;
+}
+
+function formatSearchSummary(args, includePattern = true) {
+  const parts = [];
+  if (args.pattern) {
+    const pattern = compactToolText(args.pattern);
+    parts.push(includePattern && normalizeToolName(args.tool) === 'grep' ? '"' + pattern + '"' : pattern);
+  }
+  if (args.path && args.path !== '.') parts.push(args.path);
+  if (args.include) parts.push('files ' + args.include);
+  return parts.join(' · ');
+}
+
+function formatSubagentSummary(args) {
+  const action = normalizeToolName(args.action);
+  const actionLabels = {
+    spawn: 'Spawn',
+    send: 'Send',
+    wait: 'Wait',
+    interrupt: 'Interrupt',
+    list: 'List',
+  };
+  const target = args.name || args.id || (action === 'list' ? 'subagents' : '');
+  return {
+    name: actionLabels[action] || 'Subagent',
+    arg: target ? compactToolText(target) : '',
+  };
+}
+
+function formatQuestionSummary(args) {
+  const questions = Array.isArray(args.questions) ? args.questions : [];
+  if (!questions.length) return { name: 'Question', arg: '' };
+  if (questions.length > 1) return { name: 'Question', arg: questions.length + ' questions' };
+  const question = questions[0] || {};
+  return { name: 'Question', arg: compactToolText(question.question || question.header || '') };
+}
+
 function formatToolArgs(tc) {
   if (!tc.arguments) return '';
   if (typeof tc.arguments === 'string') return tc.arguments;
-  // Show key fields for known tools
   const args = tc.arguments;
-  const toolName = typeof tc.name === 'string' ? tc.name.toLowerCase() : '';
-  if (toolName === 'bash' && args.command) return args.command;
-  if (tc.name === 'Read' && args.file_path) return args.file_path;
-  if (tc.name === 'Write' && args.file_path) return args.file_path;
-  if (tc.name === 'Edit' && args.file_path) return args.file_path + ' (edit)';
+  const toolName = normalizeToolName(tc.name);
+  if (toolName === 'bash') return args.command || '';
+  if (toolName === 'read') {
+    return [formatPathSummary(args, ''), formatReadRange(args)].filter(Boolean).join(' · ');
+  }
+  if (toolName === 'write') return formatPathSummary(args, '');
+  if (toolName === 'edit') {
+    return [formatPathSummary(args, ''), args.replace_all ? 'replace all' : ''].filter(Boolean).join(' · ');
+  }
+  if (toolName === 'ls') {
+    return [formatPathSummary(args), args.limit ? 'limit ' + args.limit : ''].filter(Boolean).join(' · ');
+  }
+  if (toolName === 'find' || toolName === 'grep') {
+    return formatSearchSummary({ ...args, tool: toolName }, true);
+  }
+  if (toolName === 'subagent') {
+    const summary = formatSubagentSummary(args);
+    return [summary.name, summary.arg].filter(Boolean).join(' · ');
+  }
+  if (toolName === 'askuserquestion' || toolName === 'ask_user_question') {
+    return formatQuestionSummary(args).arg;
+  }
   return JSON.stringify(args);
 }
 
 function formatToolTitle(tc) {
-  const name = tc.name || 'Tool';
-  const args = tc.arguments || {};
-  if (typeof args === 'string') return { name, arg: args };
-  if (typeof name === 'string' && name.toLowerCase() === 'bash' && args.command) {
-    return { name, arg: args.command };
+  const rawName = tc.name || 'Tool';
+  const toolName = normalizeToolName(rawName);
+  const args = tc.arguments && typeof tc.arguments === 'object' ? tc.arguments : {};
+  if (typeof tc.arguments === 'string') {
+    return { name: toolDisplayLabel(rawName), arg: compactToolText(tc.arguments) };
   }
-  if (name === 'Read') return { name, arg: args.file_path || args.path || '' };
-  if (name === 'Write') return { name, arg: args.file_path || args.path || '' };
-  if (name === 'Edit') return { name, arg: args.file_path || args.path || '' };
-  if (name === 'Find') {
-    const parts = [];
-    if (args.pattern) parts.push(args.pattern);
-    if (args.path && args.path !== '.') parts.push(args.path);
-    return { name, arg: parts.join(' ') };
+  if (toolName === 'bash') {
+    const description = compactToolText(args.description);
+    return { name: 'Bash', arg: description || compactToolText(args.command || '') };
   }
-  if (name === 'Grep') {
-    const parts = [];
-    if (args.pattern) parts.push(args.pattern);
-    if (args.path) parts.push(args.path);
-    return { name, arg: parts.join(' ') };
+  if (toolName === 'subagent') return formatSubagentSummary(args);
+  if (toolName === 'askuserquestion' || toolName === 'ask_user_question') {
+    return formatQuestionSummary(args);
   }
-  return { name, arg: formatToolArgs(tc) };
+  return { name: toolDisplayLabel(rawName), arg: formatToolArgs(tc) };
+}
+
+function resolveToolTitle(tc, devFlowPresentation) {
+  return devFlowPresentation
+    ? formatBashDevFlowTitle(devFlowPresentation)
+    : formatToolTitle(tc);
 }
 
 function renderCodeView(content) {
@@ -1655,7 +2010,8 @@ function renderRunningMessages(queuedMessages, steeringConversation) {
 
 function trackTool(name) {
   if (!name) return;
-  toolCounts[name] = (toolCounts[name] || 0) + 1;
+  const label = toolDisplayLabel(name);
+  toolCounts[label] = (toolCounts[label] || 0) + 1;
 }
 
 function renderToolChips() {
@@ -1673,10 +2029,11 @@ function renderToolChips() {
 }
 
 function toolIcon(name) {
-  if (name === 'Bash') return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 5.5 1.5 8 4 10.5"/><line x1="8" y1="10" x2="13" y2="10"/></svg>';
-  if (name === 'Edit') return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 2.5a1.4 1.4 0 012 2L5 14l-3 1 1-3 9.5-9.5z"/><path d="M11 4l2 2"/></svg>';
-  if (name === 'Write') return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 2.5a1.4 1.4 0 012 2L5 14l-3 1 1-3 9.5-9.5z"/><path d="M11 4l2 2"/></svg>';
-  if (name === 'Read') return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1V3.5a1 1 0 011-1z"/><path d="M9 2.5v4h4"/><path d="M5 8.5h6M5 11h4"/></svg>';
+  const toolName = normalizeToolName(name);
+  if (toolName === 'bash') return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 5.5 1.5 8 4 10.5"/><line x1="8" y1="10" x2="13" y2="10"/></svg>';
+  if (toolName === 'edit') return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 2.5a1.4 1.4 0 012 2L5 14l-3 1 1-3 9.5-9.5z"/><path d="M11 4l2 2"/></svg>';
+  if (toolName === 'write') return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 2.5a1.4 1.4 0 012 2L5 14l-3 1 1-3 9.5-9.5z"/><path d="M11 4l2 2"/></svg>';
+  if (toolName === 'read') return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1V3.5a1 1 0 011-1z"/><path d="M9 2.5v4h4"/><path d="M5 8.5h6M5 11h4"/></svg>';
   // Generic file icon for other tools
   return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1V3.5a1 1 0 011-1z"/><path d="M9 2.5v4h4"/></svg>';
 }

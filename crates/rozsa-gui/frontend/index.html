@@ -202,9 +202,9 @@ body {
 .tool-status {
   width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
-.tool-status.s-success { background: var(--success); }
-.tool-status.s-error { background: var(--error); }
-.tool-status.s-running { background: var(--warning); animation: pulse 1.2s infinite; }
+.tool-status.s-success, .tool-call-status.s-success { background: var(--success); }
+.tool-status.s-error, .tool-call-status.s-error { background: var(--error); }
+.tool-status.s-running, .tool-call-status.s-running { background: var(--warning); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 .tool-name { color: var(--fg); font-weight: 500; }
 
@@ -454,6 +454,10 @@ body {
 
 /* 消息块 */
 .msg { display: flex; gap: 12px; max-width: 100%; }
+.msg-assistant-continuation {
+  padding-left: 40px;
+  margin-top: -12px;
+}
 .msg-avatar {
   width: 28px; height: 28px;
   border-radius: 6px;
@@ -890,6 +894,18 @@ body.hide-thinking .thinking-block { display: none; }
 .dev-flow-tool-meta { color: var(--muted); font-family: var(--font-ui); font-size: 10.5px; }
 .dev-flow-tool-deltas { display: grid; gap: 3px; }
 .dev-flow-tool-deltas > span { color: var(--fg); font-family: var(--font-ui); font-weight: 500; }
+.tool-evidence { display: grid; gap: 6px; }
+.tool-evidence pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-evidence-meta { color: var(--muted); font-family: var(--font-ui); font-size: 10.5px; }
+.tool-evidence-section { display: grid; gap: 3px; min-width: 0; }
+.tool-evidence-label { color: var(--fg); font-family: var(--font-ui); font-size: 10.5px; font-weight: 500; }
+.tool-evidence-output { color: var(--fg); }
+.tool-evidence-pending { color: var(--muted); font-family: var(--font-ui); font-style: italic; }
+.tool-evidence-list { display: grid; gap: 3px; }
+.tool-evidence-row, .tool-evidence-question { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.tool-evidence-key { color: var(--fg); font-family: var(--font-ui); font-weight: 500; flex-shrink: 0; }
+.tool-evidence-value { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.tool-evidence-question { display: grid; gap: 1px; }
 
 /* 运行时摘要卡片 */
 .changes-card { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: color-mix(in oklch, var(--surface) 92%, var(--code-bg)); padding: 10px 12px; }
@@ -1006,6 +1022,11 @@ body.hide-thinking .thinking-block { display: none; }
   flex: 1;
   white-space: pre;
   color: var(--fg);
+}
+.tool-evidence-code-view, .tool-evidence-diff-view {
+  margin: 0;
+  padding: 0 !important;
+  background: transparent;
 }
 .kw,
 .fn,
