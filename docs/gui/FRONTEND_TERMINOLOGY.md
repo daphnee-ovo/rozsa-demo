@@ -310,9 +310,13 @@ chat region                                      #chatMessages
 | `tool call` | 工具调用项 | 展示 agent 请求执行某个工具的完整项 | `.tool-call`；`renderMessage()` |
 | `tool call row` | 工具调用行 | tool call 在消息流中的一行摘要入口 | `.tool-call`、`.tool-header`；`renderMessage()` |
 | `tool header` | 工具调用头部 | 展示工具名、参数摘要、状态和展开入口 | `.tool-header`、`.tool-name`、`.tool-call-args`、`.tool-call-toggle` |
-| `tool status` | 工具状态 | 表示工具正在运行、成功或失败 | `.tool-call-status.s-success` / `.s-error`；`renderMessage()` |
+| `tool title` | 工具标题 | 折叠态展示的结构化动作或工具名称 | `.tool-name`、`.tool-call-args`；`formatToolTitle()`、`resolveToolTitle()` |
+| `tool argument summary` | 工具参数摘要 | 将 description 或语义参数压缩为可扫描的一行 | `.tool-call-args`；`formatToolArgs()` |
+| `tool status` | 工具状态 | 表示工具正在运行、成功或失败 | `.tool-call-status.s-running` / `.s-success` / `.s-error`；`renderMessage()` |
 | `tool call body` | 工具调用正文 | 展开后展示参数、输出、代码或 diff | `.tool-call-body` |
 | `tool output` | 工具输出 | 工具执行返回的文本或步骤摘要 | `.tool-output`、`.tool-output-steps`、`.tool-step` |
+| `tool evidence` | 工具执行证据 | 展开后对原始输出补充退出码、耗时、截断和结构化详情 | `.tool-call-body`；`renderMessage()` |
+| `tool icon` | 工具图标 | 按大小写无关的工具名选择图标 | `.tool-icon`；`toolIcon()` |
 | `code view` | 代码视图 | 工具写入内容的带行号源码视图 | `.code-view`、`.code-line`、`.code-ln`、`.code-text`；`renderCodeView()` |
 | `diff view` | 差异视图 | 展示新增、删除及行号的 patch 视图 | `.diff-view`、`.diff-line`、`.diff-add`、`.diff-del`；`renderDiffView()` |
 | `file delta` | 文件变更数据 | 描述某个文件修改前后的结构化数据，不是 UI 本身 | `result.details.file_deltas`；`renderMessage()` |
