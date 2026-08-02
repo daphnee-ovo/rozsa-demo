@@ -5,8 +5,9 @@
 Add a project-scoped, read-only dev-flow integration to Rózsa. It must discover
 and validate `dow`, manage reusable dashboard services, adapt the versioned
 dashboard REST/SSE API behind an internal boundary, present open and claimed
-work in the GUI, specialize supported successful `dow` Bash results, and add a
-reusable notification center without coupling GUI code to dev-flow API details.
+work in the GUI, provide consistent structured tool-call presentation,
+specialize supported successful `dow` Bash results, and add a reusable
+notification center without coupling GUI code to dev-flow API details.
 
 ## Scope
 
@@ -19,8 +20,9 @@ reusable notification center without coupling GUI code to dev-flow API details.
   a Dashboard action in the sidebar.
 - A dedicated Dev-flow settings pane with one resolved CLI Path control, a flat
   project Overview, installation guidance, and dependent enablement.
-- Structured presentation for supported successful create, claim, task-done,
-  and issue-close Bash calls while preserving raw execution details.
+- Structured presentation for known tool calls and supported successful create,
+  claim, task-done, and issue-close Bash calls while preserving raw execution
+  details.
 - A general app notification center with independent timers and unresolved-error
   aggregation.
 - Focused deterministic tests, isolated real-`dow` contract tests, GUI
@@ -96,8 +98,10 @@ not guess.
    or possibly external work.
 7. **Presentation boundary**: open counts exclude closed/done work; claimed is
    the API `InProgress` subset. Routine Ready/sync/open success is silent.
-   Structured Bash cards require confirmed success and preserve the full raw
-   Bash result when expanded.
+   Tool names are normalized case-insensitively. Collapsed titles prefer a
+   confirmed Dev-flow display, then Bash `arguments.description`, then a
+   semantic argument summary, then a bounded raw fallback. Structured cards
+   require confirmed success and preserve the full raw result when expanded.
 8. **Persistence boundary**: restored presentation uses persisted
    execution-time project/revision identity and never executes commands. A
    current snapshot may add a title only on exact project-key equality.
@@ -480,12 +484,38 @@ reuses the current project service, then uses the Tauri opener plugin. Missing
 CLI, disabled integration, uninitialized project, startup, and failure states
 have explicit disabled/loading/error UI. Successful opening is silent.
 
-### 8. Structured Bash result presentation
+### 8. Tool-call title and structured result presentation
 
 The GUI frontend derives this presentation directly from the existing assistant
 `ToolCall` and matching Bash `ToolResult` already present in the session
 messages. This is a display transformation only: it must not execute commands,
 add session metadata, or require a GUI snapshot field dedicated to presentation.
+
+All tool names pass through a case-insensitive normalization step before label,
+icon, count, or title selection. Known tools have stable labels: `Bash`, `Read`,
+`Write`, `Edit`, `List`, `Search`, `Find`, `Subagent`, and `Question`. The
+collapsed title priority is:
+
+1. the confirmed Dev-flow structured display;
+2. Bash `arguments.description`;
+3. a semantic summary of the tool arguments;
+4. a bounded raw argument fallback for unknown tools.
+
+The semantic summaries are path/range for `Read`, path for `Write` and `Edit`,
+pattern/path for `Grep` and `Find`, action/target for `Subagent`, and question
+text or count for `AskUserQuestion`. Expanded content retains the raw result
+and may add structured metadata such as exit status, duration, truncation,
+matches, entries, subagent state, answers, or file deltas.
+
+The expanded presentation contract is tool-specific but deliberately
+evidence-preserving: `Read` keeps the tool's real line numbers and requested
+range; `Write` keeps its code view plus path/byte/line information; `Edit` keeps
+its diff plus replacement information; `Grep`, `Find`, and `Ls` keep raw lists
+plus counts and truncation flags; `Subagent` shows action, identity, status,
+model, and summary without rendering prompts; and `AskUserQuestion` shows
+question/answer summaries while keeping the interactive question panel as the
+input surface. Missing details fall back to text output, and errors are never
+hidden behind a structured summary.
 
 For a successful, non-truncated Bash result, the frontend may recognize the
 Dev-flow resource action set: `task create`, `task update`, `task remove`,

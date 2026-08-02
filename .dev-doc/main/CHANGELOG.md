@@ -20,3 +20,16 @@
 ## 2026-08-02
 - 00:21 docs: 同步 Dev-flow GUI 文档、原型与开发阶段校验
 - 00:48 fix: harden dev-flow integration and settings
+- 00:51 feat: complete dev-flow dashboard integration
+- 01:49 feat: secure model credentials with private env
+- 02:12 fix: ISSUE-I004：Test TASK-T027 fail:running 14 tests
+- 02:22 fix: Hide model configurations without usable credentials from the GUI model list
+- 02:34 feat: Optimize Dev Flow settings overview layout and dashboard access
+- 02:42 feat: Inherit static environment values from the default terminal shell
+- 03:04 fix: 修复模型切换阻塞与界面状态不同步
+- 03:27 feat: Rework Dev Flow settings modules and editable executable path
+- 03:46 fix: 修复首次发送时 Dev Flow 提前打开懒加载 session
+- 03:49 feat: harden model credentials and portability
+- 03:55 style: Refine Dev Flow Overview hierarchy and remove redundant path control
+- 03:58 chore: 初始化项目脚手架
+- 04:26 fix: ISSUE-I005：Test TASK-T040 fail:running 5 tests
