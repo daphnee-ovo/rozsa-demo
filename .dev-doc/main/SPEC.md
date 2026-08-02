@@ -505,7 +505,9 @@ The semantic summaries are path/range for `Read`, path for `Write` and `Edit`,
 pattern/path for `Grep` and `Find`, action/target for `Subagent`, and question
 text or count for `AskUserQuestion`. Expanded content retains the raw result
 and may add structured metadata such as exit status, duration, truncation,
-matches, entries, subagent state, answers, or file deltas.
+matches, entries, subagent state, or answers. Bash evidence is limited to the
+command, execution metadata, and raw output; file deltas are not part of the
+Bash presentation.
 
 The expanded presentation contract is tool-specific but deliberately
 evidence-preserving: `Read` keeps the tool's real line numbers and requested
@@ -514,7 +516,8 @@ its diff plus replacement information; `Grep`, `Find`, and `Ls` keep raw lists
 plus counts and truncation flags; `Subagent` shows action, identity, status,
 model, and summary without rendering prompts; and `AskUserQuestion` shows
 question/answer summaries while keeping the interactive question panel as the
-input surface. Missing details fall back to text output, and errors are never
+input surface. File deltas remain limited to file-tool and turn-summary
+presentations. Missing details fall back to text output, and errors are never
 hidden behind a structured summary.
 
 For a successful, non-truncated Bash result, the frontend may recognize the

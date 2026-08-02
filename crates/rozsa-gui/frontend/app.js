@@ -1238,13 +1238,9 @@ function renderBashToolEvidence(toolCall, result) {
     Number.isFinite(details.timeout_ms) ? 'timeout ' + details.timeout_ms + 'ms' : 'timeout unavailable',
     details.truncated ? 'truncated' : 'not truncated',
   ];
-  const deltas = Array.isArray(details.file_deltas) ? details.file_deltas : [];
   return '<div class="dev-flow-tool-command">$ ' + escapeHtml(command) + '</div>' +
     '<div class="dev-flow-tool-meta">' + facts.map(escapeHtml).join(' · ') + '</div>' +
-    '<pre>' + escapeHtml(result.output || '') + '</pre>' +
-    (deltas.length
-      ? '<div class="dev-flow-tool-deltas"><span>File delta</span><pre>' + escapeHtml(JSON.stringify(deltas, null, 2)) + '</pre></div>'
-      : '');
+    '<pre>' + escapeHtml(result.output || '') + '</pre>';
 }
 
 function toolResultDetails(result) {

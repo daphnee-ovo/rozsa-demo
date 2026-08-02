@@ -93,9 +93,10 @@ const evidence = renderBashToolEvidence(
   {{arguments:{{command:'dow task create < request.json'}}}},
   {{...result,output:'TASK-T001\nstderr evidence'}}
 );
-for (const expected of ['$ dow task create &lt; request.json','exit 0','42ms','timeout 120000ms','not truncated','TASK-T001','stderr evidence','src/lib.rs','@@']) {{
+for (const expected of ['$ dow task create &lt; request.json','exit 0','42ms','timeout 120000ms','not truncated','TASK-T001','stderr evidence']) {{
   check(evidence.includes(expected), 'missing evidence: ' + expected);
 }}
+check(!evidence.includes('File delta') && !evidence.includes('file_deltas'), 'bash file delta should be hidden');
 "#,
         &source[start..end]
     );

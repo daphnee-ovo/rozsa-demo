@@ -240,8 +240,9 @@ Bash 调用参数中的 `description`，再其次是工具语义参数（路径�
 
 工具展开内容的约定：
 
-- `bash` 显示命令、exit code、耗时、timeout、截断状态、输出和可用的
-  file delta；Dev-flow 成功动作保留结构化证据卡。
+- `bash` 显示命令、exit code、耗时、timeout、截断状态和输出；Dev-flow
+  成功动作保留结构化证据卡。文件变更只在 `write` / `edit` 和回合摘要中
+  展示，不在 Bash 展开区重复展示。
 - `read` 显示文件、请求范围、工具返回的真实行号和截断信息；不能因为
   `offset` 存在而把输出重新从 1 编号。
 - `write` 保留 code view，并补充路径、创建/更新、字节数和行数；`edit`
