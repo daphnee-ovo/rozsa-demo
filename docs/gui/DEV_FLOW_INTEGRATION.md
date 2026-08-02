@@ -78,10 +78,11 @@ subject to 15-minute inactive-session reclamation and the soft
 external dashboard clients are protected. Memory Use is the current service
 child RSS plus its project-local registry cache estimate.
 
-The GUI talks to Dev Flow only through the internal adapter in `rozsa-app` and
-the typed `DevFlowRuntime` facade in `rozsa-gui`; frontend code does not depend
-on Dev Flow transport payloads. Transport/API changes must be absorbed by that
-adapter and its contract tests before changing GUI snapshots.
+The status/sidebar/dashboard path talks to Dev Flow through the internal
+adapter in `rozsa-app` and the typed `DevFlowRuntime` facade in `rozsa-gui`;
+frontend Bash-card rendering is a separate message-derived display transform.
+It does not consume status snapshots, persist presentation state, or invoke
+commands through the app layer.
 
 The adapter uses only the loopback REST v1 read routes: `GET /api/v1/status`,
 `GET /api/v1/tasks`, and `GET /api/v1/issues`. `GET /api/v1/events` supplies SSE
@@ -90,6 +91,33 @@ publish a fully validated combined snapshot. Rózsa does not expose or invoke
 the dashboard's mutation or document routes. A real-`dow` test validates
 discovery at `GET /api/v1` (without a trailing slash) and these read contracts
 inside an isolated `tmp/test_env/` project.
+
+## Bash tool-call presentation
+
+The GUI derives a structured collapsed summary from a successful, non-truncated
+Bash tool call and its matching result. It recognizes these resource actions:
+
+- Task: `create`, `update`, `remove`, `done`, and `reopen`.
+- Issue: `create`, `update`, `remove`, `close`, and `reopen`.
+- Claims: `claim` and `claim --revoke`.
+
+The summary displays the action, resource type, short ID, and title when one is
+available. Task/Issue titles are enriched with one bounded detail request per
+ID: `GET /api/v1/tasks/:id` or `GET /api/v1/issues/:id`. Collection GETs are not
+used for title lookup. A removed resource may no longer have a detail route, so
+its summary keeps the ID and shows `Details unavailable` when no title was
+captured in the command result.
+
+`task/issue show`, `list`, and `schema`, along with `status`, `init`, `doctor`,
+`iterate`, `version`, `changelog`, `rollback`, and other non-resource commands,
+remain ordinary Bash summaries. They are intentionally separate from the
+Dev-flow status/sidebar linkage.
+
+The recognizer accepts `-H`/`--human`, known option values, input redirection,
+and a captured `2>&1`. It does not treat `2&>1` as captured output and does not
+claim success for semicolon-separated commands such as `dow task update T001
+2>&1; echo "==="`, because one tool result cannot attribute the final exit code
+to each command.
 
 Errors use the shared notification center. They appear for six seconds, then
 remain reachable through the unresolved-error indicator until explicitly

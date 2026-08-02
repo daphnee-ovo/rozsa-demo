@@ -42,16 +42,50 @@ const closed = parseDevFlowBashPresentation(
   {{name:'bash',arguments:{{command:'dow issue close I003 -H 2>&1'}}}}, result
 );
 check(closed.action === 'closed' && closed.items[0].kind === 'issue', 'close action');
+const updated = parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow --human task update --title "renamed" T004 --priority P1 2>&1'}}}}, result
+);
+check(updated.action === 'updated' && updated.items[0].id === 'TASK-T004', 'update action');
+const removed = parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow issue remove ISSUE-I005 --confirm IRM-123 -H 2>&1'}}}}, result
+);
+check(removed.action === 'removed' && removed.items[0].id === 'ISSUE-I005', 'remove action');
+const reopened = parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow task reopen T006 --confirm TRO-123 --human 2>&1'}}}}, result
+);
+check(reopened.action === 'reopened' && reopened.items[0].kind === 'task', 'reopen action');
+const released = parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow claim --revoke TASK-T001 ISSUE-I003 --timeout=300 -H 2>&1'}}}}, result
+);
+check(released.action === 'released' && released.items.length === 2, 'release action');
+const releasedAll = parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow claim --revoke -H 2>&1'}}}}, result
+);
+check(formatBashDevFlowTitle(releasedAll).arg === 'all claims', 'release all action');
+const multiDone = parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow task done T007 T008 --human 2>&1'}}}}, result
+);
+check(multiDone.action === 'completed' && multiDone.items.length === 2, 'multi-id action');
 check(parseDevFlowBashPresentation(
-  {{name:'bash',arguments:{{command:'dow task show TASK-T001; echo nope'}}}}, result
+  {{name:'bash',arguments:{{command:'dow task show TASK-T001 -H 2>&1'}}}}, result
+) === null, 'read-only task command');
+check(parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow status set --phase DEV -H 2>&1'}}}}, result
+) === null, 'status command');
+check(parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow task update T001 2&>1'}}}}, result
+) === null, 'file redirect is not captured');
+check(parseDevFlowBashPresentation(
+  {{name:'bash',arguments:{{command:'dow task update T001 2>&1; echo "==="'}}}}, result
 ) === null, 'compound command');
 check(parseDevFlowBashPresentation(
   {{name:'bash',arguments:{{command:'dow claim TASK-T001'}}}},
   {{...result,isError:true,details:{{...result.details,success:false}}}}
 ) === null, 'failed command');
-check(devFlowTitleEndpoint('task').pathname === '/api/v1/tasks', 'task title endpoint');
-check(devFlowTitleEndpoint('issue').pathname === '/api/v1/issues', 'issue title endpoint');
-check(fetchDevFlowTitleItems.toString().includes("method: 'GET'"), 'title lookup uses GET');
+check(devFlowTitleEndpoint('task', 'TASK-T001').pathname === '/api/v1/tasks/TASK-T001', 'task detail endpoint');
+check(devFlowTitleEndpoint('issue', 'ISSUE-I003').pathname === '/api/v1/issues/ISSUE-I003', 'issue detail endpoint');
+check(fetchDevFlowTitle.toString().includes("method: 'GET'"), 'title lookup uses GET');
+check(!fetchDevFlowTitle.toString().includes('payload?.items'), 'title lookup is not a list GET');
 const evidence = renderBashToolEvidence(
   {{arguments:{{command:'dow task create < request.json'}}}},
   {{...result,output:'TASK-T001\nstderr evidence'}}

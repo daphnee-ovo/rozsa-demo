@@ -927,43 +927,145 @@ function parseDevFlowBashPresentation(toolCall, result, titleLookup = null) {
   const parsed = parseDevFlowBashCommand(command);
   if (!parsed) return null;
   const { words, stageCount } = parsed;
-  if (!words.length || !isDevFlowExecutable(words[0])) return null;
-  const args = words.slice(1);
-  let action;
-  let expectedKind = null;
-  let ids;
-  if (args[0] === 'task' && args[1] === 'create') {
-    action = 'created';
-    expectedKind = 'task';
-    ids = parseCreatedDevFlowIds(result.output, expectedKind);
-  } else if (args[0] === 'issue' && args[1] === 'create') {
-    action = 'created';
-    expectedKind = 'issue';
-    ids = parseCreatedDevFlowIds(result.output, expectedKind);
-  } else if (args[0] === 'claim') {
-    action = 'claimed';
-    ids = parseDevFlowArgumentIds(args.slice(1), null, true);
-  } else if (args[0] === 'task' && args[1] === 'done') {
-    action = 'completed';
-    expectedKind = 'task';
-    ids = parseDevFlowArgumentIds(args.slice(2), expectedKind, false);
-  } else if (args[0] === 'issue' && args[1] === 'close') {
-    action = 'closed';
-    expectedKind = 'issue';
-    ids = parseDevFlowArgumentIds(args.slice(2), expectedKind, false);
-  } else {
-    return null;
-  }
-  if (!ids || (!expectedKind && !ids.length) || (stageCount > 1 && action !== 'created')) return null;
+  const operation = parseDevFlowAction(words, result.output);
+  if (!operation || (stageCount > 1 && operation.action !== 'created')) return null;
+  if (!operation.ids.length && !operation.allowEmpty) return null;
   return {
-    action,
-    items: ids.map(({ kind, id }) => ({
-      kind: expectedKind || kind,
+    action: operation.action,
+    items: operation.ids.map(({ kind, id }) => ({
+      kind: operation.expectedKind || kind,
       id,
       shortId: devFlowShortId(id),
-      title: typeof titleLookup === 'function' ? titleLookup(expectedKind || kind, id) : null,
+      title: typeof titleLookup === 'function' ? titleLookup(operation.expectedKind || kind, id) : null,
     })),
   };
+}
+
+const DEV_FLOW_RESOURCE_VALUE_OPTIONS = {
+  task: {
+    update: ['--title', '--task-type', '--priority', '--refs', '--file', '--depends-on', '--parallel', '--complexity', '--done-when'],
+    remove: ['--confirm'],
+    reopen: ['--confirm'],
+  },
+  issue: {
+    update: ['--title', '--severity', '--location', '--desc', '--reproduce', '--fix', '--file'],
+    remove: ['--confirm'],
+    reopen: ['--confirm'],
+  },
+};
+
+function parseDevFlowAction(words, output) {
+  const invocation = parseDevFlowInvocation(words);
+  if (!invocation) return null;
+  if (invocation.command === 'claim') {
+    const claim = parseDevFlowClaimArgs(invocation.args);
+    if (!claim) return null;
+    return {
+      action: claim.revoke ? 'released' : 'claimed',
+      expectedKind: null,
+      ids: claim.ids,
+      allowEmpty: claim.revoke && claim.ids.length === 0,
+    };
+  }
+
+  const { kind, operation, args } = invocation;
+  if (operation === 'create') {
+    const ids = parseCreatedDevFlowIds(output, kind);
+    return ids ? { action: 'created', expectedKind: kind, ids, allowEmpty: false } : null;
+  }
+
+  const actionByOperation = {
+    update: 'updated',
+    remove: 'removed',
+    done: 'completed',
+    close: 'closed',
+    reopen: 'reopened',
+  };
+  const action = actionByOperation[operation];
+  if (!action) return null;
+  if ((kind === 'task' && operation === 'close') ||
+      (kind === 'issue' && operation === 'done')) return null;
+
+  const ids = parseDevFlowResourceIds(
+    args,
+    kind,
+    DEV_FLOW_RESOURCE_VALUE_OPTIONS[kind]?.[operation] || [],
+    operation === 'done' || operation === 'close',
+  );
+  return ids ? { action, expectedKind: kind, ids, allowEmpty: false } : null;
+}
+
+function parseDevFlowInvocation(words) {
+  if (!Array.isArray(words) || !words.length || !isDevFlowExecutable(words[0])) return null;
+  const args = words.slice(1);
+  let index = 0;
+  while (isDevFlowFormatOption(args[index])) index++;
+  if (args[index] === 'claim') {
+    return { command: 'claim', args: args.slice(index + 1) };
+  }
+  if (args[index] !== 'task' && args[index] !== 'issue') return null;
+  const kind = args[index++];
+  while (isDevFlowFormatOption(args[index])) index++;
+  const operation = args[index++];
+  if (!operation) return null;
+  return { kind, operation, args: args.slice(index) };
+}
+
+function isDevFlowFormatOption(value) {
+  return value === '-H' || value === '--human';
+}
+
+function splitDevFlowOption(value) {
+  const text = String(value || '');
+  const separator = text.indexOf('=');
+  return separator < 0
+    ? { name: text, inlineValue: null }
+    : { name: text.slice(0, separator), inlineValue: text.slice(separator + 1) };
+}
+
+function parseDevFlowClaimArgs(args) {
+  const ids = [];
+  let revoke = false;
+  for (let index = 0; index < args.length; index++) {
+    const option = splitDevFlowOption(args[index]);
+    if (isDevFlowFormatOption(args[index])) continue;
+    if (option.name === '--revoke') {
+      if (option.inlineValue !== null) return null;
+      revoke = true;
+      continue;
+    }
+    if (option.name === '--timeout') {
+      const value = option.inlineValue !== null ? option.inlineValue : args[++index];
+      const timeout = Number(value);
+      if (!Number.isInteger(timeout) || timeout <= 0) return null;
+      continue;
+    }
+    if (option.name.startsWith('-')) return null;
+    const parsed = normalizeDevFlowId(args[index]);
+    if (!parsed) return null;
+    ids.push(parsed);
+  }
+  return { revoke, ids };
+}
+
+function parseDevFlowResourceIds(args, expectedKind, valueOptions, multiple) {
+  const ids = [];
+  for (let index = 0; index < args.length; index++) {
+    const raw = args[index];
+    if (isDevFlowFormatOption(raw)) continue;
+    const option = splitDevFlowOption(raw);
+    if (valueOptions.includes(option.name)) {
+      const value = option.inlineValue !== null ? option.inlineValue : args[++index];
+      if (value === undefined || value === '') return null;
+      continue;
+    }
+    if (option.name.startsWith('-')) return null;
+    const parsed = normalizeDevFlowId(raw);
+    if (!parsed || parsed.kind !== expectedKind) return null;
+    ids.push(parsed);
+  }
+  if (!ids.length || (!multiple && ids.length !== 1)) return null;
+  return ids;
 }
 
 function parseDevFlowBashCommand(command) {
@@ -1092,23 +1194,6 @@ function parseCreatedDevFlowIds(output, expectedKind) {
   return ids;
 }
 
-function parseDevFlowArgumentIds(args, expectedKind, allowTimeout) {
-  const ids = [];
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index];
-    if (allowTimeout && arg === '--timeout') {
-      const value = Number(args[++index]);
-      if (!Number.isInteger(value) || value <= 0) return null;
-      continue;
-    }
-    if (arg === '-H' || arg === '--human') continue;
-    const parsed = normalizeDevFlowId(arg);
-    if (!parsed || (expectedKind && parsed.kind !== expectedKind)) return null;
-    ids.push(parsed);
-  }
-  return ids.length ? ids : null;
-}
-
 function normalizeDevFlowId(value) {
   const match = String(value || '').match(/^(TASK-T|T|ISSUE-I|I)(\d+)$/i);
   if (!match || Number(match[2]) <= 0) return null;
@@ -1125,11 +1210,18 @@ function devFlowShortId(id) {
 function formatBashDevFlowTitle(presentation) {
   const action = {
     created: 'Created',
+    updated: 'Updated',
+    removed: 'Removed',
     claimed: 'Claimed',
+    released: 'Released',
     completed: 'Completed',
     closed: 'Closed',
+    reopened: 'Reopened',
   }[presentation.action] || 'Dev-flow';
   const items = Array.isArray(presentation.items) ? presentation.items : [];
+  if (!items.length && presentation.action === 'released') {
+    return { name: action, arg: 'all claims' };
+  }
   const arg = items.map(item => {
     const kind = item.kind === 'issue' ? 'Issue' : 'Task';
     return kind + ' ' + (item.shortId || item.id || '') + ' ' + (item.title || 'Details unavailable');
@@ -1184,16 +1276,17 @@ function rememberDevFlowTitle(key, title) {
   }
 }
 
-function devFlowTitleEndpoint(kind) {
+function devFlowTitleEndpoint(kind, id) {
   const rawUrl = typeof devFlowSettings !== 'undefined'
     ? devFlowSettings?.project?.dashboardUrl
     : null;
-  if (!rawUrl) return null;
+  if (!rawUrl || !id) return null;
   try {
     const base = new URL(rawUrl);
     const loopback = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(base.hostname);
     if (base.protocol !== 'http:' || !loopback) return null;
-    const path = kind === 'issue' ? 'api/v1/issues' : 'api/v1/tasks';
+    const collection = kind === 'issue' ? 'issues' : 'tasks';
+    const path = 'api/v1/' + collection + '/' + encodeURIComponent(id);
     return new URL(path, rawUrl.endsWith('/') ? rawUrl : rawUrl + '/');
   } catch (_) {
     return null;
@@ -1217,7 +1310,7 @@ function ensureDevFlowTitleSettings() {
   return devFlowTitleSettingsRequest;
 }
 
-function fetchDevFlowTitleItems(endpoint) {
+function fetchDevFlowTitle(endpoint) {
   if (typeof fetch !== 'function') return Promise.resolve(null);
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), DEV_FLOW_TITLE_TIMEOUT_MS) : null;
@@ -1230,13 +1323,14 @@ function fetchDevFlowTitleItems(endpoint) {
   }).then(text => {
     if (text.length > DEV_FLOW_TITLE_RESPONSE_LIMIT) throw new Error('Dev Flow title response is too large');
     const payload = JSON.parse(text);
-    return Array.isArray(payload?.items) ? payload.items : [];
+    return typeof payload?.title === 'string' ? payload.title : null;
   }).catch(() => null).finally(() => {
     if (timer) clearTimeout(timer);
   });
 }
 
 function requestDevFlowTitles(toolCallId, presentation) {
+  if (presentation.action === 'removed') return;
   const missing = presentation.items.filter(item => !item.title);
   for (const item of missing) {
     const cacheKey = devFlowTitleCacheKey(item.kind, item.id);
@@ -1244,12 +1338,12 @@ function requestDevFlowTitles(toolCallId, presentation) {
       item.title = devFlowTitleCache.get(cacheKey);
       continue;
     }
-    const endpoint = devFlowTitleEndpoint(item.kind);
+    const endpoint = devFlowTitleEndpoint(item.kind, item.id);
     if (!endpoint) {
       const settingsRequest = ensureDevFlowTitleSettings();
       if (settingsRequest) {
         settingsRequest.then(() => {
-          if (devFlowTitleEndpoint(item.kind)) requestDevFlowTitles(toolCallId, presentation);
+          if (devFlowTitleEndpoint(item.kind, item.id)) requestDevFlowTitles(toolCallId, presentation);
         });
       }
       continue;
@@ -1257,15 +1351,11 @@ function requestDevFlowTitles(toolCallId, presentation) {
     const requestKey = endpoint.toString();
     let request = devFlowTitleRequests.get(requestKey);
     if (!request) {
-      request = fetchDevFlowTitleItems(endpoint);
+      request = fetchDevFlowTitle(endpoint);
       devFlowTitleRequests.set(requestKey, request);
       request.finally(() => devFlowTitleRequests.delete(requestKey));
     }
-    request.then(items => {
-      const found = Array.isArray(items)
-        ? items.find(candidate => normalizeDevFlowId(candidate?.id)?.id === item.id)
-        : null;
-      const title = found && typeof found.title === 'string' ? found.title : null;
+    request.then(title => {
       rememberDevFlowTitle(cacheKey, title);
       item.title = title;
       updateDevFlowToolCard(toolCallId, presentation);

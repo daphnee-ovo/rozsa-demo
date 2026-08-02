@@ -488,17 +488,29 @@ messages. This is a display transformation only: it must not execute commands,
 add session metadata, or require a GUI snapshot field dedicated to presentation.
 
 For a successful, non-truncated Bash result, the frontend may recognize the
-small supported `dow` action set: `task create`, `issue create`, `claim`,
-`task done`, and `issue close`. Unsupported, failed, or incomplete commands
-remain generic Bash tool calls. The collapsed summary shows the action, entity,
-short ID, and optional title; expansion preserves the original command,
-stdout/stderr, exit code, duration, timeout, truncation, and file-delta details.
+Dev-flow resource action set: `task create`, `task update`, `task remove`,
+`task done`, `task reopen`, `issue create`, `issue update`, `issue remove`,
+`issue close`, `issue reopen`, `claim`, and `claim --revoke`. The collapsed
+summary shows Created, Updated, Removed, Completed, Reopened, Claimed,
+Released, or Closed with the entity, short ID, and optional title. Read-only
+resource queries (`show`, `list`, and `schema`) and project/status/workflow
+commands remain generic Bash tool calls; they must not be represented as
+Task/Issue mutation cards. Failed, truncated, incomplete, or unsafe compound
+commands also remain generic Bash tool calls.
 
-If an ID needs a title, the GUI may use one bounded read-only GET against the
-already available Dev-flow status data and render `Details unavailable` when
-the lookup does not complete. This title enrichment is separate from the
-Dev-flow status/sidebar/dashboard presentation and must not introduce session
-record persistence or app-layer presentation state.
+Title enrichment uses one bounded, read-only detail GET per Task/Issue ID:
+`GET /api/v1/tasks/:id` or `GET /api/v1/issues/:id`. It does not fetch the
+collection endpoints. The GUI renders `Details unavailable` when the lookup
+does not complete; removed resources are not fetched after deletion because
+their detail endpoint may already return 404. This title enrichment is
+separate from the Dev-flow status/sidebar/dashboard presentation and must not
+introduce session record persistence or app-layer presentation state.
+
+The recognizer accepts output-only flags such as `-H`/`--human`, known option
+values such as `--timeout` and `--confirm`, input redirection, and a captured
+`2>&1` redirect. A redirect such as `2&>1` and a semicolon compound command
+such as `dow task update T001 2>&1; echo "==="` remain generic because the
+single Bash result cannot prove the individual `dow` command succeeded.
 
 Session activation and restoration recompute the card from persisted messages
 without re-executing Bash. The Dev-flow status/sidebar/dashboard data flow is
@@ -584,13 +596,16 @@ Rust file whose symbol structure changes; never edit generated trees manually.
   reuses one project service and opens its loopback URL, while unavailable states
   are explicit; startup/open failures create resolvable per-project errors; and
   successful opening emits no notification.
-- SPEC-AC-009: Recognizer tests cover direct commands, file/stdin and arbitrary
-  producer pipelines ending in create, multi-ID output, absolute `dow`, quoting,
-  failure/truncation, and rejection of unsupported compound commands.
-- SPEC-AC-010: Successful supported calls render Created/Claimed/Completed/Closed
+- SPEC-AC-009: Recognizer tests cover the supported Task/Issue resource actions,
+  direct commands, file/stdin and arbitrary producer pipelines ending in create,
+  multi-ID output, absolute `dow`, known option values, quoting,
+  failure/truncation, unsafe redirects, and rejection of unsupported compound
+  commands.
+- SPEC-AC-010: Successful supported calls render the corresponding Created,
+  Updated, Removed, Claimed, Released, Completed, Closed, or Reopened
   Task/Issue cards with short ID and title when available; reload reconstructs
-  them from persisted execution-time project/revision records without execution
-  or cross-project enrichment, and expansion preserves raw Bash evidence.
+  them from persisted messages without execution or cross-project enrichment,
+  and expansion preserves raw Bash evidence.
 - SPEC-AC-011: Dev-flow Settings matches the shared Settings visual language;
   its header shows version/description, its flat Overview shows availability,
   address, measured current-project memory and one editable Path row, and its
