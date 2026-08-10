@@ -8,7 +8,7 @@
 - 提供 `AgentSession`，管理对话历史、工具调用、取消令牌、事件流
 - 通过 `SessionManager` 实现 JSONL 持久化（append-only tree structure）
 - 通过 `ModelRegistry` 管理模型元数据、凭据发现、models.json 合并，以及已学习的 provider thinking effort 映射
-- 通过 `SkillRegistry` 加载和注册 skill（project / user scope）
+- 通过 `SkillRegistry` 加载和注册 skill（project / agents / user scope）
 - 通过 `SubagentManager` 派生子 agent，实现 scope 隔离和并发编排
 - 通过 `RuntimeState` 跟踪 edit mode、tool stats、permission mode
 - 通过 `PermissionPolicy` 和 `PendingApprovals` 实现工具调用审批
@@ -392,7 +392,7 @@ pub struct ProviderAvailable {
 
 ### SkillRegistry
 
-**职责**：从 `ROZSA_CONFIG_DIR/skills`（默认 `~/.rozsa/skills`）和 `ROZSA_PROJECT_CONFIG_DIR/skills`（默认 `<project>/.rozsa/skills`）加载 skill，按 scope 优先级去重（Project > User），格式化为 system prompt 片段。
+**职责**：从 `ROZSA_CONFIG_DIR/skills`（默认 `~/.rozsa/skills`）、`$HOME/.agents/skills` 和 `ROZSA_PROJECT_CONFIG_DIR/skills`（默认 `<project>/.rozsa/skills`）加载 skill，按 scope 优先级去重（Project > Agents > User），格式化为 system prompt 片段。
 
 **Skill**：
 ```rust

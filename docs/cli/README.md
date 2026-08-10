@@ -223,7 +223,7 @@ rozsa [OPTIONS] [PROMPT]
 
 ### 配置根布局
 
-全局根和项目根使用完全一致的相对布局。读取顺序始终为全局后项目，因此项目同名项覆盖全局；不读取旧 `agent/` 层级。
+全局根和项目根使用完全一致的相对布局。读取顺序始终为全局后项目，因此项目同名项覆盖全局。除此之外，SkillRegistry 继续兼容读取 `$HOME/.agents/skills`；其他旧 `agent/` 配置层级不读取。
 
 ```text
 ROZSA_CONFIG_DIR/                  ROZSA_PROJECT_CONFIG_DIR/
@@ -236,7 +236,7 @@ ROZSA_CONFIG_DIR/                  ROZSA_PROJECT_CONFIG_DIR/
 └── extensions/ ...               └── extensions/ ...
 ```
 
-`agent/` 目录保留给未来用途。
+`agent/` 目录保留给未来用途；`$HOME/.agents/skills` 是独立保留的 skill 兼容来源。
 
 ---
 
