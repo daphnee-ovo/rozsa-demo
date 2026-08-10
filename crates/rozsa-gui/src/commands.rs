@@ -1478,8 +1478,24 @@ async fn capability_settings_snapshot(
 
     let [global_dir, project_dir] = state.config_roots.skill_dirs();
     let global_result = load_skills_from_dirs(&[(global_dir, SkillScope::User)]);
+    let agents_result = state
+        .config_roots
+        .agents_skills_dir()
+        .map(|dir| load_skills_from_dirs(&[(dir.to_path_buf(), SkillScope::Agents)]))
+        .unwrap_or_default();
     let project_result = load_skills_from_dirs(&[(project_dir, SkillScope::Project)]);
-    let to_skill_items = |skills: Vec<rozsa_app::skills::loader::LoadedSkill>| {
+    let global_diagnostics = global_result.diagnostics;
+    let agents_diagnostics = agents_result.diagnostics;
+    let project_diagnostics = project_result.diagnostics;
+    let global_registry = SkillRegistry::new(
+        global_result
+            .skills
+            .into_iter()
+            .chain(agents_result.skills)
+            .collect(),
+    );
+    let project_registry = SkillRegistry::new(project_result.skills);
+    let to_skill_items = |skills: Vec<rozsa_app::skills::Skill>| {
         skills
             .into_iter()
             .map(|skill| CapabilityItemSnapshot {
@@ -1495,12 +1511,12 @@ async fn capability_settings_snapshot(
 
     Ok(CapabilitySettingsSnapshot {
         tools,
-        global_skills: to_skill_items(global_result.skills),
-        project_skills: to_skill_items(project_result.skills),
-        diagnostics: global_result
-            .diagnostics
+        global_skills: to_skill_items(global_registry.list().to_vec()),
+        project_skills: to_skill_items(project_registry.list().to_vec()),
+        diagnostics: global_diagnostics
             .into_iter()
-            .chain(project_result.diagnostics)
+            .chain(agents_diagnostics)
+            .chain(project_diagnostics)
             .map(|diagnostic| format!("{}: {}", diagnostic.path.display(), diagnostic.message))
             .collect(),
     })

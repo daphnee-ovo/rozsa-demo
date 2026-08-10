@@ -128,7 +128,12 @@ impl SkillRegistry {
 
     pub fn layered_dirs(roots: &ConfigRoots) -> Vec<(PathBuf, SkillScope)> {
         let [global, project] = roots.skill_dirs();
-        vec![(global, SkillScope::User), (project, SkillScope::Project)]
+        let mut dirs = vec![(global, SkillScope::User)];
+        if let Some(agents) = roots.agents_skills_dir() {
+            dirs.push((agents.to_path_buf(), SkillScope::Agents));
+        }
+        dirs.push((project, SkillScope::Project));
+        dirs
     }
 
     pub fn find_by_name(&self, name: &str) -> Option<&Skill> {
@@ -178,6 +183,7 @@ fn filter_enabled(skills: Vec<LoadedSkill>, settings: &BTreeMap<String, bool>) -
 fn scope_priority(scope: SkillScope) -> u8 {
     match scope {
         SkillScope::Project => 2,
+        SkillScope::Agents => 1,
         SkillScope::User => 0,
     }
 }
@@ -185,6 +191,7 @@ fn scope_priority(scope: SkillScope) -> u8 {
 fn format_skill_var_path(skill: &Skill) -> String {
     let var_name = match skill.scope {
         SkillScope::Project => "$PROJECT_SKILLS",
+        SkillScope::Agents => "$AGENTS_SKILLS",
         SkillScope::User => "$USER_SKILLS",
     };
 

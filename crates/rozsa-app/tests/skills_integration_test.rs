@@ -5,6 +5,7 @@ use rozsa_app::config_paths::ConfigRoots;
 use rozsa_app::skills::SkillRegistry;
 use rozsa_app::skills::loader::{SkillScope, load_skills_from_dirs};
 use std::fs;
+use std::path::Path;
 use tempfile::TempDir;
 
 fn create_skill(dir: &std::path::Path, name: &str, content: &str) {
@@ -67,6 +68,63 @@ fn priority_override_across_dirs() {
     assert_eq!(
         registry.find_by_name("deploy").unwrap().scope,
         SkillScope::Project
+    );
+}
+
+#[test]
+fn agents_skills_are_loaded_between_user_and_project_scopes() {
+    let tmp = TempDir::new().unwrap();
+    let global = tmp.path().join("global");
+    let project = tmp.path().join("project");
+    let home = tmp.path().join("home");
+
+    create_skill(
+        &global.join("skills"),
+        "shared",
+        "---\nname: shared\ndescription: Global shared\n---\nGlobal.",
+    );
+    create_skill(
+        &home.join(".agents").join("skills"),
+        "shared",
+        "---\nname: shared\ndescription: Agents shared\n---\nAgents.",
+    );
+    create_skill(
+        &home.join(".agents").join("skills"),
+        "agents-only",
+        "---\nname: agents-only\ndescription: Agents-only skill\n---\nAgents only.",
+    );
+    create_skill(
+        &project.join("skills"),
+        "shared",
+        "---\nname: shared\ndescription: Project shared\n---\nProject.",
+    );
+
+    let roots = ConfigRoots::from_overrides(
+        Path::new("/workspace"),
+        Some(global),
+        Some(project),
+        Some(home),
+    )
+    .unwrap();
+    let dirs = SkillRegistry::layered_dirs(&roots);
+    assert_eq!(
+        dirs.iter().map(|(_, scope)| *scope).collect::<Vec<_>>(),
+        vec![SkillScope::User, SkillScope::Agents, SkillScope::Project]
+    );
+
+    let registry = SkillRegistry::load_from_roots(&roots);
+    assert_eq!(
+        registry.find_by_name("shared").unwrap().description,
+        "Project shared"
+    );
+    assert_eq!(
+        registry.find_by_name("agents-only").unwrap().scope,
+        SkillScope::Agents
+    );
+    assert!(
+        registry
+            .format_for_prompt()
+            .contains("$AGENTS_SKILLS/agents-only/SKILL.md")
     );
 }
 

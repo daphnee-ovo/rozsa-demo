@@ -1,3 +1,16 @@
+// FrameworkTree
+// loader.rs
+// ├── enum SkillScope
+// ├── struct LoadedSkill
+// ├── struct SkillDiagnostic
+// ├── struct SkillLoadResult
+// ├── load_skills_from_dirs()
+// ├── scan_skills_dir()
+// ├── parse_skill_file()
+// ├── extract_frontmatter()
+// ├── parse_frontmatter_field()
+// └── strip_frontmatter()
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -6,6 +19,8 @@ use std::path::{Path, PathBuf};
 pub enum SkillScope {
     /// <cwd>/.rozsa/skills/
     Project,
+    /// ~/.agents/skills/
+    Agents,
     /// ~/.rozsa/skills/
     User,
 }

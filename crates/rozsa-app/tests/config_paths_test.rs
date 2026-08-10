@@ -123,6 +123,10 @@ fn defaults_are_home_and_project_dot_rozsa() {
 
     assert_eq!(roots.global(), Path::new("/home/user/.rozsa"));
     assert_eq!(roots.project(), Path::new("/workspace/.rozsa"));
+    assert_eq!(
+        roots.agents_skills_dir(),
+        Some(Path::new("/home/user/.agents/skills"))
+    );
 }
 
 #[test]

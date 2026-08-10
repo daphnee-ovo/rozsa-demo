@@ -51,6 +51,8 @@ fn capability_controls_use_layer_aware_backend_commands() {
     assert!(index.contains("Run <code>/reload</code>"));
     assert!(commands.contains("set_capability_override(scope, kind, &name, enabled)"));
     assert!(commands.contains(".shared\n        .registered_tool_metadata()"));
+    assert!(commands.contains("agents_skills_dir"));
+    assert!(commands.contains("SkillScope::Agents"));
     assert!(state.contains("Settings must remain inspectable before the first chat exists."));
 }
 

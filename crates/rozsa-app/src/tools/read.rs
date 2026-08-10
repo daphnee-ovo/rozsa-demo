@@ -1,3 +1,25 @@
+// FrameworkTree
+// read.rs
+// ├── struct ReadParams
+// ├── struct TruncationDetails
+// ├── struct ReadTool
+// ├── impl ReadTool
+// ├── new()
+// ├── format_line_with_number()
+// ├── format_size()
+// ├── read_and_format()
+// ├── truncate_head()
+// ├── impl ReadTool
+// ├── default()
+// ├── impl ReadTool
+// ├── name()
+// ├── description()
+// ├── label()
+// ├── parameters_schema()
+// ├── execute()
+// ├── create_read_tool()
+// └── resolve_skill_path_vars()
+
 use rozsa_core::tool::{Tool, ToolError, ToolResult};
 use rozsa_model::types::ContentBlock;
 use serde::{Deserialize, Serialize};
@@ -323,11 +345,13 @@ pub fn create_read_tool() -> Box<dyn Tool> {
     Box::new(ReadTool::new())
 }
 
-/// Resolve `$PROJECT_SKILLS` and `$USER_SKILLS` path variables.
+/// Resolve `$PROJECT_SKILLS`, `$AGENTS_SKILLS`, and `$USER_SKILLS` path variables.
 /// Returns Some(resolved_path) if a variable was found, None otherwise.
 fn resolve_skill_path_vars(path: &str) -> Option<String> {
     let (var, rest) = if let Some(rest) = path.strip_prefix("$PROJECT_SKILLS") {
         ("$PROJECT_SKILLS", rest)
+    } else if let Some(rest) = path.strip_prefix("$AGENTS_SKILLS") {
+        ("$AGENTS_SKILLS", rest)
     } else {
         ("$USER_SKILLS", path.strip_prefix("$USER_SKILLS")?)
     };
@@ -339,6 +363,7 @@ fn resolve_skill_path_vars(path: &str) -> Option<String> {
 
     let base = match var {
         "$PROJECT_SKILLS" => project_skills,
+        "$AGENTS_SKILLS" => roots.agents_skills_dir()?.to_path_buf(),
         "$USER_SKILLS" => user_skills,
         _ => unreachable!(),
     };

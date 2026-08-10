@@ -1,3 +1,25 @@
+// FrameworkTree
+// config_paths.rs
+// ├── enum ConfigPathError
+// ├── struct ConfigRoots
+// ├── impl ConfigRoots
+// ├── discover()
+// ├── from_roots()
+// ├── global()
+// ├── project()
+// ├── settings_paths()
+// ├── model_dirs()
+// ├── theme_dirs()
+// ├── skill_dirs()
+// ├── agents_skills_dir()
+// ├── resource_dirs()
+// ├── session_dirs()
+// ├── writable_session_dir()
+// ├── global_models_dir()
+// ├── from_overrides()
+// ├── resolve_global_root()
+// └── encode_project_path()
+
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
@@ -23,6 +45,7 @@ pub enum ConfigPathError {
 pub struct ConfigRoots {
     global: PathBuf,
     project: PathBuf,
+    agents_skills: Option<PathBuf>,
 }
 
 impl ConfigRoots {
@@ -36,7 +59,11 @@ impl ConfigRoots {
     }
 
     pub fn from_roots(global: PathBuf, project: PathBuf) -> Self {
-        Self { global, project }
+        Self {
+            global,
+            project,
+            agents_skills: None,
+        }
     }
 
     pub fn global(&self) -> &Path {
@@ -64,6 +91,11 @@ impl ConfigRoots {
 
     pub fn skill_dirs(&self) -> [PathBuf; 2] {
         [self.global.join("skills"), self.project.join("skills")]
+    }
+
+    /// Legacy user-wide skill directory kept for compatibility with existing skills.
+    pub fn agents_skills_dir(&self) -> Option<&Path> {
+        self.agents_skills.as_deref()
     }
 
     pub fn resource_dirs(&self) -> [PathBuf; 2] {
@@ -96,6 +128,9 @@ impl ConfigRoots {
         project_override: Option<PathBuf>,
         home: Option<PathBuf>,
     ) -> Result<Self, ConfigPathError> {
+        let agents_skills = home
+            .as_ref()
+            .map(|path| path.join(".agents").join("skills"));
         let global = resolve_global_root(global_override, home)?;
         if project_override
             .as_ref()
@@ -106,7 +141,11 @@ impl ConfigRoots {
             });
         }
         let project = project_override.unwrap_or_else(|| project_dir.join(".rozsa"));
-        Ok(Self { global, project })
+        Ok(Self {
+            global,
+            project,
+            agents_skills,
+        })
     }
 }
 
