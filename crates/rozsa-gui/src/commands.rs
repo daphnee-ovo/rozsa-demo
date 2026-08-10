@@ -148,6 +148,7 @@
 // ├── struct ModelListEntry
 // ├── struct SettingsSnapshot
 // ├── struct PermissionSettingsSnapshot
+// ├── struct PermissionRuleGroupSnapshot
 // ├── struct CapabilitySettingsSnapshot
 // ├── struct CapabilityItemSnapshot
 // └── struct AppearanceSnapshot
@@ -168,7 +169,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use rozsa_app::agent_session::{AgentSession, normalize_thinking_effort};
 use rozsa_app::model_registry::ModelRegistry;
-use rozsa_app::permissions::{PermissionMode, PermissionResponse};
+use rozsa_app::permissions::{PermissionMode, PermissionResponse, default_read_only_bash_rules};
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::{CapabilityKind, PermissionRuleKind, SettingsScope};
 use rozsa_app::skills::SkillRegistry;
@@ -1608,6 +1609,10 @@ async fn permission_settings_snapshot(
         default_deny: defaults.deny,
         default_ask: defaults.ask,
         default_allow: defaults.allow,
+        default_allow_groups: vec![PermissionRuleGroupSnapshot {
+            name: "Read-only Bash".to_owned(),
+            rules: default_read_only_bash_rules(),
+        }],
         global_deny: manager
             .permission_rule_overrides(SettingsScope::Global, PermissionRuleKind::Deny)
             .map_err(|error| error.to_string())?,
@@ -3836,12 +3841,20 @@ pub struct PermissionSettingsSnapshot {
     pub default_deny: Vec<String>,
     pub default_ask: Vec<String>,
     pub default_allow: Vec<String>,
+    pub default_allow_groups: Vec<PermissionRuleGroupSnapshot>,
     pub global_deny: Option<Vec<String>>,
     pub global_ask: Option<Vec<String>>,
     pub global_allow: Option<Vec<String>>,
     pub project_deny: Option<Vec<String>>,
     pub project_ask: Option<Vec<String>>,
     pub project_allow: Option<Vec<String>>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionRuleGroupSnapshot {
+    pub name: String,
+    pub rules: Vec<String>,
 }
 
 #[derive(serde::Serialize)]

@@ -13,6 +13,7 @@
 // ├── struct PermissionSettings
 // ├── impl PermissionSettings
 // ├── default()
+// ├── migrate_permission_allow_rules()
 // ├── struct DevFlowSettings
 // ├── impl DevFlowSettings
 // ├── default()
@@ -147,19 +148,34 @@ pub struct PermissionSettings {
 
 impl Default for PermissionSettings {
     fn default() -> Self {
+        let mut allow = vec!["subagent(*)".to_string(), "askUserQuestion(*)".to_string()];
+        allow.extend(crate::permissions::default_read_only_bash_rules());
         Self {
             deny: Vec::new(),
             ask: Vec::new(),
-            allow: vec![
-                "ls(*)".to_string(),
-                "grep(*)".to_string(),
-                "find(*)".to_string(),
-                "subagent(*)".to_string(),
-                "askUserQuestion(*)".to_string(),
-            ],
+            allow,
             mode: "on-request".to_string(),
         }
     }
+}
+
+/// Replace the removed standalone file-tool defaults in persisted permission
+/// lists while preserving user-defined rules. The old entries were defaults,
+/// so their replacement is appended as the final Read-only Bash group.
+pub fn migrate_permission_allow_rules(mut rules: Vec<String>) -> Vec<String> {
+    let legacy_rules = ["ls(*)", "grep(*)", "find(*)"];
+    let had_legacy_default = rules
+        .iter()
+        .any(|rule| legacy_rules.contains(&rule.as_str()));
+    rules.retain(|rule| !legacy_rules.contains(&rule.as_str()));
+    if had_legacy_default {
+        for rule in crate::permissions::default_read_only_bash_rules() {
+            if !rules.contains(&rule) {
+                rules.push(rule);
+            }
+        }
+    }
+    rules
 }
 
 /// Global settings for the optional, read-only dev-flow integration.

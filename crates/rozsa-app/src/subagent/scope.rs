@@ -1,3 +1,15 @@
+// FrameworkTree
+// scope.rs
+// ├── enum AllowedTools
+// ├── struct SubagentScope
+// ├── impl SubagentScope
+// ├── inherit()
+// ├── readonly()
+// ├── scoped()
+// ├── custom()
+// ├── check_tool_allowed()
+// └── resolve_path()
+
 // File: subagent/scope.rs
 //
 // 子 agent 工具访问范围控制 — 控制 subagent 可使用的工具集与路径/命令/skill 限制。
@@ -36,7 +48,7 @@ pub struct SubagentScope {
     pub allowed_skills: Option<Vec<String>>,
 }
 
-const FILE_TOOLS: &[&str] = &["read", "write", "edit", "grep", "find", "ls"];
+const FILE_TOOLS: &[&str] = &["read", "write", "edit"];
 const PATH_KEYS: &[&str] = &["path", "file_path", "filePath", "dir", "directory"];
 
 impl SubagentScope {
@@ -50,20 +62,22 @@ impl SubagentScope {
     }
 
     pub fn readonly() -> Self {
-        let tools: HashSet<String> = ["read", "grep", "find", "ls"]
-            .into_iter()
-            .map(String::from)
-            .collect();
+        let tools: HashSet<String> = ["read", "bash"].into_iter().map(String::from).collect();
         Self {
             allowed_tools: AllowedTools::Only(tools),
             allowed_paths: None,
-            bash_prefixes: None,
+            bash_prefixes: Some(
+                crate::permissions::SAFE_SHELL_COMMANDS
+                    .iter()
+                    .flat_map(|prefix| [prefix.to_string(), format!("{prefix} ")])
+                    .collect(),
+            ),
             allowed_skills: None,
         }
     }
 
     pub fn scoped(paths: Vec<PathBuf>) -> Self {
-        let tools: HashSet<String> = ["read", "write", "edit", "grep", "find", "ls"]
+        let tools: HashSet<String> = ["read", "write", "edit"]
             .into_iter()
             .map(String::from)
             .collect();

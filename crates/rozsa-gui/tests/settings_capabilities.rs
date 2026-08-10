@@ -55,6 +55,23 @@ fn capability_controls_use_layer_aware_backend_commands() {
 }
 
 #[test]
+fn permission_allow_defaults_are_rendered_as_an_editable_group() {
+    let frontend = include_str!("../frontend/app.js");
+    let index = include_str!("../frontend/index.html");
+    let commands = include_str!("../src/commands.rs");
+
+    assert!(commands.contains("name: \"Read-only Bash\""));
+    assert!(commands.contains("default_allow_groups"));
+    assert!(frontend.contains("permissionRuleGroups"));
+    assert!(frontend.contains("document.createElement('details')"));
+    assert!(frontend.contains("details.open = previousGroupOpen.get(group.name) === true"));
+    assert!(frontend.contains("removePermissionRule(kind, rule)"));
+    assert!(frontend.contains("wirePermissionRulePointerDrag(row, kind, rule)"));
+    assert!(index.contains("permission-rule-group"));
+    assert!(index.contains(".permission-rule-group-summary"));
+}
+
+#[test]
 fn general_controls_are_connected_to_real_setting_keys() {
     let index = include_str!("../frontend/index.html");
     let frontend = include_str!("../frontend/app.js");
@@ -92,6 +109,8 @@ fn general_controls_are_connected_to_real_setting_keys() {
     );
     assert!(frontend.contains("combobox.onfocusout = event =>"));
     assert!(frontend.contains("copy.textContent = rule"));
+    assert!(frontend.contains("permissionRuleGroups"));
+    assert!(frontend.contains("Read-only Bash"));
     assert!(frontend.contains("target = `$HOME/${target"));
     assert!(!frontend.contains("All tools"));
     assert!(!frontend.contains("Inherit from global"));

@@ -181,7 +181,11 @@ fn merge_permissions(
         Some(o) => PermissionSettings {
             deny: o.deny.clone().unwrap_or_else(|| base.deny.clone()),
             ask: o.ask.clone().unwrap_or_else(|| base.ask.clone()),
-            allow: o.allow.clone().unwrap_or_else(|| base.allow.clone()),
+            allow: o
+                .allow
+                .clone()
+                .map(super::schema::migrate_permission_allow_rules)
+                .unwrap_or_else(|| base.allow.clone()),
             mode: o.mode.clone().unwrap_or_else(|| base.mode.clone()),
         },
     }

@@ -3,6 +3,7 @@ use std::fs;
 use std::sync::{Arc, Mutex};
 
 use rozsa_app::agent_session::{AgentSession, AgentSessionConfig, ModelStream};
+use rozsa_app::permissions::default_read_only_bash_rules;
 use rozsa_app::resources::LoadedResources;
 use rozsa_app::session::manager::SessionManager;
 use rozsa_app::settings::{
@@ -76,6 +77,30 @@ fn malformed_capability_shapes_fail_loudly() {
 }
 
 #[test]
+fn legacy_standalone_permission_defaults_migrate_to_read_only_bash() {
+    let temp = tempdir().unwrap();
+    let global = temp.path().join("settings.json");
+    fs::write(
+        &global,
+        r#"{"permission":{"allow":["subagent(*)","ls(*)","custom(*)","grep(*)","find(*)"]}}"#,
+    )
+    .unwrap();
+
+    let manager = SettingsManager::load(global, None, None).unwrap();
+    let allow = &manager.resolved().permissions.allow;
+
+    assert!(
+        !allow
+            .iter()
+            .any(|rule| { matches!(rule.as_str(), "ls(*)" | "grep(*)" | "find(*)") })
+    );
+    assert!(allow.contains(&"custom(*)".to_owned()));
+    for rule in default_read_only_bash_rules() {
+        assert!(allow.contains(&rule), "missing migrated rule: {rule}");
+    }
+}
+
+#[test]
 fn layered_permission_updates_preserve_settings_and_remove_retired_fields() {
     let temp = tempdir().unwrap();
     let global = temp.path().join("global/settings.json");
@@ -129,7 +154,7 @@ fn permission_rule_set_moves_are_written_atomically() {
             SettingsScope::Global,
             vec!["Bash(cargo publish *)".to_owned()],
             vec![],
-            vec!["ls(*)".to_owned()],
+            vec!["Bash(ls*)".to_owned()],
         )
         .unwrap();
 
@@ -142,11 +167,11 @@ fn permission_rule_set_moves_are_written_atomically() {
     assert_eq!(persisted["permission"]["ask"], serde_json::json!([]));
     assert_eq!(
         persisted["permission"]["allow"],
-        serde_json::json!(["ls(*)"])
+        serde_json::json!(["Bash(ls*)"])
     );
     assert_eq!(
         manager.resolved().permissions.allow,
-        vec!["ls(*)".to_owned()]
+        vec!["Bash(ls*)".to_owned()]
     );
 }
 

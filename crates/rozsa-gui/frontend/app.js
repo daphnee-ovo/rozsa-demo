@@ -1344,45 +1344,6 @@ function renderWriteEditToolEvidence(toolCall, result, mode) {
   return { html: body, className: ' tool-evidence' };
 }
 
-function renderSearchToolEvidence(toolCall, result, mode) {
-  const args = toolCallArgs(toolCall);
-  const details = toolResultDetails(result);
-  const isGrep = mode === 'grep';
-  const count = isGrep ? details.total_matches : details.total_results;
-  const limit = isGrep ? details.match_limit_reached : details.result_limit_reached;
-  const facts = [
-    args.pattern ? 'Pattern ' + compactToolText(args.pattern) : 'Pattern unavailable',
-    'Path ' + (args.path || '.'),
-    args.include ? 'Files ' + args.include : '',
-    Number.isFinite(count) ? count + (isGrep ? ' matches' : ' results') : '',
-    details.truncated
-      ? 'truncated' + (Number.isFinite(limit) ? ' at ' + limit : '')
-      : (result ? 'complete' : ''),
-    isGrep && details.lines_truncated ? 'long lines truncated' : '',
-  ];
-  const body = toolEvidenceMeta(facts) + (result
-    ? toolEvidenceOutput(toolResultOutput(result), 'Results')
-    : toolEvidencePending('Awaiting search results'));
-  return { html: body, className: ' tool-evidence' };
-}
-
-function renderLsToolEvidence(toolCall, result) {
-  const args = toolCallArgs(toolCall);
-  const details = toolResultDetails(result);
-  const facts = [
-    'Directory ' + (args.path || '.'),
-    Number.isFinite(details.total_entries) ? details.total_entries + ' total entries' : '',
-    Number.isFinite(details.output_entries) ? details.output_entries + ' entries shown' : '',
-    details.truncated
-      ? 'truncated' + (Number.isFinite(details.entry_limit_reached) ? ' at ' + details.entry_limit_reached : '')
-      : (result ? 'complete' : ''),
-  ];
-  const body = toolEvidenceMeta(facts) + (result
-    ? toolEvidenceOutput(toolResultOutput(result), 'Entries')
-    : toolEvidencePending('Awaiting directory listing'));
-  return { html: body, className: ' tool-evidence' };
-}
-
 function subagentActionLabel(action) {
   const labels = { spawn: 'Spawn', send: 'Send', wait: 'Wait', interrupt: 'Interrupt', list: 'List' };
   return labels[normalizeToolName(action)] || 'Subagent';
@@ -1502,8 +1463,6 @@ function renderToolEvidence(toolCall, result, devFlowPresentation) {
   if (toolName === 'read') return renderReadToolEvidence(toolCall, result);
   if (toolName === 'write') return renderWriteEditToolEvidence(toolCall, result, 'write');
   if (toolName === 'edit') return renderWriteEditToolEvidence(toolCall, result, 'edit');
-  if (toolName === 'grep' || toolName === 'find') return renderSearchToolEvidence(toolCall, result, toolName);
-  if (toolName === 'ls') return renderLsToolEvidence(toolCall, result);
   if (toolName === 'subagent') return renderSubagentToolEvidence(toolCall, result);
   if (toolName === 'askuserquestion' || toolName === 'ask_user_question') {
     return renderQuestionToolEvidence(toolCall, result);
@@ -1646,9 +1605,6 @@ function toolDisplayLabel(name) {
     case 'read': return 'Read';
     case 'write': return 'Write';
     case 'edit': return 'Edit';
-    case 'ls': return 'List';
-    case 'grep': return 'Search';
-    case 'find': return 'Find';
     case 'subagent': return 'Subagent';
     case 'askuserquestion':
     case 'ask_user_question': return 'Question';
@@ -1673,17 +1629,6 @@ function formatReadRange(args) {
 function formatPathSummary(args, fallback = 'current directory') {
   const path = args.file_path || args.path;
   return path || fallback;
-}
-
-function formatSearchSummary(args, includePattern = true) {
-  const parts = [];
-  if (args.pattern) {
-    const pattern = compactToolText(args.pattern);
-    parts.push(includePattern && normalizeToolName(args.tool) === 'grep' ? '"' + pattern + '"' : pattern);
-  }
-  if (args.path && args.path !== '.') parts.push(args.path);
-  if (args.include) parts.push('files ' + args.include);
-  return parts.join(' · ');
 }
 
 function formatSubagentSummary(args) {
@@ -1722,12 +1667,6 @@ function formatToolArgs(tc) {
   if (toolName === 'write') return formatPathSummary(args, '');
   if (toolName === 'edit') {
     return [formatPathSummary(args, ''), args.replace_all ? 'replace all' : ''].filter(Boolean).join(' · ');
-  }
-  if (toolName === 'ls') {
-    return [formatPathSummary(args), args.limit ? 'limit ' + args.limit : ''].filter(Boolean).join(' · ');
-  }
-  if (toolName === 'find' || toolName === 'grep') {
-    return formatSearchSummary({ ...args, tool: toolName }, true);
   }
   if (toolName === 'subagent') {
     const summary = formatSubagentSummary(args);
@@ -3922,6 +3861,55 @@ function displayedPermissionRules(kind) {
     : [...effectivePermissionRules(kind)];
 }
 
+function permissionRuleGroups(kind, rows) {
+  if (kind !== 'allow') return [{ name: null, rules: rows }];
+  const groupedRules = new Set();
+  const groups = (permissionSettings?.defaultAllowGroups || []).map(group => {
+    const rules = rows.filter(rule => group.rules.includes(rule));
+    rules.forEach(rule => groupedRules.add(rule));
+    return { name: group.name, rules };
+  });
+  return [
+    { name: null, rules: rows.filter(rule => !groupedRules.has(rule)) },
+    ...groups,
+  ];
+}
+
+function renderPermissionRuleRows(list, kind, rules, inherited) {
+  list.dataset.permissionKind = kind;
+  for (const rule of rules) {
+    const row = document.createElement('div');
+    row.className = 'permission-rule-row';
+    wirePermissionRulePointerDrag(row, kind, rule);
+    const copy = document.createElement('div');
+    copy.className = 'permission-rule-copy';
+    copy.textContent = rule;
+    row.appendChild(copy);
+    if (inherited) {
+      const badge = document.createElement('span');
+      badge.className = 'capability-inherited';
+      badge.textContent = permissionScope === 'global' ? 'Default' : 'Inherited';
+      row.appendChild(badge);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'permission-rule-delete';
+    remove.setAttribute('aria-label', `Delete ${rule}`);
+    remove.textContent = 'Delete';
+    remove.onclick = () => removePermissionRule(kind, rule);
+    row.appendChild(remove);
+    list.appendChild(row);
+  }
+  return rules.length;
+}
+
+function renderPermissionRuleEmpty(list) {
+  const empty = document.createElement('div');
+  empty.className = 'permission-rule-empty';
+  empty.textContent = 'No rules configured';
+  list.appendChild(empty);
+}
+
 function renderPermissionSettings() {
   if (!permissionSettings) return;
   const scopeHost = document.getElementById('permissionScope');
@@ -3976,39 +3964,48 @@ function setPermissionSettingsError(message) {
 function renderPermissionRuleList(kind) {
   const host = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}List`);
   if (!host) return;
+  const previousGroupOpen = new Map(
+    [...(host.parentElement?.querySelectorAll('.permission-rule-group') || [])]
+      .map(group => [group.dataset.permissionRuleGroup || '', group.open])
+  );
+  host.parentElement?.querySelectorAll('.permission-rule-group')
+    .forEach(group => group.remove());
   host.replaceChildren();
   host.dataset.permissionKind = kind;
   const localRules = permissionLayerRules(kind);
   const inherited = localRules == null;
   const rows = displayedPermissionRules(kind);
-  if (!rows.length) {
-    const empty = document.createElement('div');
-    empty.className = 'permission-rule-empty';
-    empty.textContent = 'No rules configured';
-    host.appendChild(empty);
+  const groups = permissionRuleGroups(kind, rows);
+  const ungrouped = groups.find(group => !group.name) || { rules: [] };
+  if (!renderPermissionRuleRows(host, kind, ungrouped.rules, inherited)) {
+    renderPermissionRuleEmpty(host);
   }
-  for (const rule of rows) {
-    const row = document.createElement('div');
-    row.className = 'permission-rule-row';
-    wirePermissionRulePointerDrag(row, kind, rule);
-    const copy = document.createElement('div');
-    copy.className = 'permission-rule-copy';
-    copy.textContent = rule;
-    row.appendChild(copy);
-    if (inherited) {
-      const badge = document.createElement('span');
-      badge.className = 'capability-inherited';
-      badge.textContent = permissionScope === 'global' ? 'Default' : 'Inherited';
-      row.appendChild(badge);
-    }
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'permission-rule-delete';
-    remove.setAttribute('aria-label', `Delete ${rule}`);
-    remove.textContent = 'Delete';
-    remove.onclick = () => removePermissionRule(kind, rule);
-    row.appendChild(remove);
-    host.appendChild(row);
+
+  let insertionPoint = host;
+  for (const group of groups) {
+    if (!group.name) continue;
+    const details = document.createElement('details');
+    details.className = 'permission-rule-group';
+    details.dataset.permissionRuleGroup = group.name;
+    details.open = previousGroupOpen.get(group.name) === true;
+
+    const summary = document.createElement('summary');
+    summary.className = 'permission-rule-group-summary';
+    const title = document.createElement('span');
+    title.className = 'permission-rule-group-title';
+    title.textContent = group.name;
+    const count = document.createElement('span');
+    count.className = 'permission-rule-group-count';
+    count.textContent = `${group.rules.length} ${group.rules.length === 1 ? 'rule' : 'rules'}`;
+    summary.append(title, count);
+
+    const list = document.createElement('div');
+    list.className = 'permission-rule-list permission-rule-group-list';
+    const renderedRows = renderPermissionRuleRows(list, kind, group.rules, inherited);
+    if (!renderedRows) renderPermissionRuleEmpty(list);
+    details.append(summary, list);
+    insertionPoint.after(details);
+    insertionPoint = details;
   }
   const reset = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}Reset`);
   if (reset) {

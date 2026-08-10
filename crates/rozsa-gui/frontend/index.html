@@ -1893,6 +1893,14 @@ body.hide-thinking .thinking-block { display: none; }
 .permission-rule-row.permission-rule-dragging { opacity: 0.45; }
 .permission-rule-copy { min-width: 0; flex: 1; color: var(--fg); font: 12px var(--font-mono); overflow-wrap: anywhere; }
 .permission-rule-delete { color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
+.permission-rule-group { margin-top: 10px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); overflow: hidden; }
+.permission-rule-group-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 14px; color: var(--muted); cursor: pointer; list-style: none; }
+.permission-rule-group-summary::-webkit-details-marker { display: none; }
+.permission-rule-group-summary::after { content: '⌄'; color: var(--muted); font-size: 14px; transition: transform .14s ease; }
+.permission-rule-group[open] .permission-rule-group-summary::after { transform: rotate(180deg); }
+.permission-rule-group-title { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.permission-rule-group-count { margin-left: auto; color: var(--muted); font-size: 10px; }
+.permission-rule-group-list { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 0 14px; }
 .permission-rule-empty { padding: 18px 0; color: var(--muted); font-size: 11px; }
 .permission-mode-row { margin-top: 10px; }
 .permission-mode-note { margin: 7px 0 0; color: var(--muted); font-size: 11px; }

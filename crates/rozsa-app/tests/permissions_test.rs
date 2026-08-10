@@ -1,8 +1,10 @@
 use rozsa_app::permissions::{
     PermissionController, PermissionMode, PermissionPolicy, PolicyVerdict, RiskLevel,
-    build_trust_key, classify_risk, generate_trust_levels, infer_risk_level, split_shell_segments,
-    validate_permission_rule, validate_permission_rule_for_scope,
+    build_trust_key, classify_risk, default_read_only_bash_rules, generate_trust_levels,
+    infer_risk_level, split_shell_segments, validate_permission_rule,
+    validate_permission_rule_for_scope,
 };
+use rozsa_app::settings::SettingsManager;
 
 #[test]
 fn parse_permission_mode() {
@@ -56,24 +58,6 @@ fn only_workspace_scoped_read_is_intrinsically_allowed() {
     let outside_read_args = serde_json::json!({"file_path": "/src/main.rs"});
     assert!(matches!(
         policy.evaluate("Read", &outside_read_args),
-        PolicyVerdict::NeedApproval { .. }
-    ));
-
-    let grep_args = serde_json::json!({"pattern": "TODO", "path": "/src"});
-    assert!(matches!(
-        policy.evaluate("Grep", &grep_args),
-        PolicyVerdict::NeedApproval { .. }
-    ));
-
-    let ls_args = serde_json::json!({"path": "/src"});
-    assert!(matches!(
-        policy.evaluate("Ls", &ls_args),
-        PolicyVerdict::NeedApproval { .. }
-    ));
-
-    let find_args = serde_json::json!({"pattern": "*.rs"});
-    assert!(matches!(
-        policy.evaluate("Find", &find_args),
         PolicyVerdict::NeedApproval { .. }
     ));
 }
@@ -255,9 +239,6 @@ fn classify_risk_correct() {
     assert_eq!(classify_risk("Write"), RiskLevel::Write);
     assert_eq!(classify_risk("Edit"), RiskLevel::Write);
     assert_eq!(classify_risk("Read"), RiskLevel::Read);
-    assert_eq!(classify_risk("Grep"), RiskLevel::Read);
-    assert_eq!(classify_risk("Ls"), RiskLevel::Read);
-    assert_eq!(classify_risk("Find"), RiskLevel::Read);
     assert_eq!(classify_risk("UnknownTool"), RiskLevel::Unknown);
 }
 
@@ -439,14 +420,12 @@ fn tool_wildcard_rule_allows_tools_without_target_arguments() {
 }
 
 #[test]
-fn default_visible_rules_allow_standard_tools() {
+fn default_visible_rules_allow_read_only_bash_and_standard_tools() {
     let controller = PermissionController::new(PermissionMode::OnRequest);
-    controller.update_from_settings(
-        PermissionMode::OnRequest,
-        &rozsa_app::settings::schema::PermissionSettings::default(),
-    );
+    let settings = rozsa_app::settings::schema::PermissionSettings::default();
+    controller.update_from_settings(PermissionMode::OnRequest, &settings);
 
-    for tool in ["ls", "grep", "find", "subagent", "askUserQuestion"] {
+    for tool in ["subagent", "askUserQuestion"] {
         assert!(
             matches!(
                 controller.evaluate("session-a", tool, &serde_json::json!({})),
@@ -455,6 +434,59 @@ fn default_visible_rules_allow_standard_tools() {
             "default rule did not allow {tool}"
         );
     }
+    let read_only_rules = default_read_only_bash_rules();
+    assert_eq!(&settings.allow[2..], read_only_rules.as_slice());
+    for rule in read_only_rules {
+        assert!(
+            settings.allow.contains(&rule),
+            "missing default rule {rule}"
+        );
+    }
+}
+
+#[test]
+fn removing_read_only_bash_defaults_restores_approval() {
+    let workspace = tempfile::tempdir().unwrap();
+    let settings_path = workspace.path().join("settings.json");
+    let settings_manager = SettingsManager::load(settings_path, None, None).unwrap();
+    let settings = rozsa_app::settings::schema::PermissionSettings::default();
+    let controller = PermissionController::with_project_rules(
+        PermissionMode::OnRequest,
+        settings.deny.clone(),
+        settings.ask.clone(),
+        settings.allow.clone(),
+        workspace.path().to_path_buf(),
+        settings_manager.clone(),
+    );
+    let args = serde_json::json!({"command": "cat README.md"});
+    assert!(matches!(
+        controller.evaluate("session-a", "bash", &args),
+        PolicyVerdict::Allow
+    ));
+
+    let mut without_defaults = settings;
+    let read_only_rules = default_read_only_bash_rules();
+    without_defaults
+        .allow
+        .retain(|rule| !read_only_rules.contains(rule));
+    controller.update_from_settings(PermissionMode::OnRequest, &without_defaults);
+    assert!(matches!(
+        controller.evaluate("session-a", "bash", &args),
+        PolicyVerdict::NeedApproval { .. }
+    ));
+
+    let yolo_controller = PermissionController::with_project_rules(
+        PermissionMode::Yolo,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        workspace.path().to_path_buf(),
+        settings_manager,
+    );
+    assert!(matches!(
+        yolo_controller.evaluate("session-a", "bash", &args),
+        PolicyVerdict::Allow
+    ));
 }
 
 #[test]

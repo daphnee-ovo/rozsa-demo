@@ -48,7 +48,7 @@
 // └── write_json()
 
 use super::merge::merge_settings;
-use super::schema::{DevFlowSettings, PartialSettings, Settings};
+use super::schema::{DevFlowSettings, PartialSettings, Settings, migrate_permission_allow_rules};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -429,7 +429,7 @@ impl SettingsManager {
         Ok(match kind {
             PermissionRuleKind::Deny => permission.deny,
             PermissionRuleKind::Ask => permission.ask,
-            PermissionRuleKind::Allow => permission.allow,
+            PermissionRuleKind::Allow => permission.allow.map(migrate_permission_allow_rules),
         })
     }
 
@@ -657,6 +657,14 @@ impl SettingsManager {
         let allow = allow
             .as_array_mut()
             .expect("permission.allow must be an array");
+        let migrated = migrate_permission_allow_rules(
+            allow
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect(),
+        );
+        allow.clear();
+        allow.extend(migrated.into_iter().map(serde_json::Value::String));
         if !allow.iter().any(|value| value.as_str() == Some(rule)) {
             allow.push(serde_json::Value::String(rule.to_string()));
             let json = serde_json::to_string_pretty(&value).map_err(|source| {

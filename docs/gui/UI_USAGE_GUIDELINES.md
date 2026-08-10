@@ -247,8 +247,8 @@ Bash 调用参数中的 `description`，再其次是工具语义参数（路径�
   `offset` 存在而把输出重新从 1 编号。
 - `write` 保留 code view，并补充路径、创建/更新、字节数和行数；`edit`
   保留 diff view，并补充路径和 replacement 数量。
-- `grep`/`find` 显示 pattern、范围、数量、截断状态和原始结果；`ls`
-  显示目录、总条目数、输出条目数和列表。
+- 项目内只读 Shell 操作统一显示为 `bash`，保留命令、exit code、耗时、截断状态
+  和原始输出；不再提供独立的 `grep`、`find`、`ls` 工具卡片。
 - `subagent` 显示 action、名称或 ID、状态、模型和结果摘要，不渲染
   system prompt 或完整 prompt。
 - `ask_user_question` 使用独立问题面板；工具展开态只显示问题/答案摘要，
@@ -468,8 +468,10 @@ substring 匹配；Bash 对拆分后的每个命令段分别匹配。项目路�
 持久化时必须以字面量 `$HOME/` 开头，UI 将该前缀固定在输入框外，用户只输入
 Home 相对 pattern；规范化后不得逃逸 Home。`*` 与正则元字符复用 composer
 的 input highlight 显示。禁止 `*(*)`；需要全部放行时使用 yolo。默认全局 allow
-规则为 `ls(*)`、`grep(*)`、`find(*)`、`subagent(*)` 和
-`askUserQuestion(*)`。
+默认 allow 为 `subagent(*)`、`askUserQuestion(*)`，以及最后一个
+`Read-only Bash` 分组中的项目内安全只读 Bash 规则。该分组中的规则与其他
+allow 规则一样可删除、移动和恢复；分组使用独立折叠容器，默认收起，展开后
+显示其中的规则。
 
 - 主要区域和可调元素应保留稳定的 `data-od-id`，便于检查和后续精修。
 - 组件样式优先复用现有 token，不在组件内新增散乱色值。

@@ -99,7 +99,7 @@
 // ├── AgentSession              # Top-level orchestrator
 // │   ├── new()                 # Create from config
 // │   ├── register_tool()       # Add a single tool
-// │   ├── register_default_tools()  # Register read/write/edit/bash/ls/grep/find
+// │   ├── register_default_tools()  # Register read/write/edit/bash/subagent
 // │   ├── prompt()              # Send user message and run agent loop
 // │   ├── is_initial_session_name_candidate() # Gate the first naming attempt
 // │   ├── generate_session_name() # Direct short title or isolated small-model request
@@ -143,8 +143,7 @@ use crate::session::manager::SessionManager;
 use crate::settings::SettingsManager;
 use crate::tools::{
     AskUserQuestionRequestSender, create_ask_user_question_tool, create_bash_tool_with_session,
-    create_edit_tool, create_find_tool, create_grep_tool, create_ls_tool, create_read_tool,
-    create_subagent_tool, create_write_tool,
+    create_edit_tool, create_read_tool, create_subagent_tool, create_write_tool,
 };
 
 /// Configuration bundle for creating an AgentSession.
@@ -457,7 +456,7 @@ impl AgentSession {
         tool_metadata(tools.iter().map(|tool| tool.as_ref()))
     }
 
-    /// Register the default built-in tools (read, write, edit, bash, ls, grep, find, subagent).
+    /// Register the default built-in tools (read, write, edit, bash, subagent).
     pub async fn register_default_tools(&self, cwd: &Path) {
         self.register_default_tools_with_question_sender(cwd, None)
             .await;
@@ -479,9 +478,6 @@ impl AgentSession {
                 self.current_cwd.clone(),
                 self.session_manager.clone(),
             ),
-            create_ls_tool(),
-            create_grep_tool(),
-            create_find_tool(),
             create_subagent_tool(self.subagent_manager.clone()),
         ];
         let mut defaults = defaults;

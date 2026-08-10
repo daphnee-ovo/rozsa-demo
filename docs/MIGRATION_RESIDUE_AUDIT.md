@@ -28,7 +28,7 @@ last active-file import of the retired `packages/ai` bridge.
 | `originator=pi` documentation | `docs/TODO.md`, `docs/model/oauth-architecture.md` | Required follow-up record. It identifies the source and test, requires upstream compatibility evidence and an authorization-flow regression before any replacement. |
 | `--tui` | `crates/rozsa-cli/tests/argument_contract_test.rs` | Negative CLI contract test: it proves the removed terminal flag is rejected, rather than supporting a terminal code path. |
 | `TypeScript` / `bridge` in guard text | `AGENTS.md`, `docs/model/oauth-architecture.md` | Negative architectural constraints: they prohibit reintroducing retired implementations and do not describe a supported dependency. |
-| `.ts` / `TypeScript` in `GrepTool` and the GUI prototype | `crates/rozsa-app/src/tools/grep.rs`, `docs/gui/prototype/prototype.js` | User-facing language/file-pattern support. These matches are unrelated to the retired project implementation. |
+| `.ts` / `TypeScript` in the GUI prototype | `docs/gui/prototype/prototype.js` | User-facing language/file-pattern support. This match is unrelated to the retired project implementation. |
 
 ## Removed categories
 

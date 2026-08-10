@@ -42,7 +42,7 @@ rozsa-app/src/
 ├── resources/
 │   └── mod.rs               # LoadedResources：CLAUDE.md / AGENTS.md / user instructions
 ├── settings/                # 设置层：schema / merge / storage
-├── tools/                   # 内置工具实现：read / write / edit / bash / ls / grep / find
+├── tools/                   # 内置工具实现：read / write / edit / bash / subagent
 └── slash_commands.rs        # slash command 解析（尚未充分实现）
 ```
 
@@ -203,7 +203,7 @@ pub struct SpawnConfig {
 **构造函数**：
 ```rust
 pub fn inherit() -> Self            // 继承全部权限（AllowedTools::All）
-pub fn readonly() -> Self           // 只读工具（read / grep / find / ls）
+pub fn readonly() -> Self           // 只读工具（read + 项目内只读 bash）
 pub fn scoped(paths: Vec<PathBuf>) -> Self  // 限定路径白名单
 pub fn custom(
     tools: AllowedTools,
@@ -225,7 +225,7 @@ pub fn check_tool_allowed(
 
 **检查逻辑**：
 1. 工具名白名单（AllowedTools::Only）
-2. 文件类工具（read/write/edit/grep/find/ls）路径白名单
+2. 文件类工具（read/write/edit）路径白名单
 3. bash 命令前缀白名单
 4. skill 名称白名单
 
@@ -678,13 +678,7 @@ use rozsa_app::permissions::{PermissionMode, PermissionPolicy, PolicyVerdict};
 use serde_json::json;
 
 // 创建 policy
-let policy = PermissionPolicy::new(
-    PermissionMode::AutoApprove,
-    vec![
-        r"^Read:.*\.md$".to_string(),  // 自动允许读 markdown
-        r"^Grep:".to_string(),         // 自动允许 grep
-    ],
-);
+let policy = PermissionPolicy::new(PermissionMode::AutoApprove);
 
 // 评估工具调用
 let args = json!({ "command": "ls -la" });

@@ -21,6 +21,8 @@
 // ├── struct TrustGroup
 // ├── enum PermissionResponse
 // ├── safer_alternative_hint()
+// ├── default_read_only_bash_rules()
+// ├── is_default_read_only_bash_rule()
 // ├── struct PermissionPolicy
 // ├── impl PermissionPolicy
 // ├── new()
@@ -132,7 +134,7 @@ impl PermissionController {
                 mode,
                 deny: Vec::new(),
                 ask: Vec::new(),
-                allow: Vec::new(),
+                allow: default_read_only_bash_rules(),
             }),
             session_approvals: DashMap::new(),
             workspace_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
@@ -182,9 +184,27 @@ impl PermissionController {
         let config = self.config.read().unwrap().clone();
         let policy =
             PermissionPolicy::with_workspace_root(config.mode, self.workspace_root.clone());
-        let verdict = policy.evaluate(tool_name, args);
+        let mut verdict = policy.evaluate(tool_name, args);
         if matches!(verdict, PolicyVerdict::Block { .. }) {
             return verdict;
+        }
+
+        // Read-only Bash is represented by editable default allow rules. Keep
+        // the classifier as the safety boundary, but do not let its intrinsic
+        // allow result survive after the corresponding rules are removed from
+        // settings.
+        if config.mode != PermissionMode::Yolo
+            && matches!(verdict, PolicyVerdict::Allow)
+            && PermissionPolicy::is_safe_readonly_bash_request(
+                tool_name,
+                args,
+                &self.workspace_root,
+            )
+            && !rules_cover_request(&config.allow, tool_name, args, &self.workspace_root)
+        {
+            verdict = PolicyVerdict::NeedApproval {
+                info: approval_info(tool_name, args, Vec::new()),
+            };
         }
 
         if rules_match_any(&config.deny, tool_name, args, &self.workspace_root) {
@@ -300,7 +320,7 @@ impl PermissionMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
-    /// 只读操作（Read, Grep, Ls, Find）。
+    /// 只读操作（Read 与项目内安全的只读 Bash）。
     Read,
     /// 写操作（Write, Edit）。
     Write,
@@ -415,11 +435,31 @@ pub type PendingApprovals = Arc<DashMap<String, oneshot::Sender<PermissionRespon
 // Shell commands that are intrinsically read-only
 // ---------------------------------------------------------------------------
 
-const SAFE_SHELL_COMMANDS: &[&str] = &[
+pub const SAFE_SHELL_COMMANDS: &[&str] = &[
     "head", "tail", "cat", "grep", "sort", "pwd", "ls", "basename", "dirname", "realpath",
     "readlink", "stat", "file", "wc", "diff", "cmp", "comm", "cut", "tr", "uniq", "strings", "od",
     "xxd",
 ];
+
+/// Permission rules for shell commands that are safe to run against the
+/// current workspace. Runtime evaluation still verifies command syntax,
+/// options, and paths; these rules are not equivalent to `Bash(*)`.
+pub fn default_read_only_bash_rules() -> Vec<String> {
+    SAFE_SHELL_COMMANDS
+        .iter()
+        .map(|command| format!("Bash({command}*)"))
+        .collect()
+}
+
+fn is_default_read_only_bash_rule(rule: &str) -> bool {
+    let Ok((tool, pattern)) = rule_pattern(rule) else {
+        return false;
+    };
+    tool.eq_ignore_ascii_case("bash")
+        && SAFE_SHELL_COMMANDS
+            .iter()
+            .any(|command| pattern == format!("{command}*"))
+}
 
 // ---------------------------------------------------------------------------
 // PermissionPolicy
@@ -1055,7 +1095,7 @@ pub fn classify_risk(tool_name: &str) -> RiskLevel {
     match tool_name {
         "Bash" | "bash" => RiskLevel::Shell,
         "Write" | "Edit" | "write" | "edit" => RiskLevel::Write,
-        "Read" | "Grep" | "Ls" | "Find" | "read" | "grep" | "ls" | "find" => RiskLevel::Read,
+        "Read" | "read" => RiskLevel::Read,
         "subagent" => RiskLevel::Unknown,
         _ => RiskLevel::Unknown,
     }
@@ -1396,13 +1436,16 @@ fn untrusted_trust_groups(
         let Some(command) = args.get("command").and_then(|value| value.as_str()) else {
             return Vec::new();
         };
+        let safe_read_only_bash =
+            PermissionPolicy::is_safe_readonly_bash_request(tool_name, args, workspace_root);
         return split_shell_segments(first_effective_line(command))
             .into_iter()
             .filter(|segment| {
                 !command_matches_session_approval(approvals, tool_name, segment)
-                    && !project_allow
-                        .iter()
-                        .any(|rule| rule_matches(rule, tool_name, segment, workspace_root))
+                    && !project_allow.iter().any(|rule| {
+                        (!is_default_read_only_bash_rule(rule) || safe_read_only_bash)
+                            && rule_matches(rule, tool_name, segment, workspace_root)
+                    })
             })
             .map(|segment| TrustGroup {
                 target: segment.to_string(),
@@ -1461,16 +1504,18 @@ fn rules_cover_request(
     workspace_root: &Path,
 ) -> bool {
     let targets = request_targets(tool_name, args);
+    let safe_read_only_bash =
+        PermissionPolicy::is_safe_readonly_bash_request(tool_name, args, workspace_root);
+    let rule_covers_target = |rule: &String, target: &str| {
+        (!is_default_read_only_bash_rule(rule) || safe_read_only_bash)
+            && rule_matches(rule, tool_name, target, workspace_root)
+    };
     if targets.is_empty() {
-        return rules
-            .iter()
-            .any(|rule| rule_matches(rule, tool_name, "", workspace_root));
+        return rules.iter().any(|rule| rule_covers_target(rule, ""));
     }
-    targets.iter().all(|target| {
-        rules
-            .iter()
-            .any(|rule| rule_matches(rule, tool_name, target, workspace_root))
-    })
+    targets
+        .iter()
+        .all(|target| rules.iter().any(|rule| rule_covers_target(rule, target)))
 }
 
 fn request_targets(tool_name: &str, args: &Value) -> Vec<String> {

@@ -39,13 +39,23 @@ fn readonly_blocks_write_tool() {
         .check_tool_allowed("write", &json!({"path": "/tmp/x"}), cwd)
         .unwrap_err();
     assert!(err.contains("write"));
-    // 只读工具放行
+    // 只读工具和安全的 Bash 读取放行
     assert!(
         scope
             .check_tool_allowed("read", &json!({"path": "/anywhere"}), cwd)
             .is_ok()
     );
-    assert!(scope.check_tool_allowed("grep", &json!({}), cwd).is_ok());
+    assert!(
+        scope
+            .check_tool_allowed("bash", &json!({"command": "cat src/lib.rs"}), cwd)
+            .is_ok()
+    );
+    assert!(
+        scope
+            .check_tool_allowed("bash", &json!({"command": "rm -rf /"}), cwd)
+            .is_err()
+    );
+    assert!(scope.check_tool_allowed("grep", &json!({}), cwd).is_err());
 }
 
 #[test]

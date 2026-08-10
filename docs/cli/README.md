@@ -445,8 +445,9 @@ ls "${ROZSA_CONFIG_DIR:-$HOME/.rozsa}/sessions/"
 禁止 `*(*)`；需要让所有工具跳过普通审批时使用 `yolo`。
 
 规则列表按层覆盖：项目层声明某一列表时替换该全局列表，未声明时继承全局。
-默认全局 allow 为 `ls(*)`、`grep(*)`、`find(*)`、`subagent(*)` 和
-`askUserQuestion(*)`。普通 pattern 使用 glob；路径 `*` 匹配一层而 `**` 递归匹配。
+默认全局 allow 为 `subagent(*)`、`askUserQuestion(*)`，以及末尾
+`Read-only Bash` 分组中的项目内安全只读 Bash 规则。普通 pattern 使用 glob；路径
+`*` 匹配一层而 `**` 递归匹配。
 项目路径相对项目根，全局文件路径规则必须以 `$HOME/` 开头且不能通过 `..` 逃逸。
 `regex:` pattern 使用完整 RegExp 匹配；Bash 对每个拆分后的命令段匹配。
 

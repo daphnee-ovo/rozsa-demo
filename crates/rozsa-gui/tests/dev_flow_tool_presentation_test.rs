@@ -158,8 +158,8 @@ check(formatToolTitle({{name:'READ', arguments:{{file_path:'src/main.rs',offset:
 check(formatToolTitle({{name:'bash', arguments:{{command:'pwd',description:'Inspect cwd'}}}}).arg === 'Inspect cwd', 'bash description priority');
 check(formatToolTitle({{name:'bash', arguments:{{command:'pwd'}}}}).arg === 'pwd', 'bash command fallback');
 check(resolveToolTitle({{name:'bash',arguments:{{command:'dow task create',description:'description'}}}}, {{action:'created'}}).name === 'Created', 'dev-flow title priority');
-const search = formatToolTitle({{name:'GREP', arguments:{{pattern:'AgentEvent',path:'crates'}}}});
-check(search.name === 'Search' && search.arg === '"AgentEvent" · crates', 'grep summary');
+const bashRead = formatToolTitle({{name:'BASH', arguments:{{command:'grep AgentEvent crates'}}}});
+check(bashRead.name === 'Bash' && bashRead.arg === 'grep AgentEvent crates', 'bash read summary');
 const subagent = formatToolTitle({{name:'subagent', arguments:{{action:'spawn',name:'reviewer'}}}});
 check(subagent.name === 'Spawn' && subagent.arg === 'reviewer', 'subagent summary');
 check(formatToolTitle({{name:'ask_user_question', arguments:{{questions:[{{question:'Choose model'}}]}}}}).arg === 'Choose model', 'question summary');
@@ -202,6 +202,8 @@ fn frontend_normalizes_tool_icons_and_status_styles() {
 #[test]
 fn frontend_renders_structured_tool_evidence_without_losing_output() {
     let source = include_str!("../frontend/app.js");
+    assert!(!source.contains("renderSearchToolEvidence"));
+    assert!(!source.contains("renderLsToolEvidence"));
     let start = source.find("function renderBashToolEvidence(").unwrap();
     let end = source[start..].find("function extractText(").unwrap() + start;
     let script = format!(
@@ -232,26 +234,12 @@ const edit = renderToolEvidence(
 );
 for (const expected of ['File src/lib.rs','2 replacements','diff-view','diff-add','diff-del','Edited file']) check(edit.html.includes(expected), 'edit evidence: ' + expected);
 
-const grep = renderToolEvidence(
-  {{name:'grep', arguments:{{pattern:'AgentEvent',path:'crates',include:'*.rs'}}}},
-  {{isError:false,output:'crates/main.rs:1:AgentEvent',details:{{total_matches:3,truncated:true,match_limit_reached:100,lines_truncated:true}}}},
+const bash = renderToolEvidence(
+  {{name:'bash', arguments:{{command:'ls src'}}}},
+  {{isError:false,output:'main.rs\\nlib.rs',details:{{exit_code:0,duration_ms:12,timeout_ms:120000,truncated:false}}}},
   null
 );
-for (const expected of ['Pattern AgentEvent','Path crates','Files *.rs','3 matches','truncated at 100','long lines truncated','crates/main.rs:1:AgentEvent']) check(grep.html.includes(expected), 'grep evidence: ' + expected);
-
-const find = renderToolEvidence(
-  {{name:'find', arguments:{{pattern:'*.rs',path:'src'}}}},
-  {{isError:false,output:'src/main.rs',details:{{total_results:1,truncated:false}}}},
-  null
-);
-for (const expected of ['Pattern *.rs','Path src','1 results','src/main.rs']) check(find.html.includes(expected), 'find evidence: ' + expected);
-
-const ls = renderToolEvidence(
-  {{name:'ls', arguments:{{path:'src'}}}},
-  {{isError:false,output:'main.rs\\nlib.rs',details:{{total_entries:2,output_entries:2,truncated:false}}}},
-  null
-);
-for (const expected of ['Directory src','2 total entries','2 entries shown','main.rs']) check(ls.html.includes(expected), 'ls evidence: ' + expected);
+for (const expected of ['$ ls src','exit 0','main.rs']) check(bash.html.includes(expected), 'bash evidence: ' + expected);
 
 const subagent = renderToolEvidence(
   {{name:'subagent', arguments:{{action:'spawn',name:'reviewer',system_prompt:'do not render this prompt'}}}},

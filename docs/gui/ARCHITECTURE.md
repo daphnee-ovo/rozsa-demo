@@ -335,8 +335,10 @@ Rózsa 支持三种权限模式（配置在 settings.json）：
 
 1. Agent 调用工具（如 `Bash { command: "rm -rf ..." }`）。
 2. `PermissionController` 拦截，先检查内置危险命令，再按 `deny > ask > allow` 处理分层规则。
-   默认全局 allow 显式包含 `ls(*)`、`grep(*)`、`find(*)`、`subagent(*)` 与
-   `askUserQuestion(*)`；这些不是隐藏白名单。
+   默认全局 allow 显式包含 `subagent(*)`、`askUserQuestion(*)`，以及末尾
+   `Read-only Bash` 分组中的安全项目内 Shell 规则。只读 Bash 规则仍由运行时
+   校验命令参数、管道、写入选项和项目路径，并且和其他 allow 规则一样可编辑；
+   GUI 将该分组放在独立且默认收起的折叠容器中。
 3. 如果需要审批：
    - 生成 `request_id`（UUID）。
    - 创建 oneshot channel `(tx, rx)`。
