@@ -25,8 +25,8 @@ fn subagent_view_payload_keeps_runtime_identity_and_status() {
 
 #[test]
 fn native_main_panel_starts_at_the_window_top() {
-    let html = include_str!("../frontend/index.html");
-    let native_main = html
+    let css = include_str!("../frontend/styles/features/appearance.css");
+    let native_main = css
         .split("body.native-split-main [data-od-id=\"app-body\"] {")
         .nth(1)
         .and_then(|tail| tail.split('}').next())

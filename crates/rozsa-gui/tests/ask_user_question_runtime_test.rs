@@ -103,15 +103,16 @@ async fn cancellation_resolves_only_the_requested_session() {
 #[test]
 fn frontend_contract_always_exposes_custom_input() {
     let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/components/overlays.css");
     let source = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"questionPanel\""));
     assert!(html.contains("id=\"questionPanelTitle\""));
-    assert!(html.contains("padding: 6px 8px;"));
-    assert!(html.contains("min-height: 28px;"));
-    assert!(html.contains(".question-panel-error:empty { display: none; }"));
-    assert!(html.contains("align-items: center;"));
-    assert!(html.contains("margin-left: auto;"));
+    assert!(css.contains("padding: 6px 8px;"));
+    assert!(css.contains("min-height: 28px;"));
+    assert!(css.contains(".question-panel-error:empty { display: none; }"));
+    assert!(css.contains("align-items: center;"));
+    assert!(css.contains("margin-left: auto;"));
     assert!(html.contains("id=\"questionPanelOtherInput\""));
     assert!(!html.contains("id=\"questionPanelProgress\""));
     assert!(!html.contains("id=\"questionPanelQuestion\""));

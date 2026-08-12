@@ -1,10 +1,10 @@
 #[test]
 fn sidebar_webview_surface_stays_transparent() {
-    let html = include_str!("../frontend/sidebar.html");
+    let css = include_str!("../frontend/styles/layout/sidebar-shell.css");
     let native = include_str!("../src/native_split_view.rs");
 
-    assert!(html.contains("body { color: var(--fg); background: transparent;"));
-    assert!(!html.contains("body { background: var(--sidebar-bg)"));
+    assert!(css.contains("body { color: var(--fg); background: transparent;"));
+    assert!(!css.contains("body { background: var(--sidebar-bg)"));
     assert!(native.contains("WebviewBuilder::new(\"sidebar\", sidebar_url)"));
     assert!(native.contains(".transparent(true)"));
 }

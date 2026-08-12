@@ -5,8 +5,9 @@
 判断问题落在哪一层时，先用这组边界：
 
 ```text
-main DOM / 输入 / Settings form -> frontend/app.js + index.html
-sidebar scene / session 导航    -> frontend/sidebar.js + sidebar.html
+main DOM / 输入 / Settings form -> frontend/index.html + app.js
+sidebar scene / session 导航    -> frontend/sidebar.html + sidebar.js
+组件视觉 / layout / theme token -> frontend/styles/main.css + sidebar.css
 Tauri command / event / tab 状态 -> crates/rozsa-gui/src/
 Agent loop / tool / session 文件 -> crates/rozsa-app/ + crates/rozsa-core/
 macOS pane / 窗口行为           -> native_split_view.rs + native_titlebar.rs
@@ -49,7 +50,7 @@ macOS pane / 窗口行为           -> native_split_view.rs + native_titlebar.rs
 | 术语 | 当前含义 | 不要混称为 |
 | --- | --- | --- |
 | GUI | 整个 Tauri 桌面应用，包含 WebView、Rust runtime 和原生窗口层 | 只有前端页面 |
-| frontend | 两个 WebView 内的 `index.html`/`app.js` 与 `sidebar.html`/`sidebar.js`，负责 DOM、输入和显示状态 | GUI runtime |
+| frontend | 两个 WebView 的 HTML、JavaScript 与 `frontend/styles/`，负责 DOM、输入、显示状态和视觉规则 | GUI runtime |
 | GUI runtime | `rozsa-gui` Rust 层，负责 tabs、commands、events 和后端 session 的拥有关系 | 浏览器状态 |
 | IPC | frontend 与 Rust 之间的命令/事件通道；前端 `invoke`，后端 `emit` | Agent event stream 本身 |
 | backend | 需要按上下文说明：通常指 `rozsa-gui` Rust runtime；若指 agent loop，应说 `AgentSession` 或 `rozsa-app` | 一个没有边界的“后端” |
@@ -342,7 +343,7 @@ NSWindow（系统拥有窗口语义）
 ### 窗口问题的定位顺序
 
 ```text
-按钮/文字/布局错       -> app.js / index.html / CSS
+按钮/文字/布局错       -> index.html / app.js / frontend/styles/
 divider / collapse 错   -> native_split_view.rs / NSSplitViewController
 拖动或双击缩放错       -> native_titlebar.rs / NSWindow event routing
 全屏进出错             -> NativeSplitHost + native titlebar observer
@@ -361,6 +362,8 @@ sidebar material 错     -> native_split_view.rs + revisioned theme-state
 | theme field | Accent、Background、Foreground、UI font、Code font、Translucent sidebar 等可编辑字段 |
 | custom theme | 写入 `~/.rozsa/themes/<theme_id>.json` 的主题副本 |
 | CSS variable | 主题 `variables` 中传给 frontend CSS 根节点的扩展变量 |
+| stylesheet entry | `main.css` 或 `sidebar.css`；定义对应 WebView 的完整导入顺序 |
+| style layer | `tokens`、`reset`、`base`、`layout`、`components`、`features`、`utilities` 的职责边界；不是 CSS `@layer` 语法的同义词 |
 | semantic state | running、success、error、approval、idle 等行为状态；不能只靠颜色表达 |
 | visual state | 同一 runtime 状态在 UI 上的呈现，例如 `sessionStreamingState` 的 running/approval/idle |
 
@@ -404,6 +407,7 @@ Dev Flow 的 task/issue 数量只统计未关闭项。项目切换会跟随当�
 | session event forwarding | [`crates/rozsa-gui/src/events.rs`](../../crates/rozsa-gui/src/events.rs) |
 | frontend state/input/rendering | [`crates/rozsa-gui/frontend/app.js`](../../crates/rozsa-gui/frontend/app.js)、[`index.html`](../../crates/rozsa-gui/frontend/index.html) |
 | sidebar scene/rendering | [`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js)、[`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html) |
+| frontend styles / component library | [`styles/main.css`](../../crates/rozsa-gui/frontend/styles/main.css)、[`styles/sidebar.css`](../../crates/rozsa-gui/frontend/styles/sidebar.css)、[`styles/README.md`](../../crates/rozsa-gui/frontend/styles/README.md) |
 | scene revision / shared frontend | [`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js) |
 | live agent loop and abort | [`crates/rozsa-app/src/agent_session.rs`](../../crates/rozsa-app/src/agent_session.rs) |
 | askUserQuestion tool | [`crates/rozsa-app/src/tools/ask_user_question.rs`](../../crates/rozsa-app/src/tools/ask_user_question.rs)、[`crates/rozsa-gui/src/events.rs`](../../crates/rozsa-gui/src/events.rs) |

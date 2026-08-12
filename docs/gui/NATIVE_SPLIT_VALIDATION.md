@@ -95,7 +95,7 @@ product and test-app launches show only the product window.
 | Check | Result | Evidence |
 | --- | --- | --- |
 | macOS native split/source contract | PASS | `native_split_host`, `native_window_behavior`, `theme_surface`, targeted routing, and scene continuity suites pass |
-| Non-macOS frontend fallback | PASS | `frontend_platform_fallback` verifies the single-WebView CSS split remains available outside macOS |
+| Non-macOS frontend fallback | PASS | `frontend_platform_fallback` verifies the single-WebView CSS Grid pane fallback remains available outside macOS; this layout fallback is distinct from the `main.css` / `sidebar.css` stylesheet entries |
 | Real non-macOS GUI | UNVERIFIED | No non-macOS graphical runtime was available in this workspace |
 
 ## Injected failure cleanup

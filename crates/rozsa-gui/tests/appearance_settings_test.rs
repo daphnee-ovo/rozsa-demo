@@ -1,6 +1,9 @@
 #[test]
 fn appearance_settings_are_in_a_dedicated_tab() {
     let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/features/appearance.css");
+    let settings_css = include_str!("../frontend/styles/features/settings.css");
+    let sidebar_css = include_str!("../frontend/styles/features/sidebar.css");
     let tauri = include_str!("../tauri.conf.json");
 
     assert!(html.contains("switchSettingsTab('appearance', this)"));
@@ -13,8 +16,8 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(!html.contains("class=\"app-titlebar\""));
     assert!(!html.contains("class=\"settings-chrome\""));
     assert!(html.contains("data-od-id=\"chat-input\""));
-    assert!(html.contains(".input-toolbar .model-selector"));
-    assert!(html.contains("@media (max-width: 560px)"));
+    assert!(css.contains(".input-toolbar .model-selector"));
+    assert!(css.contains("@media (max-width: 560px)"));
     assert!(tauri.contains("\"decorations\": true"));
     assert!(tauri.contains("\"hiddenTitle\": true"));
     assert!(tauri.contains("\"titleBarStyle\": \"Overlay\""));
@@ -80,7 +83,7 @@ fn appearance_settings_are_in_a_dedicated_tab() {
         );
     }
     assert_eq!(html.matches("class=\"settings-hint\"").count(), 10);
-    let help_tip_style = html
+    let help_tip_style = settings_css
         .split(".settings-hint {")
         .nth(1)
         .and_then(|styles| styles.split("}").next())
@@ -94,8 +97,8 @@ fn appearance_settings_are_in_a_dedicated_tab() {
             .contains("border: 1px solid color-mix(in srgb, var(--muted) 55%, transparent);")
     );
     assert!(help_tip_style.contains("color: color-mix(in srgb, var(--muted) 55%, transparent);"));
-    assert!(html.contains(".settings-hint:hover::after"));
-    assert!(html.contains(".settings-hint:focus::after"));
+    assert!(settings_css.contains(".settings-hint:hover::after"));
+    assert!(settings_css.contains(".settings-hint:focus::after"));
     assert!(html.contains("class=\"settings-hint\" tabindex=\"0\""));
     for mode in ["system", "light", "dark"] {
         assert!(
@@ -129,8 +132,8 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(!html.contains("id=\"darkThemeTranslucentSidebar\""));
     assert!(!html.contains("id=\"settingsAutoCompact\" aria-label=\"自动压缩\"><option"));
     assert!(!html.contains("id=\"settingsBlockImages\" aria-label=\"Block images\"><option"));
-    assert!(html.contains(".setting-toggle.on::after { transform: translateX(16px); }"));
-    assert!(html.contains(".setting-item.is-disabled { opacity: .42; }"));
+    assert!(sidebar_css.contains(".setting-toggle.on::after { transform: translateX(16px); }"));
+    assert!(settings_css.contains(".setting-item.is-disabled { opacity: .42; }"));
     for picker in [
         "lightThemeAccentPicker",
         "lightThemeBackgroundPicker",

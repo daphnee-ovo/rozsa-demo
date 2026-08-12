@@ -1,0 +1,253 @@
+[data-theme-translucent-sidebar="true"] [data-od-id="sidebar"] {
+  background: color-mix(in srgb, var(--sidebar-bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  backdrop-filter: blur(20px) saturate(130%);
+}
+.setting-toggle {
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.16s;
+  -webkit-app-region: no-drag;
+}
+.setting-toggle::after {
+  content: '';
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(20 10 15 / 18%);
+  transition: transform 0.16s;
+}
+.setting-toggle.on { background: var(--accent); }
+.setting-toggle.on::after { transform: translateX(16px); }
+.setting-toggle:disabled { cursor: not-allowed; }
+.setting-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+.settings-close {
+  position: absolute;
+  top: 12px; right: 12px;
+  border: none; background: none; cursor: pointer;
+  font-size: 16px; color: var(--muted);
+  padding: 4px 6px; border-radius: 4px;
+  z-index: 1;
+}
+.settings-close:hover { background: var(--code-bg); color: var(--fg); }
+
+/* 周限额面板 */
+.quota-panel {
+  margin-top: 8px;
+  padding: 14px;
+  background: var(--code-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--code-border);
+}
+.quota-title {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); margin-bottom: 10px;
+}
+.quota-bar-track {
+  height: 6px; background: var(--border);
+  border-radius: 3px; overflow: hidden;
+  margin-bottom: 6px;
+}
+.quota-bar-fill {
+  height: 100%; width: 0; border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.4s;
+}
+.quota-bar-fill.warn { background: var(--warning); }
+.quota-text {
+  font-size: 11px; font-family: var(--font-mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 状态面板 */
+.status-panel {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.status-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 5px 0;
+}
+.status-group[hidden] { display: none; }
+.status-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: oklch(62% 0.01 350);
+}
+/* 工具调用 chips */
+.tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.tool-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  line-height: 1.4;
+}
+.tool-chip-name {
+  color: var(--fg);
+  font-weight: 500;
+}
+.tool-chip-count {
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tool-count-summary {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: oklch(62% 0.01 350);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+/* 限额进度 */
+.quota-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.quota-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--fg);
+}
+.quota-value {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.quota-tooltip {
+  position: fixed;
+  display: none;
+  z-index: 120;
+  max-width: 220px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in oklch, var(--border) 78%, var(--surface));
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--surface) 96%, var(--code-bg));
+  color: var(--fg);
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.075);
+  font-size: 11px;
+  line-height: 1.35;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: pre-line;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.quota-tooltip.visible {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+/* Git 状态 */
+.git-branch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg);
+  min-width: 0;
+}
+.git-branch svg { flex-shrink: 0; color: var(--muted); }
+.git-branch-name {
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-diff-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 15px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+.git-diff-add { color: var(--success); font-weight: 500; }
+.git-diff-del { color: var(--error); font-weight: 500; }
+.git-diff-files { color: var(--muted); }
+
+/* 焦点状态 — WCAG 2.4.7 */
+button:focus-visible, .session-item:focus-visible,
+.sidebar-btn:focus-visible, .send-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 按压态 */
+.send-btn:active:not(:disabled) { transform: translateY(1px); }
+.session-item:active { background: oklch(91% 0.012 350); }
+.sidebar-btn:active { background: oklch(90% 0.012 350); }
+/* 空会话状态 */
+.chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+.chat-empty-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: var(--accent-bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.chat-empty-title {
+  font-size: 15px; font-weight: 600; color: var(--fg);
+}
+.chat-empty-hint {
+  font-size: 12.5px; text-align: center; line-height: 1.6;
+  max-width: 320px;
+}
+.chat-empty-kbd {
+  display: inline-flex; gap: 6px; margin-top: 8px;
+  font-family: var(--font-mono); font-size: 11px;
+}
+.chat-empty-kbd kbd {
+  padding: 2px 7px; border-radius: 4px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  font-family: var(--font-mono);
+}

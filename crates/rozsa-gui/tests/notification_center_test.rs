@@ -228,6 +228,7 @@ check(elements.get('notificationErrorList').hidden, 'Escape close path must clos
 #[test]
 fn notification_layer_is_global_to_the_main_webview() {
     let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/components/feedback.css");
     let main_start = html.find("id=\"mainContentScene\"").unwrap();
     let settings_start = html.find("id=\"settingsPanel\"").unwrap();
     let center = html.find("id=\"notificationCenter\"").unwrap();
@@ -241,10 +242,10 @@ fn notification_layer_is_global_to_the_main_webview() {
     );
     assert!(html.contains("class=\"notification-center\""));
     assert!(html.contains("aria-live=\"polite\""));
-    assert!(html.contains("position: fixed;"));
-    assert!(html.contains("top: 12px;"));
-    assert!(html.contains("right: 12px;"));
-    assert!(html.contains("z-index: 200;"));
+    assert!(css.contains("position: fixed;"));
+    assert!(css.contains("top: 12px;"));
+    assert!(css.contains("right: 12px;"));
+    assert!(css.contains("z-index: 200;"));
 }
 
 #[test]
@@ -282,11 +283,11 @@ fn stable_ids_deduplicate_toasts() {
 #[test]
 fn toasts_stack_downward_with_independent_six_second_timers() {
     let js = include_str!("../frontend/app.js");
-    let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/components/feedback.css");
     assert!(js.contains("const NOTIFICATION_TIMEOUT_MS = 6000;"));
     assert!(js.contains("notificationStack().appendChild(element);"));
     assert!(js.contains("toast.timer = setTimeout(() => expireNotification(id), timeoutMs);"));
-    assert!(html.contains("flex-direction: column;"));
+    assert!(css.contains("flex-direction: column;"));
     assert!(js.contains("toast.element.remove();"));
 }
 
@@ -308,6 +309,7 @@ fn hover_pauses_only_that_toasts_timer() {
 fn errors_collapse_into_unresolved_tray_with_circled_count() {
     let js = include_str!("../frontend/app.js");
     let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/components/feedback.css");
     assert!(js.contains("if (toast.severity === 'error') {"));
     assert!(
         js.contains("unresolvedErrors.set(id, { title: toast.title, message: toast.message });")
@@ -318,7 +320,7 @@ fn errors_collapse_into_unresolved_tray_with_circled_count() {
     assert!(html.contains("id=\"notificationErrorTrayButton\""));
     assert!(html.contains("id=\"notificationErrorCount\""));
     assert!(html.contains("class=\"notification-error-icon\""));
-    assert!(html.contains("border-radius: 50%;"));
+    assert!(css.contains("border-radius: 50%;"));
 }
 
 #[test]
@@ -371,10 +373,11 @@ fn error_list_supports_hover_focus_pin_and_escape() {
 fn notification_accessibility_does_not_rely_on_color_alone() {
     let js = include_str!("../frontend/app.js");
     let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/components/feedback.css");
     assert!(html.contains("aria-hidden=\"true\""));
     assert!(js.contains("notificationIcon(severity)"));
     assert!(js.contains("setAttribute('role', severity === 'error' ? 'alert' : 'status')"));
-    assert!(html.contains(".notification-error { border-color: var(--error); }"));
+    assert!(css.contains(".notification-error { border-color: var(--error); }"));
     assert!(js.contains("aria-label=\"Dismiss notification\""));
 }
 

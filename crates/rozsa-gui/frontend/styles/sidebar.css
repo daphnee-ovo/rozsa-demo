@@ -1,0 +1,6 @@
+/* Native sidebar-window stylesheet entry point. */
+@import url("./tokens.css");
+@import url("./reset.css");
+@import url("./layout/sidebar-shell.css");
+@import url("./components/actions.css");
+@import url("./features/sidebar-window.css");

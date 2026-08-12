@@ -489,7 +489,7 @@ function updateQuotaVisibility(model) {
   const nextKey = modelKey(model);
   const group = document.getElementById('quotaGroup');
   quotaEligible = nextEligible;
-  if (group) group.style.display = nextEligible && quotaDisplayEnabled ? '' : 'none';
+  if (group) group.hidden = !(nextEligible && quotaDisplayEnabled);
   if (!nextEligible) {
     quotaLoaded = false;
     quotaLoading = false;

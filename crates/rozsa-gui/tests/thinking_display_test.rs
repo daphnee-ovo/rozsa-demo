@@ -9,7 +9,7 @@ fn thinking_rendering_preserves_expand_state_and_patches_streaming_dom() {
 
 #[test]
 fn thinking_animation_does_not_restart_on_each_token() {
-    let source = include_str!("../frontend/index.html");
+    let source = include_str!("../frontend/styles/features/conversation.css");
     assert!(source.contains(".thinking-block.active .thinking-icon"));
     assert!(!source.contains("animation: thinkPulse"));
     assert!(!source.contains("animation: thinkDots"));
@@ -17,7 +17,7 @@ fn thinking_animation_does_not_restart_on_each_token() {
 
 #[test]
 fn thinking_block_uses_typography_without_card_chrome() {
-    let source = include_str!("../frontend/index.html");
+    let source = include_str!("../frontend/styles/features/conversation.css");
     let block = source
         .split(".thinking-block {")
         .nth(1)

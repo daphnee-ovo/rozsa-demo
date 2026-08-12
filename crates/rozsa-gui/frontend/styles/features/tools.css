@@ -1,0 +1,308 @@
+/* 工具调用 — timeline 图标 + 竖线 */
+.tool-call {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  position: relative;
+  margin: 0;
+  opacity: 0.8;
+  transition: opacity 0.18s, background 0.15s;
+  cursor: pointer;
+}
+.tool-call:not(.expanded):hover {
+  opacity: 1;
+  background: color-mix(in oklch, var(--surface) 96%, var(--text));
+  border-radius: 6px;
+}
+.tool-call.expanded { margin: 0 0 6px 0; opacity: 1; }
+.tool-call + .tool-call { margin: 0; }
+.tool-call:not(.expanded)::before { display: none; }
+.tool-call.expanded::before {
+  content: '';
+  position: absolute;
+  top: 24px;
+  left: 11px;
+  width: 1.5px;
+  height: calc(100% - 24px);
+  background: color-mix(in oklch, var(--border) 65%, var(--surface));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* 左侧竖线轨道 */
+.tool-track {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+/* 工具图标（无圈） */
+.tool-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  min-width: 22px;
+  flex-shrink: 0;
+  color: oklch(55% 0.008 350);
+}
+.tool-icon svg { width: 14px; height: 14px; }
+/* 右侧内容 */
+.tool-content {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0 6px 0;
+}
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+  transition: color 0.1s, transform 0.1s;
+}
+.tool-call:not(.expanded):hover .tool-name,
+.tool-call:not(.expanded):hover .tool-icon,
+.tool-call:not(.expanded):hover .tool-call-args,
+.tool-call:not(.expanded):hover .tool-call-toggle { color: var(--accent); }
+.tool-call-status {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tool-name {
+  color: var(--fg);
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+.tool-call-args {
+  color: var(--muted);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-call-toggle {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+}
+.tool-call-duration {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+}
+.tool-call-body {
+  width: 100%;
+  margin: 0;
+  padding: 0 8px 0 27px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: oklch(48% 0.012 350);
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.22s ease-out, opacity 0.18s ease-out, padding 0.18s ease-out;
+}
+.tool-call.expanded .tool-call-body {
+  padding: 6px 8px 6px 27px;
+  max-height: 500px;
+  opacity: 1;
+  overflow-y: auto;
+}
+.dev-flow-tool-call .tool-name { font-weight: 600; }
+.dev-flow-tool-evidence { display: grid; gap: 6px; }
+.dev-flow-tool-evidence pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dev-flow-tool-command { color: var(--fg); overflow-wrap: anywhere; }
+.dev-flow-tool-meta { color: var(--muted); font-family: var(--font-ui); font-size: 10.5px; }
+.tool-evidence { display: grid; gap: 6px; }
+.tool-evidence pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-evidence-meta { color: var(--muted); font-family: var(--font-ui); font-size: 10.5px; }
+.tool-evidence-section { display: grid; gap: 3px; min-width: 0; }
+.tool-evidence-label { color: var(--fg); font-family: var(--font-ui); font-size: 10.5px; font-weight: 500; }
+.tool-evidence-output { color: var(--fg); }
+.tool-evidence-pending { color: var(--muted); font-family: var(--font-ui); font-style: italic; }
+.tool-evidence-list { display: grid; gap: 3px; }
+.tool-evidence-row, .tool-evidence-question { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.tool-evidence-key { color: var(--fg); font-family: var(--font-ui); font-weight: 500; flex-shrink: 0; }
+.tool-evidence-value { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.tool-evidence-question { display: grid; gap: 1px; }
+
+/* 运行时摘要卡片 */
+.changes-card { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: color-mix(in oklch, var(--surface) 92%, var(--code-bg)); padding: 10px 12px; }
+.changes-header { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; font-size: 11.5px; font-weight: 500; color: var(--fg); }
+.changes-list { display: flex; flex-direction: column; gap: 4px; }
+.change-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 11.5px; font-family: var(--font-mono); }
+.change-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.change-icon.mod { background: var(--warning-bg); color: #927114; }
+.change-name { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.change-name:hover { color: var(--accent); text-decoration: underline; }
+.change-add { color: var(--success); font-weight: 600; font-variant-numeric: tabular-nums; }
+.change-del { color: var(--error); font-weight: 600; font-variant-numeric: tabular-nums; }
+.changes-footer { display: flex; align-items: center; gap: 6px; padding: 8px 0 0; font-size: 10.5px; font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.changes-runtime { min-width: 0; margin-left: auto; overflow: hidden; color: var(--muted); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+/* 工具输出 — 命令行风格 */
+.tool-output {
+  padding: 0 0 0 27px !important;
+  margin: 0;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+}
+.tool-call.expanded .tool-output {
+  padding: 6px 0 6px 27px !important;
+  max-height: 2000px !important;
+  opacity: 1 !important;
+  overflow-y: auto !important;
+}
+.tool-output-steps { display: flex; flex-direction: column; gap: 2px; }
+.tool-step { font-size: 11px; line-height: 1.5; color: var(--muted); }
+.step-text { color: var(--muted); }
+.step-pkg { color: var(--fg); font-weight: 500; }
+
+/* 运行时摘要卡片 */
+.changes-card { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: color-mix(in oklch, var(--surface) 92%, var(--code-bg)); padding: 10px 12px; }
+.changes-header { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; font-size: 11.5px; font-weight: 500; color: var(--fg); }
+.changes-header svg { display: none; }
+.changes-list { display: flex; flex-direction: column; gap: 4px; }
+.change-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 11.5px; font-family: var(--font-mono); }
+.change-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.change-icon.new { background: var(--success-bg); color: var(--success); }
+.change-icon.mod { background: var(--warning-bg); color: #927114; }
+.change-name { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.change-name:hover { color: var(--accent); }
+.change-toggle { width: 12px; color: var(--muted); font-size: 15px; line-height: 1; transition: transform 0.12s ease; }
+.change-entry.expanded .change-toggle { transform: rotate(90deg); }
+.change-add { color: var(--success); font-weight: 600; font-variant-numeric: tabular-nums; }
+.change-del { color: var(--error); font-weight: 600; font-variant-numeric: tabular-nums; }
+.changes-footer { display: flex; align-items: center; gap: 6px; padding: 8px 0 0; font-size: 10.5px; font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.changes-runtime { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; color: var(--muted); font-weight: 400; flex-direction: row-reverse; }
+.changes-runtime svg { flex-shrink: 0; }
+
+/* Diff 视图 */
+.diff-view {
+  padding: 0 8px 0 27px !important;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.diff-line {
+  display: flex;
+  align-items: baseline;
+  padding: 0 10px;
+  min-height: 20px;
+}
+.diff-sign {
+  width: 14px;
+  flex-shrink: 0;
+  font-weight: 600;
+  user-select: none;
+}
+.diff-ln {
+  width: 32px;
+  flex-shrink: 0;
+  text-align: right;
+  color: oklch(72% 0.005 350);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  padding-right: 10px;
+}
+.diff-text {
+  flex: 1;
+  white-space: pre;
+}
+/* 代码视图（Write 展示） */
+.code-view {
+  padding: 0 8px 6px 27px !important;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  background: color-mix(in oklch, var(--surface) 97%, var(--code-bg));
+}
+.code-line {
+  display: flex;
+  align-items: baseline;
+  padding: 0 10px;
+  min-height: 20px;
+  border-radius: 5px;
+  transition: background 0.1s ease;
+}
+.code-line:hover {
+  background: color-mix(in oklch, var(--surface) 92%, var(--code-bg));
+}
+.code-ln {
+  width: 32px;
+  flex-shrink: 0;
+  text-align: right;
+  color: color-mix(in oklch, var(--muted) 58%, var(--surface));
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  padding-right: 12px;
+}
+.code-text {
+  flex: 1;
+  white-space: pre;
+  color: var(--fg);
+}
+.tool-evidence-code-view, .tool-evidence-diff-view {
+  margin: 0;
+  padding: 0 !important;
+  background: transparent;
+}
+.kw,
+.fn,
+.macro {
+  color: color-mix(in oklch, var(--accent-hover) 72%, var(--fg));
+  font-weight: 600;
+}
+.ty,
+.lifetime,
+.attr {
+  color: color-mix(in oklch, var(--fg) 70%, var(--muted));
+}
+.s {
+  color: color-mix(in oklch, var(--success) 62%, var(--fg));
+}
+.cm {
+  color: var(--muted);
+  font-style: italic;
+}
+.m {
+  color: color-mix(in oklch, var(--warning) 54%, var(--fg));
+}
+.op {
+  color: color-mix(in oklch, var(--muted) 72%, var(--fg));
+}
+.diff-del {
+  background: color-mix(in oklch, var(--error-bg) 54%, transparent);
+}
+.diff-del .diff-sign { color: var(--error); }
+.diff-add {
+  background: color-mix(in oklch, var(--success-bg) 58%, transparent);
+}
+.diff-add .diff-sign { color: var(--success); }
+
+
+
+/* 打字指示器 */
+.typing-indicator {
+  display: flex; gap: 4px; align-items: center;
+  padding: 4px 0;
+}
+.typing-indicator span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--muted);
+  animation: typing 1.2s infinite;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing { 0%,60%,100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }

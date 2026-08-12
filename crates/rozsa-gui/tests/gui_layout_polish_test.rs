@@ -8,8 +8,8 @@
 
 #[test]
 fn sidebar_and_settings_keep_compact_titlebar_spacing() {
-    let sidebar = include_str!("../frontend/sidebar.html");
-    let main = include_str!("../frontend/index.html");
+    let sidebar = include_str!("../frontend/styles/layout/sidebar-shell.css");
+    let main = include_str!("../frontend/styles/features/appearance.css");
 
     assert!(
         sidebar.contains(
@@ -24,6 +24,9 @@ fn sidebar_and_settings_keep_compact_titlebar_spacing() {
 #[test]
 fn composer_controls_follow_the_requested_order_and_hint_behavior() {
     let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/features/appearance.css");
+    let layout_css = include_str!("../frontend/styles/layout/app-shell.css");
+    let form_css = include_str!("../frontend/styles/components/forms.css");
     let js = include_str!("../frontend/app.js");
     let input = html.split("id=\"msgInput\"").nth(1).unwrap();
     let toolbar = html.split("<div class=\"input-toolbar\">").nth(1).unwrap();
@@ -37,10 +40,10 @@ fn composer_controls_follow_the_requested_order_and_hint_behavior() {
     assert!(input.contains("data-placeholder=\"Message Rózsa, supports Markdown…\""));
     assert!(!input.contains("data-default-placeholder"));
 
-    assert!(html.contains("border-radius: 8px;\n  background: transparent;"));
-    assert!(html.contains("border: 0;\n  appearance: none;"));
-    assert!(html.contains("flex: 0 1 auto;"));
-    assert!(!html.contains("flex: 0 1 clamp(110px, 22vw, 220px)"));
+    assert!(css.contains("border-radius: 8px;\n  background: transparent;"));
+    assert!(layout_css.contains("border: 0;\n  appearance: none;"));
+    assert!(form_css.contains("flex: 0 1 auto;"));
+    assert!(!form_css.contains("flex: 0 1 clamp(110px, 22vw, 220px)"));
     assert!(js.contains("const COMPOSER_HINTS = ["));
     assert!(js.contains("const COMPOSER_HINT_ROTATION_MS = 30_000"));
     assert!(js.contains("window.setInterval(rotateComposerHint, COMPOSER_HINT_ROTATION_MS)"));
@@ -53,20 +56,20 @@ fn composer_controls_follow_the_requested_order_and_hint_behavior() {
 
 #[test]
 fn native_main_content_stays_centered_while_resizing() {
-    let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/features/appearance.css");
     let split = include_str!("../src/native_split_view.rs");
 
-    assert!(html.contains("--main-content-max-width: 960px"));
-    assert!(html.contains("body.native-split-main {\n  width: 100%;\n}"));
-    assert!(html.contains(
+    assert!(css.contains("--main-content-max-width: 960px"));
+    assert!(css.contains("body.native-split-main {\n  width: 100%;\n}"));
+    assert!(css.contains(
         "body.native-split-main [data-od-id=\"main-panel\"] {\n  width: 100%;\n  height: 100%;\n  align-items: center;\n}"
     ));
     assert!(
-        html.contains(
+        css.contains(
             "body.native-split-main [data-od-id=\"panel-header\"] { align-self: stretch; }"
         )
     );
-    assert!(html.contains(
+    assert!(css.contains(
         "[data-od-id=\"chat-messages\"],\n[data-od-id=\"chat-input\"] {\n  width: 100%;\n  max-width: var(--main-content-max-width);\n}"
     ));
 
@@ -101,6 +104,7 @@ fn native_sidebar_button_reflects_real_collapsed_state() {
 #[test]
 fn native_collapsed_sidebar_reveals_at_the_edge_and_avoids_the_titlebar() {
     let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/features/appearance.css");
     let frontend = include_str!("../frontend/app.js");
     let sidebar_frontend = include_str!("../frontend/sidebar.js");
     let lib = include_str!("../src/lib.rs");
@@ -131,10 +135,10 @@ fn native_collapsed_sidebar_reveals_at_the_edge_and_avoids_the_titlebar() {
     assert!(!sidebar_frontend.contains("set_native_sidebar_overlay_visible"));
     assert!(html.contains("id=\"nativeSidebarEdgeTrigger\""));
     assert!(html.contains("id=\"nativeGuiInteractionLayer\" aria-hidden=\"true\""));
-    assert!(html.contains("#nativeGuiInteractionLayer { display: none; }"));
-    assert!(html.contains("z-index: 120;"));
-    assert!(html.contains("pointer-events: none;"));
-    assert!(html.contains("pointer-events: auto;"));
+    assert!(css.contains("#nativeGuiInteractionLayer { display: none; }"));
+    assert!(css.contains("z-index: 120;"));
+    assert!(css.contains("pointer-events: none;"));
+    assert!(css.contains("pointer-events: auto;"));
     assert_eq!(html.matches("id=\"nativeSidebarEdgeTrigger\"").count(), 1);
     let settings_panel = html
         .find("id=\"settingsPanel\"")
@@ -143,10 +147,10 @@ fn native_collapsed_sidebar_reveals_at_the_edge_and_avoids_the_titlebar() {
         .find("id=\"nativeGuiInteractionLayer\"")
         .expect("shared native interaction layer is missing");
     assert!(interaction_layer > settings_panel);
-    assert!(html.contains("width: 18px;"));
-    assert!(html.contains("body.native-split-main.sidebar-collapsed #nativeSidebarEdgeTrigger"));
-    assert!(html.contains("body.native-split-main.sidebar-collapsed:not(.native-fullscreen) [data-od-id=\"panel-header\"]"));
-    assert!(html.contains("height: 58px;\n  flex: 0 0 58px;\n  padding-top: 12px;"));
+    assert!(css.contains("width: 18px;"));
+    assert!(css.contains("body.native-split-main.sidebar-collapsed #nativeSidebarEdgeTrigger"));
+    assert!(css.contains("body.native-split-main.sidebar-collapsed:not(.native-fullscreen) [data-od-id=\"panel-header\"]"));
+    assert!(css.contains("height: 58px;\n  flex: 0 0 58px;\n  padding-top: 12px;"));
     assert!(lib.contains("fn native_sidebar_collapsed() -> Result<bool, String>"));
     assert!(lib.contains("fn set_native_sidebar_overlay_visible(visible: bool)"));
     assert!(lib.contains("fn native_sidebar_overlay_width() -> Result<f64, String>"));

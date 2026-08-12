@@ -1,0 +1,17 @@
+/* Rózsa main-window stylesheet entry point.
+ * Import order is part of the cascade contract: foundations, layout,
+ * reusable components, feature surfaces, then state utilities.
+ */
+@import url("./tokens.css");
+@import url("./reset.css");
+@import url("./base.css");
+@import url("./layout/app-shell.css");
+@import url("./features/conversation.css");
+@import url("./features/tools.css");
+@import url("./components/forms.css");
+@import url("./components/overlays.css");
+@import url("./features/settings.css");
+@import url("./features/sidebar.css");
+@import url("./utilities.css");
+@import url("./features/appearance.css");
+@import url("./components/feedback.css");

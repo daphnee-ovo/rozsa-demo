@@ -87,6 +87,7 @@ fn composer_thinking_effort_offers_six_model_aware_persisted_choices() {
 #[test]
 fn thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame() {
     let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/layout/app-shell.css");
     let app = include_str!("../frontend/app.js");
     let settings_start = html
         .find("<!-- ============ 设置面板")
@@ -102,7 +103,7 @@ fn thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame() {
         popover > main_end,
         "popover must live outside the clipped composer"
     );
-    assert!(html.contains(".thinking-level-popover {\n  position: fixed;"));
+    assert!(css.contains(".thinking-level-popover {\n  position: fixed;"));
     assert!(app.contains("function positionThinkingEffortPopover()"));
     assert!(app.contains("popover.style.top = 'auto';"));
     assert!(app.contains("popover.style.right = Math.round(Math.max(margin, window.innerWidth - triggerRect.right)) + 'px';"));
@@ -112,19 +113,19 @@ fn thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame() {
 
 #[test]
 fn thinking_slider_uses_compact_composer_scale() {
-    let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/layout/app-shell.css");
 
-    assert!(html.contains("width: min(320px, calc(100vw - 32px));"));
-    assert!(html.contains("max-height: calc(100vh - 32px);"));
-    assert!(html.contains("overflow: auto;"));
+    assert!(css.contains("width: min(320px, calc(100vw - 32px));"));
+    assert!(css.contains("max-height: calc(100vh - 32px);"));
+    assert!(css.contains("overflow: auto;"));
     assert!(
-        html.contains(".thinking-level-slider::-webkit-slider-runnable-track {\n  height: 28px;")
+        css.contains(".thinking-level-slider::-webkit-slider-runnable-track {\n  height: 28px;")
     );
-    assert!(html.contains(
+    assert!(css.contains(
         ".thinking-level-slider::-webkit-slider-thumb {\n  width: 38px;\n  height: 38px;"
     ));
-    assert!(!html.contains("width: min(420px, calc(100vw - 32px));"));
-    assert!(!html.contains("height: 54px;"));
+    assert!(!css.contains("width: min(420px, calc(100vw - 32px));"));
+    assert!(!css.contains("height: 54px;"));
 }
 
 #[test]

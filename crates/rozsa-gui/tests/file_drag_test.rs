@@ -1,7 +1,7 @@
 #[test]
 fn product_composer_converts_native_file_drop_paths_to_at_references() {
     let js = include_str!("../frontend/app.js");
-    let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/components/forms.css");
 
     for event_name in [
         "tauri://drag-enter",
@@ -22,5 +22,5 @@ fn product_composer_converts_native_file_drop_paths_to_at_references() {
     assert!(js.contains("input.addEventListener('dragover'"));
     assert!(js.contains("input.addEventListener('drop'"));
     assert!(js.contains("await configureNativeFileDrag()"));
-    assert!(html.contains(".input-wrapper.file-drop-active"));
+    assert!(css.contains(".input-wrapper.file-drop-active"));
 }

@@ -2,6 +2,9 @@
 fn frontend_keeps_prototype_write_edit_and_turn_diff_contracts() {
     let app = include_str!("../frontend/app.js");
     let html = include_str!("../frontend/index.html");
+    let overlay_css = include_str!("../frontend/styles/components/overlays.css");
+    let tool_css = include_str!("../frontend/styles/features/tools.css");
+    let form_css = include_str!("../frontend/styles/components/forms.css");
 
     assert!(app.contains("function renderCodeView(content)"));
     assert!(app.contains("tc.arguments.content"));
@@ -11,7 +14,7 @@ fn frontend_keeps_prototype_write_edit_and_turn_diff_contracts() {
     assert!(app.contains("function updateThinkingTimings("));
     assert!(!app.contains("Date.now() - messageTimestampMs(msg)"));
     assert!(app.contains("renderedQueueKey"));
-    assert!(html.contains(".perm-panel-opt:focus"));
+    assert!(overlay_css.contains(".perm-panel-opt:focus"));
     assert!(app.contains("let sessionViewState = {}"));
     assert!(app.contains("function persistSessionViewState("));
     assert!(app.contains("function restoreSessionViewState("));
@@ -26,9 +29,9 @@ fn frontend_keeps_prototype_write_edit_and_turn_diff_contracts() {
     assert!(app.contains("function toggleTurnDiff(button)"));
     assert!(!app.contains("function closeTurnDiff(button)"));
     assert!(app.contains("summary.assistantMessageIndex"));
-    assert!(html.contains(".code-view"));
-    assert!(html.contains(".diff-del"));
-    assert!(html.contains(".diff-add"));
-    assert!(html.contains(".turn-diff-inline"));
+    assert!(tool_css.contains(".code-view"));
+    assert!(tool_css.contains(".diff-del"));
+    assert!(tool_css.contains(".diff-add"));
+    assert!(form_css.contains(".turn-diff-inline"));
     assert!(!html.contains("id=\"turnDiff\""));
 }

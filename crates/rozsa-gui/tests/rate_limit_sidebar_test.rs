@@ -1,6 +1,7 @@
 #[test]
 fn native_sidebar_renders_codex_oauth_rate_limits_from_sidebar_state() {
     let html = include_str!("../frontend/sidebar.html");
+    let css = include_str!("../frontend/styles/features/sidebar-window.css");
     let js = include_str!("../frontend/sidebar.js");
     let state = include_str!("../src/state.rs");
     let commands = include_str!("../src/commands.rs");
@@ -20,7 +21,7 @@ fn native_sidebar_renders_codex_oauth_rate_limits_from_sidebar_state() {
     assert!(js.contains("snapshot.showWeeklyQuota"));
     assert!(js.contains("snapshot.quota?.primary"));
     assert!(js.contains("snapshot.quota?.secondary"));
-    assert!(html.contains(".quota-row[hidden], .quota-group[hidden] { display: none; }"));
+    assert!(css.contains(".quota-row[hidden], .quota-group[hidden] { display: none; }"));
     assert!(state.contains("pub show_quota: bool"));
     assert!(state.contains("pub show_weekly_quota: bool"));
     assert!(state.contains("provider.as_str() == \"codex-oauth\""));

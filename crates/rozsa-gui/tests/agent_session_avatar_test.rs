@@ -62,8 +62,8 @@ check(continuation.className.includes('msg-assistant-continuation'), 'continuati
 
 #[test]
 fn frontend_styles_continuation_messages_as_one_agent_group() {
-    let html = include_str!("../frontend/index.html");
-    let continuation = html
+    let css = include_str!("../frontend/styles/features/conversation.css");
+    let continuation = css
         .split(".msg-assistant-continuation {")
         .nth(1)
         .and_then(|tail| tail.split('}').next())

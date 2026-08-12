@@ -475,7 +475,9 @@ allow 规则一样可删除、移动和恢复；分组使用独立折叠容器�
 
 - 主要区域和可调元素应保留稳定的 `data-od-id`，便于检查和后续精修。
 - 组件样式优先复用现有 token，不在组件内新增散乱色值。
-- 单文件原型可以保留内联 CSS / JS；工程化时可拆分为 `styles/` 与 `components/`，但命名和状态语义不变。
+- `docs/gui/prototype/` 的单文件原型可以保留少量内联 runtime value；产品运行时 HTML 禁止 `<style>` 与静态 `style` 属性。
+- 产品样式必须经 `styles/main.css` 或 `styles/sidebar.css` 加载，并放入最窄的稳定职责：design value 进 `tokens.css`，窗口几何进 `layout/`，可复用控件进 `components/`，业务 scene 进 `features/`，跨功能 state helper 才进 `utilities.css`。
+- `main.css` / `sidebar.css` 的导入顺序属于级联契约；新增或移动 import 时必须验证两个 WebView 的资源存在性、无循环依赖和视觉优先级。完整规则见 [`frontend/styles/README.md`](../../crates/rozsa-gui/frontend/styles/README.md)。
 - 复杂交互必须有真实行为：展开、复制、权限选择、设置 tab、发送消息、自动增长、autocomplete。
 - 不把说明文档、设计规范或调试控件塞进产品界面。
 - 新增 UI 模块时，必须同步考虑空态、加载态、成功态、错误态、键盘态和移动/窄屏降级。
@@ -500,6 +502,7 @@ allow 规则一样可删除、移动和恢复；分组使用独立折叠容器�
 - [ ] 是否没有紫色渐变、emoji、重卡片、假指标和模板化占位？
 - [ ] 是否所有交互都有 hover / focus / active 状态？
 - [ ] 是否所有图标按钮都有可访问名称？
+- [ ] 运行时 HTML 是否没有 `<style>` 和静态 `style` 属性，新增样式是否进入正确的 style layer？
 
 ## 11. 后续扩展边界
 

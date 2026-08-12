@@ -868,6 +868,9 @@ fn sidebar_and_detail_static_contracts() {
     let lib = include_str!("../src/lib.rs");
     let dev_flow = include_str!("../src/dev_flow.rs");
     let capabilities = include_str!("../capabilities/default.json");
+    let sidebar_css = include_str!("../frontend/styles/features/sidebar-window.css");
+    let sidebar_actions_css = include_str!("../frontend/styles/components/actions.css");
+    let feedback_css = include_str!("../frontend/styles/components/feedback.css");
 
     // Summary, claimed rows, more N, and the Dashboard entry live in the
     // sidebar; Dashboard sits immediately above Settings.
@@ -903,8 +906,8 @@ fn sidebar_and_detail_static_contracts() {
     assert!(sidebar_js.contains("sidebarInvoke('open_dev_flow_dashboard'"));
     assert!(sidebar_js.contains("snapshot.showDevFlowDashboard"));
     assert!(sidebar_js.contains("button.hidden = !visible;"));
-    assert!(sidebar_html.contains(".sidebar-action[hidden] { display: none; }"));
-    assert!(sidebar_html.contains("min-height: var(--dev-flow-sessions-min, 96px)"));
+    assert!(sidebar_css.contains(".sidebar-action[hidden] { display: none; }"));
+    assert!(sidebar_actions_css.contains("min-height: var(--dev-flow-sessions-min, 96px)"));
 
     // The main view owns the read-only overlay with focus, Escape, outside
     // click, and responsive narrow/wide presentation.
@@ -921,7 +924,7 @@ fn sidebar_and_detail_static_contracts() {
             "{id} in index.html"
         );
     }
-    assert!(index_html.contains("@media (max-width: 720px)"));
+    assert!(feedback_css.contains("@media (max-width: 720px)"));
     assert!(app_js.contains("listen('dev-flow-detail'"));
     assert!(app_js.contains("payload.revision < baseline"));
     assert!(app_js.contains("DEV_FLOW_DETAIL_BASELINE_LIMIT = 32"));

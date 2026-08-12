@@ -1,0 +1,313 @@
+/* 消息块 */
+.msg { display: flex; gap: 12px; max-width: 100%; }
+.msg-assistant-continuation {
+  padding-left: 40px;
+  margin-top: -12px;
+}
+.msg-avatar {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.msg-user .msg-avatar { background: var(--accent-bg); color: var(--accent); }
+.msg-assistant .msg-avatar { background: oklch(94% 0.015 260); color: oklch(50% 0.06 260); }
+.msg-body { flex: 1; min-width: 0; }
+.msg-role {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  margin-bottom: 4px;
+}
+.msg-user .msg-role { color: var(--accent); }
+.msg-assistant .msg-role { color: oklch(50% 0.06 260); }
+.msg-content {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--fg);
+}
+.msg-error {
+  color: var(--error);
+  border-left: 2px solid color-mix(in oklch, var(--error) 42%, var(--border));
+  padding-left: 10px;
+}
+.msg-error pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.msg-content p,
+.markdown-body p {
+  margin-bottom: 8px;
+}
+.msg-content p:last-child,
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  color: var(--fg);
+  line-height: 1.28;
+  margin: 10px 0 6px;
+  font-weight: 650;
+}
+.markdown-body h1 { font-size: 18px; }
+.markdown-body h2 { font-size: 16px; }
+.markdown-body h3 { font-size: 14px; }
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 20px;
+  margin: 6px 0 10px;
+}
+.markdown-body li {
+  margin: 3px 0;
+  padding-left: 2px;
+}
+.markdown-body blockquote {
+  margin: 8px 0 10px;
+  padding: 6px 0 6px 12px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+.markdown-body a {
+  color: var(--accent-hover);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+}
+.markdown-body a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.markdown-body strong { font-weight: 650; }
+.markdown-body em { color: color-mix(in oklch, var(--fg) 82%, var(--muted)); }
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+.md-code-block {
+  position: relative;
+  margin: 8px 0 12px;
+  border: 1px solid color-mix(in oklch, var(--border) 82%, var(--surface));
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface) 94%, var(--code-bg));
+  overflow: hidden;
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.018);
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+.md-code-block:hover,
+.md-code-block:focus-within {
+  border-color: color-mix(in oklch, var(--border) 58%, var(--accent));
+  background: color-mix(in oklch, var(--surface) 97%, var(--code-bg));
+  box-shadow: 0 2px 8px oklch(0% 0 0 / 0.035);
+}
+.md-code-head {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  right: 7px;
+  min-height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.md-code-lang {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.72;
+  text-transform: uppercase;
+}
+.md-copy {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  opacity: 0.62;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+.md-code-block:hover .md-copy,
+.md-copy:focus-visible {
+  opacity: 1;
+}
+.md-copy:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+.md-copy:active {
+  transform: translateY(1px);
+}
+.md-copy:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 34%, transparent);
+}
+.md-copy.copied {
+  color: var(--accent);
+}
+.md-copy svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}
+.md-code-block pre {
+  margin: 0;
+  padding: 30px 12px 10px;
+  overflow-x: auto;
+  white-space: pre;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.md-code-block pre::-webkit-scrollbar {
+  height: 6px;
+}
+.md-code-block pre::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+.md-code-block code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.55;
+  font-variant-ligatures: none;
+  tab-size: 2;
+}
+.md-syn-command,
+.md-syn-keyword {
+  color: color-mix(in oklch, var(--accent-hover) 78%, var(--fg));
+  font-weight: 600;
+}
+.md-syn-string {
+  color: color-mix(in oklch, var(--success) 72%, var(--fg));
+}
+.md-syn-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+.md-syn-number,
+.md-syn-option {
+  color: color-mix(in oklch, var(--muted) 72%, var(--fg));
+}
+
+/* Thinking 块 */
+.thinking-block {
+  margin: 0 0 10px;
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+}
+body.hide-thinking .thinking-block { display: none; }
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  cursor: pointer;
+  user-select: none;
+}
+.thinking-icon { color: var(--accent); flex-shrink: 0; }
+.thinking-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.thinking-duration {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: oklch(65% 0.008 350);
+  font-variant-numeric: tabular-nums;
+}
+.thinking-chevron {
+  margin-left: auto;
+  font-size: 11px;
+  color: oklch(65% 0.008 350);
+  transition: transform 0.15s;
+}
+.thinking-block.expanded .thinking-chevron { transform: rotate(90deg); }
+.thinking-content {
+  display: none;
+  border: 0;
+  min-width: 0;
+  max-height: min(46vh, 440px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: 12px;
+  line-height: 1.6;
+  color: oklch(48% 0.012 350);
+}
+.thinking-block.expanded .thinking-content,
+.thinking-expanded .thinking-content { display: block; }
+.thinking-markdown {
+  min-width: 0;
+  padding: 7px 0 4px 19px;
+  overflow-wrap: anywhere;
+}
+.thinking-markdown p { margin-bottom: 6px; }
+.thinking-markdown p:last-child { margin-bottom: 0; }
+.thinking-markdown h1, .thinking-markdown h2, .thinking-markdown h3 { margin: 8px 0 5px; }
+.thinking-markdown ul, .thinking-markdown ol { margin: 5px 0 8px; }
+.thinking-markdown pre, .thinking-markdown .md-table-wrap { max-width: 100%; overflow: auto; }
+.thinking-markdown pre { font-size: 11.5px; }
+/* Thinking 进行中动画 */
+.thinking-block.active .thinking-icon,
+.thinking-block.active .thinking-label {
+  opacity: 1;
+}
+.thinking-block.active .thinking-label::after {
+  content: '…';
+}
+/* 流式光标 */
+.stream-cursor {
+  color: var(--accent);
+  font-weight: 300;
+  animation: cursorBlink 0.8s steps(1) infinite;
+  margin-left: 1px;
+}
+@keyframes cursorBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.stream-text { white-space: pre-wrap; }
+.msg-content p code,
+.msg-content li code,
+.msg-content blockquote code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.msg-content ul, .msg-content ol {
+  padding-left: 20px; margin: 6px 0;
+}
+.msg-content li { margin-bottom: 3px; }

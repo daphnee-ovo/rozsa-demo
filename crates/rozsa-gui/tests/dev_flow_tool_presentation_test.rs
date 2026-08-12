@@ -186,15 +186,15 @@ check(formatToolTitle({{name:'unknown', arguments:{{a:1}}}}).arg === '{{"a":1}}'
 #[test]
 fn frontend_normalizes_tool_icons_and_status_styles() {
     let source = include_str!("../frontend/app.js");
-    let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/layout/app-shell.css");
     assert!(
         source.contains("const toolName = normalizeToolName(name);"),
         "tool icons should normalize tool names"
     );
     assert!(
-        html.contains(".tool-call-status.s-success")
-            && html.contains(".tool-call-status.s-error")
-            && html.contains(".tool-call-status.s-running"),
+        css.contains(".tool-call-status.s-success")
+            && css.contains(".tool-call-status.s-error")
+            && css.contains(".tool-call-status.s-running"),
         "tool-call status classes should have visual styles"
     );
 }

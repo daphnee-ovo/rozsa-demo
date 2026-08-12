@@ -1,0 +1,134 @@
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 消息入场动画 */
+@keyframes msgEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.msg-enter { animation: msgEnter 0.2s ease-out; }
+
+/* Markdown Tables */
+.md-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.md-table th,
+.md-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.md-table th {
+  background: var(--code-bg);
+  font-weight: 600;
+  font-size: 11.5px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.md-table tr:last-child td { border-bottom: none; }
+.md-table tr:hover td { background: oklch(98.5% 0.003 350); }
+
+/* Task lists */
+.task-list-item {
+  list-style: none;
+  margin-left: -20px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.task-list-item input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  flex-shrink: 0;
+  position: relative;
+  top: 1px;
+}
+.task-list-item input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.task-list-item input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px; top: 1px;
+  width: 5px; height: 8px;
+  border: solid white;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+/* Strikethrough */
+.markdown-body del {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* Highlight / mark */
+.markdown-body mark {
+  background: oklch(94% 0.06 90);
+  color: var(--fg);
+  padding: 1px 3px;
+  border-radius: 2px;
+}
+
+/* Inline LaTeX */
+.md-latex-inline {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: oklch(96% 0.01 260);
+  border: 1px solid oklch(90% 0.01 260);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: oklch(40% 0.04 260);
+}
+
+/* LaTeX block */
+.md-latex-block {
+  margin: 8px 0 12px;
+  padding: 12px 16px;
+  background: oklch(97% 0.006 260);
+  border: 1px solid oklch(91% 0.008 260);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.md-latex-block code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: oklch(35% 0.03 260);
+  white-space: pre-wrap;
+}
+
+/* Image blocks */
+.md-image {
+  margin: 8px 0 12px;
+}
+
+/* h4-h6 support */
+.markdown-body h4 { font-size: 13px; font-weight: 650; margin: 8px 0 4px; color: var(--fg); }
+.markdown-body h5 { font-size: 12px; font-weight: 650; margin: 8px 0 4px; color: var(--fg); }
+.markdown-body h6 { font-size: 11.5px; font-weight: 650; margin: 8px 0 4px; color: var(--muted); }
+
+/* Running tool call animation */
+.tool-call.running .tool-icon {
+  animation: pulse 1.2s infinite;
+}
+.tool-call.running .tool-name {
+  color: var(--warning);
+}

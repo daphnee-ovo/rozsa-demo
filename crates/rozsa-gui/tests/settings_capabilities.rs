@@ -59,7 +59,7 @@ fn capability_controls_use_layer_aware_backend_commands() {
 #[test]
 fn permission_allow_defaults_are_rendered_as_an_editable_group() {
     let frontend = include_str!("../frontend/app.js");
-    let index = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/features/settings.css");
     let commands = include_str!("../src/commands.rs");
 
     assert!(commands.contains("name: \"Read-only Bash\""));
@@ -69,8 +69,8 @@ fn permission_allow_defaults_are_rendered_as_an_editable_group() {
     assert!(frontend.contains("details.open = previousGroupOpen.get(group.name) === true"));
     assert!(frontend.contains("removePermissionRule(kind, rule)"));
     assert!(frontend.contains("wirePermissionRulePointerDrag(row, kind, rule)"));
-    assert!(index.contains("permission-rule-group"));
-    assert!(index.contains(".permission-rule-group-summary"));
+    assert!(css.contains("permission-rule-group"));
+    assert!(css.contains(".permission-rule-group-summary"));
 }
 
 #[test]

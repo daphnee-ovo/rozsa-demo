@@ -37,7 +37,17 @@ crates/rozsa-gui/
     ├── app.js              — main scene、chat、permission、settings form
     ├── sidebar.html        — sidebar WebView 的两个 sidebar scene roots
     ├── sidebar.js          — session/status 与 settings navigation
-    └── gui_shared.js       — scene/theme revision 与共享 DOM helper
+    ├── gui_shared.js       — scene/theme revision 与共享 DOM helper
+    └── styles/
+        ├── main.css        — main WebView stylesheet entry
+        ├── sidebar.css     — sidebar WebView stylesheet entry
+        ├── tokens.css      — 两个 WebView 共享的 semantic design tokens
+        ├── reset.css       — 两个 WebView 安全共享的浏览器归一化
+        ├── base.css        — main WebView document defaults
+        ├── layout/         — window shell 与区域几何
+        ├── components/     — 可复用 controls、forms、overlays、feedback
+        ├── features/       — scene 与产品功能专属样式
+        └── utilities.css   — 跨功能状态与 rich-content helpers
 ```
 
 **crate 定位**：
@@ -80,6 +90,9 @@ crates/rozsa-gui/
 - `frontend/index.html` + `app.js`：持久 main WebView。Main scene 承载 chat/composer/permission/question；Settings scene 承载当前 settings pane。
 - `frontend/sidebar.html` + `sidebar.js`：持久 sidebar WebView。Main scene 承载 session/status；Settings scene 承载 settings navigation。
 - `frontend/gui_shared.js`：两个 WebView 共用的 scene/theme revision 应用规则。
+- `frontend/styles/main.css` 与 `sidebar.css`：两个 WebView 各自唯一的 stylesheet entry。两者共享 `tokens.css` 与 `reset.css`，再按 layout、components、features、utilities 的职责导入窗口专属规则。
+
+运行时 HTML 只描述静态 DOM、ARIA 与初始语义状态，不包含 `<style>` 或静态 `style` 属性。动态进度宽度、弹层坐标等真正的运行时值可由 JavaScript 写入 CSS property；稳定视觉规则必须放在 `styles/` 的最窄职责文件中。导入顺序属于级联契约，完整维护规则见 [`frontend/styles/README.md`](../../crates/rozsa-gui/frontend/styles/README.md)。
 
 前端职责：
 
@@ -393,7 +406,7 @@ cargo tauri dev
 
 - Cargo 编译 Rust 后端。
 - Tauri 启动 webview，加载 `frontend/index.html`。
-- 支持热重载（修改 `index.html` 自动刷新）。
+- 开发服务器监视 `frontend/` 资源；修改 HTML、JavaScript 或 `styles/` 下的 CSS 后刷新对应 WebView。
 
 ### 8.2 生产构建
 
@@ -439,7 +452,7 @@ GUI 视觉设计和交互规范见 [UI_USAGE_GUIDELINES.md](./UI_USAGE_GUIDELINE
 - **状态真实**：运行中、成功、失败、等待审批等状态必须具体可见。
 - **工具调用轻量**：折叠态无竖线、低透明度，展开态竖线从图标下方开始。
 
-设计参考原型：`docs/gui/index.html`。
+设计参考原型：[`docs/gui/prototype/`](./prototype/)。原型样式独立于运行时 `frontend/styles/`，不能作为已加载到产品的证据。
 
 ## 10. 未来扩展
 
@@ -465,6 +478,8 @@ GUI 视觉设计和交互规范见 [UI_USAGE_GUIDELINES.md](./UI_USAGE_GUIDELINE
 - [UI 使用规范](./UI_USAGE_GUIDELINES.md) — GUI 视觉设计和交互规范
 - [Dev Flow GUI integration](./DEV_FLOW_INTEGRATION.md) — Settings、sidebar、runtime ownership 与 adapter 边界
 - [GUI 术语表](./TERMINOLOGY.md) — session、permission、输入、tool/diff 和窗口层的共同词汇与文字图
+- [前端页面术语表](./FRONTEND_TERMINOLOGY.md) — DOM、组件、CSS 与交互状态的稳定名称和代码锚点
+- [Runtime CSS architecture](../../crates/rozsa-gui/frontend/styles/README.md) — stylesheet entry、分层职责与新增规则约束
 - [Agent Session](../../crates/rozsa-app/src/agent_session.rs) — Agent 会话管理
 - [Permission System](../../crates/rozsa-app/src/permissions/mod.rs) — 权限系统实现
 - [Core Events](../../crates/rozsa-core/src/events.rs) — Agent 事件定义
