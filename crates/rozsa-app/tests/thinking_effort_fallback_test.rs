@@ -23,7 +23,7 @@ fn write_models_config(dir: &std::path::Path) -> std::path::PathBuf {
             "providers": {
                 "demo": {
                     "baseUrl": "https://api.example.test/v1",
-                    "apiKey": "DEMO_API_KEY",
+                    "apiKey": "$DEMO_API_KEY",
                     "api": "openai-responses",
                     "headers": { "X-Unrelated": "preserved" },
                     "models": [{

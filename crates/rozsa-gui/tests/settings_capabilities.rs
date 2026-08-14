@@ -65,6 +65,7 @@ fn permission_allow_defaults_are_rendered_as_an_editable_group() {
     assert!(commands.contains("name: \"Read-only Bash\""));
     assert!(commands.contains("default_allow_groups"));
     assert!(frontend.contains("permissionRuleGroups"));
+    assert!(frontend.contains("title.textContent = group.name"));
     assert!(frontend.contains("document.createElement('details')"));
     assert!(frontend.contains("details.open = previousGroupOpen.get(group.name) === true"));
     assert!(frontend.contains("removePermissionRule(kind, rule)"));
@@ -78,8 +79,8 @@ fn general_controls_are_connected_to_real_setting_keys() {
     let index = include_str!("../frontend/index.html");
     let frontend = include_str!("../frontend/app.js");
     for id in [
-        "settingsCompactionThreshold",
-        "settingsCompactionTarget",
+        "settingsCompactionTriggerRatio",
+        "settingsCompactionTargetRatio",
         "settingsRetryTimeout",
         "settingsHideThinking",
     ] {
@@ -112,7 +113,6 @@ fn general_controls_are_connected_to_real_setting_keys() {
     assert!(frontend.contains("combobox.onfocusout = event =>"));
     assert!(frontend.contains("copy.textContent = rule"));
     assert!(frontend.contains("permissionRuleGroups"));
-    assert!(frontend.contains("Read-only Bash"));
     assert!(frontend.contains("target = `$HOME/${target"));
     assert!(!frontend.contains("All tools"));
     assert!(!frontend.contains("Inherit from global"));
