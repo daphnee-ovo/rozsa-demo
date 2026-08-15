@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "scenes/complete-session.html",
+  "entry": "scenes/complete-session.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-10T12:16:34.150Z",
+  "updatedAt": "2026-08-10T12:16:34.150Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

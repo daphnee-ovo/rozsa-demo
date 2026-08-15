@@ -1,0 +1,324 @@
+  [data-rozsa-scene="dev-flow-runtime"] #queuedMessages,
+  [data-rozsa-scene="dev-flow-runtime"] #steeringConversation {
+    margin: 0;
+    padding: 13px 17px 11px;
+    border-bottom: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+    border-radius: 0;
+    background: transparent;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .input-wrapper > .running-messages:not([hidden]) ~ .rich-input {
+    min-height: 52px;
+    padding-top: 12px;
+  }
+
+  /* A detached sidebar-adjacent work index keeps the live transcript visible. */
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail {
+    inset: calc(var(--native-titlebar-offset) + 56px) auto 76px calc(var(--main-sidebar-width) + 12px);
+    width: min(408px, calc(100vw - var(--main-sidebar-width) - 340px));
+    min-width: 340px;
+    display: block;
+    padding: 0;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    pointer-events: none;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-panel {
+    position: relative;
+    width: 100%;
+    max-height: 100%;
+    overflow: auto;
+    padding: 22px;
+    border: 1px solid color-mix(in oklch, var(--border) 86%, transparent);
+    border-radius: var(--radius-panel);
+    background: color-mix(in oklch, var(--surface) 94%, transparent);
+    box-shadow: var(--shadow-2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.04);
+    backdrop-filter: blur(16px) saturate(1.04);
+    pointer-events: auto;
+    transform-origin: left center;
+    animation: dev-flow-detail-enter 150ms ease-out;
+  }
+  @keyframes dev-flow-detail-enter {
+    from { opacity: 0; transform: translateX(-5px) scale(.992); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-context {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-stat {
+    padding: 11px 12px;
+    border: 1px solid color-mix(in oklch, var(--border) 78%, transparent);
+    border-radius: var(--radius-control);
+    background: var(--fg-soft);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-stat-value {
+    display: block;
+    font: 600 19px/1.1 var(--font-mono);
+    color: var(--fg);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-stat-label {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font: 10px/1.4 var(--font-mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-section-label {
+    display: block;
+    margin: 17px 4px 7px;
+    color: var(--muted);
+    font: 10px/1.4 var(--font-mono);
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-list {
+    display: grid;
+    gap: 4px;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item {
+    position: relative;
+    padding: 11px 12px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    background: transparent;
+    box-shadow: none;
+    transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item.focus {
+    padding: 13px 14px;
+    border-color: color-mix(in oklch, var(--accent) 28%, var(--border));
+    border-radius: var(--radius-card);
+    background: var(--accent-soft);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-trigger {
+    display: block;
+    width: 100%;
+    color: inherit;
+    cursor: pointer;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-state {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    margin-top: 5px;
+    border: 1px solid var(--muted);
+    border-radius: 50%;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item.focus .dev-flow-detail-state {
+    border-color: var(--accent);
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-copy { min-width: 0; flex: 1; }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-title {
+    display: block;
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.42;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-id {
+    margin-left: 7px;
+    color: var(--muted);
+    font: 500 10px/1.4 var(--font-mono);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin-top: 7px;
+    color: var(--muted);
+    font: 10px/1.4 var(--font-mono);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-meta strong {
+    color: color-mix(in oklch, var(--accent) 72%, var(--fg));
+    font-weight: 700;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-details {
+    display: grid;
+    gap: 4px;
+    margin-top: 9px;
+    padding-top: 8px;
+    border-top: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.45;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-detail {
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 8px;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-detail-label {
+    font-family: var(--font-mono);
+    opacity: .72;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-expanded {
+    display: grid;
+    gap: 15px;
+    padding: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.55;
+    cursor: pointer;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-expanded[hidden] { display: none; }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item[data-expanded="true"] > .dev-flow-detail-item-trigger { display: none; }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-expanded-head {
+    display: grid;
+    gap: 7px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid color-mix(in oklch, var(--border) 68%, transparent);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-expanded-title {
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.42;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-expanded-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    color: var(--muted);
+    font: 10px/1.4 var(--font-mono);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-expanded-meta strong {
+    color: color-mix(in oklch, var(--accent) 72%, var(--fg));
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-expanded-block {
+    display: grid;
+    gap: 7px;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-expanded-label {
+    color: var(--fg);
+    font: 600 10px/1.4 var(--font-mono);
+    letter-spacing: .035em;
+    text-transform: uppercase;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-expanded-list {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0 0 0 17px;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-file-tree,
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-file-tree ul {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font: 10px/1.55 var(--font-mono);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-file-tree ul {
+    position: relative;
+    margin-left: 7px;
+    padding-left: 16px;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-file-tree ul::before {
+    content: "";
+    position: absolute;
+    inset: 1px auto 5px 3px;
+    border-left: 1px solid color-mix(in oklch, var(--border) 88%, transparent);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-file-tree li {
+    position: relative;
+    min-width: 0;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-file-tree ul > li::before {
+    content: "";
+    position: absolute;
+    top: .78em;
+    left: -13px;
+    width: 9px;
+    border-top: 1px solid color-mix(in oklch, var(--border) 88%, transparent);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-tree-folder {
+    color: var(--fg);
+    font-weight: 600;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-tree-file {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    overflow-wrap: anywhere;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-tree-kind {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item:hover {
+    border-color: color-mix(in oklch, var(--border) 82%, transparent);
+    border-radius: var(--radius-control);
+    background: var(--fg-soft);
+    box-shadow: var(--shadow-1);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item.focus:hover {
+    border-radius: var(--radius-card);
+    background: color-mix(in oklch, var(--accent) 18%, transparent);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item:hover .dev-flow-detail-item-detail-label,
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-trigger:focus-visible .dev-flow-detail-item-detail-label {
+    color: var(--fg);
+    opacity: 1;
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-trigger:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 5px;
+    border-radius: var(--radius-xs);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item[data-expanded="true"] {
+    padding: 14px;
+    border-color: color-mix(in oklch, var(--border) 92%, transparent);
+    border-radius: var(--radius-card);
+    background: color-mix(in oklch, var(--surface) 74%, transparent);
+    box-shadow: var(--shadow-1);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item.focus[data-expanded="true"] {
+    border-color: color-mix(in oklch, var(--accent) 28%, var(--border));
+    background: var(--accent-soft);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item.focus[data-expanded="true"]:hover {
+    background: color-mix(in oklch, var(--accent) 20%, transparent);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-expanded:hover {
+    color: var(--fg);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-item-expanded:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: var(--radius-control);
+  }
+  [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail[data-pinned="true"] .dev-flow-detail-panel {
+    box-shadow: var(--shadow-3);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail-panel { animation: none; }
+  }
+  @media (max-width: 900px) {
+    [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail {
+      width: min(372px, calc(100vw - var(--main-sidebar-width) - 80px));
+      min-width: 300px;
+    }
+  }
+  @media (max-width: 760px) {
+    [data-rozsa-scene="dev-flow-runtime"] .dev-flow-detail {
+      inset: calc(var(--native-titlebar-offset) + 12px) 12px 12px 12px;
+      width: auto;
+      min-width: 0;
+    }
+  }

@@ -1,0 +1,35 @@
+/* Composer：悬浮在消息流上方，不与消息区平级。 */
+[data-od-id="chat-input"] { position: absolute; inset: auto 0 0; z-index: 8; padding: 14px clamp(16px, 3vw, 42px) 24px; background: transparent; pointer-events: none; }
+[data-od-id="chat-input"] > * { pointer-events: auto; }
+.input-wrapper { position: relative; width: min(100%, 900px); margin: 0 auto; padding: 0; border: 1px solid color-mix(in oklch, var(--border) 58%, transparent); border-radius: var(--radius-panel); background: color-mix(in oklch, var(--surface) 66%, transparent); box-shadow: var(--shadow-2); -webkit-backdrop-filter: blur(26px) saturate(1.10); backdrop-filter: blur(26px) saturate(1.10); transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
+.input-wrapper:focus-within { border-color: color-mix(in oklch, var(--accent) 64%, var(--border)); background: color-mix(in oklch, var(--surface) 76%, transparent); box-shadow: var(--shadow-2), 0 0 0 2px var(--accent-soft); }
+.rich-input { min-height: 56px; max-height: 220px; overflow-y: auto; padding: 15px 17px 8px; color: var(--fg); font-size: clamp(14px, 1vw, 16px); line-height: 1.55; outline: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rich-input:empty::before { content: attr(data-placeholder); color: color-mix(in oklch, var(--muted) 76%, transparent); pointer-events: none; }
+.input-toolbar { min-height: 54px; display: flex; align-items: center; gap: 4px; padding: 4px 9px 9px; }
+.input-spacer { flex: 1; min-width: 12px; }
+.input-tool-btn { width: 44px; height: 44px; min-width: 44px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--muted); transition: background-color 150ms ease, color 150ms ease, transform 100ms ease; }
+.input-tool-btn svg { width: 17px; height: 17px; place-self: center; }
+.input-tool-btn:hover { background: var(--fg-soft); color: var(--fg); }
+.input-tool-btn:active { transform: translateY(1px); }
+.context-ring { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted); }
+.context-ring svg { width: 18px; height: 18px; place-self: center; }
+.context-tokens { color: var(--muted); font: 10px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
+.send-btn { width: 44px; height: 44px; min-width: 44px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-1); font-size: 0; line-height: 1; transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 100ms ease; }
+.send-btn svg { width: 19px; height: 19px; place-self: center; }
+.send-btn::before { content: none; }
+.send-btn:hover { background: color-mix(in oklch, var(--accent) 88%, var(--fg)); color: var(--on-accent); box-shadow: var(--shadow-2); transform: translateY(-1px); }
+.send-btn:active:not(:disabled) { transform: translateY(1px) scale(.98); }
+.send-btn:disabled { opacity: .52; box-shadow: none; }
+.running-messages { margin: 10px 12px 0; padding: 10px 12px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--surface) 76%, transparent); color: var(--muted); font-size: 11px; }
+.running-messages-title { color: var(--fg); font: 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.running-messages ol { margin: 7px 0 0 18px; padding: 0; }
+.running-messages li { margin: 3px 0; }
+.autocomplete-popup { position: absolute; left: 12px; right: 12px; bottom: calc(100% + 10px); z-index: 30; display: none; max-height: 280px; overflow: auto; padding: 8px; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-3); }
+.autocomplete-popup:not(:empty) { display: block; }
+.ac-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 9px 10px; border-radius: var(--radius-control); }
+.ac-item:hover,
+.ac-item.active { background: var(--accent-soft); }
+.ac-cmd { color: var(--fg); font: 11px/1.4 var(--font-mono); }
+.ac-desc,
+.ac-hint { color: var(--muted); font-size: 11px; }
+

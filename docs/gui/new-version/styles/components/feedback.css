@@ -1,0 +1,27 @@
+/* 全局浮层 */
+.notification-close { width: 44px; height: 44px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--muted); }
+.notification-close svg { width: 17px; height: 17px; place-self: center; }
+.notification-close:hover { background: var(--fg-soft); color: var(--fg); }
+.notification-center { position: fixed; inset: 0; z-index: 160; pointer-events: none; }
+.notification-stack { position: absolute; top: calc(var(--native-titlebar-offset) + 18px); right: 20px; width: min(360px, calc(100vw - 40px)); display: grid; gap: 8px; }
+.notification-toast { min-width: 0; display: grid; grid-template-columns: 24px minmax(0, 1fr) 44px; gap: 10px; align-items: start; padding: 12px 10px 12px 13px; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-3); pointer-events: auto; }
+.notification-icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
+.notification-icon svg { width: 16px; height: 16px; }
+.notification-success .notification-icon { background: var(--success-bg); color: var(--success); }
+.notification-warning .notification-icon { background: var(--warning-bg); color: var(--warning); }
+.notification-error .notification-icon { background: var(--error-bg); color: var(--error); }
+.notification-body { min-width: 0; }
+.notification-title { color: var(--fg); font: 600 11px/1.4 var(--font-ui); }
+.notification-message { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.notification-close { pointer-events: auto; }
+.notification-error-tray { position: absolute; right: 20px; bottom: 20px; pointer-events: auto; }
+.notification-error-tray-button { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid color-mix(in oklch, var(--error) 42%, var(--border)); border-radius: var(--radius-control); background: var(--surface); color: var(--error); box-shadow: var(--shadow-2); }
+.notification-error-icon,
+.notification-error-item-icon { width: 18px; height: 18px; display: inline-grid; place-items: center; color: var(--error); }
+.notification-error-icon svg,
+.notification-error-item-icon svg { width: 18px; height: 18px; }
+.notification-error-list { position: absolute; right: 0; bottom: calc(100% + 8px); width: min(340px, calc(100vw - 40px)); display: grid; gap: 8px; padding: 10px; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-3); }
+.notification-error-item { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px; border-radius: var(--radius-control); background: var(--error-bg); }
+.notification-error-item-title { color: var(--fg); font: 600 11px/1.4 var(--font-ui); }
+.notification-error-item-message { margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+

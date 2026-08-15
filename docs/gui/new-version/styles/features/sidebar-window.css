@@ -1,0 +1,7 @@
+/* 原生窗口的侧栏状态 */
+[data-od-id="app-body"].sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+[data-od-id="app-body"].sidebar-collapsed > [data-od-id="sidebar"] { position: absolute; inset: var(--native-titlebar-offset) auto 0 0; width: var(--main-sidebar-width); transform: translateX(-105%); visibility: hidden; }
+[data-od-id="app-body"].sidebar-collapsed.sidebar-edge-visible > [data-od-id="sidebar"] { transform: translateX(0); visibility: visible; box-shadow: var(--shadow-2), var(--shadow-sidebar); }
+[data-theme-translucent-sidebar="true"] [data-od-id="sidebar"],
+[data-theme-translucent-sidebar="true"] .settings-tabs { background: color-mix(in oklch, var(--surface) 46%, transparent); -webkit-backdrop-filter: blur(16px) saturate(1.08); backdrop-filter: blur(16px) saturate(1.08); }
+

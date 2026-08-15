@@ -1,0 +1,32 @@
+/* 能力与快捷键 */
+.capability-scope { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.capability-scope button { min-height: 40px; padding: 7px 11px; border: 1px solid color-mix(in oklch, var(--border) 76%, var(--fg) 7%); border-radius: var(--radius-control); background: color-mix(in oklch, var(--bg) 70%, var(--surface) 30%); color: var(--muted); font: 500 11px/1.35 var(--font-ui); }
+.capability-scope button.active { border-color: var(--accent-border); background: var(--accent-soft); color: var(--fg); }
+.capability-notice { margin: 7px 0 14px; }
+.capability-list { display: grid; gap: 4px; }
+.capability-row,
+.shortcut-row { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 12px; border-radius: var(--radius-control); }
+.capability-row:hover,
+.shortcut-row:hover { background: var(--fg-soft); }
+.capability-name,
+.shortcut-title { color: var(--fg); font-size: 12px; font-weight: 600; }
+.capability-description,
+.shortcut-description { color: var(--muted); font-size: 11px; }
+.capability-controls,
+.shortcut-actions { display: flex; align-items: center; gap: 6px; }
+.capability-copy,
+.capability-reset,
+.shortcut-copy,
+.shortcut-reset { min-height: 40px; padding: 7px 10px; border: 1px solid color-mix(in oklch, var(--border) 76%, var(--fg) 7%); border-radius: var(--radius-control); background: transparent; color: var(--muted); font: 500 11px/1.35 var(--font-ui); }
+.capability-copy:hover,
+.capability-reset:hover,
+.shortcut-copy:hover,
+.shortcut-reset:hover { background: var(--fg-soft); color: var(--fg); }
+.shortcut-search { width: 100%; margin-bottom: 18px; }
+.shortcut-group { margin-top: 20px; }
+.shortcut-binding { flex: 0 0 auto; color: var(--muted); font: 10px/1.4 var(--font-mono); }
+.shortcut-empty,
+.empty-settings-state { padding: 18px 0; color: var(--muted); font-size: 12px; }
+.shortcut-error,
+.permission-settings-error { margin: 10px 0; color: var(--error); }
+

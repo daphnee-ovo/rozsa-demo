@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "scenes/tool-calls.html",
+  "entry": "scenes/tool-calls.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-10T12:01:23.807Z",
+  "updatedAt": "2026-08-10T12:01:23.807Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

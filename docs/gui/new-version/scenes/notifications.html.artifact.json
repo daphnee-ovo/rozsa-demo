@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "scenes/notifications.html",
+  "entry": "scenes/notifications.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-10T12:16:34.266Z",
+  "updatedAt": "2026-08-10T12:16:34.266Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

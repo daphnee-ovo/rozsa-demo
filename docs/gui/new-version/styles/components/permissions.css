@@ -1,0 +1,49 @@
+/* Permission rules */
+.permission-mode-row { margin-top: 10px; }
+.permission-mode-note { max-width: 70ch; margin: 7px 0 16px; }
+.permission-rule-section { margin-top: 24px; }
+.permission-rule-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.permission-rule-heading .settings-group-label { margin-bottom: 0; }
+.permission-rule-heading-actions { display: flex; align-items: center; gap: 6px; }
+.permission-rule-add,
+.permission-rule-reset { min-height: 36px; padding: 6px 9px; border: 1px solid var(--border); border-radius: var(--radius-control); background: transparent; color: var(--muted); font-size: 11px; }
+.permission-rule-add:hover,
+.permission-rule-reset:hover { background: var(--accent-soft); color: var(--fg); border-color: var(--accent-border); }
+.permission-rule-list { display: grid; gap: 6px; padding: 12px 20px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--bg) 68%, var(--surface) 32%); box-shadow: var(--shadow-1); }
+.permission-rule-row { min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--radius-control); cursor: grab; }
+.permission-rule-row:hover { background: var(--fg-soft); }
+.permission-rule-row.permission-rule-dragging { opacity: .45; }
+.permission-rule-copy { min-width: 0; flex: 1; color: var(--fg); font: 11px/1.45 var(--font-mono); overflow-wrap: anywhere; }
+.permission-rule-delete { min-height: 34px; padding: 6px 8px; border: 0; border-radius: var(--radius-control); background: var(--error-bg); color: var(--error); }
+.permission-rule-group { margin-top: 10px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--bg) 68%, var(--surface) 32%); box-shadow: var(--shadow-1); overflow: hidden; }
+.permission-rule-group-summary { min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 14px; color: var(--muted); cursor: pointer; list-style: none; }
+.permission-rule-group-summary::-webkit-details-marker { display: none; }
+.permission-rule-group-summary::after { content: none; }
+.permission-rule-group-title { color: var(--fg); font: 10px/1.4 var(--font-mono); text-transform: uppercase; }
+.permission-rule-group-count { margin-left: auto; font: 10px/1.4 var(--font-mono); }
+.permission-rule-group-list { padding: 0 8px 8px; }
+.permission-rule-empty { padding: 13px 8px; color: var(--muted); font-size: 11px; }
+.permission-rule-editor { margin-top: 13px; padding: 16px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--bg) 62%, var(--surface) 38%); box-shadow: var(--shadow-2); }
+.permission-rule-editor-grid { display: grid; grid-template-columns: minmax(130px, .72fr) minmax(220px, 1.5fr) auto; gap: 10px; align-items: center; }
+.permission-tool-combobox { position: relative; display: flex; min-width: 0; }
+.permission-tool-combobox .setting-input { width: 100%; padding-right: 38px; }
+.permission-tool-combobox-button { position: absolute; right: 5px; top: 5px; width: 32px; height: 32px; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--muted); }
+.permission-tool-combobox-button svg { width: 16px; height: 16px; margin: auto; }
+.permission-tool-combobox-button:hover { background: var(--fg-soft); color: var(--fg); }
+.permission-tool-options { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 10; max-height: 190px; overflow: auto; padding: 6px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--bg) 62%, var(--surface) 38%); box-shadow: var(--shadow-3); }
+.permission-tool-option { padding: 8px; border-radius: var(--radius-control); color: var(--fg); font: 11px/1.4 var(--font-mono); cursor: pointer; }
+.permission-tool-option:hover,
+.permission-tool-option.active { background: var(--accent-soft); }
+.permission-rule-pattern-wrap { min-width: 0; display: flex; align-items: center; min-height: 44px; padding: 0 11px; border: 1px solid color-mix(in oklch, var(--border) 76%, var(--fg) 7%); border-radius: var(--radius-control); background: color-mix(in oklch, var(--bg) 70%, var(--surface) 30%); }
+.permission-rule-pattern-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.permission-rule-path-prefix { flex: 0 0 auto; color: var(--muted); font: 11px/1.4 var(--font-mono); }
+.permission-rule-pattern { min-width: 0; flex: 1; padding: 8px 0; outline: 0; color: var(--fg); font: 11px/1.4 var(--font-mono); overflow-wrap: anywhere; }
+.permission-rule-pattern:empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; }
+.permission-regexp-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.permission-regexp-toggle .setting-toggle { transform: scale(.86); transform-origin: right center; }
+.permission-rule-editor-hint { margin-top: 8px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+.permission-rule-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.permission-rule-editor-actions button { min-height: 38px; padding: 7px 11px; border: 1px solid var(--border); border-radius: var(--radius-control); background: transparent; color: var(--fg); }
+.permission-rule-editor-actions button:hover { background: var(--fg-soft); }
+.permission-rule-editor-actions .primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+

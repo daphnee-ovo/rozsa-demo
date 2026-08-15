@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "original_stylesheet": {
+    "file": "docs/gui/new-version/rozsa-gui.css",
+    "line_count": 1171,
+    "sha256": "3d789bfb15daa0c21ddadde40d81e66cf3b8a42b37fc17a3925c52cd324a1007"
+  },
+  "blocks": [
+    { "order": 1, "source_lines": [1, 102], "target": "docs/gui/new-version/styles/tokens.css", "sha256": "efa704b8b7eb2e825c9b8450d726779776b35f2b6b5c23adc94b6ac59f2c355c" },
+    { "order": 2, "source_lines": [103, 115], "target": "docs/gui/new-version/styles/reset.css", "sha256": "d407bba52e515ca2ede4ebe4f673ebee4f300836fe735c233fdd63c7f94a53ef" },
+    { "order": 3, "source_lines": [116, 170], "target": "docs/gui/new-version/styles/base.css", "sha256": "0e181a7ae24b72b1bd387dccf5b9a23c5f70331b634a00dada2fdd644e9d76a2" },
+    { "order": 4, "source_lines": [171, 190], "target": "docs/gui/new-version/styles/layout/app-shell.css", "sha256": "9c062bb699e8307d29c9dee4bbc33fe5db722d4b762d5b9a28920322954a0aba" },
+    { "order": 5, "source_lines": [191, 204], "target": "docs/gui/new-version/styles/layout/sidebar-shell.css", "sha256": "5bd0a97a2ff11b174727f1454038ea290ca8b318ecebaaf7f4fe702b70a14722" },
+    { "order": 6, "source_lines": [205, 286], "target": "docs/gui/new-version/styles/features/sidebar.css", "sha256": "54f3d3eebd9ebae76b1741fbb7199fcf721612eabee8fc404ca9683cf6615999" },
+    { "order": 7, "source_lines": [287, 402], "target": "docs/gui/new-version/styles/features/conversation.css", "sha256": "b0a87541083dd9db82bdc525fb48c472b2658f692600cdd7166ac6f4267021c3" },
+    { "order": 8, "source_lines": [403, 489], "target": "docs/gui/new-version/styles/features/tools.css", "sha256": "ffd6b3964aa2baf398b853811e74afc0b67a5df9f580d797342b26920c5dcb87" },
+    { "order": 9, "source_lines": [490, 524], "target": "docs/gui/new-version/styles/components/forms.css", "sha256": "ac79930b63b9d42712bd65b5f346e8fd54f8d6b334681777a670cfa5d85033f6" },
+    { "order": 10, "source_lines": [525, 648], "target": "docs/gui/new-version/styles/components/overlays.css", "sha256": "afb36943249d9756ce06e02cf0a07a6e837b265357c187495b071255f7873c10" },
+    { "order": 11, "source_lines": [649, 726], "target": "docs/gui/new-version/styles/features/settings.css", "sha256": "08b9922553c0e92ce50f6f40127c5ad01b49232d5a8b533ccca400d2ca0e30ab" },
+    { "order": 12, "source_lines": [727, 899], "target": "docs/gui/new-version/styles/features/appearance.css", "sha256": "d237c15e86a57c6683e169dbde188542b6c80060e6f8500ff6fac3f1eb5e189a" },
+    { "order": 13, "source_lines": [900, 931], "target": "docs/gui/new-version/styles/components/actions.css", "sha256": "cbb3380e2c103f61a7a356d6979815f7088e3f19765e40b16c8a3c4a4f615fee" },
+    { "order": 14, "source_lines": [932, 980], "target": "docs/gui/new-version/styles/components/permissions.css", "sha256": "ed9b4368677bc59b5a58e7ec730bc6b2218430311df83251c5f47a7be6722561" },
+    { "order": 15, "source_lines": [981, 1030], "target": "docs/gui/new-version/styles/features/dev-flow.css", "sha256": "02de4038ffd4b9377e1e087994c3b8f7b58f5e98ced89bfd77369f817843c649" },
+    { "order": 16, "source_lines": [1031, 1057], "target": "docs/gui/new-version/styles/components/feedback.css", "sha256": "aa1f4da45fee31d4a577348bc275e5a40051474f970a3e6108ecb46a70a78a49" },
+    { "order": 17, "source_lines": [1058, 1083], "target": "docs/gui/new-version/styles/features/dev-flow-detail.css", "sha256": "f4ea341f87a9f565b56feabe39fbe6d745dd17ddda0220cd138cd5cebfecdbd1" },
+    { "order": 18, "source_lines": [1084, 1090], "target": "docs/gui/new-version/styles/features/sidebar-window.css", "sha256": "79dfdb7ee2767ca74cb21fe0810b47f7eba776f3dc1175d419df806b2108520e" },
+    { "order": 19, "source_lines": [1091, 1171], "target": "docs/gui/new-version/styles/utilities.css", "sha256": "89e2dbf36697c1050af3cb31f587a89705055734afabeb29c0962de27ee41395" }
+  ],
+  "extracted_inline_styles": [
+    { "html": "docs/gui/new-version/scenes/ask-user-question.html", "source_lines": [9, 22], "target": "docs/gui/new-version/styles/scenes/ask-user-question.css", "href": "../styles/scenes/ask-user-question.css", "css_sha256": "cc0f4403939896646fc1304121f0b67b9ad22be481bb04bbfb5aa1e32807d389", "original_html_sha256": "11e7f6cf009af459a9e9be27e04b7dc5bf30b0a18dc310061d3e1b8fb917e749" },
+    { "html": "docs/gui/new-version/scenes/complete-session.html", "source_lines": [9, 48], "target": "docs/gui/new-version/styles/scenes/complete-session.css", "href": "../styles/scenes/complete-session.css", "css_sha256": "582d9897d5f6ef4773b782396c345afc73a6af4066405bebfcd4275ad7996008", "original_html_sha256": "203a89ef8db47031ffb4006247c127b4e604ef3dc53623c05b2176449b1e9c74" },
+    { "html": "docs/gui/new-version/scenes/dev-flow-runtime.html", "source_lines": [9, 332], "target": "docs/gui/new-version/styles/scenes/dev-flow-runtime.css", "href": "../styles/scenes/dev-flow-runtime.css", "css_sha256": "ebf66b05f6bea2df702b19558925d14dba204080e6d8969ac87946b2ab80d3ca", "original_html_sha256": "609db3e4c873e854fa03a10691430f8ff3e1465f5fa224c7733cedfb6a519f27" },
+    { "html": "docs/gui/new-version/rozsa-visual-demo.html", "source_lines": [8, 693], "target": "docs/gui/new-version/styles/features/visual-demo.css", "href": "styles/features/visual-demo.css", "css_sha256": "95f8c7a9fe2b5b3bf28ea2efb6de57c01919d90a592144525ddf1b3648078f4e", "original_html_sha256": "43b77bb3daa02ae6ad9860278a40064e5f62de1d95eb79ff4e7ea4be45c4bc7b" }
+  ]
+}

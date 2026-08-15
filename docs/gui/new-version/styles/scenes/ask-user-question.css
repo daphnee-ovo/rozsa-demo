@@ -1,0 +1,14 @@
+[data-rozsa-scene="ask-user-question"] .question-panel-error:empty { display: none; }
+[data-rozsa-scene="ask-user-question"] .question-panel-answer-row { margin-top: 8px; }
+[data-rozsa-scene="ask-user-question"] .question-panel-submit {
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 50%;
+}
+[data-rozsa-scene="ask-user-question"] .question-panel-submit .lucide {
+  width: 20px;
+  height: 20px;
+}

@@ -1,0 +1,40 @@
+  [data-rozsa-scene="complete-session"] #queuedMessages,
+  [data-rozsa-scene="complete-session"] #steeringConversation {
+    margin: 0;
+    padding: 13px 17px 11px;
+    border-bottom: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+    border-radius: 0;
+    background: transparent;
+  }
+  [data-rozsa-scene="complete-session"] .input-wrapper > .running-messages:not([hidden]) ~ .rich-input {
+    min-height: 52px;
+    padding-top: 12px;
+  }
+  [data-rozsa-scene="complete-session"] .subagent-sidebar-panel {
+    flex: 0 0 auto;
+    margin-top: 12px;
+  }
+  [data-rozsa-scene="complete-session"] .subagent-sidebar-panel ol {
+    display: grid;
+    gap: 7px;
+    margin: 7px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  [data-rozsa-scene="complete-session"] .subagent-sidebar-panel li {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    color: var(--fg);
+    font: 11px/1.4 var(--font-mono);
+  }
+  [data-rozsa-scene="complete-session"] .subagent-sidebar-panel li::before {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: quiet-pulse 1.4s ease-in-out infinite;
+    content: "";
+  }

@@ -1,0 +1,20 @@
+/* 应用骨架 */
+[data-od-id="app-body"] {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--main-sidebar-width) minmax(0, 1fr);
+  padding-top: var(--native-titlebar-offset);
+  overflow: hidden;
+  background: var(--bg);
+}
+body.native-fullscreen { --native-titlebar-offset: 0px; }
+body.native-split-main [data-od-id="app-body"] { padding-top: 0; }
+[data-native-scene-root][hidden] { display: none !important; }
+body.settings-visible [data-od-id="app-body"] { visibility: hidden; }
+#nativeGuiInteractionLayer,
+#nativeSidebarEdgeTrigger { position: fixed; pointer-events: none; }
+

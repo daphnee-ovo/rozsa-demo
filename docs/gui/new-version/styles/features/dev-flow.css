@@ -1,0 +1,50 @@
+/* Dev Flow */
+.dev-flow-heading { margin-bottom: 26px; }
+.dev-flow-heading .settings-pane-title { margin-bottom: 8px; }
+.dev-flow-description { max-width: 70ch; }
+.dev-flow-description strong { color: var(--fg); font-weight: 650; }
+.dev-flow-missing { margin-top: 14px; }
+.dev-flow-install-list { margin: 8px 0 12px; padding-left: 18px; color: var(--muted); font: 11px/1.5 var(--font-mono); }
+.dev-flow-install-list li { margin: 4px 0; }
+.dev-flow-section { margin-bottom: 28px; }
+.dev-flow-module { padding: 12px 20px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--bg) 68%, var(--surface) 32%); box-shadow: var(--shadow-1); }
+.dev-flow-overview-module { padding: 0; background: transparent; box-shadow: none; }
+.dev-flow-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.dev-flow-overview-card { min-width: 0; min-height: 88px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--bg) 68%, var(--surface) 32%); box-shadow: var(--shadow-1); text-align: center; }
+.dev-flow-overview-card > div { min-width: 0; }
+.dev-flow-overview-icon { width: 20px; height: 20px; flex: 0 0 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; color: var(--muted); }
+.dev-flow-overview-kicker { display: block; color: var(--muted); font: 10px/1.4 var(--font-mono); text-transform: uppercase; }
+.dev-flow-overview-value { display: block; margin-top: 4px; color: var(--fg); font: 19px/1.2 var(--font-display); overflow-wrap: anywhere; }
+.dev-flow-overview-status.is-ready { color: var(--success); background: var(--success-bg); }
+.dev-flow-overview-status.is-ready .dev-flow-overview-icon { color: var(--success); }
+.dev-flow-overview-link { min-width: 0; display: inline-flex; align-items: center; gap: 8px; border: 0; padding: 0; background: transparent; color: var(--fg); font: inherit; text-align: left; overflow-wrap: anywhere; }
+.dev-flow-overview-link:hover { color: var(--accent); }
+.dev-flow-external-icon { width: 15px; height: 15px; flex: 0 0 15px; }
+.dev-flow-overview-link:disabled { color: var(--muted); cursor: not-allowed; }
+.dev-flow-version-prefix,
+.dev-flow-memory-unit { color: var(--muted); font: 12px/1.4 var(--font-mono); }
+.dev-flow-memory-unit { margin-left: 3px; }
+.dev-flow-settings-rows .setting-item { margin-inline: 0; padding-inline: 0; }
+.dev-flow-path-control { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; width: min(100%, 570px); }
+.dev-flow-path-control .setting-input { min-width: 0; flex: 1; }
+.dev-flow-icon-button { width: 44px; height: 44px; display: inline-grid; place-items: center; flex: 0 0 44px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--muted); }
+.dev-flow-icon-button svg { width: 17px; height: 17px; place-self: center; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.dev-flow-icon-button:hover { border-color: var(--accent-border); background: var(--accent-soft); color: var(--fg); }
+.dev-flow-value { max-width: 62%; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
+.dev-flow-group { display: flex; flex-direction: column; gap: 4px; }
+.dev-flow-summary,
+.dev-flow-claimed-row,
+.dev-flow-more { min-width: 0; display: flex; align-items: center; gap: 7px; padding: 4px 6px; margin: 0 -6px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--fg); text-align: left; }
+.dev-flow-summary { font-size: 11px; font-weight: 600; }
+.dev-flow-summary:hover:not(:disabled),
+.dev-flow-claimed-row:hover,
+.dev-flow-more:hover { background: var(--accent-soft); }
+.dev-flow-summary:disabled { color: var(--muted); cursor: default; }
+.dev-flow-summary.stale,
+.dev-flow-more { color: var(--muted); }
+.dev-flow-claimed { display: flex; flex-direction: column; gap: 2px; }
+.dev-flow-claimed-row { font-size: 11px; }
+.dev-flow-claimed-dot { width: 6px; height: 6px; flex-basis: 6px; background: var(--accent); }
+.dev-flow-claimed-id { flex: 0 0 auto; color: var(--accent); font: 10px/1.4 var(--font-mono); }
+.dev-flow-claimed-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+

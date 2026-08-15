@@ -1,0 +1,26 @@
+/* Dev Flow 详情 */
+.dev-flow-detail { position: fixed; inset: 0; left: var(--main-sidebar-width); z-index: 150; display: grid; place-items: center; padding: 24px; background: color-mix(in oklch, var(--code-bg) 46%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.dev-flow-detail-panel { position: relative; width: min(760px, 100%); max-height: min(720px, calc(100vh - 48px)); overflow: auto; padding: 24px; border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow-3); }
+.dev-flow-detail-header { display: flex; align-items: center; gap: 10px; }
+.dev-flow-detail-title { color: var(--fg); font: 500 26px/1.1 var(--font-display); }
+.dev-flow-detail-revision { margin-left: auto; color: var(--muted); font: 10px/1.4 var(--font-mono); }
+.dev-flow-detail-close { width: 44px; height: 44px; display: inline-grid; place-items: center; margin-left: 4px; padding: 0; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--muted); }
+.dev-flow-detail-close:hover { background: var(--fg-soft); color: var(--fg); }
+.dev-flow-detail-close svg { width: 17px; height: 17px; place-self: center; }
+.dev-flow-detail-project { margin-top: 10px; color: var(--accent); font: 10px/1.4 var(--font-mono); }
+.dev-flow-detail-summary { margin-top: 6px; color: var(--muted); font-size: 12px; }
+.dev-flow-detail-list { display: grid; gap: 8px; margin-top: 20px; }
+.dev-flow-detail-item { padding: 14px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--surface) 76%, transparent); box-shadow: var(--shadow-1); }
+.dev-flow-detail-item.focus { background: var(--accent-soft); }
+.dev-flow-detail-item-head { display: flex; align-items: baseline; gap: 8px; }
+.dev-flow-detail-item-id { flex: 0 0 auto; color: var(--accent); font: 10px/1.4 var(--font-mono); }
+.dev-flow-detail-item-title { min-width: 0; flex: 1; color: var(--fg); font-size: 13px; font-weight: 620; }
+.dev-flow-detail-item-status { flex: 0 0 auto; color: var(--muted); font: 10px/1.4 var(--font-mono); text-transform: uppercase; }
+.dev-flow-detail-item-status.in-progress { color: var(--accent); }
+.dev-flow-detail-item-meta { margin-top: 6px; color: var(--muted); font: 10px/1.4 var(--font-mono); }
+.dev-flow-detail-item-desc { margin-top: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.dev-flow-detail-disclosure { margin-top: 10px; color: var(--muted); font-size: 11px; }
+.dev-flow-detail-disclosure summary { cursor: pointer; }
+.dev-flow-detail-disclosure-body { display: grid; gap: 4px; margin-top: 7px; color: var(--muted); font: 10px/1.45 var(--font-mono); }
+.dev-flow-detail-empty { padding: 20px 0; color: var(--muted); }
+

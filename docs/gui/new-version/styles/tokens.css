@@ -1,0 +1,102 @@
+/*
+ * Rózsa GUI
+ * Apple 的空间秩序，Claude 的温和纸面，海报式留白。
+ * 结构层只用表面、留白和阴影分层，分割线仅保留在真正需要的控件边界。
+ */
+
+:root {
+  --bg: oklch(96.8% 0.018 82) !important;
+  --surface: oklch(98.6% 0.010 82) !important;
+  --surface-raised: color-mix(in oklch, var(--surface) 82%, var(--fg) 18%) !important;
+  --fg: oklch(24% 0.026 55) !important;
+  --muted: oklch(51% 0.024 68) !important;
+  --border: oklch(87.5% 0.022 78) !important;
+  --accent: oklch(58% 0.075 355) !important;
+  --accent-hover: oklch(52% 0.085 355) !important;
+  --accent-btn: var(--accent) !important;
+  --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent) !important;
+  --accent-bg: var(--accent-soft) !important;
+  --accent-border: color-mix(in oklch, var(--accent) 34%, var(--border)) !important;
+  --success: oklch(48% 0.085 155) !important;
+  --success-bg: color-mix(in oklch, var(--success) 12%, transparent) !important;
+  --warning: oklch(62% 0.095 82) !important;
+  --warning-bg: color-mix(in oklch, var(--warning) 14%, transparent) !important;
+  --error: oklch(52% 0.12 25) !important;
+  --error-bg: color-mix(in oklch, var(--error) 12%, transparent) !important;
+  --danger: var(--error) !important;
+  --user-bg: var(--accent-soft) !important;
+  --code-bg: oklch(22% 0.024 55) !important;
+  --code-border: oklch(34% 0.022 55) !important;
+  --sidebar-bg: var(--bg) !important;
+  --titlebar-bg: color-mix(in oklch, var(--surface) 88%, transparent) !important;
+  --on-accent: oklch(98% 0.010 82) !important;
+  --fg-secondary: var(--muted) !important;
+  --fg-soft: color-mix(in oklch, var(--fg) 6%, transparent) !important;
+
+  --font-display: Iowan Old Style, Baskerville, 'Songti SC', 'Noto Serif CJK SC', STSong, Georgia, serif !important;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Noto Sans CJK SC', 'Segoe UI', system-ui, sans-serif !important;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace !important;
+
+  --radius-xs: 8px !important;
+  --radius-control: 12px !important;
+  --radius-card: 16px !important;
+  --radius-panel: 20px !important;
+  --radius-dialog: 24px !important;
+  --radius-pill: 999px !important;
+  --radius: var(--radius-control) !important;
+  --radius-lg: var(--radius-card) !important;
+
+  --shadow-1: 0 2px 10px oklch(24% 0.026 55 / 0.06) !important;
+  --shadow-2: 0 8px 28px oklch(24% 0.026 55 / 0.10) !important;
+  --shadow-3: 0 18px 54px oklch(24% 0.026 55 / 0.16) !important;
+  --shadow-note: 5px 10px 24px -14px oklch(24% 0.026 55 / 0.18), 0 3px 8px -6px oklch(24% 0.026 55 / 0.12) !important;
+  --shadow-slider-thumb: 0 4px 12px -4px oklch(24% 0.026 55 / 0.24), 0 1px 3px oklch(24% 0.026 55 / 0.14) !important;
+  --slider-track-fill: color-mix(in oklch, var(--accent) 14%, var(--surface)) !important;
+  --slider-track-rest: color-mix(in oklch, var(--accent) 6%, var(--surface)) !important;
+  --shadow-slider-track: inset 0 2px 4px oklch(24% 0.026 55 / 0.10) !important;
+  --shadow-sidebar: inset -1px 0 0 color-mix(in oklch, var(--fg) 6%, transparent), inset -2px 0 4px -5px color-mix(in oklch, var(--fg) 9%, transparent) !important;
+
+  --ui-font-size: 14px;
+  --ui-scale: 1;
+  --main-sidebar-width: clamp(236px, 20vw, 304px);
+  --native-titlebar-offset: 42px;
+}
+
+html[data-theme-mode="dark"] {
+  color-scheme: dark;
+  --bg: oklch(18% 0.018 55) !important;
+  --surface: oklch(23% 0.022 55) !important;
+  --surface-raised: color-mix(in oklch, var(--surface) 84%, var(--fg) 16%) !important;
+  --fg: oklch(92% 0.018 78) !important;
+  --muted: oklch(72% 0.022 72) !important;
+  --border: oklch(35% 0.022 55) !important;
+  --accent: oklch(70% 0.085 355) !important;
+  --accent-hover: oklch(76% 0.080 355) !important;
+  --accent-btn: var(--accent) !important;
+  --accent-soft: color-mix(in oklch, var(--accent) 16%, transparent) !important;
+  --accent-bg: var(--accent-soft) !important;
+  --accent-border: color-mix(in oklch, var(--accent) 36%, var(--border)) !important;
+  --success: oklch(72% 0.085 155) !important;
+  --success-bg: color-mix(in oklch, var(--success) 16%, transparent) !important;
+  --warning: oklch(78% 0.095 82) !important;
+  --warning-bg: color-mix(in oklch, var(--warning) 18%, transparent) !important;
+  --error: oklch(74% 0.105 25) !important;
+  --error-bg: color-mix(in oklch, var(--error) 16%, transparent) !important;
+  --user-bg: var(--accent-soft) !important;
+  --code-bg: oklch(14% 0.018 55) !important;
+  --code-border: oklch(32% 0.022 55) !important;
+  --sidebar-bg: var(--bg) !important;
+  --titlebar-bg: color-mix(in oklch, var(--surface) 88%, transparent) !important;
+  --on-accent: oklch(24% 0.026 55) !important;
+  --fg-soft: color-mix(in oklch, var(--fg) 7%, transparent) !important;
+  --shadow-1: 0 2px 10px oklch(8% 0.018 55 / 0.20) !important;
+  --shadow-2: 0 8px 28px oklch(8% 0.018 55 / 0.30) !important;
+  --shadow-3: 0 18px 54px oklch(8% 0.018 55 / 0.42) !important;
+  --shadow-note: 5px 10px 24px -14px oklch(8% 0.018 55 / 0.38), 0 3px 8px -6px oklch(8% 0.018 55 / 0.26) !important;
+  --shadow-slider-thumb: 0 4px 12px -4px oklch(8% 0.018 55 / 0.38), 0 1px 3px oklch(8% 0.018 55 / 0.26) !important;
+  --slider-track-fill: color-mix(in oklch, var(--accent) 16%, var(--surface)) !important;
+  --slider-track-rest: color-mix(in oklch, var(--accent) 8%, var(--surface)) !important;
+  --shadow-slider-track: inset 0 2px 4px oklch(8% 0.018 55 / 0.22) !important;
+  --shadow-sidebar: inset -1px 0 0 color-mix(in oklch, var(--fg) 5%, transparent), inset -2px 0 4px -5px color-mix(in oklch, var(--bg) 16%, transparent) !important;
+}
+
