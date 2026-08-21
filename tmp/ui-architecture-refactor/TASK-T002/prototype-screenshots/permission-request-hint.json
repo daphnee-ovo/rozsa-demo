@@ -1,0 +1,114 @@
+{
+  "focus": "permHintInput",
+  "heading": [],
+  "visibleInputs": [
+    {
+      "id": "permHintInput",
+      "placeholder": null
+    },
+    {
+      "id": "thinkingEffortSlider",
+      "placeholder": null
+    },
+    {
+      "id": "settingsFontSizeRange",
+      "placeholder": null
+    },
+    {
+      "id": "settingsFontSizeInput",
+      "placeholder": null
+    },
+    {
+      "id": "lightThemeAccentPicker",
+      "placeholder": null
+    },
+    {
+      "id": "lightThemeAccent",
+      "placeholder": null
+    },
+    {
+      "id": "lightThemeBackgroundPicker",
+      "placeholder": null
+    },
+    {
+      "id": "lightThemeBackground",
+      "placeholder": null
+    },
+    {
+      "id": "lightThemeForegroundPicker",
+      "placeholder": null
+    },
+    {
+      "id": "lightThemeForeground",
+      "placeholder": null
+    },
+    {
+      "id": "lightThemeUiFont",
+      "placeholder": null
+    },
+    {
+      "id": "lightThemeCodeFont",
+      "placeholder": null
+    },
+    {
+      "id": "darkThemeAccentPicker",
+      "placeholder": null
+    },
+    {
+      "id": "darkThemeAccent",
+      "placeholder": null
+    },
+    {
+      "id": "darkThemeBackgroundPicker",
+      "placeholder": null
+    },
+    {
+      "id": "darkThemeBackground",
+      "placeholder": null
+    },
+    {
+      "id": "darkThemeForegroundPicker",
+      "placeholder": null
+    },
+    {
+      "id": "darkThemeForeground",
+      "placeholder": null
+    },
+    {
+      "id": "darkThemeUiFont",
+      "placeholder": null
+    },
+    {
+      "id": "darkThemeCodeFont",
+      "placeholder": null
+    },
+    {
+      "id": "settingsCompactionTriggerRatio",
+      "placeholder": null
+    },
+    {
+      "id": "settingsCompactionTargetRatio",
+      "placeholder": null
+    },
+    {
+      "id": "settingsRetryTimeout",
+      "placeholder": "Default"
+    },
+    {
+      "id": "settingsRetryMax",
+      "placeholder": "Default"
+    },
+    {
+      "id": "settingsRetryDelay",
+      "placeholder": "Default"
+    },
+    {
+      "id": "shortcutSearch",
+      "placeholder": "Search shortcuts"
+    },
+    {
+      "id": "devFlowExecutablePath",
+      "placeholder": null
+    }
+  ]
+}

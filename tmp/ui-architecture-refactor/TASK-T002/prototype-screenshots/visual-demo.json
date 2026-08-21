@@ -1,0 +1,67 @@
+{
+  "body": {
+    "className": "",
+    "height": 1103,
+    "width": 1440
+  },
+  "focus": "BODY",
+  "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", \"Noto Sans CJK SC\", \"Segoe UI\", system-ui, sans-serif",
+  "reducedMotion": false,
+  "root": {
+    "backgroundColor": "oklch(0.968 0.018 82)",
+    "className": "",
+    "color": "oklch(0.24 0.026 55)",
+    "display": "block",
+    "height": "1102.55px",
+    "id": "",
+    "position": "static",
+    "tag": "BODY",
+    "width": "1440px"
+  },
+  "scene": null,
+  "scroll": {
+    "x": 0,
+    "y": 0
+  },
+  "stylesheets": [
+    "inline"
+  ],
+  "theme": "light",
+  "title": "Rozsa · Visual Direction Demo",
+  "url": "http://127.0.0.1:4173/rozsa-visual-demo.html",
+  "viewport": {
+    "dpr": 2,
+    "height": 1000,
+    "width": 1440
+  },
+  "visiblePanels": [
+    "sceneName",
+    "themeToggle",
+    "themeIcon",
+    "railThemeLabel",
+    "content",
+    "emptyView",
+    "empty-title",
+    "active-title",
+    "openPermission",
+    "thinkingToggle",
+    "thinkingBody",
+    "inspectTool",
+    "copyCode",
+    "codeContent",
+    "composer",
+    "composerInput",
+    "attachButton",
+    "modelButton",
+    "thinkingButton",
+    "settings-title",
+    "themeSelect",
+    "textureToggle",
+    "restoreDefaults",
+    "permission-title",
+    "permission-copy",
+    "permissionCancel",
+    "permissionAllow",
+    "codex-browser-sidebar-comments-root"
+  ]
+}
