@@ -143,7 +143,13 @@ fn prototype_inventory_is_bidirectional() {
 
     let root = prototype["application_root"].as_str().unwrap();
     let gallery = prototype["gallery"].as_str().unwrap();
-    for path in [root, gallery, prototype["script"].as_str().unwrap()] {
+    let gallery_script = prototype["gallery_script"].as_str().unwrap();
+    for path in [
+        root,
+        gallery,
+        prototype["script"].as_str().unwrap(),
+        gallery_script,
+    ] {
         assert!(
             repository_root().join(path).is_file(),
             "原型清单路径不存在：{path}"
@@ -158,6 +164,15 @@ fn prototype_inventory_is_bidirectional() {
             .iter()
             .any(|entry| entry.starts_with(gallery)),
         "gallery 入口没有对应项目"
+    );
+    let prototype_behavior_references: BTreeSet<_> = items(&manifest)
+        .flat_map(|item| item_strings(item, "behavior"))
+        .collect();
+    assert!(
+        prototype_behavior_references
+            .iter()
+            .any(|entry| entry.starts_with(gallery_script)),
+        "gallery behavior 入口没有对应项目"
     );
 
     let gallery_items: Vec<_> = items(&manifest)

@@ -1,0 +1,46 @@
+[
+  {
+    "sceneId": "empty-session",
+    "alert": null,
+    "body": {
+      "height": 900,
+      "width": 820
+    },
+    "horizontalOverflow": false,
+    "overflowX": "hidden",
+    "scene": "empty-session"
+  },
+  {
+    "sceneId": "complete-session",
+    "alert": null,
+    "body": {
+      "height": 900,
+      "width": 820
+    },
+    "horizontalOverflow": false,
+    "overflowX": "hidden",
+    "scene": "complete-session"
+  },
+  {
+    "sceneId": "settings-appearance",
+    "alert": null,
+    "body": {
+      "height": 900,
+      "width": 820
+    },
+    "horizontalOverflow": false,
+    "overflowX": "hidden",
+    "scene": "settings-appearance"
+  },
+  {
+    "sceneId": "dev-flow-runtime",
+    "alert": null,
+    "body": {
+      "height": 900,
+      "width": 820
+    },
+    "horizontalOverflow": false,
+    "overflowX": "hidden",
+    "scene": "dev-flow-runtime"
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "before": {
+    "dismissCount": 56,
+    "statusCount": 4
+  },
+  "after": {
+    "statusCount": 3,
+    "visibleText": false
+  }
+}

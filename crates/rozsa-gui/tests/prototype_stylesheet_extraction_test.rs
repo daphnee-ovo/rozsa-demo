@@ -286,10 +286,23 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
         "docs/gui/new-version/scenes/complete-session.html",
         "docs/gui/new-version/scenes/dev-flow-runtime.html",
         "docs/gui/new-version/rozsa-visual-demo.html",
+        "docs/gui/new-version/gallery/visual-direction.html",
     ] {
         let source = fs::read_to_string(root.join(html)).unwrap();
         assert!(!source.contains("<style>"), "{html} 仍包含 style 标签");
     }
+
+    let gallery_css =
+        fs::read_to_string(root.join("docs/gui/new-version/gallery/visual-direction.css")).unwrap();
+    assert_eq!(
+        gallery_css.trim(),
+        "@import url(\"../styles/features/visual-demo.css\");"
+    );
+    let gallery_html =
+        fs::read_to_string(root.join("docs/gui/new-version/gallery/visual-direction.html"))
+            .unwrap();
+    assert!(gallery_html.contains("href=\"visual-direction.css\""));
+    assert!(gallery_html.contains("src=\"visual-direction.js\""));
 
     for scene in fs::read_dir(root.join("docs/gui/new-version/scenes")).unwrap() {
         let path = scene.unwrap().path();

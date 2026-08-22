@@ -4,7 +4,9 @@
 
 ## 使用方式
 
-每个 `items` 项目都有不会随文件移动改变的稳定 ID，并记录 runtime 入口与触发方式、prototype 入口、覆盖状态、重构后的 CSS/markup/behavior 责任位置、全部使用方和重构前后验证 ID。`prototype_inventory` 覆盖 `index.html` 主入口、兼容入口、11 个 application scene、独立 gallery 与 shell/renderer/legacy behavior 脚本；`runtime_inventory` 覆盖 main/sidebar HTML、三个运行脚本和所有已注册可见事件。
+每个 `items` 项目都有不会随文件移动改变的稳定 ID，并记录 runtime 入口与触发方式、prototype 入口、覆盖状态、重构后的 CSS/markup/behavior 责任位置、全部使用方和重构前后验证 ID。`prototype_inventory` 覆盖 `index.html` 主入口、兼容入口、11 个 application scene、gallery HTML/脚本与 shell/renderer/legacy behavior 脚本；`runtime_inventory` 覆盖 main/sidebar HTML、三个运行脚本和所有已注册可见事件。
+
+prototype 的统一入口是 `docs/gui/new-version/index.html`：`?scene=<id>` 装配 application scene，`?gallery=visual-direction` 装配 `gallery/visual-direction.html`。独立的 `rozsa-visual-demo.html` 只作为 T015 的重构前对照材料，不能替代 gallery 入口。
 
 后续移动文件时更新责任路径，不更换项目 ID。公共实现的每个 `used_by` 都必须进入同一项目的验证范围。`verification` 在 TASK-T002 建立重构前材料后成为前后成对检查的稳定键。
 
@@ -63,16 +65,17 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 ### Gallery 视觉参考
 
 - 项目：`UI-GALLERY-001`、`UI-GALLERY-002`、`UI-GALLERY-003`、`UI-GALLERY-004`。
-- 结论：Independent demo topbar 与 Empty、Active、Appearance 三个视图均作为 gallery 专属内容登记；它们不是 runtime application scene。
+- 入口：`docs/gui/new-version/index.html?gallery=visual-direction`；对照实现：`gallery/visual-direction.html`、`gallery/visual-direction.js`，共享 `styles/features/visual-demo.css`。
+- 结论：Independent demo topbar 与 Empty、Active、Appearance 三个视图均作为 gallery 专属内容登记；它们不是 runtime application scene。独立 `rozsa-visual-demo.html` 只用于与 baseline 成对比较。
 
 ## 维护约束
 
-- 新增或删除 scene、gallery view、runtime entry、可见事件或界面状态时，必须同步更新 JSON inventory 和对应 item。
+- 新增或删除 scene、gallery view、runtime entry、可见事件或界面状态时，必须同步更新 JSON inventory 和对应 item；gallery 的 HTML、脚本入口和 shared CSS owner 必须同时可追溯。
 - 一个项目只能使用四种固定状态；`partial`/`missing` 必须在缺口表有且只有一个可追溯条目。
 - `css`、`markup`、`behavior` 分别描述最终唯一责任位置，不能把第二份公共实现藏在 scene 或 gallery 中。
 - prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features`、`layouts` 或 `scenes` 的唯一 owner；响应式规则直接归属于该 owner，入口只负责保持 import source order。
 - application shell 的稳定 HTML 只能来自 `templates/`，入口只提供 mount；`scripts/core/` 只负责加载、装配和 renderer 边界，scene 文件仍是只读迁移输入。
-- scene 的唯一配置入口是 `scenarios/registry.js`，读取路径经过 `scripts/core/scene-loader.js` 和 `scripts/adapters/mock-adapter.js`；mock 文件及每个 scene 的全部使用方必须登记在 JSON `scenario_inventory`，未知 ID 必须明确报错且不能 fallback 到未定义页面。
+- scene/gallery 的唯一路由登记入口是 `scenarios/registry.js`；scene 读取路径经过 `scripts/core/scene-loader.js` 和 `scripts/adapters/mock-adapter.js`，gallery 通过统一 entry route 装配；mock 文件及每个 scene 的全部使用方必须登记在 JSON `scenario_inventory`，未知 ID 必须明确报错且不能 fallback 到未定义页面。
 - prototype component behavior 的唯一归属是 `scripts/components/` 或 `scripts/features/`；Composer、interruption、popover、notification、tool-call、conversation、settings、sidebar 与 Dev Flow 的使用方必须在 JSON 的 `behavior` 和 `used_by` 中闭合记录。
 - 跨组件 flow 的唯一归属是 `scripts/flows/`：`composer-interruption.js` 只协调 interruption 与 composer 的 focus restore，`scenario-flow.js` 只协调 scene-ready 与 application shell 的装配时序；两者的 component、feature、scene 使用方登记在 JSON `flow_inventory`，交由 T015 统一验证。
 - 本清单与自动化测试只证明分类和引用闭合，不证明视觉或交互等价；最终结论必须来自 TASK-T002 建立的成对材料与后续实际重放。

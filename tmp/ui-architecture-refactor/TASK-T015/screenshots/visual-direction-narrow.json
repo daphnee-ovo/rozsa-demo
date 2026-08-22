@@ -1,0 +1,35 @@
+{
+  "sameGeometry": true,
+  "baseline": {
+    "body": {
+      "height": 1514,
+      "width": 820
+    },
+    "overflowX": "hidden",
+    "scroll": {
+      "x": 0,
+      "y": 0
+    },
+    "viewport": {
+      "dpr": 2,
+      "height": 900,
+      "width": 820
+    }
+  },
+  "gallery": {
+    "body": {
+      "height": 1514,
+      "width": 820
+    },
+    "overflowX": "hidden",
+    "scroll": {
+      "x": 0,
+      "y": 0
+    },
+    "viewport": {
+      "dpr": 2,
+      "height": 900,
+      "width": 820
+    }
+  }
+}

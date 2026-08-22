@@ -89,8 +89,22 @@ const sceneDefinitions = {
   }
 };
 
+const galleryDefinitions = {
+  "visual-direction": {
+    id: "visual-direction",
+    entry: "gallery/visual-direction.html",
+    stylesheet: "gallery/visual-direction.css",
+    behavior: "gallery/visual-direction.js",
+    verification: ["BASE-P-GALLERY-001", "BASE-P-GALLERY-002", "BASE-P-GALLERY-003", "BASE-P-GALLERY-004"]
+  }
+};
+
 export const sceneRegistry = Object.freeze(
   Object.fromEntries(Object.entries(sceneDefinitions).map(([id, definition]) => [id, Object.freeze(definition)]))
+);
+
+export const galleryRegistry = Object.freeze(
+  Object.fromEntries(Object.entries(galleryDefinitions).map(([id, definition]) => [id, Object.freeze(definition)]))
 );
 
 export function resolveSceneId(value) {
@@ -103,4 +117,16 @@ export function resolveSceneId(value) {
 
 export function getSceneDefinition(value) {
   return sceneRegistry[resolveSceneId(value)];
+}
+
+export function resolveGalleryId(value) {
+  const id = String(value || "");
+  if (!Object.hasOwn(galleryRegistry, id)) {
+    throw new Error(`Unknown prototype gallery: ${id || "(empty)"}`);
+  }
+  return id;
+}
+
+export function getGalleryDefinition(value) {
+  return galleryRegistry[resolveGalleryId(value)];
 }

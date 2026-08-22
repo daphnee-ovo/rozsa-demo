@@ -20,6 +20,42 @@
   <div data-template-mount="notification"></div>
   <div data-template-mount="dev-flow"></div>
 </div>
-<script type="module" src="scripts/core/shell.js"></script>
+<script type="module">
+import { resolveGalleryId, resolveSceneId } from "./scenarios/registry.js";
+
+function showEntryError(error) {
+  document.body.replaceChildren();
+  const message = document.createElement("main");
+  message.setAttribute("role", "alert");
+  message.textContent = error instanceof Error ? error.message : String(error);
+  document.body.append(message);
+}
+
+async function mountGallery(id) {
+  const response = await fetch(`gallery/${id}.html`);
+  if (!response.ok) {
+    throw new Error(`Unable to load prototype gallery: ${id} (${response.status})`);
+  }
+  const galleryDocument = new DOMParser().parseFromString(await response.text(), "text/html");
+  const base = galleryDocument.createElement("base");
+  base.href = new URL("gallery/", window.location.href).href;
+  galleryDocument.head.prepend(base);
+  galleryDocument.querySelector('script[src="visual-direction.js"]')?.remove();
+  document.replaceChild(galleryDocument.documentElement, document.documentElement);
+  await import(`./gallery/${id}.js`);
+}
+
+try {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("gallery")) {
+    await mountGallery(resolveGalleryId(params.get("gallery")));
+  } else {
+    resolveSceneId(params.get("scene"));
+    await import("./scripts/core/shell.js");
+  }
+} catch (error) {
+  showEntryError(error);
+}
+</script>
 </body>
 </html>

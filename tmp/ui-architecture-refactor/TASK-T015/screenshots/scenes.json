@@ -1,0 +1,145 @@
+[
+  {
+    "sceneId": "ask-user-question",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "ask-user-question",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "complete-session",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "complete-session",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "dev-flow-active",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "dev-flow-active",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "dev-flow-runtime",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "dev-flow-runtime",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "dev-flow",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "dev-flow",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "empty-session",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "empty-session",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "notifications",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "notifications",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "permission-request",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "permission-request",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "permissions",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "permissions",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "settings-appearance",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "settings-appearance",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  },
+  {
+    "sceneId": "tool-calls",
+    "alert": null,
+    "body": {
+      "height": 1000,
+      "width": 1440
+    },
+    "scene": "tool-calls",
+    "shellError": null,
+    "stylesheetCount": 1,
+    "title": "Rózsa — Coding Agent",
+    "visibleMounts": 9
+  }
+]
