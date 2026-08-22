@@ -21,6 +21,8 @@
     "features/settings.js",
     "features/sidebar.js",
     "features/dev-flow.js",
+    "flows/composer-interruption.js",
+    "flows/scenario-flow.js",
   ];
   const state = {
     themeMode: "light",
@@ -37,8 +39,14 @@
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
     if (!api) throw new Error("Prototype behavior API is unavailable");
-    const modules = await Promise.all(behaviorModulePaths.map(path => import(new URL("./scripts/" + path, legacyScriptUrl))));
+    const flowEntry = document.body?.dataset.rozsaFlowEntry;
+    const paths = behaviorModulePaths.filter(path => !path.startsWith("flows/") || flowEntry);
+    const modules = await Promise.all(paths.map(path => import(new URL("./scripts/" + path, legacyScriptUrl))));
     modules.forEach(module => module.init(api));
+  }
+
+  function emitFlowEvent(name, detail = {}) {
+    document.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
   const byId = id => document.getElementById(id);
@@ -370,6 +378,7 @@
     if (input) input.style.display = "none";
     const first = byId("permPanelActions")?.querySelector("button");
     if (first) first.focus();
+    emitFlowEvent("rozsa:interruption-open", { kind: "permission" });
   }
 
   function renderPermissionCommand(command, tool) {
@@ -384,8 +393,8 @@
     const input = byId("msgInput");
     if (input) {
       input.style.display = "";
-      input.focus();
     }
+    emitFlowEvent("rozsa:interruption-close", { kind: "permission" });
     showNotification("Permission request closed");
   }
 
@@ -612,11 +621,12 @@
     otherInput.addEventListener("input", () => { error.textContent = ""; });
     panel.classList.add("visible");
     options.querySelector("input")?.focus();
+    emitFlowEvent("rozsa:interruption-open", { kind: "question" });
   }
 
   function hideQuestionDemo() {
     byId("questionPanel")?.classList.remove("visible");
-    byId("msgInput")?.focus();
+    emitFlowEvent("rozsa:interruption-close", { kind: "question" });
   }
 
   function submitQuestionDemo() {
@@ -1021,7 +1031,9 @@
     byId("pane-" + sceneSettingsTab)?.classList.add("active");
     all(".settings-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.settingsPane === sceneSettingsTab));
     if (document.documentElement.dataset.rozsaEntry === "application-shell") {
-      loadBehaviorModules().catch(error => console.error("Prototype behavior modules failed to load.", error));
+      loadBehaviorModules()
+        .then(() => emitFlowEvent("rozsa:scene-ready", { scene: sceneName }))
+        .catch(error => console.error("Prototype behavior modules failed to load.", error));
     }
   });
 

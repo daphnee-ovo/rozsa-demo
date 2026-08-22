@@ -69,6 +69,7 @@
 - prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features`、`layouts` 或 `scenes` 的唯一 owner；响应式片段也登记在实际 owner 下，入口只负责保持 source order。
 - application shell 的稳定 HTML 只能来自 `templates/`，入口只提供 mount；`scripts/core/` 只负责加载、装配和 renderer 边界，scene 文件仍是只读迁移输入。
 - prototype component behavior 的唯一归属是 `scripts/components/` 或 `scripts/features/`；Composer、interruption、popover、notification、tool-call、conversation、settings、sidebar 与 Dev Flow 的使用方必须在 JSON 的 `behavior` 和 `used_by` 中闭合记录。
+- 跨组件 flow 的唯一归属是 `scripts/flows/`：`composer-interruption.js` 只协调 interruption 与 composer 的 focus restore，`scenario-flow.js` 只协调 scene-ready 与 application shell 的装配时序；两者的 component、feature、scene 使用方登记在 JSON `flow_inventory`，交由 T015 统一验证。
 - 本清单与自动化测试只证明分类和引用闭合，不证明视觉或交互等价；最终结论必须来自 TASK-T002 建立的成对材料与后续实际重放。
 
 ## Related Docs
