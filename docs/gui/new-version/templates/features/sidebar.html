@@ -3,7 +3,7 @@
     <div class="sidebar-section" data-od-id="sidebar-sessions">
       <div class="sidebar-header">
         <span role="heading" aria-level="2">Sessions</span>
-        <button type="button" data-od-id="new-session" title="New session" aria-label="New session" onclick="newSession()" style="margin-right: calc(10px - clamp(16px, 1.8vw, 24px));">
+        <button type="button" data-od-id="new-session" data-action="new-session" title="New session" aria-label="New session" style="margin-right: calc(10px - clamp(16px, 1.8vw, 24px));">
           <svg class="lucide" data-lucide="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
         </button>
       </div>
@@ -62,10 +62,9 @@
 
     <!-- 底部导航 -->
     <div class="sidebar-bottom">
-      <button type="button" class="sidebar-btn" data-od-id="btn-settings" aria-label="Open settings" onclick="toggleSettings()">
+      <button type="button" class="sidebar-btn" data-od-id="btn-settings" data-action="toggle-settings" aria-label="Open settings">
         <svg class="lucide" data-lucide="settings-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9M14 17H5M20 17h-3M9 7H5"/><circle cx="17" cy="17" r="2"/><circle cx="7" cy="7" r="2"/></svg>
         <span>Settings</span>
       </button>
     </div>
-  </aside>
-
+</aside>

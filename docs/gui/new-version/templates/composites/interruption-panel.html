@@ -6,33 +6,33 @@
               <span class="perm-panel-desc" id="permDesc"></span>
             </div>
             <div class="perm-panel-cmd collapsed" id="permCmd">—</div>
-            <button class="perm-panel-cmd-toggle" id="permCmdToggle" type="button" aria-expanded="false" onclick="togglePermissionCommand()" hidden>Show full command</button>
+            <button class="perm-panel-cmd-toggle" id="permCmdToggle" data-permission-action="toggle-command" type="button" aria-expanded="false" hidden>Show full command</button>
           </div>
           <div class="perm-panel-page" id="permPanelMain">
             <div class="perm-panel-actions" id="permPanelActions">
-              <button type="button" class="perm-panel-opt" onclick="respondPermission('allow')">
+              <button type="button" class="perm-panel-opt" data-permission-action="allow">
                 <span class="perm-panel-opt-key">Y</span>
                 <span class="perm-panel-opt-label">Allow Once</span>
               </button>
-              <button type="button" class="perm-panel-opt" onclick="enterPermissionTrust()">
+              <button type="button" class="perm-panel-opt" data-permission-action="trust">
                 <span class="perm-panel-opt-key">T</span>
                 <span class="perm-panel-opt-label">Trust in session</span>
               </button>
-              <button type="button" class="perm-panel-opt" onclick="respondPermission('deny')">
+              <button type="button" class="perm-panel-opt" data-permission-action="deny">
                 <span class="perm-panel-opt-key">N</span>
                 <span class="perm-panel-opt-label">Deny Execute</span>
               </button>
-              <button type="button" class="perm-panel-opt" onclick="enterPermissionHint()">
+              <button type="button" class="perm-panel-opt" data-permission-action="hint">
                 <span class="perm-panel-opt-key">H</span>
                 <span class="perm-panel-opt-label">Deny and hints</span>
               </button>
             </div>
           </div>
           <div class="perm-panel-page perm-panel-hint-page" id="permPanelHint" hidden>
-            <input id="permHintInput" class="perm-panel-hint-input" type="text" value="Deny, " autocomplete="off" spellcheck="false" aria-label="Deny reason" oninput="normalizePermissionHint(this)" onkeydown="handlePermissionHintKeydown(event)">
+            <input id="permHintInput" class="perm-panel-hint-input" type="text" value="Deny, " autocomplete="off" spellcheck="false" aria-label="Deny reason">
             <div class="perm-panel-hint-actions">
-              <button class="perm-panel-hint-cancel" type="button" onclick="showPermissionMainPage()">Cancel</button>
-              <button class="perm-panel-hint-submit" type="button" onclick="submitPermissionHint()">Deny</button>
+              <button class="perm-panel-hint-cancel" data-permission-action="cancel-hint" type="button">Cancel</button>
+              <button class="perm-panel-hint-submit" data-permission-action="submit-hint" type="button">Deny</button>
             </div>
           </div>
           <div class="perm-panel-page" id="permPanelTrust" hidden>
@@ -46,8 +46,7 @@
           <div class="question-panel-answer-row">
             <input class="question-panel-other-input" id="questionPanelOtherInput" type="text" autocomplete="off" spellcheck="false" placeholder="Type your own answer…" hidden>
             <div class="question-panel-actions">
-              <button class="question-panel-submit" id="questionPanelSubmit" type="button" aria-label="Done (D)" onclick="submitUserQuestion()"><span class="question-panel-submit-key">D</span><span>Done</span></button>
+              <button class="question-panel-submit" id="questionPanelSubmit" data-permission-action="submit-question" type="button" aria-label="Done (D)"><span class="question-panel-submit-key">D</span><span>Done</span></button>
             </div>
           </div>
-        </div>
-
+</div>

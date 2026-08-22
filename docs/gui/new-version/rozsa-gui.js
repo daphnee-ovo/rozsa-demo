@@ -10,6 +10,18 @@
   const settingsPanel = document.getElementById("settingsPanel");
   const settingsContent = document.querySelector(".settings-content");
   const sceneName = document.documentElement.dataset.rozsaScene || "";
+  const legacyScriptUrl = new URL(document.currentScript?.src || "rozsa-gui.js", document.baseURI);
+  const behaviorModulePaths = [
+    "components/composer.js",
+    "components/interruption-panel.js",
+    "components/popover.js",
+    "components/notification.js",
+    "components/tool-call.js",
+    "features/conversation.js",
+    "features/settings.js",
+    "features/sidebar.js",
+    "features/dev-flow.js",
+  ];
   const state = {
     themeMode: "light",
     fontSize: 14,
@@ -21,6 +33,13 @@
     messages: []
   };
   let devFlowDetailOpen = false;
+
+  async function loadBehaviorModules() {
+    const api = window.RozsaPrototype;
+    if (!api) throw new Error("Prototype behavior API is unavailable");
+    const modules = await Promise.all(behaviorModulePaths.map(path => import(new URL("./scripts/" + path, legacyScriptUrl))));
+    modules.forEach(module => module.init(api));
+  }
 
   const byId = id => document.getElementById(id);
   const all = selector => Array.from(document.querySelectorAll(selector));
@@ -175,7 +194,6 @@
       dashboard.hidden = true;
       dashboard.textContent = "Dashboard";
       dashboard.title = "Open Dev Flow dashboard";
-      dashboard.addEventListener("click", openDevFlowDashboardDemo);
       bottom.insertBefore(dashboard, bottom.firstChild);
     }
   }
@@ -194,21 +212,6 @@
       '<div class="session-name">' + escapeHtml(sessionLabel(session)) + "</div>" +
       '<div class="session-meta"><span>' + escapeHtml(session.date || "") + "</span></div></div>"
     ).join("");
-    all(".session-item").forEach(item => {
-      const activate = () => {
-        state.activeSession = Number(item.dataset.sessionIndex);
-        renderSessionList();
-        renderMessages();
-        saveState();
-      };
-      item.addEventListener("click", activate);
-      item.addEventListener("keydown", event => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          activate();
-        }
-      });
-    });
   }
 
   function textMarkup(value) {
@@ -233,7 +236,7 @@
     const stateClass = options.expanded ? " expanded" : "";
     const extraClass = options.className ? " " + options.className : "";
     const body = options.bodyHtml || '<pre style="white-space:pre-wrap;margin:0">' + escapeHtml(output || "") + "</pre>";
-    return '<div class="tool-call' + stateClass + extraClass + '" data-tool-call-id="' + escapeHtml(id) + '" data-od-id="tool-call-' + escapeHtml(id) + '" tabindex="0" onclick="toggleToolCall(this)">' +
+    return '<div class="tool-call' + stateClass + extraClass + '" data-tool-call-id="' + escapeHtml(id) + '" data-od-id="tool-call-' + escapeHtml(id) + '" tabindex="0">' +
       '<div class="tool-track"><div class="tool-icon">' + lucideIcon("corner-down-right") + '</div></div>' +
       '<div class="tool-content"><div class="tool-header"><span class="tool-call-status ' + status + '"></span>' +
       '<span class="tool-name">' + escapeHtml(name) + '</span><span class="tool-call-args">' + escapeHtml(arg) +
@@ -243,7 +246,7 @@
 
   function thinkingMarkup(text, expanded = true, active = false, duration = "") {
     return '<div class="thinking-block' + (expanded ? " expanded" : "") + (active ? " active" : "") + '">' +
-      '<div class="thinking-header" role="button" tabindex="0" aria-expanded="' + String(expanded) + '" onclick="toggleThinking(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();toggleThinking(this)}">' +
+      '<div class="thinking-header" role="button" tabindex="0" aria-expanded="' + String(expanded) + '">' +
       lucideIcon("lightbulb", "thinking-icon") +
       '<span class="thinking-label">' + (active ? "THINKING" : "THINKED") + '</span>' +
       (duration ? '<span class="thinking-duration">' + escapeHtml(duration) + '</span>' : "") +
@@ -292,7 +295,7 @@
   function changesMarkup(files, verification) {
     const rows = (files || []).map(file => '<div class="change-entry"><div class="change-row">' +
       '<span class="change-icon ' + (file.status === "added" ? "new" : "mod") + '">' + lucideIcon(file.status === "added" ? "file-plus-2" : "file-pen-line") + '</span>' +
-      '<button class="change-name" type="button" aria-expanded="false" data-turn-diff="' + escapeHtml(JSON.stringify({ patch: file.patch || "" })) + '" onclick="toggleTurnDiff(this)">' +
+      '<button class="change-name" type="button" aria-expanded="false" data-turn-diff="' + escapeHtml(JSON.stringify({ patch: file.patch || "" })) + '">' +
       escapeHtml(file.path) + '</button><span class="change-add">+' + escapeHtml(file.added) + '</span><span class="change-del">-' + escapeHtml(file.deleted) + '</span><span class="change-toggle">' + lucideIcon("chevron-right") + '</span>' +
       '</div><div class="turn-diff-inline" hidden></div></div>').join("");
     const footer = verification ? '<div class="changes-footer"><span class="change-add">Verified</span><span class="changes-runtime">' +
@@ -351,14 +354,6 @@
       index,
       Boolean(message.continuation),
     )).join("");
-    all(".tool-call").forEach(card => {
-      card.addEventListener("keydown", event => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          toggleToolCall(card);
-        }
-      });
-    });
   }
 
   function openPermissionDemo() {
@@ -577,7 +572,6 @@
     const stack = byId("notificationStack");
     if (stack) {
       stack.innerHTML = items.map(notificationMarkup).join("");
-      all(".notification-close").forEach(button => button.addEventListener("click", () => button.closest(".notification-toast")?.remove()));
     }
     const tray = byId("notificationErrorTray");
     const count = byId("notificationErrorCount");
@@ -588,10 +582,6 @@
       list.hidden = true;
       list.innerHTML = errors.map(error => '<div class="notification-error-item" role="listitem"><span class="notification-error-item-icon">' + lucideIcon("circle-alert") + '</span><div><div class="notification-error-item-title">' +
         escapeHtml(error.title) + '</div><div class="notification-error-item-message">' + escapeHtml(error.message) + "</div></div></div>").join("");
-      byId("notificationErrorTrayButton")?.addEventListener("click", () => {
-        list.hidden = !list.hidden;
-        byId("notificationErrorTrayButton")?.setAttribute("aria-expanded", String(!list.hidden));
-      });
     }
   }
 
@@ -718,16 +708,13 @@
     group.hidden = false;
     summary.textContent = "2 tasks · 1 issue";
     summary.disabled = false;
-    summary.onclick = openDevFlowDetailDemo;
     claimed.innerHTML = [
       ["T007", "Fix Dev Flow showcase interactions"],
       ["T004", "Split current GUI into reusable files"]
     ].map(([id, title]) => '<button class="dev-flow-claimed-row" type="button" title="' + escapeHtml(title) + '" data-dev-flow-trigger="true"><span class="dev-flow-claimed-dot" aria-hidden="true"></span><span class="dev-flow-claimed-id">' +
       id + '</span><span class="dev-flow-claimed-title">' + escapeHtml(title) + "</span></button>").join("");
-    all("#devFlowSidebarClaimed [data-dev-flow-trigger]").forEach(row => { row.onclick = openDevFlowDetailDemo; });
     more.hidden = false;
     more.textContent = "more 1";
-    more.onclick = openDevFlowDetailDemo;
     dashboard.hidden = false;
   }
 
@@ -942,10 +929,67 @@
   };
   window.submitUserQuestion = submitQuestionDemo;
 
-  document.addEventListener("click", event => {
-    const target = event.target.closest("[data-settings-theme-mode-card]");
-    if (target) selectThemeModeCard(target.dataset.settingsThemeModeCard);
-  });
+  window.RozsaPrototype = {
+    all,
+    byId,
+    state,
+    boundModules: new Set(),
+    addMessage,
+    applyTheme,
+    closeDevFlowDetail,
+    closeSettings,
+    enterPermissionHint: window.enterPermissionHint,
+    enterPermissionTrust: window.enterPermissionTrust,
+    handleCompositionEnd: window.handleCompositionEnd,
+    handleCompositionStart: window.handleCompositionStart,
+    handleCompositionUpdate: window.handleCompositionUpdate,
+    handleInput: window.handleInput,
+    handlePermissionHintKeydown: window.handlePermissionHintKeydown,
+    hidePermission,
+    hideQuestionDemo,
+    insertSlashCommandPrefix: window.insertSlashCommandPrefix,
+    lucideIcon,
+    newSession,
+    noOpToast,
+    normalizePermissionHint: window.normalizePermissionHint,
+    onModelChange: window.onModelChange,
+    openDevFlowDashboardDemo,
+    openDevFlowDetailDemo,
+    openPermissionDemo,
+    openPermissionRuleEditor: window.openPermissionRuleEditor,
+    previewThinkingEffort,
+    renderKeyBindings,
+    renderMessages,
+    renderNotifications,
+    renderSessionList,
+    saveState,
+    selectQuestionOption: window.selectQuestionOption,
+    selectThemeModeCard,
+    selectThinkingEffort,
+    setFontSize,
+    setThinking,
+    showModelPicker: window.showModelPicker,
+    showQuestionDemo,
+    showPermissionMainPage: window.showPermissionMainPage,
+    closePermissionRuleEditor: window.closePermissionRuleEditor,
+    resetPermissionRules: window.resetPermissionRules,
+    savePermissionRule: window.savePermissionRule,
+    submitPermissionHint: window.submitPermissionHint,
+    submitQuestionDemo,
+    switchSettingsTab,
+    togglePermissionCommand: window.togglePermissionCommand,
+    toggleSetting,
+    toggleThinking: window.toggleThinking,
+    toggleThinkingEffortPicker,
+    toggleTurnDiff,
+    toggleToolCall: window.toggleToolCall,
+    toast,
+    updateAbortButton: window.updateAbortButton,
+    attachFileReference: window.attachFileReference,
+    attachDirectoryReference: window.attachDirectoryReference,
+    respondPermission: window.respondPermission,
+    toggleSettings,
+  };
 
   document.addEventListener("DOMContentLoaded", () => {
     loadState();
@@ -956,7 +1000,7 @@
     setFontSize(state.fontSize, false);
     applyTheme(state.themeMode, false);
     renderSessionList();
-    renderMessages();
+    if (document.documentElement.dataset.rozsaEntry !== "application-shell") renderMessages();
     const sidebar = byId("sidebar");
     if (sidebar) sidebar.removeAttribute("hidden");
     const model = byId("modelSelector");
@@ -969,35 +1013,16 @@
       setText("gitDel", "—");
       setText("gitFiles", "—");
     }
-    const send = byId("send-btn");
-    if (send) send.onclick = addMessage;
     const slider = byId("thinkingEffortSlider");
     setThinking(slider?.value || 0);
-    slider?.addEventListener("input", event => setThinking(event.target.value));
-    byId("settingsFontSizeRange")?.addEventListener("input", event => setFontSize(event.target.value));
-    byId("settingsFontSizeInput")?.addEventListener("input", event => setFontSize(event.target.value));
     const sceneSettingsTab = sceneName === "settings-appearance" ? "appearance" :
       (sceneName === "permissions" ? "permissions" : ((sceneName === "dev-flow-active" || sceneName === "dev-flow") ? "dev-flow" : "appearance"));
     all("[data-settings-pane]").forEach(pane => pane.classList.remove("active"));
     byId("pane-" + sceneSettingsTab)?.classList.add("active");
     all(".settings-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.settingsPane === sceneSettingsTab));
-    all(".setting-toggle").forEach(button => {
-      if (!button.dataset.boundLocalToggle) {
-        button.dataset.boundLocalToggle = "true";
-        button.addEventListener("click", () => toggleSetting(button));
-      }
-    });
-    byId("devFlowDetailClose")?.addEventListener("click", closeDevFlowDetail);
-    document.addEventListener("pointerdown", event => {
-      if (!devFlowDetailOpen || event.target.closest("#devFlowDetail")) return;
-      closeDevFlowDetail();
-    });
-    document.addEventListener("keydown", event => {
-      if (devFlowDetailOpen && event.key === "Escape") {
-        event.preventDefault();
-        closeDevFlowDetail();
-      }
-    });
+    if (document.documentElement.dataset.rozsaEntry === "application-shell") {
+      loadBehaviorModules().catch(error => console.error("Prototype behavior modules failed to load.", error));
+    }
   });
 
   if (window.matchMedia) {
