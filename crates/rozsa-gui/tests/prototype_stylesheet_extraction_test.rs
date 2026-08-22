@@ -107,6 +107,14 @@ fn extracted_inline_styles_reconstruct_the_original_html_byte_for_byte() {
             &link,
             &format!("<style>\n{}</style>", css.trim_end_matches('\n')),
         );
+        let reconstructed_with_two_space_close = direct_entry_reverted.replace(
+            &link,
+            &format!("<style>\n{}\n  </style>", css.trim_end_matches('\n')),
+        );
+        let reconstructed_with_raw_two_space_close = direct_entry_reverted.replace(
+            &link,
+            &format!("<style>\n{}  </style>", css),
+        );
         let original_hash = extraction["original_html_sha256"].as_str().unwrap();
         assert!(
             sha256_hex(reconstructed.as_bytes()) == original_hash
@@ -114,6 +122,18 @@ fn extracted_inline_styles_reconstruct_the_original_html_byte_for_byte() {
                 || sha256_hex(reconstructed_with_indented_close.as_bytes()) == original_hash
                 || sha256_hex(
                     reconstructed_with_indented_close
+                        .trim_end_matches('\n')
+                        .as_bytes(),
+                ) == original_hash
+                || sha256_hex(reconstructed_with_two_space_close.as_bytes()) == original_hash
+                || sha256_hex(
+                    reconstructed_with_two_space_close
+                        .trim_end_matches('\n')
+                        .as_bytes(),
+                ) == original_hash
+                || sha256_hex(reconstructed_with_raw_two_space_close.as_bytes()) == original_hash
+                || sha256_hex(
+                    reconstructed_with_raw_two_space_close
                         .trim_end_matches('\n')
                         .as_bytes(),
                 ) == original_hash,
