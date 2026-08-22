@@ -2,7 +2,7 @@ export function init(api) {
   if (api.boundModules.has("interruption-panel")) return;
   api.boundModules.add("interruption-panel");
 
-  const panel = api.byId("chat-input");
+  const panel = document.querySelector('[data-od-id="chat-input"]');
   panel?.addEventListener("click", event => {
     const action = event.target.closest("[data-permission-action]")?.dataset.permissionAction;
     if (!action) return;

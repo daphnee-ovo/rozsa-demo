@@ -976,11 +976,12 @@
       const scene = await sceneLoader.loadPrototypeScene();
       document.documentElement.dataset.rozsaScene = scene.id;
       sceneLoader.applyPrototypeScene(window.RozsaPrototype, scene);
+      const isApplicationShell = document.body?.dataset.rozsaEntry === "application-shell";
       if (state.activeSession >= state.sessions.length) state.activeSession = 0;
       setFontSize(state.fontSize, false);
       applyTheme(state.themeMode, false);
       renderSessionList();
-      if (document.documentElement.dataset.rozsaEntry !== "application-shell") renderMessages();
+      if (!isApplicationShell) renderMessages();
       const sidebar = byId("sidebar");
       if (sidebar) sidebar.removeAttribute("hidden");
       const model = byId("modelSelector");
@@ -993,7 +994,7 @@
       all("[data-settings-pane]").forEach(pane => pane.classList.remove("active"));
       byId("pane-" + sceneSettingsTab)?.classList.add("active");
       all(".settings-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.settingsPane === sceneSettingsTab));
-      if (document.documentElement.dataset.rozsaEntry === "application-shell") {
+      if (isApplicationShell) {
         await loadBehaviorModules();
         emitFlowEvent("rozsa:scene-ready", { scene: scene.id });
       }

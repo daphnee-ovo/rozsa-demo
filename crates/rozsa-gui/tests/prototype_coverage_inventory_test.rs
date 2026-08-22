@@ -1,6 +1,7 @@
 // FrameworkTree
 // prototype_coverage_inventory_test.rs
 // ├── coverage_schema_matches_specification()
+// ├── application_shell_templates_preserve_mount_contract()
 // ├── prototype_inventory_is_bidirectional()
 // ├── runtime_inventory_and_visible_events_are_bidirectional()
 // ├── path_references_resolve_to_current_sources()
@@ -83,6 +84,34 @@ fn coverage_schema_matches_specification() {
         );
     }
     assert_eq!(actual_areas, expected_areas, "八个界面区域都必须有项目");
+}
+
+#[test]
+fn application_shell_templates_preserve_mount_contract() {
+    let sidebar = fs::read_to_string(
+        repository_root().join("docs/gui/new-version/templates/features/sidebar.html"),
+    )
+    .expect("prototype sidebar template must be readable");
+    assert!(
+        sidebar.contains("<aside id=\"sidebar\" data-od-id=\"sidebar\""),
+        "shared sidebar template must preserve the legacy mount id"
+    );
+    let legacy = fs::read_to_string(repository_root().join("docs/gui/new-version/rozsa-gui.js"))
+        .expect("prototype legacy bootstrap must be readable");
+    assert!(
+        legacy.contains(
+            "const isApplicationShell = document.body?.dataset.rozsaEntry === \"application-shell\";"
+        ),
+        "legacy bootstrap must read the application-shell entry marker from body"
+    );
+    let interruption = fs::read_to_string(
+        repository_root().join("docs/gui/new-version/scripts/components/interruption-panel.js"),
+    )
+    .expect("prototype interruption component must be readable");
+    assert!(
+        interruption.contains("document.querySelector('[data-od-id=\"chat-input\"]')"),
+        "interruption component must bind to the template's data-od-id root"
+    );
 }
 
 #[test]
