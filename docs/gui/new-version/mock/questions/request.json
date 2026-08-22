@@ -1,0 +1,8 @@
+{
+  "title": "[1/1] Which verification should Rózsa run next?",
+  "options": [
+    { "label": "Run the focused GUI checks", "description": "Fast feedback for the current interface changes." },
+    { "label": "Open the settings surface", "description": "Review the active configuration before continuing." },
+    { "label": "Other", "description": "Type a custom answer.", "other": true }
+  ]
+}

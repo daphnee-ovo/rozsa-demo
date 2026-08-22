@@ -1,0 +1,5 @@
+{
+  "tool": "Bash",
+  "description": "Rózsa wants to run a command in the current workspace.",
+  "command": "cargo test -p rozsa-gui"
+}

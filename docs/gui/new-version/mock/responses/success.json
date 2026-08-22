@@ -1,0 +1,5 @@
+{
+  "permissionClosedNotification": "Permission request closed",
+  "questionSubmittedText": "Thanks — I’ll continue with the selected verification path.",
+  "questionSubmittedNotification": { "id": "question-complete", "severity": "success", "title": "Answer received", "message": "Rózsa will continue with the selected path." }
+}

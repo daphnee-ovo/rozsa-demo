@@ -1,0 +1,8 @@
+{
+  "id": "empty",
+  "sessions": [
+    { "name": "Current session", "date": "" },
+    { "name": "Untitled", "date": "" }
+  ],
+  "activeSession": 0
+}

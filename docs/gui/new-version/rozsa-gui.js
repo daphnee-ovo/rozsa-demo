@@ -35,6 +35,11 @@
     messages: []
   };
   let devFlowDetailOpen = false;
+  let devFlowFixture = null;
+  let devFlowDashboardNotifications = null;
+  let permissionRequest = null;
+  let questionRequest = null;
+  let prototypeResponses = null;
 
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
@@ -364,15 +369,17 @@
     )).join("");
   }
 
-  function openPermissionDemo() {
+  function openPermissionDemo(request = permissionRequest) {
+    if (!request) throw new Error("Prototype permission request is unavailable");
+    permissionRequest = request;
     const panel = byId("permPanel");
     if (!panel) return;
     const tool = byId("permTool");
     const desc = byId("permDesc");
     const cmd = byId("permCmd");
-    if (tool) tool.textContent = "Bash";
-    if (desc) desc.textContent = "Rózsa wants to run a command in the current workspace.";
-    if (cmd) cmd.innerHTML = renderPermissionCommand("cargo test -p rozsa-gui", "Bash");
+    if (tool) tool.textContent = request.tool;
+    if (desc) desc.textContent = request.description;
+    if (cmd) cmd.innerHTML = renderPermissionCommand(request.command, request.tool);
     panel.classList.add("visible");
     const input = byId("msgInput");
     if (input) input.style.display = "none";
@@ -395,7 +402,9 @@
       input.style.display = "";
     }
     emitFlowEvent("rozsa:interruption-close", { kind: "permission" });
-    showNotification("Permission request closed");
+    const notification = prototypeResponses?.cancel?.permissionClosedNotification;
+    if (!notification) throw new Error("Prototype permission cancel response is unavailable");
+    showNotification(notification);
   }
 
   function toast(text) {
@@ -530,36 +539,39 @@
     if (element) element.setAttribute("aria-checked", String(Boolean(enabled)));
   }
 
-  function populateWorkspaceFixture() {
-    setText("gitBranch", "feature/gui-showcase");
-    setText("gitAdd", "+18");
-    setText("gitDel", "−4");
-    setText("gitFiles", "3 files");
+  function populateWorkspaceFixture(workspace) {
+    if (!workspace?.git || !workspace.quota || !Array.isArray(workspace.toolChips)) {
+      throw new Error("Prototype workspace mock is incomplete");
+    }
+    setText("gitBranch", workspace.git.branch);
+    setText("gitAdd", workspace.git.added);
+    setText("gitDel", workspace.git.deleted);
+    setText("gitFiles", workspace.git.files);
     const quota = byId("quotaGroup");
-    if (quota) quota.style.display = "";
-    setText("quotaHour", "3h 42m");
-    setText("quotaWeek", "18h 06m");
+    if (quota) quota.style.display = workspace.quota.visible ? "" : "none";
+    setText("quotaHour", workspace.quota.hour);
+    setText("quotaWeek", workspace.quota.week);
     const hourBar = byId("quotaHourBar");
     const weekBar = byId("quotaWeekBar");
-    if (hourBar) hourBar.style.width = "36%";
-    if (weekBar) weekBar.style.width = "62%";
+    if (hourBar) hourBar.style.width = workspace.quota.hourProgress + "%";
+    if (weekBar) weekBar.style.width = workspace.quota.weekProgress + "%";
     const chips = byId("toolChips");
-    if (chips) chips.innerHTML = [
-      ["Read", "4"], ["Edit", "2"], ["Bash", "3"], ["AskUserQuestion", "1"]
-    ].map(([name, count]) => '<span class="tool-chip"><span class="tool-chip-name">' + name +
-      '</span><span class="tool-chip-count">' + count + "</span></span>").join("");
-    setText("contextTokens", "12.8k");
-    setText("thinkingEffort", "high");
-    setText("modelSelector", "gpt-5");
+    if (chips) chips.innerHTML = workspace.toolChips.map(({ name, count }) => '<span class="tool-chip"><span class="tool-chip-name">' + escapeHtml(name) +
+      '</span><span class="tool-chip-count">' + escapeHtml(count) + "</span></span>").join("");
+    setText("contextTokens", workspace.contextTokens);
+    setText("thinkingEffort", workspace.thinkingEffort);
+    setText("modelSelector", workspace.model);
   }
 
-  function renderRunningFixture(config = {}) {
-    const panels = {
-      subagentPanel: config.subagent ? '<div class="running-messages-title">Subagents <span>1</span></div><ol><li>workspace-review · running</li></ol>' : "",
-      forkPicker: config.fork ? '<div class="running-messages-title">Fork from this turn</div><ol><li>Review current GUI state</li><li>Continue from verification</li></ol>' : "",
-      queuedMessages: config.queue ? '<div class="running-messages-title">Queue <span>2</span></div><ol><li>Check the settings surface</li><li>Summarize changed files</li></ol>' : "",
-      steeringConversation: config.steering ? '<div class="running-messages-title">Steering</div><ol><li>Keep the current structure and show the completed state.</li></ol>' : ""
-    };
+  function runningPanelMarkup(panel) {
+    if (!panel) return "";
+    const count = panel.count ? " <span>" + escapeHtml(panel.count) + "</span>" : "";
+    return '<div class="running-messages-title">' + escapeHtml(panel.title) + count + "</div><ol>" + panel.items.map(item => "<li>" + escapeHtml(item) + "</li>").join("") + "</ol>";
+  }
+
+  function renderRunningFixture(config) {
+    if (!config) throw new Error("Prototype running-state mock is unavailable");
+    const panels = Object.fromEntries(["subagentPanel", "forkPicker", "queuedMessages", "steeringConversation"].map(id => [id, runningPanelMarkup(config[id])]));
     Object.entries(panels).forEach(([id, html]) => {
       const panel = byId(id);
       if (!panel) return;
@@ -594,19 +606,17 @@
     }
   }
 
-  function showQuestionDemo() {
+  function showQuestionDemo(request = questionRequest) {
+    if (!request || !Array.isArray(request.options)) throw new Error("Prototype question request is unavailable");
+    questionRequest = request;
     const panel = byId("questionPanel");
     const options = byId("questionPanelOptions");
     const otherInput = byId("questionPanelOtherInput");
     const error = byId("questionPanelError");
     if (!panel || !options || !otherInput || !error) return;
-    setText("questionPanelTitle", "[1/1] Which verification should Rózsa run next?");
-    options.innerHTML = [
-      ["Run the focused GUI checks", "Fast feedback for the current interface changes."],
-      ["Open the settings surface", "Review the active configuration before continuing."],
-      ["Other", "Type a custom answer."]
-    ].map(([label, description], index) => '<label class="question-panel-option"><span class="question-panel-option-key">' + (index + 1) +
-      '</span><input type="radio" name="question-demo" value="' + escapeHtml(label) + '" data-option-number="' + (index + 1) + '" data-other="' + String(label === "Other") + '"><span class="question-panel-option-copy"><span class="question-panel-option-label">' +
+    setText("questionPanelTitle", request.title);
+    options.innerHTML = request.options.map(({ label, description, other }, index) => '<label class="question-panel-option"><span class="question-panel-option-key">' + (index + 1) +
+      '</span><input type="radio" name="question-demo" value="' + escapeHtml(label) + '" data-option-number="' + (index + 1) + '" data-other="' + String(Boolean(other)) + '"><span class="question-panel-option-copy"><span class="question-panel-option-label">' +
       escapeHtml(label) + '</span><span class="question-panel-option-description">' + escapeHtml(description) + "</span></span></label>").join("");
     otherInput.value = "";
     otherInput.hidden = true;
@@ -634,19 +644,22 @@
     const selected = panel?.querySelector("input:checked");
     const error = byId("questionPanelError");
     const otherInput = byId("questionPanelOtherInput");
+    if (!prototypeResponses?.error || !prototypeResponses.success?.questionSubmittedNotification) {
+      throw new Error("Prototype question response mock is unavailable");
+    }
     if (!selected) {
-      if (error) error.textContent = "Select an option or choose Other.";
+      if (error) error.textContent = prototypeResponses.error.questionMissing;
       return;
     }
     if (selected.dataset.other === "true" && !otherInput?.value.trim()) {
-      if (error) error.textContent = "Type your answer in the Other field.";
+      if (error) error.textContent = prototypeResponses.error.questionOtherMissing;
       otherInput?.focus();
       return;
     }
     hideQuestionDemo();
-    state.messages.push({ role: "assistant", continuation: true, text: "Thanks — I’ll continue with the selected verification path." });
+    state.messages.push({ role: "assistant", continuation: true, text: prototypeResponses.success.questionSubmittedText });
     renderMessages();
-    renderNotifications([{ id: "question-complete", severity: "success", title: "Answer received", message: "Rózsa will continue with the selected path." }]);
+    renderNotifications([prototypeResponses.success.questionSubmittedNotification]);
   }
 
   function closeDevFlowDetail() {
@@ -657,7 +670,8 @@
   }
 
   function openDevFlowDetailDemo() {
-    renderDevFlowFixture({ showDetail: true });
+    if (!devFlowFixture) throw new Error("Prototype Dev Flow fixture is unavailable");
+    renderDevFlowFixture(devFlowFixture, { showDetail: true });
     const detail = byId("devFlowDetail");
     if (!detail) return;
     detail.hidden = false;
@@ -667,48 +681,48 @@
   }
 
   function openDevFlowDashboardDemo() {
-    renderNotifications([{ id: "dev-flow-dashboard", severity: "info", title: "Dashboard", message: "Dev Flow Dashboard is ready at http://127.0.0.1:54122." }]);
+    if (!devFlowDashboardNotifications) throw new Error("Prototype Dev Flow dashboard response is unavailable");
+    renderNotifications(devFlowDashboardNotifications);
   }
 
-  function renderDevFlowFixture({ showDetail = false } = {}) {
+  function renderDevFlowFixture(fixture, { showDetail = false } = {}) {
+    if (!fixture?.settings || !fixture.detail) throw new Error("Prototype Dev Flow mock is incomplete");
+    devFlowFixture = fixture;
     const missing = byId("devFlowMissing");
     if (missing) missing.hidden = true;
     const ready = byId("devFlowDashboardStatus");
     ready?.classList.add("is-ready");
-    setText("devFlowDashboardAvailability", "Ready");
-    setText("devFlowDashboardAddressText", "http://127.0.0.1:54122");
-    setText("devFlowVersion", "0.1.0");
-    setText("devFlowMemoryAmount", "42");
-    setText("devFlowMemoryUnit", "MB");
+    setText("devFlowDashboardAvailability", fixture.settings.availability);
+    setText("devFlowDashboardAddressText", fixture.settings.address);
+    setText("devFlowVersion", fixture.settings.version);
+    setText("devFlowMemoryAmount", fixture.settings.memory.amount);
+    setText("devFlowMemoryUnit", fixture.settings.memory.unit);
     const address = byId("devFlowDashboardAddress");
     if (address) address.disabled = false;
     const path = byId("devFlowExecutablePath");
-    if (path) path.value = "/usr/local/bin/dow";
-    setToggle("devFlowEnabled", true);
-    setToggle("devFlowSidebarStatus", true);
-    setToggle("devFlowDashboardButton", true);
+    if (path) path.value = fixture.settings.executablePath;
+    setToggle("devFlowEnabled", fixture.settings.enabled);
+    setToggle("devFlowSidebarStatus", fixture.settings.sidebarEnabled);
+    setToggle("devFlowDashboardButton", fixture.settings.dashboardEnabled);
     const detail = byId("devFlowDetail");
     if (detail) {
       detail.hidden = !showDetail;
       document.body?.classList.toggle("dev-flow-detail-open", showDetail);
     }
-    setText("devFlowDetailRevision", "#18");
-    setText("devFlowDetailProject", "rozsa-demo · DEV");
-    setText("devFlowDetailSummary", "2 Tasks · 1 Issue");
+    setText("devFlowDetailRevision", fixture.detail.revision);
+    setText("devFlowDetailProject", fixture.detail.project);
+    setText("devFlowDetailSummary", fixture.detail.summary);
     const list = byId("devFlowDetailList");
-    if (list) list.innerHTML = [
-      ["T005", "Build realistic GUI showcase scenarios", "in-progress", "P1 · L · feat"],
-      ["T004", "Split current GUI into reusable files", "done", "P1 · M · refactor"],
-      ["I002", "Permission panel should remain visible during approval", "open", "P1 · UI"]
-    ].map(([id, title, status, meta]) => '<div class="dev-flow-detail-item' + (status === "in-progress" ? " focus" : "") + '" role="listitem" tabindex="0"><div class="dev-flow-detail-item-head"><span class="dev-flow-detail-item-id">' +
-      id + '</span><span class="dev-flow-detail-item-title">' + escapeHtml(title) + '</span><span class="dev-flow-detail-item-status' + (status === "in-progress" ? " in-progress" : "") + '">' + status +
-      '</span></div><div class="dev-flow-detail-item-meta">' + escapeHtml(meta) + '</div><div class="dev-flow-detail-item-desc">Current project state is visible from the active Dev Flow integration.</div><details class="dev-flow-detail-disclosure"><summary>Files (2)</summary><div class="dev-flow-detail-disclosure-body"><div>MODIFY: rozsa-gui.js</div><div>CREATE: scenes/complete-session.html</div></div></details></div>').join("");
+    if (list) list.innerHTML = fixture.detail.items.map(item => '<div class="dev-flow-detail-item' + (item.status === "in-progress" ? " focus" : "") + '" role="listitem" tabindex="0"><div class="dev-flow-detail-item-head"><span class="dev-flow-detail-item-id">' +
+      escapeHtml(item.id) + '</span><span class="dev-flow-detail-item-title">' + escapeHtml(item.title) + '</span><span class="dev-flow-detail-item-status' + (item.status === "in-progress" ? " in-progress" : "") + '">' + escapeHtml(item.status) +
+      '</span></div><div class="dev-flow-detail-item-meta">' + escapeHtml(item.meta) + '</div><div class="dev-flow-detail-item-desc">' + escapeHtml(item.description) + '</div><details class="dev-flow-detail-disclosure"><summary>Files (' + item.files.length + ')</summary><div class="dev-flow-detail-disclosure-body">' + item.files.map(file => "<div>" + escapeHtml(file) + "</div>").join("") + '</div></details></div>').join("");
   }
 
-  function renderDevFlowRuntimeFixture() {
+  function renderDevFlowRuntimeFixture(fixture) {
+    if (!fixture?.sidebar) throw new Error("Prototype Dev Flow sidebar mock is unavailable");
     closeSettings();
     closeDevFlowDetail();
-    renderDevFlowFixture({ showDetail: false });
+    renderDevFlowFixture(fixture, { showDetail: false });
     const group = byId("devFlowSidebarGroup");
     const summary = byId("devFlowSidebarSummary");
     const claimed = byId("devFlowSidebarClaimed");
@@ -716,107 +730,58 @@
     const dashboard = byId("sidebarDevFlowDashboard");
     if (!group || !summary || !claimed || !more || !dashboard) return;
     group.hidden = false;
-    summary.textContent = "2 tasks · 1 issue";
+    summary.textContent = fixture.sidebar.summary;
     summary.disabled = false;
-    claimed.innerHTML = [
-      ["T007", "Fix Dev Flow showcase interactions"],
-      ["T004", "Split current GUI into reusable files"]
-    ].map(([id, title]) => '<button class="dev-flow-claimed-row" type="button" title="' + escapeHtml(title) + '" data-dev-flow-trigger="true"><span class="dev-flow-claimed-dot" aria-hidden="true"></span><span class="dev-flow-claimed-id">' +
-      id + '</span><span class="dev-flow-claimed-title">' + escapeHtml(title) + "</span></button>").join("");
+    claimed.innerHTML = fixture.sidebar.claimed.map(({ id, title }) => '<button class="dev-flow-claimed-row" type="button" title="' + escapeHtml(title) + '" data-dev-flow-trigger="true"><span class="dev-flow-claimed-dot" aria-hidden="true"></span><span class="dev-flow-claimed-id">' +
+      escapeHtml(id) + '</span><span class="dev-flow-claimed-title">' + escapeHtml(title) + "</span></button>").join("");
     more.hidden = false;
-    more.textContent = "more 1";
+    more.textContent = fixture.sidebar.more;
     dashboard.hidden = false;
   }
 
-  function completeSessionMessages() {
-    return [
-      { role: "user", text: "Review the current GUI, run the checks, and keep the existing interaction model intact." },
-      { role: "assistant", thinking: "I traced the current GUI from the message stream through the tool timeline, permission surface, settings scenes, and Dev Flow status. The showcase should expose those existing states without introducing a parallel visual system.", thinkingDuration: "4.8s", text: "The current interface already has the pieces needed for a complete agent session.", tools: [
-        { id: "read-gui", name: "Read", args: "crates/rozsa-gui/frontend/index.html", kind: "code", content: "<main data-od-id=\"main-panel\">\n  <div class=\"chat-messages\">\n  <div class=\"input-wrapper\">", output: "Current GUI structure loaded" },
-        { id: "edit-adapter", name: "Edit", args: "rozsa-gui.js", kind: "diff", patch: "@@ -1,3 +1,5 @@\n const root = document.documentElement;\n+const sceneName = root.dataset.rozsaScene || '';\n+applySceneFixture();\n const state = {};", output: "Updated shared scene adapter" },
-        { id: "bash-check", name: "Bash", args: "node --check rozsa-gui.js", output: "\n> rozsa-gui@0.1.0 check\n> node --check rozsa-gui.js\n\nProcess exited with code 0", className: "dev-flow-tool-call" }
-      ] },
-      { role: "assistant", continuation: true, text: "The adapter preserves the current shell and only changes the fixture state for this showcase.", changes: { files: [
-        { path: "rozsa-gui.js", status: "modified", added: 148, deleted: 12, patch: "@@ -330,2 +330,5 @@\n function applySceneFixture() {\n+  if (sceneName === 'complete-session') {\n+    populateWorkspaceFixture();\n+  }" },
-        { path: "scenes/complete-session.html", status: "added", added: 431, deleted: 0, patch: "@@ -1,0 +1,3 @@\n+<!doctype html>\n+<html data-rozsa-scene=\"complete-session\">\n+</html>" }
-      ], verification: { command: "node --check rozsa-gui.js", exitCode: 0, duration: "82ms" } } },
-      { role: "user", text: "Run the final verification and summarize the current state." },
-      { role: "assistant", thinking: "The structure check is complete. I am recording the result as a finished agent turn.", thinkingDuration: "1.2s", text: "All checks passed. The current workspace has a complete conversation state, visible tool evidence, a file-change summary, and a ready-to-continue composer." }
-    ];
-  }
+  function applySceneFixture(scene) {
+    const { id, definition, sessions, activeSession, messages, workspace, running, permission, question, settings, notifications, devFlow, responses } = scene;
+    state.sessions = sessions;
+    state.activeSession = activeSession;
+    state.messages = messages;
+    permissionRequest = permission;
+    questionRequest = question;
+    prototypeResponses = responses;
+    devFlowDashboardNotifications = notifications?.["dev-flow-dashboard"] || null;
 
-  function applySceneFixture() {
-    if (sceneName === "empty-session") {
-      state.messages = [];
-      return;
-    }
-    if (sceneName === "complete-session") {
-      state.sessions = [{ name: "GUI review and verification", date: "now" }, { name: "Permission flow", date: "10m ago" }, { name: "Dev Flow setup", date: "yesterday" }];
-      state.messages = completeSessionMessages();
-      populateWorkspaceFixture();
-      renderRunningFixture({ subagent: true, fork: true, queue: true, steering: true });
-      setThinking("3");
+    if (workspace) populateWorkspaceFixture(workspace);
+    if (Object.keys(running).length) renderRunningFixture(running);
+    if (id === "complete-session") {
+      setThinking(definition.initialState.thinkingEffort);
       toggleThinkingEffortPicker({ currentTarget: byId("thinkingEffort") });
+    }
+    if (id === "notifications") {
+      renderNotifications(notifications.notifications, notifications.errors);
+      openPermissionDemo(permission);
       return;
     }
-    if (sceneName === "notifications") {
-      state.messages = [{ role: "user", text: "Run the verification command in the current workspace." }, { role: "assistant", text: "I need approval before I can run the command." }];
-      populateWorkspaceFixture();
-      renderRunningFixture({ queue: true, steering: true });
-      renderNotifications([
-        { id: "run-started", severity: "info", title: "Command started", message: "Preparing the verification request." },
-        { id: "workspace-updated", severity: "success", title: "Workspace indexed", message: "3 files are ready for review." },
-        { id: "approval-needed", severity: "warning", title: "Approval needed", message: "Rózsa is waiting for permission to continue." }
-      ], [{ title: "Verification could not start", message: "The command is waiting for user approval." }]);
-      openPermissionDemo();
+    if (id === "permission-request") {
+      openPermissionDemo(permission);
       return;
     }
-    if (sceneName === "ask-user-question") {
-      state.messages = [{ role: "user", text: "Prepare the next verification step." }, { role: "assistant", thinking: "There are two valid ways to verify this state. I should ask before choosing one.", thinkingDuration: "2.1s", text: "I need one decision before continuing.", tools: [{ id: "ask-question", name: "AskUserQuestion", args: "1 question · waiting for answer", output: "The separate question panel is awaiting your answer.", expanded: true }] }];
-      populateWorkspaceFixture();
-      renderRunningFixture({ subagent: true });
-      showQuestionDemo();
+    if (id === "ask-user-question") {
+      showQuestionDemo(question);
       return;
     }
-    if (sceneName === "dev-flow-runtime") {
-      state.sessions = [{ name: "Dev Flow active work", date: "now" }, { name: "GUI review and verification", date: "10m ago" }];
-      state.messages = [
-        { role: "user", text: "Continue the active Dev Flow work and show the project status." },
-        { role: "assistant", text: "Dev Flow is active in the main workspace. The sidebar shows claimed work and the current project status.", tools: [
-          { id: "dev-flow-status", name: "Bash", args: "dow status", output: "phase DEV · 2 tasks · 1 issue · dashboard ready", className: "dev-flow-tool-call", expanded: true }
-        ] },
-        { role: "assistant", continuation: true, text: "Click a task in the sidebar to inspect the read-only work details. The detail panel can be closed with ×, Escape, or by clicking outside it." }
-      ];
-      populateWorkspaceFixture();
-      renderRunningFixture({ queue: true, steering: true });
-      renderDevFlowRuntimeFixture();
-      renderNotifications([{ id: "dev-flow-runtime", severity: "success", title: "Dev Flow active", message: "Project status is available from the main workspace." }]);
+    if (id === "dev-flow-runtime") {
+      renderDevFlowRuntimeFixture(devFlow);
+      renderNotifications(notifications["dev-flow-runtime"]);
       return;
     }
-    if (sceneName === "dev-flow-active" || sceneName === "dev-flow") {
-      state.messages = [{ role: "assistant", text: "Dev Flow is active for this project. The current stage and open work are available in Settings." }];
-      populateWorkspaceFixture();
+    if (settings?.tab) {
       openSettings();
-      switchSettingsTab("dev-flow");
-      renderDevFlowFixture({ showDetail: false });
-      renderNotifications([{ id: "dev-flow-ready", severity: "success", title: "Dev Flow connected", message: "Project status and dashboard actions are available." }]);
-      return;
+      switchSettingsTab(settings.tab);
     }
-    if (sceneName === "tool-calls" || sceneName === "permission-request") {
-      state.messages = [
-        { role: "user", text: "Review the current GUI implementation." },
-        { role: "assistant", text: "I inspected the current GUI structure.", tools: [
-          { id: "read-current-gui", name: "Read", args: "crates/rozsa-gui/frontend/index.html", output: "430 lines read · structure preserved", expanded: true },
-          { id: "bash-current-check", name: "Bash", args: "node --check rozsa-gui.js", output: "Process exited with code 0", className: "dev-flow-tool-call", expanded: true }
-        ] }
-      ];
-      if (sceneName === "permission-request") openPermissionDemo();
-      return;
-    }
-    if (sceneName === "settings-appearance" || sceneName === "permissions" || sceneName === "dev-flow") {
-      state.messages = [];
+    if (id === "dev-flow-active" || id === "dev-flow") {
       openSettings();
-      switchSettingsTab(sceneName === "settings-appearance" ? "appearance" : sceneName);
+      switchSettingsTab(definition.initialState.settings);
+      renderDevFlowFixture(devFlow, { showDetail: false });
+      renderNotifications(notifications["dev-flow-ready"]);
     }
   }
 
@@ -943,6 +908,7 @@
     all,
     byId,
     state,
+    applySceneFixture,
     boundModules: new Set(),
     addMessage,
     applyTheme,
@@ -1002,39 +968,46 @@
   };
 
   document.addEventListener("DOMContentLoaded", () => {
-    loadState();
-    mountTemplates();
-    all(".settings-hint").forEach(hint => { hint.innerHTML = lucideIcon("circle-help"); });
-    applySceneFixture();
-    if (state.activeSession >= state.sessions.length) state.activeSession = 0;
-    setFontSize(state.fontSize, false);
-    applyTheme(state.themeMode, false);
-    renderSessionList();
-    if (document.documentElement.dataset.rozsaEntry !== "application-shell") renderMessages();
-    const sidebar = byId("sidebar");
-    if (sidebar) sidebar.removeAttribute("hidden");
-    const model = byId("modelSelector");
-    if (model) model.textContent = "gpt-5";
-    const currentSession = byId("currentSessionName");
-    if (currentSession) currentSession.textContent = sessionLabel(state.sessions[state.activeSession]);
-    if (!sceneName) {
-      setText("gitBranch", "—");
-      setText("gitAdd", "—");
-      setText("gitDel", "—");
-      setText("gitFiles", "—");
-    }
-    const slider = byId("thinkingEffortSlider");
-    setThinking(slider?.value || 0);
-    const sceneSettingsTab = sceneName === "settings-appearance" ? "appearance" :
-      (sceneName === "permissions" ? "permissions" : ((sceneName === "dev-flow-active" || sceneName === "dev-flow") ? "dev-flow" : "appearance"));
-    all("[data-settings-pane]").forEach(pane => pane.classList.remove("active"));
-    byId("pane-" + sceneSettingsTab)?.classList.add("active");
-    all(".settings-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.settingsPane === sceneSettingsTab));
-    if (document.documentElement.dataset.rozsaEntry === "application-shell") {
-      loadBehaviorModules()
-        .then(() => emitFlowEvent("rozsa:scene-ready", { scene: sceneName }))
-        .catch(error => console.error("Prototype behavior modules failed to load.", error));
-    }
+    const bootstrap = async () => {
+      loadState();
+      mountTemplates();
+      all(".settings-hint").forEach(hint => { hint.innerHTML = lucideIcon("circle-help"); });
+      const sceneLoader = await import(new URL("./scripts/core/scene-loader.js", legacyScriptUrl));
+      const scene = await sceneLoader.loadPrototypeScene();
+      document.documentElement.dataset.rozsaScene = scene.id;
+      sceneLoader.applyPrototypeScene(window.RozsaPrototype, scene);
+      if (state.activeSession >= state.sessions.length) state.activeSession = 0;
+      setFontSize(state.fontSize, false);
+      applyTheme(state.themeMode, false);
+      renderSessionList();
+      if (document.documentElement.dataset.rozsaEntry !== "application-shell") renderMessages();
+      const sidebar = byId("sidebar");
+      if (sidebar) sidebar.removeAttribute("hidden");
+      const model = byId("modelSelector");
+      if (model) model.textContent = "gpt-5";
+      const currentSession = byId("currentSessionName");
+      if (currentSession) currentSession.textContent = sessionLabel(state.sessions[state.activeSession]);
+      const slider = byId("thinkingEffortSlider");
+      if (!scene.definition.initialState.thinkingEffort) setThinking(slider?.value || 0);
+      const sceneSettingsTab = scene.settings?.tab || scene.definition.initialState.settings || "appearance";
+      all("[data-settings-pane]").forEach(pane => pane.classList.remove("active"));
+      byId("pane-" + sceneSettingsTab)?.classList.add("active");
+      all(".settings-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.settingsPane === sceneSettingsTab));
+      if (document.documentElement.dataset.rozsaEntry === "application-shell") {
+        await loadBehaviorModules();
+        emitFlowEvent("rozsa:scene-ready", { scene: scene.id });
+      }
+    };
+    bootstrap().catch(error => {
+      console.error("Prototype scene failed to load.", error);
+      const shell = document.querySelector("[data-application-shell]");
+      if (!shell) return;
+      shell.dataset.sceneError = "load-failed";
+      const message = document.createElement("p");
+      message.setAttribute("role", "alert");
+      message.textContent = error.message;
+      shell.appendChild(message);
+    });
   });
 
   if (window.matchMedia) {

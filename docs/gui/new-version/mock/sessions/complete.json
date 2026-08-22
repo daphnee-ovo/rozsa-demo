@@ -1,0 +1,22 @@
+{
+  "id": "complete",
+  "sessions": [
+    { "name": "GUI review and verification", "date": "now" },
+    { "name": "Permission flow", "date": "10m ago" },
+    { "name": "Dev Flow setup", "date": "yesterday" }
+  ],
+  "activeSession": 0,
+  "workspace": {
+    "git": { "branch": "feature/gui-showcase", "added": "+18", "deleted": "−4", "files": "3 files" },
+    "quota": { "visible": true, "hour": "3h 42m", "week": "18h 06m", "hourProgress": 36, "weekProgress": 62 },
+    "toolChips": [
+      { "name": "Read", "count": "4" },
+      { "name": "Edit", "count": "2" },
+      { "name": "Bash", "count": "3" },
+      { "name": "AskUserQuestion", "count": "1" }
+    ],
+    "contextTokens": "12.8k",
+    "thinkingEffort": "high",
+    "model": "gpt-5"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "notifications": [
+    { "id": "run-started", "severity": "info", "title": "Command started", "message": "Preparing the verification request." },
+    { "id": "workspace-updated", "severity": "success", "title": "Workspace indexed", "message": "3 files are ready for review." },
+    { "id": "approval-needed", "severity": "warning", "title": "Approval needed", "message": "Rózsa is waiting for permission to continue." }
+  ],
+  "errors": [
+    { "title": "Verification could not start", "message": "The command is waiting for user approval." }
+  ],
+  "dev-flow-runtime": [
+    { "id": "dev-flow-runtime", "severity": "success", "title": "Dev Flow active", "message": "Project status is available from the main workspace." }
+  ],
+  "dev-flow-ready": [
+    { "id": "dev-flow-ready", "severity": "success", "title": "Dev Flow connected", "message": "Project status and dashboard actions are available." }
+  ],
+  "dev-flow-dashboard": [
+    { "id": "dev-flow-dashboard", "severity": "info", "title": "Dashboard", "message": "Dev Flow Dashboard is ready at http://127.0.0.1:54122." }
+  ]
+}

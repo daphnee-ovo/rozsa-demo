@@ -18,6 +18,10 @@
     "script": "docs/gui/new-version/scripts/core/shell.js",
     "behavior_script": "docs/gui/new-version/rozsa-gui.js",
     "templates": "docs/gui/new-version/templates",
+    "scenarios": "docs/gui/new-version/scenarios/registry.js",
+    "scene_loader": "docs/gui/new-version/scripts/core/scene-loader.js",
+    "mock_adapter": "docs/gui/new-version/scripts/adapters/mock-adapter.js",
+    "mock": "docs/gui/new-version/mock",
     "flow_inventory": [
       {
         "id": "composer-interruption",
@@ -33,6 +37,19 @@
       }
     ]
   },
+  "scenario_inventory": [
+    { "id": "empty-session", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/messages/conversation.json"], "used_by": ["index.html?scene=empty-session", "scene:empty-session"] },
+    { "id": "complete-session", "config": "scenarios/registry.js", "mocks": ["mock/sessions/complete.json", "mock/messages/conversation.json", "mock/tools/call-states.json"], "used_by": ["index.html?scene=complete-session", "scene:complete-session", "scripts/features/conversation.js", "scripts/components/tool-call.js"] },
+    { "id": "tool-calls", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/messages/conversation.json", "mock/tools/call-states.json"], "used_by": ["index.html?scene=tool-calls", "scene:tool-calls", "scripts/components/tool-call.js"] },
+    { "id": "permission-request", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/messages/conversation.json", "mock/tools/call-states.json", "mock/permissions/request.json", "mock/responses/success.json", "mock/responses/error.json", "mock/responses/cancel.json"], "used_by": ["index.html?scene=permission-request", "scene:permission-request", "scripts/components/interruption-panel.js", "scripts/flows/composer-interruption.js"] },
+    { "id": "ask-user-question", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/sessions/complete.json", "mock/messages/conversation.json", "mock/tools/call-states.json", "mock/questions/request.json", "mock/responses/success.json", "mock/responses/error.json", "mock/responses/cancel.json"], "used_by": ["index.html?scene=ask-user-question", "scene:ask-user-question", "scripts/components/interruption-panel.js", "scripts/flows/composer-interruption.js", "scripts/flows/scenario-flow.js"] },
+    { "id": "settings-appearance", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/messages/conversation.json", "mock/settings/appearance.json"], "used_by": ["index.html?scene=settings-appearance", "scene:settings-appearance", "scripts/features/settings.js"] },
+    { "id": "permissions", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/messages/conversation.json", "mock/settings/permissions.json"], "used_by": ["index.html?scene=permissions", "scene:permissions", "scripts/features/settings.js"] },
+    { "id": "notifications", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/sessions/complete.json", "mock/messages/conversation.json", "mock/tools/call-states.json", "mock/permissions/request.json", "mock/notifications/states.json", "mock/responses/success.json", "mock/responses/error.json", "mock/responses/cancel.json"], "used_by": ["index.html?scene=notifications", "scene:notifications", "scripts/components/notification.js", "scripts/flows/composer-interruption.js"] },
+    { "id": "dev-flow-runtime", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/sessions/complete.json", "mock/messages/conversation.json", "mock/tools/call-states.json", "mock/dev-flow/runtime.json", "mock/notifications/states.json"], "used_by": ["index.html?scene=dev-flow-runtime", "scene:dev-flow-runtime", "scripts/features/dev-flow.js", "scripts/flows/scenario-flow.js"] },
+    { "id": "dev-flow-active", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/messages/conversation.json", "mock/dev-flow/runtime.json", "mock/notifications/states.json"], "used_by": ["index.html?scene=dev-flow-active", "scene:dev-flow-active", "scripts/features/dev-flow.js"] },
+    { "id": "dev-flow", "config": "scenarios/registry.js", "mocks": ["mock/sessions/empty.json", "mock/messages/conversation.json", "mock/dev-flow/runtime.json", "mock/notifications/states.json"], "used_by": ["index.html?scene=dev-flow", "scene:dev-flow", "scripts/features/dev-flow.js"] }
+  ],
   "runtime_inventory": {
     "entries": ["crates/rozsa-gui/frontend/index.html", "crates/rozsa-gui/frontend/sidebar.html"],
     "scripts": ["crates/rozsa-gui/frontend/app.js", "crates/rozsa-gui/frontend/sidebar.js", "crates/rozsa-gui/frontend/gui_shared.js"],

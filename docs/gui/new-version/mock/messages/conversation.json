@@ -1,0 +1,91 @@
+{
+  "empty-session": [],
+  "complete-session": [
+    { "role": "user", "text": "Review the current GUI, run the checks, and keep the existing interaction model intact." },
+    {
+      "role": "assistant",
+      "thinking": "I traced the current GUI from the message stream through the tool timeline, permission surface, settings scenes, and Dev Flow status. The showcase should expose those existing states without introducing a parallel visual system.",
+      "thinkingDuration": "4.8s",
+      "text": "The current interface already has the pieces needed for a complete agent session.",
+      "toolRefs": ["read-gui", "edit-adapter", "bash-check"]
+    },
+    {
+      "role": "assistant",
+      "continuation": true,
+      "text": "The adapter preserves the current shell and only changes the fixture state for this showcase.",
+      "changes": {
+        "files": [
+          {
+            "path": "rozsa-gui.js",
+            "status": "modified",
+            "added": 148,
+            "deleted": 12,
+            "patch": "@@ -330,2 +330,5 @@\n function applySceneFixture() {\n+  if (sceneName === 'complete-session') {\n+    populateWorkspaceFixture();\n+  }"
+          },
+          {
+            "path": "scenes/complete-session.html",
+            "status": "added",
+            "added": 431,
+            "deleted": 0,
+            "patch": "@@ -1,0 +1,3 @@\n+<!doctype html>\n+<html data-rozsa-scene=\"complete-session\">\n+</html>"
+          }
+        ],
+        "verification": { "command": "node --check rozsa-gui.js", "exitCode": 0, "duration": "82ms" }
+      }
+    },
+    { "role": "user", "text": "Run the final verification and summarize the current state." },
+    {
+      "role": "assistant",
+      "thinking": "The structure check is complete. I am recording the result as a finished agent turn.",
+      "thinkingDuration": "1.2s",
+      "text": "All checks passed. The current workspace has a complete conversation state, visible tool evidence, a file-change summary, and a ready-to-continue composer."
+    }
+  ],
+  "notifications": [
+    { "role": "user", "text": "Run the verification command in the current workspace." },
+    { "role": "assistant", "text": "I need approval before I can run the command." }
+  ],
+  "ask-user-question": [
+    { "role": "user", "text": "Prepare the next verification step." },
+    {
+      "role": "assistant",
+      "thinking": "There are two valid ways to verify this state. I should ask before choosing one.",
+      "thinkingDuration": "2.1s",
+      "text": "I need one decision before continuing.",
+      "toolRefs": ["ask-question"]
+    }
+  ],
+  "dev-flow-runtime": [
+    { "role": "user", "text": "Continue the active Dev Flow work and show the project status." },
+    {
+      "role": "assistant",
+      "text": "Dev Flow is active in the main workspace. The sidebar shows claimed work and the current project status.",
+      "toolRefs": ["dev-flow-status"]
+    },
+    { "role": "assistant", "continuation": true, "text": "Click a task in the sidebar to inspect the read-only work details. The detail panel can be closed with ×, Escape, or by clicking outside it." }
+  ],
+  "tool-calls": [
+    { "role": "user", "text": "Review the current GUI implementation." },
+    {
+      "role": "assistant",
+      "text": "I inspected the current GUI structure.",
+      "toolRefs": ["read-current-gui", "bash-current-check"]
+    }
+  ],
+  "permission-request": [
+    { "role": "user", "text": "Review the current GUI implementation." },
+    {
+      "role": "assistant",
+      "text": "I inspected the current GUI structure.",
+      "toolRefs": ["read-current-gui", "bash-current-check"]
+    }
+  ],
+  "settings-appearance": [],
+  "permissions": [],
+  "dev-flow": [
+    { "role": "assistant", "text": "Dev Flow is active for this project. The current stage and open work are available in Settings." }
+  ],
+  "dev-flow-active": [
+    { "role": "assistant", "text": "Dev Flow is active for this project. The current stage and open work are available in Settings." }
+  ]
+}

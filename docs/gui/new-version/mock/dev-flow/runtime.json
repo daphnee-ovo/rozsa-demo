@@ -1,0 +1,34 @@
+{
+  "sessions": [
+    { "name": "Dev Flow active work", "date": "now" },
+    { "name": "GUI review and verification", "date": "10m ago" }
+  ],
+  "settings": {
+    "availability": "Ready",
+    "address": "http://127.0.0.1:54122",
+    "version": "0.1.0",
+    "memory": { "amount": "42", "unit": "MB" },
+    "executablePath": "/usr/local/bin/dow",
+    "enabled": true,
+    "sidebarEnabled": true,
+    "dashboardEnabled": true
+  },
+  "detail": {
+    "revision": "#18",
+    "project": "rozsa-demo · DEV",
+    "summary": "2 Tasks · 1 Issue",
+    "items": [
+      { "id": "T005", "title": "Build realistic GUI showcase scenarios", "status": "in-progress", "meta": "P1 · L · feat", "description": "Current project state is visible from the active Dev Flow integration.", "files": ["MODIFY: rozsa-gui.js", "CREATE: scenes/complete-session.html"] },
+      { "id": "T004", "title": "Split current GUI into reusable files", "status": "done", "meta": "P1 · M · refactor", "description": "Current project state is visible from the active Dev Flow integration.", "files": ["MODIFY: rozsa-gui.js", "CREATE: scenes/complete-session.html"] },
+      { "id": "I002", "title": "Permission panel should remain visible during approval", "status": "open", "meta": "P1 · UI", "description": "Current project state is visible from the active Dev Flow integration.", "files": ["MODIFY: rozsa-gui.js", "CREATE: scenes/complete-session.html"] }
+    ]
+  },
+  "sidebar": {
+    "summary": "2 tasks · 1 issue",
+    "claimed": [
+      { "id": "T007", "title": "Fix Dev Flow showcase interactions" },
+      { "id": "T004", "title": "Split current GUI into reusable files" }
+    ],
+    "more": "more 1"
+  }
+}
