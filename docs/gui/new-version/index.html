@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rózsa — Coding Agent</title>
+<link rel="stylesheet" href="styles/main.css">
+</head>
+<body data-rozsa-entry="application-shell">
+<div data-application-shell>
+  <div data-od-id="app-body">
+    <div data-template-mount="sidebar"></div>
+    <div data-template-mount="conversation"></div>
+  </div>
+  <div data-template-mount="popover"></div>
+  <div data-template-mount="settings"></div>
+  <div id="nativeGuiInteractionLayer" aria-hidden="true">
+    <div id="nativeSidebarEdgeTrigger"></div>
+  </div>
+  <div data-template-mount="notification"></div>
+  <div data-template-mount="dev-flow"></div>
+</div>
+<script type="module" src="scripts/core/shell.js"></script>
+</body>
+</html>
+

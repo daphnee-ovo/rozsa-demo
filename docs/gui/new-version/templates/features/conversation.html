@@ -1,0 +1,20 @@
+<main data-od-id="main-panel" id="mainContentScene" data-native-scene-root="main-content" aria-label="Conversation workspace">
+    <!-- 面板头部 -->
+    <div data-od-id="panel-header" aria-label="Conversation header">
+      <span class="current-session-name" id="currentSessionName" data-od-id="current-session" aria-live="polite">Rózsa</span>
+      <div class="header-spacer"></div>
+    </div>
+
+    <!-- 聊天消息（由 renderState 动态填充） -->
+    <div class="chat-messages" data-od-id="chat-messages" id="chatMessages" role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions text">
+      <!-- 初始空状态 -->
+      <div class="chat-empty" id="emptyState">
+        <div class="chat-empty-icon" data-od-id="chat-empty-mark" aria-hidden="true">R</div>
+        <div class="chat-empty-title" data-od-id="chat-empty-title" role="heading" aria-level="1">Start a new conversation</div>
+        <div class="chat-empty-hint" data-od-id="chat-empty-hint">Describe your coding task to Rózsa<div class="chat-empty-kbd"><kbd>Enter</kbd> Send <kbd>⇧ Enter</kbd> New line</div></div>
+      </div>
+    </div>
+
+    <!-- 输入框 -->
+        <div data-template-mount="composer"></div>
+  </main>

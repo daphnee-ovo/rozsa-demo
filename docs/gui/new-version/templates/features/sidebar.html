@@ -1,0 +1,71 @@
+<aside data-od-id="sidebar" aria-label="Workspace sidebar">
+    <!-- 会话列表 -->
+    <div class="sidebar-section" data-od-id="sidebar-sessions">
+      <div class="sidebar-header">
+        <span role="heading" aria-level="2">Sessions</span>
+        <button type="button" data-od-id="new-session" title="New session" aria-label="New session" onclick="newSession()" style="margin-right: calc(10px - clamp(16px, 1.8vw, 24px));">
+          <svg class="lucide" data-lucide="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        </button>
+      </div>
+      <div class="sidebar-scroll" id="sessionList">
+        <!-- 动态填充 by renderSessionList() -->
+      </div>
+    </div>
+
+    <!-- 状态栏：工具计数 + 限额 -->
+    <div class="sidebar-section" data-od-id="sidebar-status">
+      <div class="sidebar-header">
+        <span role="heading" aria-level="2">Status</span>
+      </div>
+      <div class="status-panel">
+        <!-- Git 状态 -->
+        <div class="status-group">
+          <div class="git-branch">
+            <svg class="lucide" data-lucide="git-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+            <span class="git-branch-name" id="gitBranch">—</span>
+          </div>
+          <div class="git-diff-stats">
+            <span class="git-diff-add" id="gitAdd">—</span>
+            <span class="git-diff-del" id="gitDel">—</span>
+            <span class="git-diff-files" id="gitFiles">—</span>
+          </div>
+        </div>
+        <!-- 限额进度 -->
+        <div class="status-group" id="quotaGroup" style="display:none">
+          <div class="quota-row">
+            <div class="quota-label-row">
+              <span>5 hours</span>
+              <span class="quota-value" id="quotaHour">—</span>
+            </div>
+            <div class="quota-bar-track"><div class="quota-bar-fill" id="quotaHourBar" style="width:0%"></div></div>
+          </div>
+          <div class="quota-row">
+            <div class="quota-label-row">
+              <span>This week</span>
+              <span class="quota-value" id="quotaWeek">—</span>
+            </div>
+            <div class="quota-bar-track"><div class="quota-bar-fill" id="quotaWeekBar" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="quota-tooltip" id="quotaTooltip"></div>
+        <!-- 工具调用计数 -->
+        <div class="status-group">
+          <div class="tool-chips" id="toolChips">
+            
+            
+            
+            
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部导航 -->
+    <div class="sidebar-bottom">
+      <button type="button" class="sidebar-btn" data-od-id="btn-settings" aria-label="Open settings" onclick="toggleSettings()">
+        <svg class="lucide" data-lucide="settings-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9M14 17H5M20 17h-3M9 7H5"/><circle cx="17" cy="17" r="2"/><circle cx="7" cy="7" r="2"/></svg>
+        <span>Settings</span>
+      </button>
+    </div>
+  </aside>
+

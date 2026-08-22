@@ -1,0 +1,208 @@
+<div class="settings-panel" id="settingsPanel" data-od-id="settings-panel" data-native-scene-root="settings-content" role="dialog" aria-modal="true" aria-label="Settings">
+  <div class="settings-dialog" data-od-id="settings-dialog" aria-label="Settings workspace">
+    <div class="settings-workspace" data-od-id="settings-workspace">
+    <template id="fallbackSettingsNavigationTemplate">
+    <nav class="settings-tabs" data-od-id="settings-navigation" aria-label="Settings navigation">
+      <button type="button" class="settings-tab" data-od-id="settings-tab-skills" data-settings-pane="skills" onclick="switchSettingsTab('skills', this)"><svg data-lucide="sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 3-2.5 6.5L3 12l6.5 2.5L12 21l2.5-6.5L21 12l-6.5-2.5L12 3Z"/><path d="M5 3v4M3 5h4M19 17v4M17 19h4"/></svg><span>Skills</span></button>
+      <button type="button" class="settings-tab" data-od-id="settings-tab-tools" data-settings-pane="tools" onclick="switchSettingsTab('tools', this)"><svg data-lucide="sliders-horizontal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" focusable="false"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="1" y2="7"/><line x1="8" x2="8" y1="9" y2="15"/><line x1="16" x2="16" y1="17" y2="23"/></svg><span>Tools</span></button>
+      <button type="button" class="settings-tab" data-od-id="settings-tab-extensions" data-settings-pane="extensions" onclick="switchSettingsTab('extensions', this)"><svg data-lucide="puzzle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 2.5a2.5 2.5 0 0 0-5 0V5H7.5a2.5 2.5 0 0 0 0 5H10v3.5a2.5 2.5 0 0 0 5 0V10h2.5a2.5 2.5 0 0 0 0-5H15.5V2.5Z"/><path d="M10 10H7.5a2.5 2.5 0 0 0 0 5H10v2.5a2.5 2.5 0 0 0 5 0V15"/></svg><span>Extensions</span></button>
+      <button type="button" class="settings-tab" data-od-id="settings-tab-general" data-settings-pane="general" onclick="switchSettingsTab('general', this)"><svg data-lucide="settings-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 7h-9M14 17H5M20 17h-3M9 7H5"/><circle cx="17" cy="17" r="2"/><circle cx="7" cy="7" r="2"/></svg><span>General</span></button>
+      <button type="button" class="settings-tab active" data-od-id="settings-tab-appearance" data-settings-pane="appearance" onclick="switchSettingsTab('appearance', this)"><svg data-lucide="palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 1 0 10 10c0-1.1-.9-2-2-2h-2.5a2 2 0 0 1-2-2 2 2 0 0 0-2-2H12Z"/></svg><span>Appearance</span></button>
+      <button type="button" class="settings-tab" data-od-id="settings-tab-keyboard-shortcuts" data-settings-pane="keyboard-shortcuts" onclick="switchSettingsTab('keyboard-shortcuts', this)"><svg data-lucide="keyboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h4"/></svg><span>Keyboard shortcuts</span></button>
+      <button type="button" class="settings-tab" data-od-id="settings-tab-permissions" data-settings-pane="permissions" onclick="switchSettingsTab('permissions', this)"><svg data-lucide="shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/><path d="m9 12 2 2 4-4"/></svg><span>Permissions</span></button>
+      <button type="button" class="settings-tab" data-od-id="settings-tab-dev-flow" data-settings-pane="dev-flow" onclick="switchSettingsTab('dev-flow', this)"><svg data-lucide="workflow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="6" height="6" x="3" y="3" rx="1"/><rect width="6" height="6" x="15" y="15" rx="1"/><path d="M6 9v2a4 4 0 0 0 4 4h5M15 9h-5a4 4 0 0 0-4 4v2"/></svg><span>Dev Flow</span></button>
+      <button class="settings-back" data-od-id="settings-back" type="button" aria-label="Back to app" onclick="closeSettings()"><svg data-lucide="arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19 12H5M12 19l-7-7 7-7"/></svg><span>Back to app</span></button>
+    </nav>
+    </template>
+    <div id="fallbackSettingsNavigationMount" hidden></div>
+    <div class="settings-content" data-od-id="settings-content">
+      <div class="settings-pane active" id="pane-appearance" role="region" aria-label="Appearance settings">
+        <div class="settings-pane-title" data-od-id="settings-title-appearance" role="heading" aria-level="1">Appearance</div>
+        <div class="settings-group">
+          <div class="settings-group-label" data-od-id="settings-subtitle-theme-mode">Theme Mode</div>
+          <div class="theme-mode-setting" data-od-id="appearance-theme-mode-options">
+            <div class="theme-mode-grid" role="group" aria-label="Theme mode">
+              <button class="theme-mode-card" type="button" data-theme-mode-card="system" onclick="selectThemeModeCard('system')" aria-pressed="false"><div class="theme-preview theme-preview-system"><div class="theme-preview-top"></div><div class="theme-preview-system-body" data-od-id="theme-preview-system-body" style="align-content: stretch; grid-auto-rows: minmax(0, 1fr);"><div class="theme-preview-half light"><span></span><span></span></div><div class="theme-preview-half dark"><span></span><span></span></div></div></div><span>System</span></button>
+              <button class="theme-mode-card" type="button" data-theme-mode-card="light" onclick="selectThemeModeCard('light')" aria-pressed="false"><div class="theme-preview"><div class="theme-preview-top"></div><div class="theme-preview-body light"><div data-od-id="theme-preview-light-sidebar" aria-hidden="true" style="position:absolute;inset:0 auto 0 0;width:25%;border-right:1px solid var(--preview-light-border);background:var(--preview-light-bg);"><i style="position:absolute;top:12px;left:28%;width:40%;height:3px;border-radius:var(--radius-pill);background:color-mix(in oklch, var(--preview-light-ink) 55%, transparent);box-shadow:0 9px 0 color-mix(in oklch, var(--preview-light-ink) 22%, transparent),0 18px 0 color-mix(in oklch, var(--preview-light-ink) 22%, transparent);"></i></div><span></span><span></span></div></div><span>Light</span></button>
+              <button class="theme-mode-card" type="button" data-theme-mode-card="dark" onclick="selectThemeModeCard('dark')" aria-pressed="false"><div class="theme-preview"><div class="theme-preview-top"></div><div class="theme-preview-body dark"><span></span><span></span></div></div><span>Dark</span></button>
+            </div>
+            <select class="setting-select settings-theme-mode-select" id="settingsThemeMode" aria-label="Theme Mode"><option value="system">system</option><option value="light">light</option><option value="dark">dark</option></select>
+          </div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label" data-od-id="settings-subtitle-display">Display</div>
+          <div class="settings-module" data-od-id="appearance-display-options">
+            <div class="setting-item"><span class="setting-label setting-label-with-hint">Font Size <span class="settings-hint" tabindex="0" aria-label="Font Size help: Applies to the whole Rózsa interface." data-tooltip="Applies to the whole Rózsa interface.">?</span></span><span class="setting-range-control"><input class="appearance-range" id="settingsFontSizeRange" type="range" min="5" max="30" step="1" value="14" style="--appearance-progress:36%" aria-label="Font Size"><input class="setting-input appearance-font-size-input" id="settingsFontSizeInput" type="number" min="5" max="30" step="1" aria-label="Font Size in pixels"><span class="setting-value">px</span></span></div>
+            <div class="setting-item appearance-sidebar-option"><span class="setting-label setting-label-with-hint">Translucent sidebar <span class="settings-hint" tabindex="0" aria-label="Translucent sidebar help: Available on macOS. Uses the system glass material for the sidebar." data-tooltip="Available on macOS. Uses the system glass material for the sidebar.">?</span></span><button class="setting-toggle" id="settingsTranslucentSidebar" type="button" role="switch" aria-checked="false" aria-label="Translucent sidebar"></button></div>
+            <div class="setting-item"><span class="setting-label setting-label-with-hint">Show rate limits <span class="settings-hint" tabindex="0" aria-label="Show rate limits help: Shows the Codex subscription quota in the sidebar when a Codex OAuth model is active." data-tooltip="Shows the Codex subscription quota in the sidebar when a Codex OAuth model is active.">?</span></span><button class="setting-toggle" id="settingsShowRateLimits" type="button" role="switch" aria-checked="false" aria-label="Show rate limits"></button></div>
+            <div class="setting-item"><span class="setting-label">Show hourly limit</span><button class="setting-toggle" id="settingsShowHourlyRateLimit" type="button" role="switch" aria-checked="false" aria-label="Show hourly limit"></button></div>
+            <div class="setting-item"><span class="setting-label setting-label-with-hint">Show weekly limit <span class="settings-hint" tabindex="0" aria-label="Show weekly limit help: Includes the weekly Codex subscription quota in the sidebar." data-tooltip="Includes the weekly Codex subscription quota in the sidebar.">?</span></span><button class="setting-toggle" id="settingsShowWeeklyRateLimit" type="button" role="switch" aria-checked="false" aria-label="Show weekly limit"></button></div>
+            <div class="setting-item"><span class="setting-label">Rate limit display</span><select class="setting-select" id="settingsRateLimitDisplayMode" aria-label="Rate limit display"><option value="remained">Remaining</option><option value="used">Used</option></select></div>
+          </div>
+        </div>
+        <div class="appearance-theme-section" id="appearanceLightSection">
+          <div class="settings-group-label settings-group-label-with-hint">Light Theme <span class="settings-hint" tabindex="0" aria-label="Light Theme help: The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/." data-tooltip="The default light theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.">?</span></div>
+          <div class="settings-module">
+          <div class="setting-item"><span class="setting-label">Theme</span><select class="setting-select" id="settingsLightTheme" aria-label="Light Theme"></select></div>
+          <div class="setting-item"><span class="setting-label">Accent</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeAccentPicker" type="color" value="#D7827E" aria-label="Light Theme Accent color picker"><input class="setting-input theme-hex-input" id="lightThemeAccent" type="text" spellcheck="false" aria-label="Light Theme Accent HEX"></span></div>
+          <div class="setting-item"><span class="setting-label">Background</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeBackgroundPicker" type="color" value="#FFFFFF" aria-label="Light Theme Background color picker"><input class="setting-input theme-hex-input" id="lightThemeBackground" type="text" spellcheck="false" aria-label="Light Theme Background HEX"></span></div>
+          <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="lightThemeForegroundPicker" type="color" value="#575279" aria-label="Light Theme Foreground color picker"><input class="setting-input theme-hex-input" id="lightThemeForeground" type="text" spellcheck="false" aria-label="Light Theme Foreground HEX"></span></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">UI font <span class="settings-hint" tabindex="0" aria-label="UI font help: The font used by navigation, labels and message text." data-tooltip="The font used by navigation, labels and message text.">?</span></span><input class="setting-input" id="lightThemeUiFont" type="text" spellcheck="false" aria-label="Light Theme UI font"></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">Code font <span class="settings-hint" tabindex="0" aria-label="Code font help: The font used inside code blocks and tool output." data-tooltip="The font used inside code blocks and tool output.">?</span></span><input class="setting-input" id="lightThemeCodeFont" type="text" spellcheck="false" aria-label="Light Theme Code font"></div>
+          </div>
+        </div>
+        <div class="appearance-theme-section" id="appearanceDarkSection">
+          <div class="settings-group-label settings-group-label-with-hint">Dark Theme <span class="settings-hint" tabindex="0" aria-label="Dark Theme help: The default dark theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/." data-tooltip="The default dark theme is built into Rózsa. Custom themes can be loaded from ~/.rozsa/themes/.">?</span></div>
+          <div class="settings-module">
+          <div class="setting-item"><span class="setting-label">Theme</span><select class="setting-select" id="settingsDarkTheme" aria-label="Dark Theme"></select></div>
+          <div class="setting-item"><span class="setting-label">Accent</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeAccentPicker" type="color" value="#D88991" aria-label="Dark Theme Accent color picker"><input class="setting-input theme-hex-input" id="darkThemeAccent" type="text" spellcheck="false" aria-label="Dark Theme Accent HEX"></span></div>
+          <div class="setting-item"><span class="setting-label">Background</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeBackgroundPicker" type="color" value="#1D1A1C" aria-label="Dark Theme Background color picker"><input class="setting-input theme-hex-input" id="darkThemeBackground" type="text" spellcheck="false" aria-label="Dark Theme Background HEX"></span></div>
+          <div class="setting-item"><span class="setting-label">Foreground</span><span class="theme-color-control"><input class="theme-color-picker" id="darkThemeForegroundPicker" type="color" value="#F1E9EB" aria-label="Dark Theme Foreground color picker"><input class="setting-input theme-hex-input" id="darkThemeForeground" type="text" spellcheck="false" aria-label="Dark Theme Foreground HEX"></span></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">UI font <span class="settings-hint" tabindex="0" aria-label="UI font help: The font used by navigation, labels and message text." data-tooltip="The font used by navigation, labels and message text.">?</span></span><input class="setting-input" id="darkThemeUiFont" type="text" spellcheck="false" aria-label="Dark Theme UI font"></div>
+          <div class="setting-item"><span class="setting-label setting-label-with-hint">Code font <span class="settings-hint" tabindex="0" aria-label="Code font help: The font used inside code blocks and tool output." data-tooltip="The font used inside code blocks and tool output.">?</span></span><input class="setting-input" id="darkThemeCodeFont" type="text" spellcheck="false" aria-label="Dark Theme Code font"></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-pane" id="pane-general">
+        <div class="settings-pane-title" data-od-id="settings-title-general" role="heading" aria-level="1">General</div>
+        <div class="settings-group">
+          <div class="settings-group-label" data-od-id="settings-subtitle-ai">AI</div>
+          <div class="settings-module">
+          <div class="setting-item"><span class="setting-label">Thinking effort</span><select class="setting-select" id="settingsThinkingEffort" aria-label="Thinking effort"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Xhigh</option><option value="max">Max</option></select></div>
+          <div class="setting-item"><span class="setting-label">Auto Compact</span><button class="setting-toggle" id="settingsAutoCompact" type="button" role="switch" aria-checked="false" aria-label="Auto Compact"></button></div>
+          <div class="setting-item"><span class="setting-label">Auto-name sessions</span><button class="setting-toggle" id="settingsAutoSessionNaming" type="button" role="switch" aria-checked="true" aria-label="Auto-name sessions"></button></div>
+          <div class="setting-item"><span class="setting-label">Steering Mode</span><select class="setting-select" id="settingsSteeringMode" aria-label="Steering Mode"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
+          <div class="setting-item"><span class="setting-label">Follow-up Mode</span><select class="setting-select" id="settingsFollowUpMode" aria-label="Follow-up Mode"><option value="one-at-a-time">One at a time</option><option value="all">All</option></select></div>
+          <div class="setting-item"><span class="setting-label">Default send mode while running</span><select class="setting-select" id="settingsRunningSendMode" aria-label="Default send mode while running"><option value="queue">Queue</option><option value="steer">Steer</option></select></div>
+          <div class="setting-item"><span class="setting-label">Block images</span><button class="setting-toggle" id="settingsBlockImages" type="button" role="switch" aria-checked="false" aria-label="Block images"></button></div>
+          <div class="setting-item"><span class="setting-label">Hide thinking blocks</span><button class="setting-toggle" id="settingsHideThinking" type="button" role="switch" aria-checked="false" aria-label="Hide thinking blocks"></button></div>
+          <div class="setting-item"><span class="setting-label">Compaction trigger ratio</span><input class="setting-input" id="settingsCompactionTriggerRatio" type="number" min="0" max="1" step="0.01"></div>
+          <div class="setting-item"><span class="setting-label">Compaction target ratio</span><input class="setting-input" id="settingsCompactionTargetRatio" type="number" min="0" max="1" step="0.01"></div>
+          </div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label">Models</div>
+          <div class="settings-module">
+          <div class="setting-item"><span class="setting-label">Model</span><select class="setting-select" id="settingsModelSelect" aria-label="Model" onchange="onModelChange(this.value)"></select></div>
+          <div class="setting-item"><span class="setting-label">Small model</span><select class="setting-select" id="settingsSmallModelSelect" aria-label="Small model"></select></div>
+          <div class="setting-item"><span class="setting-label">Provider</span><span class="setting-value" id="settingsProvider">—</span></div>
+          <div class="setting-item"><span class="setting-label">Context window</span><span class="setting-value" id="settingsContextWindow">—</span></div>
+          </div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-label">Network</div>
+          <div class="settings-module">
+          <div class="setting-item"><span class="setting-label">Transport</span><select class="setting-select" id="settingsTransport" aria-label="Transport"><option value="auto">Auto</option><option value="sse">SSE</option><option value="websocket">WebSocket</option><option value="websocket-cached">WebSocket (cached)</option></select></div>
+          <div class="setting-item"><span class="setting-label">Retry timeout (ms)</span><input class="setting-input" id="settingsRetryTimeout" type="number" min="1" placeholder="Default"></div>
+          <div class="setting-item"><span class="setting-label">Maximum retries</span><input class="setting-input" id="settingsRetryMax" type="number" min="0" placeholder="Default"></div>
+          <div class="setting-item"><span class="setting-label">Maximum retry delay (ms)</span><input class="setting-input" id="settingsRetryDelay" type="number" min="1" placeholder="Default"></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-pane" id="pane-skills" role="region" aria-label="Skills settings">
+        <div class="settings-pane-title" data-od-id="settings-title-skills" role="heading" aria-level="1">Skills</div>
+        <div class="capability-scope" id="skillsScope"></div>
+        <p class="capability-notice">Changes apply to new sessions. Run <code>/reload</code> in an existing session.</p>
+        <div class="settings-group capability-list" id="settingsSkillList"></div>
+      </div>
+      <div class="settings-pane" id="pane-tools">
+        <div class="settings-pane-title" data-od-id="settings-title-tools" role="heading" aria-level="1">Tools</div>
+        <div class="capability-scope" id="toolsScope"></div>
+        <p class="capability-notice">Changes apply to new sessions. Run <code>/reload</code> in an existing session.</p>
+        <div class="settings-group capability-list" id="settingsToolList"></div>
+      </div>
+      <div class="settings-pane" id="pane-extensions">
+        <div class="settings-pane-title" data-od-id="settings-title-extensions" role="heading" aria-level="1">Extensions</div>
+        <div class="settings-group empty-settings-state"><div class="settings-group-label">Coming later</div><div class="settings-module"><p>Extension management is reserved for a future release.</p></div></div>
+      </div>
+      <div class="settings-pane" id="pane-keyboard-shortcuts">
+        <div class="settings-pane-title" data-od-id="settings-title-keyboard-shortcuts" role="heading" aria-level="1">Keyboard shortcuts</div>
+        <input class="shortcut-search" id="shortcutSearch" type="search" placeholder="Search shortcuts" aria-label="Search keyboard shortcuts" oninput="renderKeyBindings(this.value)">
+        <div class="shortcut-error" id="shortcutError" role="alert" hidden></div>
+        <div class="settings-group shortcut-group">
+          <div class="settings-group-label">Customizable</div>
+          <div class="settings-module" id="keyBindingList"></div>
+        </div>
+        <div class="settings-group shortcut-group">
+          <div class="settings-group-label">Context controls</div>
+          <div class="settings-module shortcut-fixed-list" id="fixedKeyBindingList"></div>
+        </div>
+        <p class="shortcut-storage-note">Custom shortcuts are stored in <code>~/.rozsa/key_bindings.json</code> by default.</p>
+      </div>
+      <div class="settings-pane" id="pane-permissions">
+        <div class="settings-pane-title" data-od-id="settings-title-permissions" role="heading" aria-level="1">Permissions</div>
+        <div class="capability-scope" id="permissionScope"></div>
+        <div class="settings-group permission-mode-row">
+          <div class="setting-item"><span class="setting-label">Permission mode</span><select class="setting-select" id="settingsPermMode" aria-label="Permission mode"></select></div>
+        </div>
+        <p class="permission-mode-note">Auto approve will use a small model to review ask decisions. That reviewer is not implemented yet, so selecting it currently returns an error.</p>
+        <div class="permission-settings-error" id="permissionSettingsError" role="alert" hidden></div>
+        <section class="permission-rule-section">
+          <div class="permission-rule-heading"><span class="settings-group-label">Deny</span><span class="permission-rule-heading-actions"><button class="permission-rule-reset" id="permissionDenyReset" type="button" onclick="resetPermissionRules('deny')" hidden>Restore inheritance</button><button class="permission-rule-add" type="button" onclick="openPermissionRuleEditor('deny')">Add rule</button></span></div>
+          <div class="settings-module permission-rule-list" id="permissionDenyList"></div>
+        </section>
+        <section class="permission-rule-section">
+          <div class="permission-rule-heading"><span class="settings-group-label">Ask</span><span class="permission-rule-heading-actions"><button class="permission-rule-reset" id="permissionAskReset" type="button" onclick="resetPermissionRules('ask')" hidden>Restore inheritance</button><button class="permission-rule-add" type="button" onclick="openPermissionRuleEditor('ask')">Add rule</button></span></div>
+          <div class="settings-module permission-rule-list" id="permissionAskList"></div>
+        </section>
+        <section class="permission-rule-section">
+          <div class="permission-rule-heading"><span class="settings-group-label">Allow</span><span class="permission-rule-heading-actions"><button class="permission-rule-reset" id="permissionAllowReset" type="button" onclick="resetPermissionRules('allow')" hidden>Restore inheritance</button><button class="permission-rule-add" type="button" onclick="openPermissionRuleEditor('allow')">Add rule</button></span></div>
+          <div class="settings-module permission-rule-list" id="permissionAllowList"></div>
+        </section>
+        <template id="permissionRuleEditorTemplate">
+        <div class="permission-rule-editor" id="permissionRuleEditor">
+          <div class="settings-group-label">Add permission rule</div>
+          <div class="permission-rule-editor-grid">
+            <div class="permission-tool-combobox">
+              <input class="setting-input" id="permissionRuleTool" role="combobox" aria-label="Rule tool" aria-autocomplete="list" aria-expanded="false" aria-controls="permissionRuleToolList" autocomplete="off">
+              <button class="permission-tool-combobox-button" id="permissionRuleToolButton" type="button" aria-label="Show tools"><svg class="lucide" data-lucide="chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+              <div class="permission-tool-options" id="permissionRuleToolList" role="listbox" hidden></div>
+            </div>
+            <div class="permission-rule-pattern-wrap"><span class="permission-rule-path-prefix" id="permissionRulePathPrefix" hidden>$HOME/</span><div class="permission-rule-pattern" id="permissionRuleTarget" contenteditable="true" role="textbox" aria-label="Rule pattern" aria-multiline="false" data-placeholder="Pattern; * matches any text"></div></div>
+            <label class="permission-regexp-toggle">RegExp <button class="setting-toggle" id="permissionRuleRegexp" type="button" role="switch" aria-checked="false" aria-label="Use regular expression"></button></label>
+          </div>
+          <div class="permission-rule-editor-hint" id="permissionRuleHint"></div>
+          <div class="permission-rule-editor-actions"><button type="button" onclick="closePermissionRuleEditor()">Cancel</button><button class="primary" type="button" onclick="savePermissionRule()">Add rule</button></div>
+        </div>
+        </template>
+      </div>
+      <div class="settings-pane" id="pane-dev-flow">
+        <div class="dev-flow-heading">
+          <div class="settings-pane-title" data-od-id="settings-title-dev-flow" role="heading" aria-level="1">Dev Flow</div>
+          <p class="setting-note dev-flow-description"><strong>Engineering discipline for coding agents.</strong> Connect this project to Dev Flow for lightweight workflow structure, project status, and a local dashboard. Optional, but recommended for reliable delivery.</p>
+          <div class="dev-flow-missing" id="devFlowMissing" hidden>
+            <p class="setting-note">Dev Flow was not detected. Install it to enable project status and dashboard access:</p>
+            <ul class="dev-flow-install-list">
+              <li><code>brew install daphnee-ovo/tap/dev-flow</code></li>
+              <li><code>npm install -g @xin_yue/dev-flow</code></li>
+              <li><code>cargo install dev-flow</code></li>
+            </ul>
+            <button type="button" id="devFlowRescan">Check again</button>
+          </div>
+        </div>
+        <div class="dev-flow-section">
+          <div class="settings-group-label">Overview</div>
+          <div class="dev-flow-module dev-flow-overview-module">
+          <div class="dev-flow-overview" aria-label="Dev Flow overview">
+            <div class="dev-flow-overview-card dev-flow-overview-status" id="devFlowDashboardStatus" title="Dashboard availability"><svg class="dev-flow-overview-icon lucide" data-lucide="gauge" aria-hidden="true" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg><div><span class="dev-flow-overview-kicker">Dashboard</span><span class="dev-flow-overview-value" id="devFlowDashboardAvailability">Unavailable</span></div></div>
+            <div class="dev-flow-overview-card" title="Dashboard address"><button class="dev-flow-overview-link" id="devFlowDashboardAddress" type="button" disabled><svg class="dev-flow-overview-icon lucide" data-lucide="link" aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span id="devFlowDashboardAddressText">Unavailable</span><svg class="lucide dev-flow-external-icon" data-lucide="external-link" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button></div>
+            <div class="dev-flow-overview-card" title="Dev Flow version"><div><span class="dev-flow-overview-value"><span class="dev-flow-version-prefix">v</span><span id="devFlowVersion">unknown</span></span></div></div>
+            <div class="dev-flow-overview-card" title="Dashboard memory use"><svg class="dev-flow-overview-icon lucide" data-lucide="cpu" aria-hidden="true" viewBox="0 0 24 24"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg><div><span class="dev-flow-overview-value"><span id="devFlowMemoryAmount">Unavailable</span><span class="dev-flow-memory-unit" id="devFlowMemoryUnit"></span></span></div></div>
+          </div>
+          </div>
+        </div>
+        <div class="dev-flow-section">
+          <div class="settings-group-label">Settings</div>
+          <div class="dev-flow-module dev-flow-settings-rows">
+          <div class="setting-item dev-flow-path-item"><label class="setting-label" for="devFlowExecutablePath">Path</label><span class="dev-flow-path-control"><input class="setting-input" id="devFlowExecutablePath" type="text" aria-label="Resolved dow executable path" spellcheck="false"><button class="dev-flow-icon-button" type="button" id="devFlowPickExecutable" aria-label="Choose Dev Flow executable" title="Choose executable"><svg class="lucide" data-lucide="folder-open" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6A2 2 0 0 1 18.46 20H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button></span></div>
+          <div class="setting-item"><span class="setting-label">Enable Dev Flow</span><button class="setting-toggle" id="devFlowEnabled" type="button" role="switch" aria-checked="false" aria-label="Enable Dev Flow integration"></button></div>
+          <div class="setting-item"><span class="setting-label">Show Dev Flow status in sidebar</span><button class="setting-toggle" id="devFlowSidebarStatus" type="button" role="switch" aria-checked="false" aria-label="Show Dev Flow status in sidebar"></button></div>
+          <div class="setting-item"><span class="setting-label">Show Dashboard button</span><button class="setting-toggle" id="devFlowDashboardButton" type="button" role="switch" aria-checked="false" aria-label="Show Dev Flow Dashboard button"></button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+</div>
+
