@@ -80,3 +80,7 @@
 .tool-call-status.s-running { background: var(--warning); }
 .tool-name { color: var(--fg); font-weight: 560; }
 
+@media (max-width: 560px) {
+  .sidebar-brand { padding-inline: 16px; }
+  .sidebar-brand strong { font-size: 22px; }
+}

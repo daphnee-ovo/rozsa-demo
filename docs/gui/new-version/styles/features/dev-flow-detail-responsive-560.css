@@ -1,6 +1,0 @@
-@media (max-width: 560px) {
-  .dev-flow-detail { left: 0; padding: 12px; }
-  .dev-flow-detail-panel { padding: 18px; max-height: calc(100vh - 24px); }
-  .dev-flow-detail-title { font-size: 23px; }
-}
-

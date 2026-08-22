@@ -76,3 +76,16 @@
 .settings-hint:hover::after,
 .settings-hint:focus::after { opacity: 1; transform: translateY(0); }
 
+@media (max-width: 900px) {
+  .settings-content { padding-inline: clamp(20px, 5vw, 54px); }
+}
+
+@media (max-width: 760px) {
+  .settings-workspace { grid-template-columns: 1fr; }
+  .settings-tabs { min-height: 0; max-height: 276px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 4px; padding: 0 12px 16px; background: var(--bg); box-shadow: 0 6px 14px -12px color-mix(in oklch, var(--fg) 18%, transparent); }
+  .settings-sidebar-brand { grid-column: 1 / -1; }
+  .settings-back { grid-column: 1 / -1; margin-top: 4px; margin-bottom: 0; }
+  .settings-tab { justify-content: flex-start; padding-inline: 10px; text-align: left; }
+  .settings-content { padding: 36px 16px 76px; }
+  .settings-pane-title { margin-bottom: 34px; font-size: clamp(34px, 10vw, 48px); }
+}

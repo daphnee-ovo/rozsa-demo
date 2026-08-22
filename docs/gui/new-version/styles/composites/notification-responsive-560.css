@@ -1,5 +1,0 @@
-@media (max-width: 560px) {
-  .notification-stack { right: 12px; width: calc(100vw - 24px); }
-  .notification-error-tray { right: 12px; bottom: 12px; }
-}
-

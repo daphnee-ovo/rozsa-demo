@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "original_stylesheet": {
     "file": "docs/gui/new-version/rozsa-gui.css",
     "line_count": 1171,
@@ -22,7 +22,7 @@
         115
       ],
       "target": "docs/gui/new-version/styles/foundations/reset.css",
-      "sha256": "d407bba52e515ca2ede4ebe4f673ebee4f300836fe735c233fdd63c7f94a53ef"
+      "sha256": "6852851a0a5d99c34299e0e3951ed7d029f04201c116b19f11a49ac0c597cab2"
     },
     {
       "order": 3,
@@ -221,7 +221,7 @@
       1090
     ],
     "line_count": 1090,
-    "sha256": "5c05191f3d2dd915371e37765188e29d571be5405a8f98385f92a0e124e0249b"
+    "sha256": "51b87c8a1a5e254e75a21e5b08c43ecda5d3115ce23ed544f65b4dce79d81c32"
   },
   "responsive_source": {
     "source_lines": [
@@ -231,6 +231,29 @@
     "line_count": 81,
     "sha256": "89e2dbf36697c1050af3cb31f587a89705055734afabeb29c0962de27ee41395"
   },
+  "responsive_layout": {
+    "sidebar_auto_collapse_max_width": 780,
+    "sidebar_auto_expand_min_width": 820,
+    "minimum_window": {
+      "width": 640,
+      "height": 480
+    },
+    "measurement": {
+      "normal_pc": {
+        "viewport_width": 1280,
+        "sidebar_width": 256,
+        "main_panel_width": 1024,
+        "composer_width": 900
+      },
+      "split_screen": {
+        "viewport_width": 820,
+        "sidebar_width": 229.6,
+        "main_panel_width": 590.4,
+        "composer_width": 541.2
+      },
+      "threshold_basis": "220px sidebar + 560px main content comfort width"
+    }
+  },
   "responsive_fragments": [
     {
       "order": 19,
@@ -238,7 +261,7 @@
         1091,
         1094
       ],
-      "target": "docs/gui/new-version/styles/features/dev-flow-detail-responsive-1100.css",
+      "owner_file": "docs/gui/new-version/styles/features/dev-flow-detail.css",
       "owner": "dev-flow-detail",
       "media": "max-width: 1100px",
       "sha256": "ecd5a4b39ec7f607b5047c4b4c0a2539e7a988aad0f19326c335524bf41ecf3d"
@@ -249,7 +272,7 @@
         1097,
         1097
       ],
-      "target": "docs/gui/new-version/styles/layouts/app-shell-responsive-900.css",
+      "owner_file": "docs/gui/new-version/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 900px",
       "sha256": "82f5d2e02faac94bb34a08ce6f59ee85e236ca32ac136cf509c1bd8a8ecfd71d"
@@ -260,7 +283,7 @@
         1098,
         1098
       ],
-      "target": "docs/gui/new-version/styles/features/conversation-responsive-900.css",
+      "owner_file": "docs/gui/new-version/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 900px",
       "sha256": "cb34449713e4c12d09bd9d964b103f96393436714b6dee970eec39349eaf6b56"
@@ -271,7 +294,7 @@
         1099,
         1099
       ],
-      "target": "docs/gui/new-version/styles/features/settings-responsive-900.css",
+      "owner_file": "docs/gui/new-version/styles/features/settings.css",
       "owner": "settings",
       "media": "max-width: 900px",
       "sha256": "700d2e143bfeb55c78425c942083fb0757898e7ada66ae979136b253180ba782"
@@ -282,7 +305,7 @@
         1100,
         1100
       ],
-      "target": "docs/gui/new-version/styles/features/dev-flow-responsive-900.css",
+      "owner_file": "docs/gui/new-version/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 900px",
       "sha256": "035ab95e09aaa7a8bdd7667666472349581756fa97e10af564acb22789526f2a"
@@ -293,9 +316,10 @@
         1103,
         1107
       ],
-      "target": "docs/gui/new-version/styles/layouts/app-shell-responsive-760.css",
+      "owner_file": "docs/gui/new-version/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 760px",
+      "current_media": "max-width: 780px",
       "sha256": "ffbc20201f12797d740fb3a85ac0f8aff0b5ab6648f6b8a2a1a093fdf4411bec"
     },
     {
@@ -304,7 +328,7 @@
         1108,
         1109
       ],
-      "target": "docs/gui/new-version/styles/features/conversation-responsive-760.css",
+      "owner_file": "docs/gui/new-version/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 760px",
       "sha256": "451299d51bebb018188dac39e58bfe6c84df9054d33a92dce49e89a756f83798"
@@ -315,7 +339,7 @@
         1110,
         1116
       ],
-      "target": "docs/gui/new-version/styles/features/settings-responsive-760.css",
+      "owner_file": "docs/gui/new-version/styles/features/settings.css",
       "owner": "settings",
       "media": "max-width: 760px",
       "sha256": "d18dc58f89e1971ee3c1127b2cdeee3ff0a1448c3f518f75dc1fa8045c43f475"
@@ -326,7 +350,7 @@
         1117,
         1119
       ],
-      "target": "docs/gui/new-version/styles/features/permissions-responsive-760.css",
+      "owner_file": "docs/gui/new-version/styles/features/permissions.css",
       "owner": "permissions",
       "media": "max-width: 760px",
       "sha256": "11d0a04a0cbf7d2c91c676a8b3e2628756c446766ea74501ed8afcbb4109204f"
@@ -337,7 +361,7 @@
         1120,
         1120
       ],
-      "target": "docs/gui/new-version/styles/features/dev-flow-responsive-760.css",
+      "owner_file": "docs/gui/new-version/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 760px",
       "sha256": "5d132843b2eefdda77758c69f4160b6c009ec56cf0f3b4bd9f662d76436276f6"
@@ -348,7 +372,7 @@
         1123,
         1124
       ],
-      "target": "docs/gui/new-version/styles/features/sidebar-responsive-560.css",
+      "owner_file": "docs/gui/new-version/styles/features/sidebar.css",
       "owner": "sidebar",
       "media": "max-width: 560px",
       "sha256": "b4b2881d29ac15bb1208dace9ac84b5836861d500f3cd6ce7d6213cb9ab66b37"
@@ -359,7 +383,7 @@
         1125,
         1125
       ],
-      "target": "docs/gui/new-version/styles/layouts/app-shell-responsive-560.css",
+      "owner_file": "docs/gui/new-version/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 560px",
       "sha256": "d57d02b31922b164639dd82b54ba7f63d597b29de496fbffb0088b33d30b4494"
@@ -370,7 +394,7 @@
         1126,
         1133
       ],
-      "target": "docs/gui/new-version/styles/features/conversation-responsive-560.css",
+      "owner_file": "docs/gui/new-version/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 560px",
       "sha256": "35b9714050faa7955fab0bd429f49e75cd4c9a78341b23c73d7edcbcb74e81e6"
@@ -381,7 +405,7 @@
         1134,
         1158
       ],
-      "target": "docs/gui/new-version/styles/features/appearance-responsive-560.css",
+      "owner_file": "docs/gui/new-version/styles/features/appearance.css",
       "owner": "appearance",
       "media": "max-width: 560px",
       "sha256": "e0e54e84663f17c2a36aa0970945b814ff18279d79a2296e8b98d61d44209126"
@@ -392,7 +416,7 @@
         1159,
         1160
       ],
-      "target": "docs/gui/new-version/styles/features/dev-flow-responsive-560.css",
+      "owner_file": "docs/gui/new-version/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 560px",
       "sha256": "569a4fe319dfacd251be403d89d1a3e8817490229c3e8d4afe4b61c37ba20897"
@@ -403,7 +427,7 @@
         1161,
         1162
       ],
-      "target": "docs/gui/new-version/styles/composites/notification-responsive-560.css",
+      "owner_file": "docs/gui/new-version/styles/composites/feedback.css",
       "owner": "notification",
       "media": "max-width: 560px",
       "sha256": "6ccb21158a057d3295085761039a1d3c698ff649fff09fc84024c05097f68841"
@@ -414,7 +438,7 @@
         1163,
         1165
       ],
-      "target": "docs/gui/new-version/styles/features/dev-flow-detail-responsive-560.css",
+      "owner_file": "docs/gui/new-version/styles/features/dev-flow-detail.css",
       "owner": "dev-flow-detail",
       "media": "max-width: 560px",
       "sha256": "916654d1a1a34d55a40e781b96103247c3072612a0a715fd9447285d229fcf2c"
@@ -425,7 +449,7 @@
         1167,
         1171
       ],
-      "target": "docs/gui/new-version/styles/foundations/motion.css",
+      "owner_file": "docs/gui/new-version/styles/foundations/motion.css",
       "owner": "motion",
       "media": "prefers-reduced-motion: reduce",
       "sha256": "f76acab354454f9e31e038674318abf8e2a43558956e111c281c453536ca1d59"

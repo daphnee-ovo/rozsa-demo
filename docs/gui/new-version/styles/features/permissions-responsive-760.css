@@ -1,6 +1,0 @@
-@media (max-width: 760px) {
-  .perm-panel-actions { grid-template-columns: minmax(0, 1fr); }
-  .permission-rule-editor-grid { grid-template-columns: 1fr; }
-  .permission-regexp-toggle { justify-self: start; }
-}
-

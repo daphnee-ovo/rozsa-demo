@@ -1,8 +1,0 @@
-@media (max-width: 760px) {
-  [data-od-id="app-body"] { grid-template-columns: minmax(0, 1fr); }
-  [data-od-id="sidebar"] { position: absolute; inset: var(--native-titlebar-offset) auto 0 0; width: min(86vw, 304px); transform: translateX(0); box-shadow: var(--shadow-2), var(--shadow-sidebar); }
-  [data-od-id="app-body"].sidebar-collapsed > [data-od-id="sidebar"] { transform: translateX(-105%); }
-  [data-od-id="main-panel"] { min-width: 0; }
-  [data-od-id="panel-header"] { min-height: 56px; height: 60px; padding-inline: 16px; }
-}
-

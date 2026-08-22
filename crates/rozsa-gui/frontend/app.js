@@ -108,6 +108,10 @@ let scrollStateFrame = 0;
 let sidebarCollapsed = false;
 let sidebarAutoCollapsed = false;
 let nativeSplitMode = false;
+// 由 prototype 的 220px sidebar + 560px 主内容舒适下限测得；820px 为
+// 820px 分屏基线，作为展开滞回边界，避免临界区间抖动。
+const SIDEBAR_AUTO_COLLAPSE_MAX_WIDTH = 780;
+const SIDEBAR_AUTO_EXPAND_MIN_WIDTH = 820;
 let nativeSidebarOverlayVisible = false;
 let nativeSidebarOverlayWidth = 0;
 let nativeSidebarOverlayRequest = 0;
@@ -3285,7 +3289,9 @@ function toggleMainSidebar() {
 
 function syncMainSidebarViewport() {
   if (nativeSplitMode) return;
-  const shouldAutoCollapse = window.innerWidth <= 1100;
+  const shouldAutoCollapse = sidebarAutoCollapsed
+    ? window.innerWidth < SIDEBAR_AUTO_EXPAND_MIN_WIDTH
+    : window.innerWidth <= SIDEBAR_AUTO_COLLAPSE_MAX_WIDTH;
   if (shouldAutoCollapse !== sidebarAutoCollapsed) {
     sidebarAutoCollapsed = shouldAutoCollapse;
     updateSidebarLayout(isSidebarCollapsed());

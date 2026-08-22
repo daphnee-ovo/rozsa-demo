@@ -1,13 +1,13 @@
 html,
 body {
   width: 100%;
-  min-width: 320px;
+  min-width: 640px;
   height: 100%;
-  min-height: 100%;
+  min-height: 480px;
   overflow: hidden;
 }
 
 *,
 *::before,
 *::after { box-sizing: border-box; }
-
+/* Native host uses the same 640×480 minimum. */

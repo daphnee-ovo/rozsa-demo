@@ -18,3 +18,30 @@ body.settings-visible [data-od-id="app-body"] { visibility: hidden; }
 #nativeGuiInteractionLayer,
 #nativeSidebarEdgeTrigger { position: fixed; pointer-events: none; }
 
+/* 780px = 约 220px sidebar + 560px 主内容舒适下限；低于此宽度
+   让主内容优先，sidebar 退为可由 edge trigger / native host 重开的 drawer。 */
+@media (max-width: 900px) {
+  :root { --main-sidebar-width: clamp(220px, 28vw, 270px); }
+}
+
+@media (max-width: 780px) {
+  [data-od-id="app-body"] { grid-template-columns: minmax(0, 1fr); }
+  [data-od-id="sidebar"] {
+    position: absolute;
+    inset: var(--native-titlebar-offset) auto 0 0;
+    width: min(86vw, 304px);
+    transform: translateX(-105%);
+    visibility: hidden;
+    box-shadow: var(--shadow-2), var(--shadow-sidebar);
+  }
+  [data-od-id="app-body"].sidebar-edge-visible > [data-od-id="sidebar"] {
+    transform: translateX(0);
+    visibility: visible;
+  }
+  [data-od-id="main-panel"] { min-width: 0; }
+  [data-od-id="panel-header"] { min-height: 56px; height: 60px; padding-inline: 16px; }
+}
+
+@media (max-width: 560px) {
+  [data-od-id="panel-header"] { padding-inline: 14px; }
+}

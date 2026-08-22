@@ -1,3 +1,15 @@
+// FrameworkTree
+// native_window_behavior.rs
+// ├── one_native_action_toggles_the_persistent_split_sidebar()
+// ├── divider_constraints_and_restoration_are_appkit_owned()
+// ├── native_sidebar_stays_inline_without_covering_main_content()
+// ├── titlebar_installs_after_split_and_uses_the_stable_content_root()
+// ├── inspector_detaches_from_the_frontend_loaded_delegate()
+// ├── inspector_is_opt_in_and_does_not_replace_the_product_window()
+// ├── close_releases_titlebar_observers_and_actions_before_split_teardown()
+// ├── native_frontend_does_not_run_the_css_width_threshold()
+// └── prototype_and_tauri_share_the_measured_minimum_window()
+
 #[test]
 fn one_native_action_toggles_the_persistent_split_sidebar() {
     let split = include_str!("../src/native_split_view.rs");
@@ -137,5 +149,20 @@ fn native_frontend_does_not_run_the_css_width_threshold() {
     let viewport = &app[start..end];
 
     assert!(viewport.contains("if (nativeSplitMode) return;"));
-    assert!(viewport.contains("window.innerWidth <= 1100"));
+    assert!(viewport.contains("SIDEBAR_AUTO_COLLAPSE_MAX_WIDTH"));
+    assert!(viewport.contains("SIDEBAR_AUTO_EXPAND_MIN_WIDTH"));
+    assert!(viewport.contains("window.innerWidth <= SIDEBAR_AUTO_COLLAPSE_MAX_WIDTH"));
+    assert!(viewport.contains("window.innerWidth < SIDEBAR_AUTO_EXPAND_MIN_WIDTH"));
+    assert!(!viewport.contains("window.innerWidth <= 1100"));
+}
+
+#[test]
+fn prototype_and_tauri_share_the_measured_minimum_window() {
+    let config = include_str!("../tauri.conf.json");
+    let reset = include_str!("../../../docs/gui/new-version/styles/foundations/reset.css");
+
+    assert!(config.contains("\"minWidth\": 640"));
+    assert!(config.contains("\"minHeight\": 480"));
+    assert!(reset.contains("min-width: 640px;"));
+    assert!(reset.contains("min-height: 480px;"));
 }

@@ -1,4 +1,0 @@
-@media (max-width: 900px) {
-  [data-od-id="chat-messages"] { padding-inline: clamp(18px, 4vw, 36px); }
-}
-

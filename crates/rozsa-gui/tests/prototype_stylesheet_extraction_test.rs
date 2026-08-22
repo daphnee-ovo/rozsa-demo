@@ -4,7 +4,8 @@
 // ├── extracted_inline_styles_reconstruct_the_original_html_byte_for_byte()
 // ├── stylesheet_entries_are_external_acyclic_and_runtime_shaped()
 // ├── repository_root()
-// └── sha256_hex()
+// ├── sha256_hex()
+// └── first_lines()
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,13 +32,14 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
 
         let target = block["target"].as_str().unwrap();
         let content = fs::read(repository_root().join(target)).unwrap();
+        let static_content = first_lines(&content, end - start + 1);
         assert_eq!(
-            String::from_utf8_lossy(&content).lines().count() as u64,
+            String::from_utf8_lossy(static_content).lines().count() as u64,
             end - start + 1,
             "{target} 的行数与原始连续块不一致"
         );
         assert_eq!(
-            sha256_hex(&content),
+            sha256_hex(static_content),
             block["sha256"].as_str().unwrap(),
             "{target} 的内容已偏离已审核的原始块"
         );
@@ -45,7 +47,7 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
             !String::from_utf8_lossy(&content).contains("@import"),
             "组件文件不得形成隐藏 import 图：{target}"
         );
-        reconstructed.extend_from_slice(&content);
+        reconstructed.extend_from_slice(static_content);
         expected_imports.push(format!(
             "@import url(\"../{}\");",
             target.strip_prefix("docs/gui/new-version/styles/").unwrap()
@@ -73,6 +75,24 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
     );
     assert_eq!(responsive_source["line_count"].as_u64().unwrap(), 81);
 
+    let responsive_layout = &manifest["responsive_layout"];
+    assert_eq!(
+        responsive_layout["sidebar_auto_collapse_max_width"].as_u64(),
+        Some(780)
+    );
+    assert_eq!(
+        responsive_layout["sidebar_auto_expand_min_width"].as_u64(),
+        Some(820)
+    );
+    assert_eq!(
+        responsive_layout["minimum_window"]["width"].as_u64(),
+        Some(640)
+    );
+    assert_eq!(
+        responsive_layout["minimum_window"]["height"].as_u64(),
+        Some(480)
+    );
+
     let fragments = manifest["responsive_fragments"].as_array().unwrap();
     let mut previous_end = expected_start - 1;
     for (index, fragment) in fragments.iter().enumerate() {
@@ -88,27 +108,23 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
         );
         previous_end = end;
 
-        let target = fragment["target"].as_str().unwrap();
-        let content = fs::read(repository_root().join(target)).unwrap();
-        assert_eq!(
-            sha256_hex(&content),
-            fragment["sha256"].as_str().unwrap(),
-            "{target} 的内容已偏离已审核的 owner-local 响应式片段"
-        );
-        let media = fragment["media"].as_str().unwrap();
+        let owner_file = fragment["owner_file"].as_str().unwrap();
+        let content = fs::read(repository_root().join(owner_file)).unwrap();
+        let source = String::from_utf8_lossy(&content);
+        let media = fragment
+            .get("current_media")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| fragment["media"].as_str().unwrap());
         assert!(
-            String::from_utf8_lossy(&content).contains(&format!("@media ({media})")),
-            "{target} 缺少 manifest 声明的 media query"
+            source.contains(&format!("@media ({media})")),
+            "{owner_file} 缺少 manifest 声明的 media query"
         );
         assert!(
-            !String::from_utf8_lossy(&content).contains("@import"),
-            "响应式片段不得形成隐藏 import 图：{target}"
+            !source.contains("@import"),
+            "owner CSS 不得形成隐藏 import 图：{owner_file}"
         );
-        expected_imports.push(format!(
-            "@import url(\"../{}\");",
-            target.strip_prefix("docs/gui/new-version/styles/").unwrap()
-        ));
     }
+    expected_imports.push("@import url(\"../foundations/motion.css\");".to_owned());
 
     let main_entry =
         fs::read_to_string(repository_root().join("docs/gui/new-version/styles/entries/main.css"))
@@ -132,6 +148,23 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
         "layout/app-shell.css",
         "layout/sidebar-shell.css",
         "utilities.css",
+        "composites/notification-responsive-560.css",
+        "features/appearance-responsive-560.css",
+        "features/conversation-responsive-560.css",
+        "features/conversation-responsive-760.css",
+        "features/conversation-responsive-900.css",
+        "features/dev-flow-detail-responsive-1100.css",
+        "features/dev-flow-detail-responsive-560.css",
+        "features/dev-flow-responsive-560.css",
+        "features/dev-flow-responsive-760.css",
+        "features/dev-flow-responsive-900.css",
+        "features/permissions-responsive-760.css",
+        "features/settings-responsive-760.css",
+        "features/settings-responsive-900.css",
+        "features/sidebar-responsive-560.css",
+        "layouts/app-shell-responsive-560.css",
+        "layouts/app-shell-responsive-760.css",
+        "layouts/app-shell-responsive-900.css",
     ] {
         assert!(
             !repository_root()
@@ -242,13 +275,7 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
             ));
         }
     }
-    for fragment in manifest["responsive_fragments"].as_array().unwrap() {
-        let target = fragment["target"].as_str().unwrap();
-        expected_sidebar_imports.push(format!(
-            "@import url(\"../{}\");",
-            target.strip_prefix("docs/gui/new-version/styles/").unwrap()
-        ));
-    }
+    expected_sidebar_imports.push("@import url(\"../foundations/motion.css\");".to_owned());
     assert_eq!(
         sidebar_entry.lines().collect::<Vec<_>>(),
         expected_sidebar_imports
@@ -355,4 +382,20 @@ fn sha256_hex(input: &[u8]) -> String {
     }
 
     state.iter().map(|value| format!("{value:08x}")).collect()
+}
+
+fn first_lines(input: &[u8], line_count: u64) -> &[u8] {
+    if line_count == 0 {
+        return &input[..0];
+    }
+    let mut seen = 0_u64;
+    for (index, byte) in input.iter().enumerate() {
+        if *byte == b'\n' {
+            seen += 1;
+            if seen == line_count {
+                return &input[..=index];
+            }
+        }
+    }
+    input
 }

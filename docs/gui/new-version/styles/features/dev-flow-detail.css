@@ -24,3 +24,13 @@
 .dev-flow-detail-disclosure-body { display: grid; gap: 4px; margin-top: 7px; color: var(--muted); font: 10px/1.45 var(--font-mono); }
 .dev-flow-detail-empty { padding: 20px 0; color: var(--muted); }
 
+/* 小屏重排 */
+@media (max-width: 1100px) {
+  body.dev-flow-detail-open .dev-flow-detail { left: var(--main-sidebar-width); }
+}
+
+@media (max-width: 560px) {
+  .dev-flow-detail { left: 0; padding: 12px; }
+  .dev-flow-detail-panel { padding: 18px; max-height: calc(100vh - 24px); }
+  .dev-flow-detail-title { font-size: 23px; }
+}

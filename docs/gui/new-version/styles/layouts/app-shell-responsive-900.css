@@ -1,4 +1,0 @@
-@media (max-width: 900px) {
-  :root { --main-sidebar-width: clamp(220px, 28vw, 270px); }
-}
-

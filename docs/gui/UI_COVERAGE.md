@@ -19,6 +19,10 @@
 
 `partial` 与 `missing` 的具体阻断范围只在 [`DESIGN_GAPS.md`](./DESIGN_GAPS.md) 维护。它们可以整理 runtime 现有实现，但不得由实施者推导或补画新视觉。
 
+## 响应式布局验证（TASK-T024）
+
+sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 560px 主内容舒适宽度得到 780px 收起边界；恢复展开使用 820px 滞回边界。产品与 prototype 的最低窗口约束统一为 640×480，正常 PC、820px 分屏和最低尺寸的几何、Composer 与 sidebar 状态记录在 [`TASK-T024 verification`](../../tmp/ui-architecture-refactor/TASK-T024/verification.md) 与 [`source-order.json`](./new-version/styles/source-order.json) 中。响应式规则归属实际 owner CSS，不再以断点生成独立 CSS 文件。
+
 ## 区域汇总
 
 ### Application shell 与 sidebar
@@ -66,7 +70,7 @@
 - 新增或删除 scene、gallery view、runtime entry、可见事件或界面状态时，必须同步更新 JSON inventory 和对应 item。
 - 一个项目只能使用四种固定状态；`partial`/`missing` 必须在缺口表有且只有一个可追溯条目。
 - `css`、`markup`、`behavior` 分别描述最终唯一责任位置，不能把第二份公共实现藏在 scene 或 gallery 中。
-- prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features`、`layouts` 或 `scenes` 的唯一 owner；响应式片段也登记在实际 owner 下，入口只负责保持 source order。
+- prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features`、`layouts` 或 `scenes` 的唯一 owner；响应式规则直接归属于该 owner，入口只负责保持 import source order。
 - application shell 的稳定 HTML 只能来自 `templates/`，入口只提供 mount；`scripts/core/` 只负责加载、装配和 renderer 边界，scene 文件仍是只读迁移输入。
 - scene 的唯一配置入口是 `scenarios/registry.js`，读取路径经过 `scripts/core/scene-loader.js` 和 `scripts/adapters/mock-adapter.js`；mock 文件及每个 scene 的全部使用方必须登记在 JSON `scenario_inventory`，未知 ID 必须明确报错且不能 fallback 到未定义页面。
 - prototype component behavior 的唯一归属是 `scripts/components/` 或 `scripts/features/`；Composer、interruption、popover、notification、tool-call、conversation、settings、sidebar 与 Dev Flow 的使用方必须在 JSON 的 `behavior` 和 `used_by` 中闭合记录。
