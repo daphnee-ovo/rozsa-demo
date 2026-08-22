@@ -1,0 +1,5 @@
+@media (max-width: 760px) {
+  [data-od-id="chat-messages"] { padding: 86px 16px 152px; }
+  [data-od-id="chat-input"] { padding: 12px 12px 16px; }
+}
+

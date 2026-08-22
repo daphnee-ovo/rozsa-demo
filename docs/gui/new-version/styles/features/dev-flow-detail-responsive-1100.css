@@ -1,0 +1,5 @@
+/* 小屏重排 */
+@media (max-width: 1100px) {
+  body.dev-flow-detail-open .dev-flow-detail { left: var(--main-sidebar-width); }
+}
+

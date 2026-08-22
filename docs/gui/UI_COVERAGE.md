@@ -66,6 +66,7 @@
 - 新增或删除 scene、gallery view、runtime entry、可见事件或界面状态时，必须同步更新 JSON inventory 和对应 item。
 - 一个项目只能使用四种固定状态；`partial`/`missing` 必须在缺口表有且只有一个可追溯条目。
 - `css`、`markup`、`behavior` 分别描述最终唯一责任位置，不能把第二份公共实现藏在 scene 或 gallery 中。
+- prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features`、`layouts` 或 `scenes` 的唯一 owner；响应式片段也登记在实际 owner 下，入口只负责保持 source order。
 - 本清单与自动化测试只证明分类和引用闭合，不证明视觉或交互等价；最终结论必须来自 TASK-T002 建立的成对材料与后续实际重放。
 
 ## Related Docs

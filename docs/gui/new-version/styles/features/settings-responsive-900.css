@@ -1,0 +1,4 @@
+@media (max-width: 900px) {
+  .settings-content { padding-inline: clamp(20px, 5vw, 54px); }
+}
+

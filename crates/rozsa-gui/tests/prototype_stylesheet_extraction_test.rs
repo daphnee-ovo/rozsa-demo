@@ -47,30 +47,101 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
         );
         reconstructed.extend_from_slice(&content);
         expected_imports.push(format!(
-            "@import url(\"./{}\");",
+            "@import url(\"../{}\");",
             target.strip_prefix("docs/gui/new-version/styles/").unwrap()
         ));
     }
 
-    let original = &manifest["original_stylesheet"];
-    assert_eq!(expected_start - 1, original["line_count"].as_u64().unwrap());
+    let base = &manifest["base_stylesheet"];
+    assert_eq!(expected_start - 1, base["line_count"].as_u64().unwrap());
     assert_eq!(
         sha256_hex(&reconstructed),
-        original["sha256"].as_str().unwrap(),
-        "有原始 rule block 丢失、重复、改写或跨块重排"
+        base["sha256"].as_str().unwrap(),
+        "静态 CSS block 有丢失、重复、改写或跨块重排"
     );
 
-    let main =
-        fs::read_to_string(repository_root().join("docs/gui/new-version/styles/main.css")).unwrap();
-    assert_eq!(main.lines().collect::<Vec<_>>(), expected_imports);
+    let responsive_source = &manifest["responsive_source"];
+    assert_eq!(
+        responsive_source["source_lines"][0].as_u64().unwrap(),
+        expected_start
+    );
+    assert_eq!(
+        responsive_source["source_lines"][1].as_u64().unwrap(),
+        manifest["original_stylesheet"]["line_count"]
+            .as_u64()
+            .unwrap()
+    );
+    assert_eq!(responsive_source["line_count"].as_u64().unwrap(), 81);
+
+    let fragments = manifest["responsive_fragments"].as_array().unwrap();
+    let mut previous_end = expected_start - 1;
+    for (index, fragment) in fragments.iter().enumerate() {
+        assert_eq!(fragment["order"].as_u64(), Some(index as u64 + 19));
+        let range = fragment["source_lines"].as_array().unwrap();
+        let start = range[0].as_u64().unwrap();
+        let end = range[1].as_u64().unwrap();
+        assert!(
+            start > previous_end
+                && end >= start
+                && end <= responsive_source["source_lines"][1].as_u64().unwrap(),
+            "响应式片段 source order 不单调：{fragment:?}"
+        );
+        previous_end = end;
+
+        let target = fragment["target"].as_str().unwrap();
+        let content = fs::read(repository_root().join(target)).unwrap();
+        assert_eq!(
+            sha256_hex(&content),
+            fragment["sha256"].as_str().unwrap(),
+            "{target} 的内容已偏离已审核的 owner-local 响应式片段"
+        );
+        let media = fragment["media"].as_str().unwrap();
+        assert!(
+            String::from_utf8_lossy(&content).contains(&format!("@media ({media})")),
+            "{target} 缺少 manifest 声明的 media query"
+        );
+        assert!(
+            !String::from_utf8_lossy(&content).contains("@import"),
+            "响应式片段不得形成隐藏 import 图：{target}"
+        );
+        expected_imports.push(format!(
+            "@import url(\"../{}\");",
+            target.strip_prefix("docs/gui/new-version/styles/").unwrap()
+        ));
+    }
+
+    let main_entry =
+        fs::read_to_string(repository_root().join("docs/gui/new-version/styles/entries/main.css"))
+            .unwrap();
+    assert_eq!(main_entry.lines().collect::<Vec<_>>(), expected_imports);
     assert!(
         !repository_root()
             .join("docs/gui/new-version/rozsa-gui.css")
             .exists(),
         "不得保留单体 CSS 或兼容入口"
     );
+    for removed in [
+        "tokens.css",
+        "reset.css",
+        "base.css",
+        "components/actions.css",
+        "components/feedback.css",
+        "components/forms.css",
+        "components/overlays.css",
+        "components/permissions.css",
+        "layout/app-shell.css",
+        "layout/sidebar-shell.css",
+        "utilities.css",
+    ] {
+        assert!(
+            !repository_root()
+                .join("docs/gui/new-version/styles")
+                .join(removed)
+                .exists(),
+            "旧的扁平样式文件仍被保留：{removed}"
+        );
+    }
 }
-
 #[test]
 fn extracted_inline_styles_reconstruct_the_original_html_byte_for_byte() {
     let manifest: Value = serde_json::from_str(SOURCE_ORDER).unwrap();
@@ -111,10 +182,8 @@ fn extracted_inline_styles_reconstruct_the_original_html_byte_for_byte() {
             &link,
             &format!("<style>\n{}\n  </style>", css.trim_end_matches('\n')),
         );
-        let reconstructed_with_raw_two_space_close = direct_entry_reverted.replace(
-            &link,
-            &format!("<style>\n{}  </style>", css),
-        );
+        let reconstructed_with_raw_two_space_close =
+            direct_entry_reverted.replace(&link, &format!("<style>\n{}  </style>", css));
         let original_hash = extraction["original_html_sha256"].as_str().unwrap();
         assert!(
             sha256_hex(reconstructed.as_bytes()) == original_hash
@@ -147,31 +216,43 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
     let root = repository_root();
     let main = fs::read_to_string(root.join("docs/gui/new-version/styles/main.css")).unwrap();
     let sidebar = fs::read_to_string(root.join("docs/gui/new-version/styles/sidebar.css")).unwrap();
+    assert_eq!(main.trim(), "@import url(\"./entries/main.css\");");
+    assert_eq!(sidebar.trim(), "@import url(\"./entries/sidebar.css\");");
 
-    assert!(!main.contains("main.css"));
-    assert!(
-        !main
-            .lines()
-            .any(|line| line == "@import url(\"./sidebar.css\");")
-    );
-    assert!(!sidebar.contains("main.css"));
-    assert!(
-        !sidebar
-            .lines()
-            .any(|line| line == "@import url(\"./sidebar.css\");")
-    );
-    for required in [
-        "tokens.css",
-        "reset.css",
-        "base.css",
-        "layout/app-shell.css",
-        "layout/sidebar-shell.css",
-        "features/sidebar.css",
-        "features/sidebar-window.css",
-        "utilities.css",
-    ] {
-        assert!(sidebar.contains(required), "sidebar.css 缺少 {required}");
+    let main_entry =
+        fs::read_to_string(root.join("docs/gui/new-version/styles/entries/main.css")).unwrap();
+    let sidebar_entry =
+        fs::read_to_string(root.join("docs/gui/new-version/styles/entries/sidebar.css")).unwrap();
+    assert!(!main_entry.contains("../entries/main.css"));
+    assert!(!main_entry.contains("../entries/sidebar.css"));
+    assert!(!sidebar_entry.contains("../entries/main.css"));
+    assert!(!sidebar_entry.contains("../entries/sidebar.css"));
+    assert!(!main_entry.contains("utilities.css"));
+    assert!(!sidebar_entry.contains("utilities.css"));
+
+    let manifest: Value = serde_json::from_str(SOURCE_ORDER).unwrap();
+    let blocks = manifest["blocks"].as_array().unwrap();
+    let mut expected_sidebar_imports = Vec::new();
+    for block in blocks {
+        if matches!(block["order"].as_u64(), Some(1 | 2 | 3 | 4 | 5 | 6 | 18)) {
+            let target = block["target"].as_str().unwrap();
+            expected_sidebar_imports.push(format!(
+                "@import url(\"../{}\");",
+                target.strip_prefix("docs/gui/new-version/styles/").unwrap()
+            ));
+        }
     }
+    for fragment in manifest["responsive_fragments"].as_array().unwrap() {
+        let target = fragment["target"].as_str().unwrap();
+        expected_sidebar_imports.push(format!(
+            "@import url(\"../{}\");",
+            target.strip_prefix("docs/gui/new-version/styles/").unwrap()
+        ));
+    }
+    assert_eq!(
+        sidebar_entry.lines().collect::<Vec<_>>(),
+        expected_sidebar_imports
+    );
 
     for html in [
         "docs/gui/new-version/scenes/ask-user-question.html",

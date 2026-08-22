@@ -1,0 +1,5 @@
+@media (max-width: 560px) {
+  .dev-flow-overview { grid-template-columns: 1fr; }
+  .dev-flow-overview-card { justify-content: flex-start; text-align: left; }
+}
+
