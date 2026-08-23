@@ -1,0 +1,55 @@
+{
+  "body": {
+    "clientHeight": 1456,
+    "clientWidth": 1280,
+    "scrollHeight": 1456,
+    "scrollWidth": 1280
+  },
+  "documentElement": {
+    "clientHeight": 720,
+    "clientWidth": 1280,
+    "scrollHeight": 1456,
+    "scrollWidth": 1280
+  },
+  "focus": "scene-tab",
+  "name": "active",
+  "regions": [
+    null,
+    null,
+    {
+      "display": "block",
+      "height": 493.953125,
+      "position": "sticky",
+      "selector": ".rail",
+      "visibility": "visible",
+      "width": 260,
+      "x": 51.1953125,
+      "y": 100
+    },
+    {
+      "display": "block",
+      "height": 1236.8046875,
+      "position": "static",
+      "selector": ".workspace",
+      "visibility": "visible",
+      "width": 853.609375,
+      "x": 375.1953125,
+      "y": 100
+    },
+    null,
+    null
+  ],
+  "scroll": {
+    "x": 0,
+    "y": 0
+  },
+  "state": "active",
+  "theme": "light",
+  "url": "http://127.0.0.1:4173/index.html?gallery=visual-direction",
+  "viewport": {
+    "dpr": 2,
+    "height": 720,
+    "width": 1280
+  },
+  "zoom": "1"
+}

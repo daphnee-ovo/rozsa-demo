@@ -1,0 +1,123 @@
+{
+  "alert": null,
+  "body": {
+    "height": 720,
+    "width": 1280
+  },
+  "currentSession": "Dev Flow active work",
+  "focus": "BODY",
+  "overflowX": "hidden",
+  "panels": {
+    "#devFlowDetail": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#forkPicker": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#mainContentScene": {
+      "hidden": false,
+      "rect": {
+        "height": 306.078125,
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      }
+    },
+    "#msgInput": {
+      "hidden": false,
+      "rect": {
+        "height": 56,
+        "width": 898,
+        "x": 319,
+        "y": 210.078125
+      }
+    },
+    "#notificationCenter": {
+      "hidden": false,
+      "rect": {
+        "height": 720,
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#permPanel": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#queuedMessages": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#settingsPanel": {
+      "hidden": false,
+      "rect": {
+        "height": 720,
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#sidebar": {
+      "hidden": false,
+      "rect": {
+        "height": 343.3984375,
+        "width": 256,
+        "x": 0,
+        "y": 42
+      }
+    },
+    "#steeringConversation": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#subagentPanel": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "scene": "dev-flow",
+  "sceneError": null,
+  "shellError": null,
+  "sidebarSessions": null,
+  "theme": "light",
+  "title": "Rózsa — Coding Agent",
+  "viewport": {
+    "dpr": 2,
+    "height": 720,
+    "width": 1280,
+    "zoom": "1"
+  }
+}

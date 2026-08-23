@@ -1,0 +1,123 @@
+{
+  "alert": null,
+  "body": {
+    "height": 720,
+    "width": 1280
+  },
+  "currentSession": "GUI review and verification",
+  "focus": "thinkingEffortSlider",
+  "overflowX": "hidden",
+  "panels": {
+    "#devFlowDetail": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#forkPicker": {
+      "hidden": false,
+      "rect": {
+        "height": 80,
+        "width": 923.203125,
+        "x": 306.3984375,
+        "y": 1439.4140625
+      }
+    },
+    "#mainContentScene": {
+      "hidden": false,
+      "rect": {
+        "height": 1776.9140625,
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      }
+    },
+    "#msgInput": {
+      "hidden": false,
+      "rect": {
+        "height": 56,
+        "width": 898,
+        "x": 319,
+        "y": 1680.9140625
+      }
+    },
+    "#notificationCenter": {
+      "hidden": false,
+      "rect": {
+        "height": 720,
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#permPanel": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#queuedMessages": {
+      "hidden": false,
+      "rect": {
+        "height": 80,
+        "width": 923.203125,
+        "x": 306.3984375,
+        "y": 1529.4140625
+      }
+    },
+    "#settingsPanel": {
+      "hidden": true,
+      "rect": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "#sidebar": {
+      "hidden": false,
+      "rect": {
+        "height": 611.3984375,
+        "width": 256,
+        "x": 0,
+        "y": 42
+      }
+    },
+    "#steeringConversation": {
+      "hidden": false,
+      "rect": {
+        "height": 60.5,
+        "width": 923.203125,
+        "x": 306.3984375,
+        "y": 1619.4140625
+      }
+    },
+    "#subagentPanel": {
+      "hidden": false,
+      "rect": {
+        "height": 117,
+        "width": 236,
+        "x": 10,
+        "y": 240
+      }
+    }
+  },
+  "scene": "complete-session",
+  "sceneError": null,
+  "shellError": null,
+  "sidebarSessions": "GUI review and verification\nnow\nPermission flow\n10m ago\nDev Flow setup\nyesterday",
+  "theme": "light",
+  "title": "Rózsa — Coding Agent",
+  "viewport": {
+    "dpr": 2,
+    "height": 720,
+    "width": 1280,
+    "zoom": "1"
+  }
+}

@@ -8,7 +8,7 @@
 uv run python -m http.server 4173 --bind 127.0.0.1 --directory prototype
 ```
 
-记录浏览器/WebView、viewport、DPR、theme、字体、reduced-motion、滚动位置、focus、展开项、选中项和使用的 mock。验证结束关闭 server。
+记录浏览器/WebView、viewport、DPR、theme、字体、reduced-motion、滚动位置、focus、展开项、选中项和使用的 mock。每个检查 ID 使用 fresh browser context，明确将页面 zoom 固定为 100%，并在截图 metadata 中记录 zoom；不得用被浏览器缩放或裁切的截图替代整体截图。验证结束关闭 server。
 
 ## 分层验证
 
@@ -21,7 +21,7 @@ uv run python -m http.server 4173 --bind 127.0.0.1 --directory prototype
 
 ## 全部入口
 
-逐一打开 `scenarios/registry.js` 中的 11 个 scene 与 `?gallery=visual-direction`。检查没有 alert、`shellError`、未知 fallback、横向溢出或资源 404。对 gallery 的 Empty、Active、Appearance 分别保存整体截图、稳定 DOM、computed style、focus 和 tab 操作结果。
+逐一打开 `scenarios/registry.js` 中的 11 个 scene 与 `?gallery=visual-direction`。检查没有 alert、`shellError`、未知 fallback、横向溢出或资源 404，并核对完整页面中 sidebar、main content、running panels、Composer 和 settings 的位置。对 gallery 的 Empty、Active、Appearance 分别保存整体截图、稳定 DOM、computed style、focus 和 tab 操作结果。
 
 ## 交互重放
 

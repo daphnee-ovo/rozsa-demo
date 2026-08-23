@@ -37,7 +37,7 @@ function resolveMessages(messages, tools, sceneId) {
 export function adaptSceneData(definition, mocks) {
   const session = mocks.sessions;
   const runtime = mocks.devFlow;
-  const sessions = session?.sessions || runtime?.sessions;
+  const sessions = runtime?.sessions || session?.sessions;
   if (!Array.isArray(sessions)) throw new Error(`Prototype session mock is missing scene: ${definition.id}`);
 
   return {
