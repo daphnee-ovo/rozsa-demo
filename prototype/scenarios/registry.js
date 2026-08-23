@@ -10,6 +10,7 @@ const sceneDefinitions = {
   "complete-session": {
     id: "complete-session",
     layout: "application-shell",
+    stylesheet: "styles/scenes/complete-session.css",
     components: ["sidebar", "conversation", "composer", "popover", "tool-call", "queue", "steering"],
     initialState: { settings: "closed", interruption: "closed", thinkingEffort: 3 },
     mocks: { sessions: "sessions/complete", messages: "messages/conversation", tools: "tools/call-states" },
@@ -34,6 +35,7 @@ const sceneDefinitions = {
   "ask-user-question": {
     id: "ask-user-question",
     layout: "application-shell",
+    stylesheet: "styles/scenes/ask-user-question.css",
     components: ["sidebar", "conversation", "composer", "tool-call", "interruption-panel"],
     initialState: { settings: "closed", interruption: "question" },
     mocks: { sessions: "sessions/empty", workspace: "sessions/complete", messages: "messages/conversation", tools: "tools/call-states", question: "questions/request", success: "responses/success", error: "responses/error", cancel: "responses/cancel" },
@@ -66,6 +68,7 @@ const sceneDefinitions = {
   "dev-flow-runtime": {
     id: "dev-flow-runtime",
     layout: "application-shell",
+    stylesheet: "styles/scenes/dev-flow-runtime.css",
     components: ["sidebar", "conversation", "composer", "notification", "dev-flow", "tool-call"],
     initialState: { settings: "closed", interruption: "closed" },
     mocks: { sessions: "sessions/empty", workspace: "sessions/complete", messages: "messages/conversation", tools: "tools/call-states", devFlow: "dev-flow/runtime", notifications: "notifications/states" },

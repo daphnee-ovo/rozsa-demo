@@ -45,3 +45,18 @@ body.settings-visible [data-od-id="app-body"] { visibility: hidden; }
 @media (max-width: 560px) {
   [data-od-id="panel-header"] { padding-inline: 14px; }
 }
+
+/* The root entry adds a shell and stable template mounts around the original
+   grid items. Keep those wrappers layout-neutral and viewport-constrained. */
+[data-application-shell] {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+[data-od-id="app-body"] > [data-template-mount="sidebar"],
+[data-od-id="app-body"] > [data-template-mount="conversation"] { display: contents; }

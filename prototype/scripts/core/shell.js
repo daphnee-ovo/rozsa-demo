@@ -1,5 +1,6 @@
 import { loadTemplate } from "./template-loader.js";
 import { mountTemplate } from "./renderer.js";
+import { getSceneDefinition, resolveSceneId } from "../../scenarios/registry.js";
 
 const templateRoot = new URL("../../", import.meta.url);
 const mounts = [
@@ -14,7 +15,23 @@ const mounts = [
   ["templates/primitives/input.html", "[data-template-mount=\"input\"]"],
 ];
 
+async function loadSceneStylesheet(sceneId) {
+  const stylesheet = getSceneDefinition(sceneId).stylesheet;
+  if (!stylesheet) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = stylesheet;
+  link.dataset.prototypeSceneStylesheet = sceneId;
+  await new Promise((resolve, reject) => {
+    link.addEventListener("load", resolve, { once: true });
+    link.addEventListener("error", () => reject(new Error("Unable to load prototype scene stylesheet: " + stylesheet)), { once: true });
+    document.head.appendChild(link);
+  });
+}
+
 async function bootstrapPrototypeShell() {
+  const sceneId = resolveSceneId(new URLSearchParams(window.location.search).get("scene"));
+  await loadSceneStylesheet(sceneId);
   for (const [relativePath, selector] of mounts) {
     const fragment = await loadTemplate(new URL(relativePath, templateRoot));
     mountTemplate(fragment, selector);

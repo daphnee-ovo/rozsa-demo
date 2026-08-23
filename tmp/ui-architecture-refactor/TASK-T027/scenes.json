@@ -1,0 +1,1818 @@
+[
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "visible",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 488.6015625,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 71.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 574.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=empty-session",
+    "sceneError": null,
+    "sceneId": "empty-session",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 488.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 115.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 530.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "visible",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 300.203125,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 69.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 354.203125
+        },
+        {
+          "className": "status-panel",
+          "height": 178.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 467.6015625
+        }
+      ],
+      "subagents": {
+        "display": "flex",
+        "height": 69.3984375,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 354.203125
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=complete-session",
+    "sceneError": null,
+    "sceneId": "complete-session",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 300.203125,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "flex",
+        "height": 69.3984375,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 236,
+        "x": 10,
+        "y": 354.203125
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 222.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 423.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      },
+      {
+        "href": "http://127.0.0.1:4174/styles/scenes/complete-session.css",
+        "scene": "complete-session"
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "visible",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 488.6015625,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 71.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 574.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=tool-calls",
+    "sceneError": null,
+    "sceneId": "tool-calls",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 488.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 115.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 530.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 59,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 900,
+        "x": 318,
+        "y": 637
+      },
+      "input": {
+        "display": "none",
+        "height": 0,
+        "overflow": "auto",
+        "visibility": "visible",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 488.6015625,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 71.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 574.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=permission-request",
+    "sceneError": null,
+    "sceneId": "permission-request",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 488.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 115.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 530.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "visible",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 264.6015625,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 117,
+          "width": 236,
+          "x": 10,
+          "y": 306.6015625
+        },
+        {
+          "className": "status-panel",
+          "height": 178.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 467.6015625
+        }
+      ],
+      "subagents": {
+        "display": "flex",
+        "height": 117,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 306.6015625
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=ask-user-question",
+    "sceneError": null,
+    "sceneId": "ask-user-question",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 264.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "flex",
+        "height": 117,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 236,
+        "x": 10,
+        "y": 306.6015625
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 222.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 423.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      },
+      {
+        "href": "http://127.0.0.1:4174/styles/scenes/ask-user-question.css",
+        "scene": "ask-user-question"
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "hidden",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 488.6015625,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 71.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 574.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=settings-appearance",
+    "sceneError": null,
+    "sceneId": "settings-appearance",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 488.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 115.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 530.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "hidden",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 488.6015625,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 71.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 574.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=permissions",
+    "sceneError": null,
+    "sceneId": "permissions",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 488.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 115.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 530.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 59,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 900,
+        "x": 318,
+        "y": 637
+      },
+      "input": {
+        "display": "none",
+        "height": 0,
+        "overflow": "auto",
+        "visibility": "visible",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 381.6015625,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 178.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 467.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=notifications",
+    "sceneError": null,
+    "sceneId": "notifications",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 381.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 222.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 423.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "visible",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 381.6015625,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 178.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 467.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "visible",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=dev-flow-runtime",
+    "sceneError": null,
+    "sceneId": "dev-flow-runtime",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 381.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 222.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 423.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      },
+      {
+        "href": "http://127.0.0.1:4174/styles/scenes/dev-flow-runtime.css",
+        "scene": "dev-flow-runtime"
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "hidden",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 488.6015625,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 71.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 574.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=dev-flow-active",
+    "sceneError": null,
+    "sceneId": "dev-flow-active",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 488.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 115.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 530.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "alert": null,
+    "body": {
+      "overflowX": "hidden",
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "geometry": {
+      "appBody": {
+        "display": "grid",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "composer": {
+        "display": "block",
+        "height": 115,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 900,
+        "x": 318,
+        "y": 581
+      },
+      "input": {
+        "display": "block",
+        "height": 56,
+        "overflow": "auto",
+        "visibility": "hidden",
+        "width": 898,
+        "x": 319,
+        "y": 582
+      },
+      "main": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 1024,
+        "x": 256,
+        "y": 42
+      },
+      "sessions": {
+        "display": "flex",
+        "height": 488.6015625,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "settingsButton": {
+        "display": "flex",
+        "height": 44,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 236,
+        "x": 10,
+        "y": 658
+      },
+      "shell": {
+        "display": "flex",
+        "height": 720,
+        "overflow": "hidden",
+        "visibility": "visible",
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "sidebar": {
+        "display": "flex",
+        "height": 678,
+        "overflow": "hidden",
+        "visibility": "hidden",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      "statusPanels": [
+        {
+          "className": "status-panel subagent-sidebar-panel",
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "className": "status-panel",
+          "height": 71.3984375,
+          "width": 236,
+          "x": 10,
+          "y": 574.6015625
+        }
+      ],
+      "subagents": {
+        "display": "none",
+        "height": 0,
+        "overflow": "visible",
+        "visibility": "hidden",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "href": "http://127.0.0.1:4174/index.html?scene=dev-flow",
+    "sceneError": null,
+    "sceneId": "dev-flow",
+    "shellError": null,
+    "sidebarChildBoxes": [
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 488.6015625,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 42
+      },
+      {
+        "className": "status-panel subagent-sidebar-panel",
+        "display": "none",
+        "height": 0,
+        "id": "subagentPanel",
+        "tag": "DIV",
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "className": "sidebar-section",
+        "display": "flex",
+        "height": 115.3984375,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 530.6015625
+      },
+      {
+        "className": "sidebar-bottom",
+        "display": "flex",
+        "height": 74,
+        "id": "",
+        "tag": "DIV",
+        "width": 256,
+        "x": 0,
+        "y": 646
+      }
+    ],
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4174/styles/main.css",
+        "scene": null
+      }
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  }
+]

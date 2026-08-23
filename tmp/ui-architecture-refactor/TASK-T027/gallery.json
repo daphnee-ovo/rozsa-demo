@@ -1,0 +1,47 @@
+[
+  {
+    "activeClass": "scene-tab",
+    "alert": null,
+    "href": "http://127.0.0.1:4174/index.html?gallery=visual-direction",
+    "shellError": null,
+    "state": "Empty",
+    "stylesheet": [
+      "http://127.0.0.1:4174/gallery/visual-direction.css"
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "activeClass": "scene-tab",
+    "alert": null,
+    "href": "http://127.0.0.1:4174/index.html?gallery=visual-direction",
+    "shellError": null,
+    "state": "Active",
+    "stylesheet": [
+      "http://127.0.0.1:4174/gallery/visual-direction.css"
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "activeClass": "scene-tab",
+    "alert": null,
+    "href": "http://127.0.0.1:4174/index.html?gallery=visual-direction",
+    "shellError": null,
+    "state": "Appearance",
+    "stylesheet": [
+      "http://127.0.0.1:4174/gallery/visual-direction.css"
+    ],
+    "viewport": {
+      "dpr": 2,
+      "height": 720,
+      "width": 1280
+    }
+  }
+]
