@@ -11,28 +11,27 @@
     "gallery"
   ],
   "prototype_inventory": {
-    "application_root": "docs/gui/new-version/index.html",
-    "compatibility_entry": "docs/gui/new-version/rozsa-gui.html",
+    "application_root": "prototype/index.html",
     "scenes": ["ask-user-question", "complete-session", "dev-flow-active", "dev-flow-runtime", "dev-flow", "empty-session", "notifications", "permission-request", "permissions", "settings-appearance", "tool-calls"],
-    "gallery": "docs/gui/new-version/gallery/visual-direction.html",
-    "gallery_script": "docs/gui/new-version/gallery/visual-direction.js",
-    "script": "docs/gui/new-version/scripts/core/shell.js",
-    "behavior_script": "docs/gui/new-version/rozsa-gui.js",
-    "templates": "docs/gui/new-version/templates",
-    "scenarios": "docs/gui/new-version/scenarios/registry.js",
-    "scene_loader": "docs/gui/new-version/scripts/core/scene-loader.js",
-    "mock_adapter": "docs/gui/new-version/scripts/adapters/mock-adapter.js",
-    "mock": "docs/gui/new-version/mock",
+    "gallery": "prototype/gallery/visual-direction.html",
+    "gallery_script": "prototype/gallery/visual-direction.js",
+    "script": "prototype/scripts/core/shell.js",
+    "behavior_script": "prototype/rozsa-gui.js",
+    "templates": "prototype/templates",
+    "scenarios": "prototype/scenarios/registry.js",
+    "scene_loader": "prototype/scripts/core/scene-loader.js",
+    "mock_adapter": "prototype/scripts/adapters/mock-adapter.js",
+    "mock": "prototype/mock",
     "flow_inventory": [
       {
         "id": "composer-interruption",
-        "path": "docs/gui/new-version/scripts/flows/composer-interruption.js",
+        "path": "prototype/scripts/flows/composer-interruption.js",
         "responsibility": "协调 permission/question interruption 关闭后的 composer focus restore，不读取场景数据",
         "used_by": ["scripts/components/composer.js", "scripts/components/interruption-panel.js", "scene:permission-request", "scene:ask-user-question"]
       },
       {
         "id": "scenario-flow",
-        "path": "docs/gui/new-version/scripts/flows/scenario-flow.js",
+        "path": "prototype/scripts/flows/scenario-flow.js",
         "responsibility": "协调 application shell 的 scene-ready 与 scenario-ready 装配时序，不复制 scene payload",
         "used_by": ["application-shell", "composer-interruption", "all-application-scenes"]
       }
@@ -64,12 +63,12 @@
     "sidebar_auto_collapse_max_width": 780,
     "sidebar_auto_expand_min_width": 820,
     "minimum_window": {"width": 640, "height": 480},
-    "measurement_record": "docs/gui/new-version/styles/source-order.json#responsive_layout",
+    "measurement_record": "prototype/styles/source-order.json#responsive_layout",
     "verification": "tmp/ui-architecture-refactor/TASK-T024/verification.md"
   },
   "items": [
-    {"id":"UI-SHELL-001","area":"application-shell-sidebar","runtime_entry":["crates/rozsa-gui/frontend/index.html"],"runtime_trigger":"启动主窗口，分别使用明暗主题、窄屏和 reduced motion。","prototype_entry":["docs/gui/new-version/index.html","docs/gui/new-version/rozsa-gui.html","scene:empty-session","scene:complete-session"],"status":"covered","css":["prototype:styles/{foundations/tokens,foundations/reset,foundations/base,layouts/app-shell}.css","runtime:styles/{tokens,reset,base,layout/app-shell}.css"],"markup":["prototype:templates/features/{sidebar,conversation,settings,dev-flow}.html（T006）","runtime:index.html#mainContentScene"],"behavior":["prototype:scripts/core/{shell,template-loader,renderer}.js（T006）","runtime:gui_shared.js applySceneSnapshot/app.js applyGuiSceneSnapshot"],"used_by":["prototype-root","empty-session","complete-session","runtime-main"],"verification":["BASE-P-SHELL-001","BASE-R-SHELL-001","T024-RESPONSIVE-001"],"runtime_events":["gui-scene-snapshot","theme-state","native-sidebar-toggle","native-sidebar-state","native-fullscreen"]},
-    {"id":"UI-SHELL-002","area":"application-shell-sidebar","runtime_entry":["crates/rozsa-gui/frontend/gui_shared.js","crates/rozsa-gui/frontend/app.js"],"runtime_trigger":"在 main/settings 间切换并跨 revision 恢复 scene。","prototype_entry":["docs/gui/new-version/rozsa-gui.html"],"status":"non-visual","css":["runtime:styles/layout/app-shell.css"],"markup":["runtime:index.html#mainContentScene,#settingsPanel"],"behavior":["runtime:gui_shared.js applySceneSnapshot/app.js captureMainSceneContinuity"],"used_by":["runtime-main","runtime-settings"],"verification":["BASE-R-SCENE-002"],"runtime_events":["gui-scene-snapshot"]},
+    {"id":"UI-SHELL-001","area":"application-shell-sidebar","runtime_entry":["crates/rozsa-gui/frontend/index.html"],"runtime_trigger":"启动主窗口，分别使用明暗主题、窄屏和 reduced motion。","prototype_entry":["prototype/index.html","scene:empty-session","scene:complete-session"],"status":"covered","css":["prototype:styles/{foundations/tokens,foundations/reset,foundations/base,layouts/app-shell}.css","runtime:styles/{tokens,reset,base,layout/app-shell}.css"],"markup":["prototype:templates/features/{sidebar,conversation,settings,dev-flow}.html（T006）","runtime:index.html#mainContentScene"],"behavior":["prototype:scripts/core/{shell,template-loader,renderer}.js（T006）","runtime:gui_shared.js applySceneSnapshot/app.js applyGuiSceneSnapshot"],"used_by":["prototype-root","empty-session","complete-session","runtime-main"],"verification":["BASE-P-SHELL-001","BASE-R-SHELL-001","T024-RESPONSIVE-001"],"runtime_events":["gui-scene-snapshot","theme-state","native-sidebar-toggle","native-sidebar-state","native-fullscreen"]},
+    {"id":"UI-SHELL-002","area":"application-shell-sidebar","runtime_entry":["crates/rozsa-gui/frontend/gui_shared.js","crates/rozsa-gui/frontend/app.js"],"runtime_trigger":"在 main/settings 间切换并跨 revision 恢复 scene。","prototype_entry":["prototype/index.html"],"status":"non-visual","css":["runtime:styles/layout/app-shell.css"],"markup":["runtime:index.html#mainContentScene,#settingsPanel"],"behavior":["runtime:gui_shared.js applySceneSnapshot/app.js captureMainSceneContinuity"],"used_by":["runtime-main","runtime-settings"],"verification":["BASE-R-SCENE-002"],"runtime_events":["gui-scene-snapshot"]},
     {"id":"UI-SIDEBAR-001","area":"application-shell-sidebar","runtime_entry":["crates/rozsa-gui/frontend/sidebar.html","crates/rozsa-gui/frontend/sidebar.js","crates/rozsa-gui/frontend/app.js"],"runtime_trigger":"启动、有/无 session、新建并切换 session。","prototype_entry":["scene:empty-session","scene:complete-session"],"status":"covered","css":["prototype:styles/features/sidebar.css","runtime:styles/features/sidebar.css"],"markup":["prototype:templates/features/sidebar.html（T006）","runtime:sidebar.html/session renderer"],"behavior":["prototype:scripts/features/sidebar.js（T007）","runtime:sidebar.js renderSidebarSessions/app.js renderSessionList"],"used_by":["all-application-scenes","runtime-main","runtime-sidebar"],"verification":["BASE-P-SIDEBAR-001","BASE-R-SIDEBAR-001","T024-RESPONSIVE-001"],"runtime_events":["sidebar-state","ui-state"]},
     {"id":"UI-SIDEBAR-002","area":"application-shell-sidebar","runtime_entry":["crates/rozsa-gui/frontend/sidebar.js"],"runtime_trigger":"提供 Git、tool chip 与 rate-limit snapshot。","prototype_entry":["scene:complete-session"],"status":"covered","css":["prototype:styles/features/sidebar.css","runtime:styles/features/sidebar.css"],"markup":["prototype:sidebar status template（T006）","runtime:sidebar.html status rows"],"behavior":["prototype:scripts/features/sidebar.js（T007）","runtime:sidebar.js renderSidebarState/renderSidebarQuota"],"used_by":["complete-session","runtime-sidebar"],"verification":["BASE-P-SIDEBAR-002","BASE-R-SIDEBAR-002"],"runtime_events":["sidebar-state"]},
     {"id":"UI-SIDEBAR-003","area":"application-shell-sidebar","runtime_entry":["crates/rozsa-gui/frontend/app.js","crates/rozsa-gui/frontend/sidebar.js"],"runtime_trigger":"hover/focus 小时或周限额条并提供 near-limit、error、hidden 数据。","prototype_entry":["scene:complete-session#quotaTooltip"],"status":"partial","css":["prototype:styles/features/sidebar.css","runtime:styles/features/sidebar.css"],"markup":["prototype:quota tooltip template（T006）","runtime:quota tooltip renderer"],"behavior":["prototype:scripts/features/sidebar.js（T007） quota interaction","runtime:app.js showQuotaTooltip/sidebar.js renderSidebarQuotaWindow"],"used_by":["complete-session","runtime-main","runtime-sidebar"],"verification":["BASE-P-SIDEBAR-003","BASE-R-SIDEBAR-003"]},
@@ -110,9 +109,9 @@
     {"id":"UI-DEVFLOW-004","area":"dev-flow","runtime_entry":["crates/rozsa-gui/frontend/app.js"],"runtime_trigger":"执行 dow Bash 命令并观察 Dev Flow tool presentation。","prototype_entry":["scene:dev-flow-runtime"],"status":"covered","css":["prototype:styles/features/dev-flow-detail.css","runtime:styles/features/tools.css"],"markup":["prototype:Dev Flow tool template（T006）","runtime:Dev Flow tool renderer"],"behavior":["prototype:scripts/features/dev-flow.js（T007）","runtime:app.js updateDevFlowToolCard"],"used_by":["dev-flow-runtime","runtime-main"],"verification":["BASE-P-DEVFLOW-004","BASE-R-DEVFLOW-004"],"runtime_events":["tool-event"]},
     {"id":"UI-DEVFLOW-005","area":"dev-flow","runtime_entry":["crates/rozsa-gui/frontend/index.html","crates/rozsa-gui/frontend/sidebar.html","crates/rozsa-gui/frontend/app.js","crates/rozsa-gui/frontend/sidebar.js"],"runtime_trigger":"切换 native sidebar/fullscreen，并在非 macOS fallback 下重放 scene。","prototype_entry":["不适用：native host 行为"],"status":"non-visual","css":["runtime:styles/layout/{app-shell,sidebar-shell}.css"],"markup":["runtime:index.html/sidebar.html"],"behavior":["runtime:app.js native scene/sidebar functions/sidebar.js renderSidebarScene"],"used_by":["runtime-main","runtime-sidebar"],"verification":["BASE-R-DEVFLOW-005"],"runtime_events":["gui-scene-snapshot","native-sidebar-toggle","native-sidebar-state","native-fullscreen"]},
 
-    {"id":"UI-GALLERY-001","area":"gallery","runtime_entry":["不适用：gallery 不是 runtime 页面"],"runtime_trigger":"不适用。","prototype_entry":["docs/gui/new-version/gallery/visual-direction.html#topbar"],"status":"covered","css":["docs/gui/new-version/styles/features/visual-demo.css"],"markup":["docs/gui/new-version/gallery/visual-direction.html#topbar"],"behavior":["docs/gui/new-version/gallery/visual-direction.js#scene-tabs"],"used_by":["gallery:visual-direction"],"verification":["BASE-P-GALLERY-001"]},
-    {"id":"UI-GALLERY-002","area":"gallery","runtime_entry":["不适用：gallery 不是 runtime 页面"],"runtime_trigger":"不适用。","prototype_entry":["docs/gui/new-version/gallery/visual-direction.html#emptyView"],"status":"covered","css":["docs/gui/new-version/styles/features/visual-demo.css"],"markup":["docs/gui/new-version/gallery/visual-direction.html#emptyView"],"behavior":["docs/gui/new-version/gallery/visual-direction.js#scene-tabs"],"used_by":["gallery:visual-direction"],"verification":["BASE-P-GALLERY-002"]},
-    {"id":"UI-GALLERY-003","area":"gallery","runtime_entry":["不适用：gallery 不是 runtime 页面"],"runtime_trigger":"不适用。","prototype_entry":["docs/gui/new-version/gallery/visual-direction.html#activeView"],"status":"covered","css":["docs/gui/new-version/styles/features/visual-demo.css"],"markup":["docs/gui/new-version/gallery/visual-direction.html#activeView"],"behavior":["docs/gui/new-version/gallery/visual-direction.js#scene-tabs"],"used_by":["gallery:visual-direction"],"verification":["BASE-P-GALLERY-003"]},
-    {"id":"UI-GALLERY-004","area":"gallery","runtime_entry":["不适用：gallery 不是 runtime 页面"],"runtime_trigger":"不适用。","prototype_entry":["docs/gui/new-version/gallery/visual-direction.html#appearanceView"],"status":"covered","css":["docs/gui/new-version/styles/features/visual-demo.css"],"markup":["docs/gui/new-version/gallery/visual-direction.html#appearanceView"],"behavior":["docs/gui/new-version/gallery/visual-direction.js#scene-tabs"],"used_by":["gallery:visual-direction"],"verification":["BASE-P-GALLERY-004"]}
+    {"id":"UI-GALLERY-001","area":"gallery","runtime_entry":["不适用：gallery 不是 runtime 页面"],"runtime_trigger":"不适用。","prototype_entry":["prototype/gallery/visual-direction.html#topbar"],"status":"covered","css":["prototype/styles/features/visual-demo.css"],"markup":["prototype/gallery/visual-direction.html#topbar"],"behavior":["prototype/gallery/visual-direction.js#scene-tabs"],"used_by":["gallery:visual-direction"],"verification":["BASE-P-GALLERY-001"]},
+    {"id":"UI-GALLERY-002","area":"gallery","runtime_entry":["不适用：gallery 不是 runtime 页面"],"runtime_trigger":"不适用。","prototype_entry":["prototype/gallery/visual-direction.html#emptyView"],"status":"covered","css":["prototype/styles/features/visual-demo.css"],"markup":["prototype/gallery/visual-direction.html#emptyView"],"behavior":["prototype/gallery/visual-direction.js#scene-tabs"],"used_by":["gallery:visual-direction"],"verification":["BASE-P-GALLERY-002"]},
+    {"id":"UI-GALLERY-003","area":"gallery","runtime_entry":["不适用：gallery 不是 runtime 页面"],"runtime_trigger":"不适用。","prototype_entry":["prototype/gallery/visual-direction.html#activeView"],"status":"covered","css":["prototype/styles/features/visual-demo.css"],"markup":["prototype/gallery/visual-direction.html#activeView"],"behavior":["prototype/gallery/visual-direction.js#scene-tabs"],"used_by":["gallery:visual-direction"],"verification":["BASE-P-GALLERY-003"]},
+    {"id":"UI-GALLERY-004","area":"gallery","runtime_entry":["不适用：gallery 不是 runtime 页面"],"runtime_trigger":"不适用。","prototype_entry":["prototype/gallery/visual-direction.html#appearanceView"],"status":"covered","css":["prototype/styles/features/visual-demo.css"],"markup":["prototype/gallery/visual-direction.html#appearanceView"],"behavior":["prototype/gallery/visual-direction.js#scene-tabs"],"used_by":["gallery:visual-direction"],"verification":["BASE-P-GALLERY-004"]}
   ]
 }

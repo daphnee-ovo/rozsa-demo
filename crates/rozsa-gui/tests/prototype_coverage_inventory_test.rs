@@ -20,9 +20,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-const MANIFEST: &str = include_str!("../../../docs/gui/UI_COVERAGE.json");
-const COVERAGE: &str = include_str!("../../../docs/gui/UI_COVERAGE.md");
-const GAPS: &str = include_str!("../../../docs/gui/DESIGN_GAPS.md");
+const MANIFEST: &str = include_str!("../../../prototype/docs/UI_COVERAGE.json");
+const COVERAGE: &str = include_str!("../../../prototype/docs/UI_COVERAGE.md");
+const GAPS: &str = include_str!("../../../prototype/docs/DESIGN_GAPS.md");
 
 #[test]
 fn coverage_schema_matches_specification() {
@@ -88,15 +88,14 @@ fn coverage_schema_matches_specification() {
 
 #[test]
 fn application_shell_templates_preserve_mount_contract() {
-    let sidebar = fs::read_to_string(
-        repository_root().join("docs/gui/new-version/templates/features/sidebar.html"),
-    )
-    .expect("prototype sidebar template must be readable");
+    let sidebar =
+        fs::read_to_string(repository_root().join("prototype/templates/features/sidebar.html"))
+            .expect("prototype sidebar template must be readable");
     assert!(
         sidebar.contains("<aside id=\"sidebar\" data-od-id=\"sidebar\""),
         "shared sidebar template must preserve the legacy mount id"
     );
-    let legacy = fs::read_to_string(repository_root().join("docs/gui/new-version/rozsa-gui.js"))
+    let legacy = fs::read_to_string(repository_root().join("prototype/rozsa-gui.js"))
         .expect("prototype legacy bootstrap must be readable");
     assert!(
         legacy.contains(
@@ -105,7 +104,7 @@ fn application_shell_templates_preserve_mount_contract() {
         "legacy bootstrap must read the application-shell entry marker from body"
     );
     let interruption = fs::read_to_string(
-        repository_root().join("docs/gui/new-version/scripts/components/interruption-panel.js"),
+        repository_root().join("prototype/scripts/components/interruption-panel.js"),
     )
     .expect("prototype interruption component must be readable");
     assert!(
@@ -118,7 +117,7 @@ fn application_shell_templates_preserve_mount_contract() {
 fn prototype_inventory_is_bidirectional() {
     let manifest = manifest();
     let prototype = &manifest["prototype_inventory"];
-    let scene_dir = repository_root().join("docs/gui/new-version/scenes");
+    let scene_dir = repository_root().join("prototype/scenes");
     let actual_scenes: BTreeSet<_> = files_with_extension(&scene_dir, "html")
         .into_iter()
         .map(|name| name.trim_end_matches(".html").to_owned())
@@ -267,7 +266,10 @@ fn path_references_resolve_to_current_sources() {
         for field in ["runtime_entry", "prototype_entry"] {
             for reference in item_strings(item, field) {
                 let path = reference.split('#').next().unwrap();
-                if path.starts_with("crates/") || path.starts_with("docs/") {
+                if path.starts_with("crates/")
+                    || path.starts_with("docs/")
+                    || path.starts_with("prototype/")
+                {
                     assert!(
                         repository_root().join(path).is_file(),
                         "{id}.{field} 引用不存在：{path}"

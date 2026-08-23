@@ -88,7 +88,7 @@ If rebase conflicts occur:
 
 ## GUI
 
-- Treat `docs/gui/UI_USAGE_GUIDELINES.md`, `docs/gui/ARCHITECTURE.md`, `docs/gui/TERMINOLOGY.md`, and `docs/gui/prototype/` as the GUI design sources.
+- Treat `docs/gui/UI_USAGE_GUIDELINES.md`, `docs/gui/ARCHITECTURE.md`, `docs/gui/TERMINOLOGY.md`, and root `prototype/` as the GUI design sources.
 - New GUI elements must preserve the established visual and interaction language.
 - If the prototype conflicts with an explicit user requirement, the user requirement wins. Obtain approval before modifying the prototype to restore product/prototype consistency.
 - Shared prototype CSS and JavaScript may be extracted when doing so improves scene reuse without changing behavior.

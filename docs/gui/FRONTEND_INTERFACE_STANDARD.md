@@ -4,7 +4,7 @@
 
 原型与真实 GUI 使用同一套概念，但各自维护实现，不能互相 import：
 
-- 原型用于设计、演示和重放界面状态，最终真源位于项目根目录 `prototype/`；在真源切换完成前，候选内容仍位于 `docs/gui/new-version/`。
+- 原型用于设计、演示和重放界面状态，最终唯一真源位于项目根目录 `prototype/`。
 - 真实 GUI 位于 `crates/rozsa-gui/frontend/`，由 Tauri main/sidebar 两个 WebView 加载，并继续使用现有产品状态、handler、event 和 IPC。
 - 双方分别与自己的重构前 baseline 比较。原型不是 runtime 的视觉覆盖层，runtime 也不能反向改变原型设计。
 
@@ -321,11 +321,11 @@ Gallery view 只保存展示特有布局/说明；公共 token、control 和 beh
 
 根目录 `prototype/` 只有在候选原型完整通过 baseline 对照后才能成为真源。切换必须在同一个执行阶段完成：
 
-1. 停止修改 `docs/gui/new-version/`；
-2. 搬入已验证的 scene、gallery、template、style、script、mock 和文档；
+1. 以根目录 `prototype/` 中已验证的 scene、gallery、template、style、script、mock 和文档为唯一输入；
+2. 保持 scene、gallery、template、style、script、mock 和文档的内部路径同步；
 3. 同步内部路径及源码、测试、规则和维护文档中的有效引用；
 4. 从新路径重开全部 scene/gallery 并运行专项测试；
-5. 验证通过后删除 `docs/gui/prototype/`、`docs/gui/new-version/` 和旧清单。
+5. 验证通过后不得恢复旧原型目录、旧入口或兼容存根。
 
 最终不保留 redirect、兼容入口、说明存根或第二份可编辑原型。设计概念由 `DESIGN.md` 解释；最终 GUI 设计真源是 `DESIGN.md` 与根目录 `prototype/`，视觉等价仍以双方各自的重构前 baseline 判断。
 
@@ -345,8 +345,8 @@ Gallery view 只保存展示特有布局/说明；公共 token、control 和 beh
 ## Related Docs
 
 - [`SPEC：GUI 原型与真实前端组件化重构`](../../.dev-doc/refactor/ui-architecture/SPEC.md)
-- [`GUI 界面对照表`](./UI_COVERAGE.md)
-- [`GUI 设计缺口表`](./DESIGN_GAPS.md)
+- [`GUI 界面对照表`](../../prototype/docs/UI_COVERAGE.md)
+- [`GUI 设计缺口表`](../../prototype/docs/DESIGN_GAPS.md)
 - [`GUI 架构`](./ARCHITECTURE.md)
 - [`前端术语`](./FRONTEND_TERMINOLOGY.md)
 - [`界面使用指南`](./UI_USAGE_GUIDELINES.md)

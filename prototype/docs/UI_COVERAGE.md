@@ -6,7 +6,7 @@
 
 每个 `items` 项目都有不会随文件移动改变的稳定 ID，并记录 runtime 入口与触发方式、prototype 入口、覆盖状态、重构后的 CSS/markup/behavior 责任位置、全部使用方和重构前后验证 ID。`prototype_inventory` 覆盖 `index.html` 主入口、兼容入口、11 个 application scene、gallery HTML/脚本与 shell/renderer/legacy behavior 脚本；`runtime_inventory` 覆盖 main/sidebar HTML、三个运行脚本和所有已注册可见事件。
 
-prototype 的统一入口是 `docs/gui/new-version/index.html`：`?scene=<id>` 装配 application scene，`?gallery=visual-direction` 装配 `gallery/visual-direction.html`。独立的 `rozsa-visual-demo.html` 只作为 T015 的重构前对照材料，不能替代 gallery 入口。
+prototype 的统一入口是 `prototype/index.html`：`?scene=<id>` 装配 application scene，`?gallery=visual-direction` 装配 `gallery/visual-direction.html`。T015 的独立 visual demo 基线材料只用于重构前后成对比较，不能替代 gallery 入口。
 
 后续移动文件时更新责任路径，不更换项目 ID。公共实现的每个 `used_by` 都必须进入同一项目的验证范围。`verification` 在 TASK-T002 建立重构前材料后成为前后成对检查的稳定键。
 
@@ -23,7 +23,7 @@ prototype 的统一入口是 `docs/gui/new-version/index.html`：`?scene=<id>` �
 
 ## 响应式布局验证（TASK-T024）
 
-sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 560px 主内容舒适宽度得到 780px 收起边界；恢复展开使用 820px 滞回边界。产品与 prototype 的最低窗口约束统一为 640×480，正常 PC、820px 分屏和最低尺寸的几何、Composer 与 sidebar 状态记录在 [`TASK-T024 verification`](../../tmp/ui-architecture-refactor/TASK-T024/verification.md) 与 [`source-order.json`](./new-version/styles/source-order.json) 中。响应式规则归属实际 owner CSS，不再以断点生成独立 CSS 文件。
+sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 560px 主内容舒适宽度得到 780px 收起边界；恢复展开使用 820px 滞回边界。产品与 prototype 的最低窗口约束统一为 640×480，正常 PC、820px 分屏和最低尺寸的几何、Composer 与 sidebar 状态记录在 [`TASK-T024 verification`](../../tmp/ui-architecture-refactor/TASK-T024/verification.md) 与 [`source-order.json`](../styles/source-order.json) 中。响应式规则归属实际 owner CSS，不再以断点生成独立 CSS 文件。
 
 ## 区域汇总
 
@@ -65,8 +65,8 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 ### Gallery 视觉参考
 
 - 项目：`UI-GALLERY-001`、`UI-GALLERY-002`、`UI-GALLERY-003`、`UI-GALLERY-004`。
-- 入口：`docs/gui/new-version/index.html?gallery=visual-direction`；对照实现：`gallery/visual-direction.html`、`gallery/visual-direction.js`，共享 `styles/features/visual-demo.css`。
-- 结论：Independent demo topbar 与 Empty、Active、Appearance 三个视图均作为 gallery 专属内容登记；它们不是 runtime application scene。独立 `rozsa-visual-demo.html` 只用于与 baseline 成对比较。
+- 入口：`prototype/index.html?gallery=visual-direction`；对照实现：`gallery/visual-direction.html`、`gallery/visual-direction.js`，共享 `styles/features/visual-demo.css`。
+- 结论：Independent demo topbar 与 Empty、Active、Appearance 三个视图均作为 gallery 专属内容登记；它们不是 runtime application scene。独立 visual demo 基线材料只用于与 baseline 成对比较。
 
 ## 维护约束
 

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-const SOURCE_ORDER: &str = include_str!("../../../docs/gui/new-version/styles/source-order.json");
+const SOURCE_ORDER: &str = include_str!("../../../prototype/styles/source-order.json");
 
 #[test]
 fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
@@ -50,7 +50,7 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
         reconstructed.extend_from_slice(static_content);
         expected_imports.push(format!(
             "@import url(\"../{}\");",
-            target.strip_prefix("docs/gui/new-version/styles/").unwrap()
+            target.strip_prefix("prototype/styles/").unwrap()
         ));
     }
 
@@ -127,13 +127,10 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
     expected_imports.push("@import url(\"../foundations/motion.css\");".to_owned());
 
     let main_entry =
-        fs::read_to_string(repository_root().join("docs/gui/new-version/styles/entries/main.css"))
-            .unwrap();
+        fs::read_to_string(repository_root().join("prototype/styles/entries/main.css")).unwrap();
     assert_eq!(main_entry.lines().collect::<Vec<_>>(), expected_imports);
     assert!(
-        !repository_root()
-            .join("docs/gui/new-version/rozsa-gui.css")
-            .exists(),
+        !repository_root().join("prototype/rozsa-gui.css").exists(),
         "不得保留单体 CSS 或兼容入口"
     );
     for removed in [
@@ -168,7 +165,7 @@ fn component_files_reconstruct_the_original_stylesheet_byte_for_byte() {
     ] {
         assert!(
             !repository_root()
-                .join("docs/gui/new-version/styles")
+                .join("prototype/styles")
                 .join(removed)
                 .exists(),
             "旧的扁平样式文件仍被保留：{removed}"
@@ -247,15 +244,14 @@ fn extracted_inline_styles_reconstruct_the_original_html_byte_for_byte() {
 #[test]
 fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
     let root = repository_root();
-    let main = fs::read_to_string(root.join("docs/gui/new-version/styles/main.css")).unwrap();
-    let sidebar = fs::read_to_string(root.join("docs/gui/new-version/styles/sidebar.css")).unwrap();
+    let main = fs::read_to_string(root.join("prototype/styles/main.css")).unwrap();
+    let sidebar = fs::read_to_string(root.join("prototype/styles/sidebar.css")).unwrap();
     assert_eq!(main.trim(), "@import url(\"./entries/main.css\");");
     assert_eq!(sidebar.trim(), "@import url(\"./entries/sidebar.css\");");
 
-    let main_entry =
-        fs::read_to_string(root.join("docs/gui/new-version/styles/entries/main.css")).unwrap();
+    let main_entry = fs::read_to_string(root.join("prototype/styles/entries/main.css")).unwrap();
     let sidebar_entry =
-        fs::read_to_string(root.join("docs/gui/new-version/styles/entries/sidebar.css")).unwrap();
+        fs::read_to_string(root.join("prototype/styles/entries/sidebar.css")).unwrap();
     assert!(!main_entry.contains("../entries/main.css"));
     assert!(!main_entry.contains("../entries/sidebar.css"));
     assert!(!sidebar_entry.contains("../entries/main.css"));
@@ -271,7 +267,7 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
             let target = block["target"].as_str().unwrap();
             expected_sidebar_imports.push(format!(
                 "@import url(\"../{}\");",
-                target.strip_prefix("docs/gui/new-version/styles/").unwrap()
+                target.strip_prefix("prototype/styles/").unwrap()
             ));
         }
     }
@@ -282,29 +278,27 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
     );
 
     for html in [
-        "docs/gui/new-version/scenes/ask-user-question.html",
-        "docs/gui/new-version/scenes/complete-session.html",
-        "docs/gui/new-version/scenes/dev-flow-runtime.html",
-        "docs/gui/new-version/rozsa-visual-demo.html",
-        "docs/gui/new-version/gallery/visual-direction.html",
+        "prototype/scenes/ask-user-question.html",
+        "prototype/scenes/complete-session.html",
+        "prototype/scenes/dev-flow-runtime.html",
+        "prototype/gallery/visual-direction.html",
     ] {
         let source = fs::read_to_string(root.join(html)).unwrap();
         assert!(!source.contains("<style>"), "{html} 仍包含 style 标签");
     }
 
     let gallery_css =
-        fs::read_to_string(root.join("docs/gui/new-version/gallery/visual-direction.css")).unwrap();
+        fs::read_to_string(root.join("prototype/gallery/visual-direction.css")).unwrap();
     assert_eq!(
         gallery_css.trim(),
         "@import url(\"../styles/features/visual-demo.css\");"
     );
     let gallery_html =
-        fs::read_to_string(root.join("docs/gui/new-version/gallery/visual-direction.html"))
-            .unwrap();
+        fs::read_to_string(root.join("prototype/gallery/visual-direction.html")).unwrap();
     assert!(gallery_html.contains("href=\"visual-direction.css\""));
     assert!(gallery_html.contains("src=\"visual-direction.js\""));
 
-    for scene in fs::read_dir(root.join("docs/gui/new-version/scenes")).unwrap() {
+    for scene in fs::read_dir(root.join("prototype/scenes")).unwrap() {
         let path = scene.unwrap().path();
         if path.extension().and_then(|value| value.to_str()) != Some("html") {
             continue;

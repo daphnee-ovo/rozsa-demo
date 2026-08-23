@@ -452,7 +452,7 @@ GUI 视觉设计和交互规范见 [UI_USAGE_GUIDELINES.md](./UI_USAGE_GUIDELINE
 - **状态真实**：运行中、成功、失败、等待审批等状态必须具体可见。
 - **工具调用轻量**：折叠态无竖线、低透明度，展开态竖线从图标下方开始。
 
-设计参考原型：[`docs/gui/prototype/`](./prototype/)。原型样式独立于运行时 `frontend/styles/`，不能作为已加载到产品的证据。
+设计参考原型：[`prototype/`](../../prototype/)。原型样式独立于运行时 `frontend/styles/`，不能作为已加载到产品的证据。
 
 ## 10. 未来扩展
 

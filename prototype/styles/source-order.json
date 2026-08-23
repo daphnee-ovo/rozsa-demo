@@ -1,7 +1,7 @@
 {
   "version": 3,
   "original_stylesheet": {
-    "file": "docs/gui/new-version/rozsa-gui.css",
+    "file": "baseline: pre-componentization monolithic stylesheet",
     "line_count": 1171,
     "sha256": "3d789bfb15daa0c21ddadde40d81e66cf3b8a42b37fc17a3925c52cd324a1007"
   },
@@ -12,7 +12,7 @@
         1,
         102
       ],
-      "target": "docs/gui/new-version/styles/foundations/tokens.css",
+      "target": "prototype/styles/foundations/tokens.css",
       "sha256": "efa704b8b7eb2e825c9b8450d726779776b35f2b6b5c23adc94b6ac59f2c355c"
     },
     {
@@ -21,7 +21,7 @@
         103,
         115
       ],
-      "target": "docs/gui/new-version/styles/foundations/reset.css",
+      "target": "prototype/styles/foundations/reset.css",
       "sha256": "6852851a0a5d99c34299e0e3951ed7d029f04201c116b19f11a49ac0c597cab2"
     },
     {
@@ -30,7 +30,7 @@
         116,
         170
       ],
-      "target": "docs/gui/new-version/styles/foundations/base.css",
+      "target": "prototype/styles/foundations/base.css",
       "sha256": "0e181a7ae24b72b1bd387dccf5b9a23c5f70331b634a00dada2fdd644e9d76a2"
     },
     {
@@ -39,7 +39,7 @@
         171,
         190
       ],
-      "target": "docs/gui/new-version/styles/layouts/app-shell.css",
+      "target": "prototype/styles/layouts/app-shell.css",
       "sha256": "9c062bb699e8307d29c9dee4bbc33fe5db722d4b762d5b9a28920322954a0aba"
     },
     {
@@ -48,7 +48,7 @@
         191,
         204
       ],
-      "target": "docs/gui/new-version/styles/layouts/sidebar-shell.css",
+      "target": "prototype/styles/layouts/sidebar-shell.css",
       "sha256": "5bd0a97a2ff11b174727f1454038ea290ca8b318ecebaaf7f4fe702b70a14722"
     },
     {
@@ -57,7 +57,7 @@
         205,
         286
       ],
-      "target": "docs/gui/new-version/styles/features/sidebar.css",
+      "target": "prototype/styles/features/sidebar.css",
       "sha256": "54f3d3eebd9ebae76b1741fbb7199fcf721612eabee8fc404ca9683cf6615999"
     },
     {
@@ -66,7 +66,7 @@
         287,
         402
       ],
-      "target": "docs/gui/new-version/styles/features/conversation.css",
+      "target": "prototype/styles/features/conversation.css",
       "sha256": "b0a87541083dd9db82bdc525fb48c472b2658f692600cdd7166ac6f4267021c3"
     },
     {
@@ -75,7 +75,7 @@
         403,
         489
       ],
-      "target": "docs/gui/new-version/styles/features/tools.css",
+      "target": "prototype/styles/features/tools.css",
       "sha256": "ffd6b3964aa2baf398b853811e74afc0b67a5df9f580d797342b26920c5dcb87"
     },
     {
@@ -84,7 +84,7 @@
         490,
         524
       ],
-      "target": "docs/gui/new-version/styles/primitives/forms.css",
+      "target": "prototype/styles/primitives/forms.css",
       "sha256": "ac79930b63b9d42712bd65b5f346e8fd54f8d6b334681777a670cfa5d85033f6"
     },
     {
@@ -93,7 +93,7 @@
         525,
         648
       ],
-      "target": "docs/gui/new-version/styles/composites/overlays.css",
+      "target": "prototype/styles/composites/overlays.css",
       "sha256": "afb36943249d9756ce06e02cf0a07a6e837b265357c187495b071255f7873c10"
     },
     {
@@ -102,7 +102,7 @@
         649,
         726
       ],
-      "target": "docs/gui/new-version/styles/features/settings.css",
+      "target": "prototype/styles/features/settings.css",
       "sha256": "08b9922553c0e92ce50f6f40127c5ad01b49232d5a8b533ccca400d2ca0e30ab"
     },
     {
@@ -111,7 +111,7 @@
         727,
         899
       ],
-      "target": "docs/gui/new-version/styles/features/appearance.css",
+      "target": "prototype/styles/features/appearance.css",
       "sha256": "d237c15e86a57c6683e169dbde188542b6c80060e6f8500ff6fac3f1eb5e189a"
     },
     {
@@ -120,7 +120,7 @@
         900,
         931
       ],
-      "target": "docs/gui/new-version/styles/primitives/actions.css",
+      "target": "prototype/styles/primitives/actions.css",
       "sha256": "cbb3380e2c103f61a7a356d6979815f7088e3f19765e40b16c8a3c4a4f615fee"
     },
     {
@@ -129,7 +129,7 @@
         932,
         980
       ],
-      "target": "docs/gui/new-version/styles/features/permissions.css",
+      "target": "prototype/styles/features/permissions.css",
       "sha256": "ed9b4368677bc59b5a58e7ec730bc6b2218430311df83251c5f47a7be6722561"
     },
     {
@@ -138,7 +138,7 @@
         981,
         1030
       ],
-      "target": "docs/gui/new-version/styles/features/dev-flow.css",
+      "target": "prototype/styles/features/dev-flow.css",
       "sha256": "02de4038ffd4b9377e1e087994c3b8f7b58f5e98ced89bfd77369f817843c649"
     },
     {
@@ -147,7 +147,7 @@
         1031,
         1057
       ],
-      "target": "docs/gui/new-version/styles/composites/feedback.css",
+      "target": "prototype/styles/composites/feedback.css",
       "sha256": "aa1f4da45fee31d4a577348bc275e5a40051474f970a3e6108ecb46a70a78a49"
     },
     {
@@ -156,7 +156,7 @@
         1058,
         1083
       ],
-      "target": "docs/gui/new-version/styles/features/dev-flow-detail.css",
+      "target": "prototype/styles/features/dev-flow-detail.css",
       "sha256": "f4ea341f87a9f565b56feabe39fbe6d745dd17ddda0220cd138cd5cebfecdbd1"
     },
     {
@@ -165,54 +165,43 @@
         1084,
         1090
       ],
-      "target": "docs/gui/new-version/styles/features/sidebar-window.css",
+      "target": "prototype/styles/features/sidebar-window.css",
       "sha256": "79dfdb7ee2767ca74cb21fe0810b47f7eba776f3dc1175d419df806b2108520e"
     }
   ],
   "extracted_inline_styles": [
     {
-      "html": "docs/gui/new-version/scenes/ask-user-question.html",
+      "html": "prototype/scenes/ask-user-question.html",
       "source_lines": [
         9,
         22
       ],
-      "target": "docs/gui/new-version/styles/scenes/ask-user-question.css",
+      "target": "prototype/styles/scenes/ask-user-question.css",
       "href": "../styles/scenes/ask-user-question.css",
       "css_sha256": "cc0f4403939896646fc1304121f0b67b9ad22be481bb04bbfb5aa1e32807d389",
       "original_html_sha256": "11e7f6cf009af459a9e9be27e04b7dc5bf30b0a18dc310061d3e1b8fb917e749"
     },
     {
-      "html": "docs/gui/new-version/scenes/complete-session.html",
+      "html": "prototype/scenes/complete-session.html",
       "source_lines": [
         9,
         48
       ],
-      "target": "docs/gui/new-version/styles/scenes/complete-session.css",
+      "target": "prototype/styles/scenes/complete-session.css",
       "href": "../styles/scenes/complete-session.css",
       "css_sha256": "582d9897d5f6ef4773b782396c345afc73a6af4066405bebfcd4275ad7996008",
       "original_html_sha256": "203a89ef8db47031ffb4006247c127b4e604ef3dc53623c05b2176449b1e9c74"
     },
     {
-      "html": "docs/gui/new-version/scenes/dev-flow-runtime.html",
+      "html": "prototype/scenes/dev-flow-runtime.html",
       "source_lines": [
         9,
         332
       ],
-      "target": "docs/gui/new-version/styles/scenes/dev-flow-runtime.css",
+      "target": "prototype/styles/scenes/dev-flow-runtime.css",
       "href": "../styles/scenes/dev-flow-runtime.css",
       "css_sha256": "ebf66b05f6bea2df702b19558925d14dba204080e6d8969ac87946b2ab80d3ca",
       "original_html_sha256": "609db3e4c873e854fa03a10691430f8ff3e1465f5fa224c7733cedfb6a519f27"
-    },
-    {
-      "html": "docs/gui/new-version/rozsa-visual-demo.html",
-      "source_lines": [
-        8,
-        693
-      ],
-      "target": "docs/gui/new-version/styles/features/visual-demo.css",
-      "href": "styles/features/visual-demo.css",
-      "css_sha256": "95f8c7a9fe2b5b3bf28ea2efb6de57c01919d90a592144525ddf1b3648078f4e",
-      "original_html_sha256": "c250e498afabbcaa775e12468663c2c39aa7b253117a4c9ab7dd75287e815c20"
     }
   ],
   "base_stylesheet": {
@@ -261,7 +250,7 @@
         1091,
         1094
       ],
-      "owner_file": "docs/gui/new-version/styles/features/dev-flow-detail.css",
+      "owner_file": "prototype/styles/features/dev-flow-detail.css",
       "owner": "dev-flow-detail",
       "media": "max-width: 1100px",
       "sha256": "ecd5a4b39ec7f607b5047c4b4c0a2539e7a988aad0f19326c335524bf41ecf3d"
@@ -272,7 +261,7 @@
         1097,
         1097
       ],
-      "owner_file": "docs/gui/new-version/styles/layouts/app-shell.css",
+      "owner_file": "prototype/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 900px",
       "sha256": "82f5d2e02faac94bb34a08ce6f59ee85e236ca32ac136cf509c1bd8a8ecfd71d"
@@ -283,7 +272,7 @@
         1098,
         1098
       ],
-      "owner_file": "docs/gui/new-version/styles/features/conversation.css",
+      "owner_file": "prototype/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 900px",
       "sha256": "cb34449713e4c12d09bd9d964b103f96393436714b6dee970eec39349eaf6b56"
@@ -294,7 +283,7 @@
         1099,
         1099
       ],
-      "owner_file": "docs/gui/new-version/styles/features/settings.css",
+      "owner_file": "prototype/styles/features/settings.css",
       "owner": "settings",
       "media": "max-width: 900px",
       "sha256": "700d2e143bfeb55c78425c942083fb0757898e7ada66ae979136b253180ba782"
@@ -305,7 +294,7 @@
         1100,
         1100
       ],
-      "owner_file": "docs/gui/new-version/styles/features/dev-flow.css",
+      "owner_file": "prototype/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 900px",
       "sha256": "035ab95e09aaa7a8bdd7667666472349581756fa97e10af564acb22789526f2a"
@@ -316,7 +305,7 @@
         1103,
         1107
       ],
-      "owner_file": "docs/gui/new-version/styles/layouts/app-shell.css",
+      "owner_file": "prototype/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 760px",
       "current_media": "max-width: 780px",
@@ -328,7 +317,7 @@
         1108,
         1109
       ],
-      "owner_file": "docs/gui/new-version/styles/features/conversation.css",
+      "owner_file": "prototype/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 760px",
       "sha256": "451299d51bebb018188dac39e58bfe6c84df9054d33a92dce49e89a756f83798"
@@ -339,7 +328,7 @@
         1110,
         1116
       ],
-      "owner_file": "docs/gui/new-version/styles/features/settings.css",
+      "owner_file": "prototype/styles/features/settings.css",
       "owner": "settings",
       "media": "max-width: 760px",
       "sha256": "d18dc58f89e1971ee3c1127b2cdeee3ff0a1448c3f518f75dc1fa8045c43f475"
@@ -350,7 +339,7 @@
         1117,
         1119
       ],
-      "owner_file": "docs/gui/new-version/styles/features/permissions.css",
+      "owner_file": "prototype/styles/features/permissions.css",
       "owner": "permissions",
       "media": "max-width: 760px",
       "sha256": "11d0a04a0cbf7d2c91c676a8b3e2628756c446766ea74501ed8afcbb4109204f"
@@ -361,7 +350,7 @@
         1120,
         1120
       ],
-      "owner_file": "docs/gui/new-version/styles/features/dev-flow.css",
+      "owner_file": "prototype/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 760px",
       "sha256": "5d132843b2eefdda77758c69f4160b6c009ec56cf0f3b4bd9f662d76436276f6"
@@ -372,7 +361,7 @@
         1123,
         1124
       ],
-      "owner_file": "docs/gui/new-version/styles/features/sidebar.css",
+      "owner_file": "prototype/styles/features/sidebar.css",
       "owner": "sidebar",
       "media": "max-width: 560px",
       "sha256": "b4b2881d29ac15bb1208dace9ac84b5836861d500f3cd6ce7d6213cb9ab66b37"
@@ -383,7 +372,7 @@
         1125,
         1125
       ],
-      "owner_file": "docs/gui/new-version/styles/layouts/app-shell.css",
+      "owner_file": "prototype/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 560px",
       "sha256": "d57d02b31922b164639dd82b54ba7f63d597b29de496fbffb0088b33d30b4494"
@@ -394,7 +383,7 @@
         1126,
         1133
       ],
-      "owner_file": "docs/gui/new-version/styles/features/conversation.css",
+      "owner_file": "prototype/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 560px",
       "sha256": "35b9714050faa7955fab0bd429f49e75cd4c9a78341b23c73d7edcbcb74e81e6"
@@ -405,7 +394,7 @@
         1134,
         1158
       ],
-      "owner_file": "docs/gui/new-version/styles/features/appearance.css",
+      "owner_file": "prototype/styles/features/appearance.css",
       "owner": "appearance",
       "media": "max-width: 560px",
       "sha256": "e0e54e84663f17c2a36aa0970945b814ff18279d79a2296e8b98d61d44209126"
@@ -416,7 +405,7 @@
         1159,
         1160
       ],
-      "owner_file": "docs/gui/new-version/styles/features/dev-flow.css",
+      "owner_file": "prototype/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 560px",
       "sha256": "569a4fe319dfacd251be403d89d1a3e8817490229c3e8d4afe4b61c37ba20897"
@@ -427,7 +416,7 @@
         1161,
         1162
       ],
-      "owner_file": "docs/gui/new-version/styles/composites/feedback.css",
+      "owner_file": "prototype/styles/composites/feedback.css",
       "owner": "notification",
       "media": "max-width: 560px",
       "sha256": "6ccb21158a057d3295085761039a1d3c698ff649fff09fc84024c05097f68841"
@@ -438,7 +427,7 @@
         1163,
         1165
       ],
-      "owner_file": "docs/gui/new-version/styles/features/dev-flow-detail.css",
+      "owner_file": "prototype/styles/features/dev-flow-detail.css",
       "owner": "dev-flow-detail",
       "media": "max-width: 560px",
       "sha256": "916654d1a1a34d55a40e781b96103247c3072612a0a715fd9447285d229fcf2c"
@@ -449,7 +438,7 @@
         1167,
         1171
       ],
-      "owner_file": "docs/gui/new-version/styles/foundations/motion.css",
+      "owner_file": "prototype/styles/foundations/motion.css",
       "owner": "motion",
       "media": "prefers-reduced-motion: reduce",
       "sha256": "f76acab354454f9e31e038674318abf8e2a43558956e111c281c453536ca1d59"
