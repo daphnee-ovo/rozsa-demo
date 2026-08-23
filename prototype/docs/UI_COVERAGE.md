@@ -73,8 +73,8 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 - 新增或删除 scene、gallery view、runtime entry、可见事件或界面状态时，必须同步更新 JSON inventory 和对应 item；gallery 的 HTML、脚本入口和 shared CSS owner 必须同时可追溯。
 - 一个项目只能使用四种固定状态；`partial`/`missing` 必须在缺口表有且只有一个可追溯条目。
 - `css`、`markup`、`behavior` 分别描述最终唯一责任位置，不能把第二份公共实现藏在 scene 或 gallery 中。
-- prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features`、`layouts` 或 `scenes` 的唯一 owner；响应式规则直接归属于该 owner，入口只负责保持 import source order。
-- application shell 的稳定 HTML 只能来自 `templates/`，入口只提供 mount；`scripts/core/` 只负责加载、装配和 renderer 边界，scene 文件仍是只读迁移输入。
+- prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features` 或 `layouts` 的唯一 owner；`styles/scenes` 不是 application runtime owner，响应式规则直接归属于实际 owner，入口只负责保持 import source order。
+- application shell 的稳定 HTML 只能来自 `templates/`，入口只提供 mount；`scripts/core/` 只负责加载、装配和 renderer 边界，scene 文件是配置输入且不得带有运行时 stylesheet 加载。
 - scene/gallery 的唯一路由登记入口是 `scenarios/registry.js`；scene 读取路径经过 `scripts/core/scene-loader.js` 和 `scripts/adapters/mock-adapter.js`，gallery 通过统一 entry route 装配；mock 文件及每个 scene 的全部使用方必须登记在 JSON `scenario_inventory`，未知 ID 必须明确报错且不能 fallback 到未定义页面。
 - prototype component behavior 的唯一归属是 `scripts/components/` 或 `scripts/features/`；Composer、interruption、popover、notification、tool-call、conversation、settings、sidebar 与 Dev Flow 的使用方必须在 JSON 的 `behavior` 和 `used_by` 中闭合记录。
 - 跨组件 flow 的唯一归属是 `scripts/flows/`：`composer-interruption.js` 只协调 interruption 与 composer 的 focus restore，`scenario-flow.js` 只协调 scene-ready 与 application shell 的装配时序；两者的 component、feature、scene 使用方登记在 JSON `flow_inventory`，交由 T015 统一验证。

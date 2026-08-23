@@ -9,7 +9,7 @@
 - `composites/`：overlays、feedback、notification 等组合控件。
 - `features/`：conversation、tools、settings、appearance、sidebar、permissions 与 Dev Flow 等业务表面。
 - `layouts/`：应用与 sidebar 的稳定几何骨架，以及随 owner 一起维护的响应式规则。
-- `scenes/`：原来位于具体 HTML `<style>` 中、必须晚于公共入口加载的场景 override。
+- `scenes/`：迁移遗留边界，仅保留非运行时标记；application scene 不加载这里的 CSS，公共状态规则归组件、feature 或 layout owner。
 - `entries/`：完整 application 入口与独立 sidebar 入口的有序 import 清单。
 - `features/visual-demo.css`：独立 visual direction gallery 的稳定视觉规则；由 `gallery/visual-direction.css` 通过 import 加载，不属于 application shell。
 
@@ -21,8 +21,8 @@
 
 1. `entries/main.css` 与 `entries/sidebar.css` 的 import 顺序必须与 `source-order.json` 一致；顶层 `main.css`、`sidebar.css` 只承担稳定路径转发。
 2. 不得在拆分过程中改写 selector、declaration、custom property、media query、keyframe、specificity 或 rule 内声明顺序。
-3. application scene 的场景 override 必须在 application entry 之后加载，不能提前并入组件文件；visual demo gallery 保持自己的独立加载入口。
-4. 新增原型场景应直接复用本组件库；只有场景独有且确实需要晚期覆盖的规则才进入 `styles/scenes/`。
+3. application scene 只在 registry 中声明配置，由 shell 装配稳定 template；不得声明或动态加载 scene stylesheet。visual demo gallery 保持自己的独立加载入口。
+4. 新增原型场景应直接复用本组件库；属于组件状态、feature 状态或响应式布局的规则必须进入对应 owner，不得用 scene ID 选择器承载。
 5. runtime 迁移优先使用同路径文件直接搬移；若目标 runtime 尚无对应文件，应保留本目录中的组件边界，不重新混入大文件。
 
-`source-order.json` 保存拆分前单体 CSS 的 SHA-256、每个连续静态块的原始行号和目标摘要、响应式源区间及当前 owner 文件映射，并保存 780/820 sidebar 边界、640×480 最低窗口和实测几何。`prototype_stylesheet_extraction_test.rs` 会验证静态块的字节级等价、owner 映射、入口顺序、最低尺寸与运行时入口形状。
+`source-order.json` 保存拆分前单体 CSS 的 SHA-256、每个连续静态块的原始行号和目标摘要、响应式源区间及当前 owner 文件映射，并保存 780/820 sidebar 边界、640×480 最低窗口和实测几何；`extracted_inline_styles` 为空表示应用场景不再承载运行时内联样式。`prototype_stylesheet_extraction_test.rs` 会验证 owner 映射、入口顺序、最低尺寸与运行时入口形状，scene ownership 测试会验证没有场景 CSS 加载边界。

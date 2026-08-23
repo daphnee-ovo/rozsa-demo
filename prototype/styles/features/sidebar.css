@@ -80,6 +80,36 @@
 .tool-call-status.s-running { background: var(--warning); }
 .tool-name { color: var(--fg); font-weight: 560; }
 
+/* Subagent status is a sidebar feature, independent of the scene that exposes it. */
+.subagent-sidebar-panel {
+  flex: 0 0 auto;
+  margin-top: 12px;
+}
+.subagent-sidebar-panel ol {
+  display: grid;
+  gap: 7px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.subagent-sidebar-panel li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--fg);
+  font: 11px/1.4 var(--font-mono);
+}
+.subagent-sidebar-panel li::before {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: quiet-pulse 1.4s ease-in-out infinite;
+  content: "";
+}
+
 @media (max-width: 560px) {
   .sidebar-brand { padding-inline: 16px; }
   .sidebar-brand strong { font-size: 22px; }

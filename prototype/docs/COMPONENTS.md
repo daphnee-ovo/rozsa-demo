@@ -8,13 +8,14 @@
 | --- | --- | --- | --- |
 | Sidebar | `templates/features/sidebar.html` | `styles/features/sidebar.css`、`styles/layouts/sidebar-shell.css` | `scripts/features/sidebar.js` |
 | Conversation | `templates/features/conversation.html` | `styles/features/conversation.css` | `scripts/features/conversation.js` |
-| Composer | `templates/composites/composer.html`（chat-input、fork、input frame、queue/steering）と `templates/primitives/input.html`（rich input、toolbar）；shell 将 input template 的 children 直接挂入 `.input-wrapper`，保持迁移前 DOM 层级 | `styles/composites/overlays.css`、`styles/primitives/forms.css` | `scripts/components/composer.js` |
+| Composer | `templates/composites/composer.html`（chat-input、fork、input frame、queue/steering）と `templates/primitives/input.html`（rich input、toolbar）；shell 将 input template 的 children 直接挂入 `.input-wrapper`，保持迁移前 DOM 层级 | `styles/composites/composer.css`、`styles/composites/overlays.css` | `scripts/components/composer.js` |
+| Queue / Steering | `templates/composites/composer.html` 内的 `queuedMessages`、`steeringConversation` | `styles/features/queue.css`、`styles/features/steering.css` | `scripts/flows/scenario-flow.js`、`scripts/components/composer.js` |
 | Interruption panel | `templates/composites/interruption-panel.html` | `styles/features/permissions.css`、`styles/composites/overlays.css` | `scripts/components/interruption-panel.js`、`scripts/flows/composer-interruption.js` |
 | Notification | `templates/composites/notification.html` | `styles/composites/feedback.css` | `scripts/components/notification.js` |
 | Popover | `templates/composites/popover.html` | `styles/composites/overlays.css` | `scripts/components/popover.js` |
 | Tool call | `templates/composites/tool-call.html` | `styles/features/tools.css` | `scripts/components/tool-call.js` |
 | Settings | `templates/features/settings.html`、`templates/composites/settings-field.html` | `styles/features/settings.css`、`styles/features/appearance.css`、`styles/features/permissions.css` | `scripts/features/settings.js` |
-| Dev Flow | `templates/features/dev-flow.html` | `styles/features/dev-flow.css`、`styles/features/dev-flow-detail.css` | `scripts/features/dev-flow.js` |
+| Dev Flow | `templates/features/dev-flow.html` | `styles/features/dev-flow.css`、`styles/features/dev-flow-detail.css`、`styles/features/dev-flow-runtime.css` | `scripts/features/dev-flow.js` |
 
 基础 actions/forms 和全局 tokens 由 `styles/primitives/` 与 `styles/foundations/` 提供。组件脚本只管理 DOM 状态、focus、键盘和明确意图，不读取产品后端。
 

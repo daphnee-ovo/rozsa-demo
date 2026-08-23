@@ -84,7 +84,7 @@
         490,
         524
       ],
-      "target": "prototype/styles/primitives/forms.css",
+      "target": "prototype/styles/composites/composer.css",
       "sha256": "ac79930b63b9d42712bd65b5f346e8fd54f8d6b334681777a670cfa5d85033f6"
     },
     {
@@ -169,41 +169,7 @@
       "sha256": "79dfdb7ee2767ca74cb21fe0810b47f7eba776f3dc1175d419df806b2108520e"
     }
   ],
-  "extracted_inline_styles": [
-    {
-      "html": "prototype/scenes/ask-user-question.html",
-      "source_lines": [
-        9,
-        22
-      ],
-      "target": "prototype/styles/scenes/ask-user-question.css",
-      "href": "../styles/scenes/ask-user-question.css",
-      "css_sha256": "cc0f4403939896646fc1304121f0b67b9ad22be481bb04bbfb5aa1e32807d389",
-      "original_html_sha256": "11e7f6cf009af459a9e9be27e04b7dc5bf30b0a18dc310061d3e1b8fb917e749"
-    },
-    {
-      "html": "prototype/scenes/complete-session.html",
-      "source_lines": [
-        9,
-        48
-      ],
-      "target": "prototype/styles/scenes/complete-session.css",
-      "href": "../styles/scenes/complete-session.css",
-      "css_sha256": "582d9897d5f6ef4773b782396c345afc73a6af4066405bebfcd4275ad7996008",
-      "original_html_sha256": "203a89ef8db47031ffb4006247c127b4e604ef3dc53623c05b2176449b1e9c74"
-    },
-    {
-      "html": "prototype/scenes/dev-flow-runtime.html",
-      "source_lines": [
-        9,
-        332
-      ],
-      "target": "prototype/styles/scenes/dev-flow-runtime.css",
-      "href": "../styles/scenes/dev-flow-runtime.css",
-      "css_sha256": "ebf66b05f6bea2df702b19558925d14dba204080e6d8969ac87946b2ab80d3ca",
-      "original_html_sha256": "609db3e4c873e854fa03a10691430f8ff3e1465f5fa224c7733cedfb6a519f27"
-    }
-  ],
+  "extracted_inline_styles": [],
   "base_stylesheet": {
     "source_lines": [
       1,

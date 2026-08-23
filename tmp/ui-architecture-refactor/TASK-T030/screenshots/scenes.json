@@ -1,0 +1,134 @@
+{
+  "sceneAuditT030": [
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    },
+    {
+      "chatPosition": "absolute",
+      "dynamicSceneCss": null,
+      "innerWidth": 1280,
+      "links": [
+        "styles/main.css"
+      ],
+      "mainY": 42,
+      "scrollWidth": 1280,
+      "shellError": false
+    }
+  ],
+  "galleryAuditT030": {
+    "bodyClass": "",
+    "hasGallery": true,
+    "links": [
+      "visual-direction.css"
+    ],
+    "shellError": false,
+    "title": "Rozsa · Visual Direction Demo"
+  }
+}

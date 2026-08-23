@@ -1,0 +1,72 @@
+{
+  "chat": {
+    "display": "block",
+    "height": 390,
+    "position": "absolute",
+    "width": 760,
+    "x": 0,
+    "y": 331
+  },
+  "directChildren": [
+    {
+      "cls": "running-messages",
+      "hidden": false,
+      "id": "queuedMessages",
+      "tag": "DIV"
+    },
+    {
+      "cls": "running-messages",
+      "hidden": false,
+      "id": "steeringConversation",
+      "tag": "DIV"
+    },
+    {
+      "cls": "rich-input",
+      "hidden": false,
+      "id": "msgInput",
+      "tag": "DIV"
+    },
+    {
+      "cls": "input-toolbar",
+      "hidden": false,
+      "id": "",
+      "tag": "DIV"
+    }
+  ],
+  "innerWidth": 760,
+  "queue": {
+    "display": "block",
+    "height": 85,
+    "position": "static",
+    "width": 712,
+    "x": 24,
+    "y": 436
+  },
+  "queueText": "QUEUE 2\nCheck the settings surface\nSummarize changed files",
+  "rich": {
+    "display": "block",
+    "height": 52,
+    "position": "static",
+    "width": 712,
+    "x": 24,
+    "y": 586
+  },
+  "scrollWidth": 760,
+  "steering": {
+    "display": "block",
+    "height": 66,
+    "position": "static",
+    "width": 712,
+    "x": 24,
+    "y": 521
+  },
+  "steeringText": "STEERING\nKeep the current structure and show the completed state.",
+  "wrapper": {
+    "display": "block",
+    "height": 262,
+    "position": "relative",
+    "width": 714,
+    "x": 23,
+    "y": 435
+  }
+}
