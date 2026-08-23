@@ -1,5 +1,5 @@
 import { loadTemplate } from "./template-loader.js";
-import { mountTemplate } from "./renderer.js";
+import { mountTemplate, mountTemplateChildren } from "./renderer.js";
 import { getSceneDefinition, resolveSceneId } from "../../scenarios/registry.js";
 
 const templateRoot = new URL("../../", import.meta.url);
@@ -12,7 +12,6 @@ const mounts = [
   ["templates/features/dev-flow.html", "[data-template-mount=\"dev-flow\"]"],
   ["templates/composites/composer.html", "[data-template-mount=\"composer\"]"],
   ["templates/composites/interruption-panel.html", "[data-template-mount=\"interruption-panel\"]"],
-  ["templates/primitives/input.html", "[data-template-mount=\"input\"]"],
 ];
 
 async function loadSceneStylesheet(sceneId) {
@@ -36,6 +35,8 @@ async function bootstrapPrototypeShell() {
     const fragment = await loadTemplate(new URL(relativePath, templateRoot));
     mountTemplate(fragment, selector);
   }
+  const inputFragment = await loadTemplate(new URL("templates/primitives/input.html", templateRoot));
+  mountTemplateChildren(inputFragment, "[data-template-mount=\"input\"]");
 
   const scene = new URLSearchParams(window.location.search).get("scene");
   if (scene && !document.documentElement.dataset.rozsaScene) {

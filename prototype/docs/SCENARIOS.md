@@ -23,7 +23,7 @@
 每个 scene 只选择公共布局、组件、初始 state、mock ID 和操作步骤；数据文件集中在 `mock/`。
 `dev-flow-runtime`、`dev-flow-active` 和 `dev-flow` 的 session 列表优先来自 `mock/dev-flow/runtime.json`，workspace 展示数据仍可来自 `mock/sessions/complete.json`；这样不会因为共享 workspace fixture 把当前 Dev Flow session 替换成空会话。
 
-运行态面板保持与重构前相同的归属：`subagentPanel` 位于 sidebar，`forkPicker`、`queuedMessages` 和 `steeringConversation` 位于 Composer 区域。scene 只提供状态数据，不复制这些组件的稳定 DOM。
+运行态面板保持与重构前相同的归属：`subagentPanel` 位于 sidebar，`forkPicker` 位于 input frame 前，`queuedMessages` 与 `steeringConversation` 位于 Composer 的 `.input-wrapper` 内并排在 `#msgInput` 前。shell 挂载 input primitive 时只插入其 children，使 Queue、Steering、`#msgInput` 和 toolbar 仍是同一 input wrapper 的直接内容；scene 只提供状态数据，不复制这些组件的稳定 DOM。
 
 ## Gallery
 

@@ -1,0 +1,839 @@
+[
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "queue": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "steering": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "wrapper": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=ask-user-question",
+    "scene": "ask-user-question",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      },
+      {
+        "href": "http://127.0.0.1:4175/styles/scenes/ask-user-question.css",
+        "scene": "ask-user-question"
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 80,
+          "width": 688.53125,
+          "x": 34.734375,
+          "y": 339.5
+        },
+        "input": {
+          "height": 52,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 571
+        },
+        "queue": {
+          "height": 85,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 420.5
+        },
+        "steering": {
+          "height": 65.5,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 505.5
+        },
+        "wrapper": {
+          "height": 261.5,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 419.5
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "52px",
+        "paddingTop": "12px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=complete-session",
+    "scene": "complete-session",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      },
+      {
+        "href": "http://127.0.0.1:4175/styles/scenes/complete-session.css",
+        "scene": "complete-session"
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 56,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 567
+        },
+        "queue": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "steering": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "wrapper": {
+          "height": 115,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 566
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=dev-flow-active",
+    "scene": "dev-flow-active",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 52,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 571
+        },
+        "queue": {
+          "height": 85,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 420.5
+        },
+        "steering": {
+          "height": 65.5,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 505.5
+        },
+        "wrapper": {
+          "height": 261.5,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 419.5
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "52px",
+        "paddingTop": "12px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=dev-flow-runtime",
+    "scene": "dev-flow-runtime",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      },
+      {
+        "href": "http://127.0.0.1:4175/styles/scenes/dev-flow-runtime.css",
+        "scene": "dev-flow-runtime"
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 56,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 567
+        },
+        "queue": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "steering": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "wrapper": {
+          "height": 115,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 566
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=dev-flow",
+    "scene": "dev-flow",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 56,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 567
+        },
+        "queue": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "steering": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "wrapper": {
+          "height": 115,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 566
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=empty-session",
+    "scene": "empty-session",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "queue": {
+          "height": 80,
+          "width": 686.53125,
+          "x": 35.734375,
+          "y": 472.5
+        },
+        "steering": {
+          "height": 60.5,
+          "width": 686.53125,
+          "x": 35.734375,
+          "y": 562.5
+        },
+        "wrapper": {
+          "height": 219.5,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 461.5
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=notifications",
+    "scene": "notifications",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "queue": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "steering": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "wrapper": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=permission-request",
+    "scene": "permission-request",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 56,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 567
+        },
+        "queue": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "steering": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "wrapper": {
+          "height": 115,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 566
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=permissions",
+    "scene": "permissions",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 56,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 567
+        },
+        "queue": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "steering": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "wrapper": {
+          "height": 115,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 566
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=settings-appearance",
+    "scene": "settings-appearance",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      }
+    ]
+  },
+  {
+    "alert": null,
+    "body": {
+      "clientHeight": 705,
+      "clientWidth": 758,
+      "scrollHeight": 705,
+      "scrollWidth": 758
+    },
+    "composer": {
+      "children": [
+        {
+          "className": "running-messages",
+          "id": "queuedMessages"
+        },
+        {
+          "className": "running-messages",
+          "id": "steeringConversation"
+        },
+        {
+          "className": "rich-input",
+          "id": "msgInput"
+        },
+        {
+          "className": "input-toolbar",
+          "id": ""
+        }
+      ],
+      "directInput": true,
+      "geometry": {
+        "fork": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "input": {
+          "height": 56,
+          "width": 710.53125,
+          "x": 23.734375,
+          "y": 567
+        },
+        "queue": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "steering": {
+          "height": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "wrapper": {
+          "height": 115,
+          "width": 712.53125,
+          "x": 22.734375,
+          "y": 566
+        }
+      },
+      "richInputStyle": {
+        "minHeight": "56px",
+        "paddingTop": "15px"
+      }
+    },
+    "href": "http://127.0.0.1:4175/index.html?scene=tool-calls",
+    "scene": "tool-calls",
+    "shellError": null,
+    "stylesheets": [
+      {
+        "href": "http://127.0.0.1:4175/styles/main.css",
+        "scene": null
+      }
+    ]
+  }
+]

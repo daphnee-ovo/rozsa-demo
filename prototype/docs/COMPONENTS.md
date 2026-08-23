@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | Sidebar | `templates/features/sidebar.html` | `styles/features/sidebar.css`、`styles/layouts/sidebar-shell.css` | `scripts/features/sidebar.js` |
 | Conversation | `templates/features/conversation.html` | `styles/features/conversation.css` | `scripts/features/conversation.js` |
-| Composer | `templates/composites/composer.html`、`templates/primitives/input.html` | `styles/composites/overlays.css`、`styles/primitives/forms.css` | `scripts/components/composer.js` |
+| Composer | `templates/composites/composer.html`（chat-input、fork、input frame、queue/steering）と `templates/primitives/input.html`（rich input、toolbar）；shell 将 input template 的 children 直接挂入 `.input-wrapper`，保持迁移前 DOM 层级 | `styles/composites/overlays.css`、`styles/primitives/forms.css` | `scripts/components/composer.js` |
 | Interruption panel | `templates/composites/interruption-panel.html` | `styles/features/permissions.css`、`styles/composites/overlays.css` | `scripts/components/interruption-panel.js`、`scripts/flows/composer-interruption.js` |
 | Notification | `templates/composites/notification.html` | `styles/composites/feedback.css` | `scripts/components/notification.js` |
 | Popover | `templates/composites/popover.html` | `styles/composites/overlays.css` | `scripts/components/popover.js` |

@@ -3,6 +3,7 @@
 // ├── application_mounts_preserve_grid_item_semantics()
 // ├── scene_stylesheets_are_declared_and_loaded_by_root_shell()
 // ├── complete_session_keeps_running_panel_style_contract()
+// ├── composer_mount_preserves_baseline_direct_children()
 // └── repository_root()
 
 use std::fs;
@@ -54,6 +55,8 @@ fn complete_session_keeps_running_panel_style_contract() {
             .expect("complete-session stylesheet must be readable");
     let input = fs::read_to_string(root.join("prototype/templates/primitives/input.html"))
         .expect("input template must be readable");
+    let composer = fs::read_to_string(root.join("prototype/templates/composites/composer.html"))
+        .expect("composer template must be readable");
 
     for selector in [
         ".subagent-sidebar-panel",
@@ -66,8 +69,23 @@ fn complete_session_keeps_running_panel_style_contract() {
             "missing scene style contract: {selector}"
         );
     }
-    assert!(input.contains("class=\"input-wrapper\""));
     assert!(input.contains("id=\"msgInput\""));
+    assert!(composer.contains("class=\"input-wrapper\""));
+    assert!(composer.contains("id=\"queuedMessages\""));
+    assert!(composer.contains("id=\"steeringConversation\""));
+    assert!(composer.contains("data-template-mount=\"input\""));
+}
+
+#[test]
+fn composer_mount_preserves_baseline_direct_children() {
+    let root = repository_root();
+    let shell = fs::read_to_string(root.join("prototype/scripts/core/shell.js"))
+        .expect("prototype shell must be readable");
+    let renderer = fs::read_to_string(root.join("prototype/scripts/core/renderer.js"))
+        .expect("prototype renderer must be readable");
+
+    assert!(shell.contains("mountTemplateChildren(inputFragment"));
+    assert!(renderer.contains("export function mountTemplateChildren"));
 }
 
 fn repository_root() -> PathBuf {
