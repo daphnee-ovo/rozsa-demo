@@ -11,7 +11,6 @@ const mounts = [
   ["templates/composites/notification.html", "[data-template-mount=\"notification\"]"],
   ["templates/features/dev-flow.html", "[data-template-mount=\"dev-flow\"]"],
   ["templates/composites/composer.html", "[data-template-mount=\"composer\"]"],
-  ["templates/composites/interruption-panel.html", "[data-template-mount=\"interruption-panel\"]"],
 ];
 
 async function bootstrapPrototypeShell() {
@@ -20,6 +19,10 @@ async function bootstrapPrototypeShell() {
     const fragment = await loadTemplate(new URL(relativePath, templateRoot));
     mountTemplate(fragment, selector);
   }
+  const interruptionPanelFragment = await loadTemplate(
+    new URL("templates/composites/interruption-panel.html", templateRoot),
+  );
+  mountTemplateChildren(interruptionPanelFragment, "[data-template-mount=\"interruption-panel\"]");
   const inputFragment = await loadTemplate(new URL("templates/primitives/input.html", templateRoot));
   mountTemplateChildren(inputFragment, "[data-template-mount=\"input\"]");
 

@@ -16,7 +16,15 @@ export function init(api) {
       return;
     }
     setState("closed", kind);
-    api.byId("msgInput")?.focus();
+    const messageInput = api.byId("msgInput");
+    if (messageInput?.getClientRects().length) {
+      messageInput.focus();
+    } else {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement && activeElement !== document.body) {
+        activeElement.blur();
+      }
+    }
   };
 
   document.addEventListener("rozsa:interruption-open", event => {
