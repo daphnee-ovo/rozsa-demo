@@ -1,29 +1,29 @@
-# SPEC：GUI 原型与真实前端组件化重构
+# SPEC：GUI 原型组件化与共享前端接入
 
 ## 1. 目标
 
-本次工作是一场前端架构重构，不是界面改版。
+本次迭代先修整新版原型，再把原型组件接入真实 GUI，最后验证并维护一份 UI 实现。
 
 需要同时整理两套前端：
 
 1. 用来演示和设计界面的原型；
 2. Tauri 应用实际运行的 GUI 前端。
 
-整理后，两套前端都应具备清楚的组件层级、唯一的公共实现、可复用的页面组合方式和明确的数据接入位置。新增组件或场景时，应当能够复用已有 CSS、HTML 结构和交互代码，而不是再次复制整页后重新拆分。
+原型修整要建立清楚的组件层级、公共页面骨架、可复用场景和集中 mock。最终原型与真实 GUI 共用组件 HTML、CSS 和交互代码；原型用 mock adapter 演示场景，真实 GUI 用 Tauri adapter 接入产品数据与操作。
 
-本次重构不得改变任一侧已有的视觉、文案、交互结果或产品行为。原型与真实 GUI 分别和自己的重构前版本比较；不得借此把真实 GUI 改成新版原型的设计语言，也不得把新版原型改得更像当前 GUI。
+原型修整不得改变新版原型原有的视觉、文案和交互结果。真实 GUI 中原型已覆盖的组件以新版原型为视觉与交互依据，同时保留现有产品状态和运行时契约。原型未覆盖的运行时界面暂留空并暂停相关操作；缺失设计在共享架构完成后逐项补齐，不把暂缺功能视为已经恢复。
 
 ## 2. 本规范涉及的实际对象
 
 “旧原型”“新版原型”和“真实 GUI”在本规范中固定指以下内容：
 
-| 名称 | 当前路径 | 当前作用 | 本次处理结果 |
+| 名称 | 迭代起点路径 | 起点作用 | 本次处理结果 |
 | --- | --- | --- | --- |
 | 旧原型 | `docs/gui/prototype/` | 较早的原型，只有 `index.html`、`prototype.css`、`prototype.js` | 删除，不作为本次组件化的实现来源 |
 | 新版原型 | `docs/gui/new-version/` | 当前需要保留的新版界面原型，包含主原型、11 个场景页、视觉参考页、脚本和样式 | 先在原位置完成组件化，再整体迁至项目根目录 `prototype/` |
-| 真实 GUI | `crates/rozsa-gui/frontend/` | Tauri 应用实际加载的 main/sidebar HTML、JavaScript 和 CSS | 保持现有功能与外观，完成同类责任的组件化整理 |
+| 真实 GUI | `crates/rozsa-gui/frontend/` | Tauri 应用实际加载的 main/sidebar HTML、JavaScript 和 CSS | 接入从新版原型提取的共享 UI，由 Tauri adapter 连接实际产品数据与操作 |
 
-新版原型的当前权威输入包括：
+本迭代起点的新版原型输入包括：
 
 - `docs/gui/new-version/rozsa-gui.html` 与 `rozsa-gui.js`；
 - `docs/gui/new-version/scenes/` 下 11 个场景页；
@@ -41,14 +41,15 @@
 - 让原型场景通过公共页面骨架、组件组合和 mock 数据生成，不再复制完整页面。
 - 将原型展示数据集中到最终的 `prototype/mock/`。
 - 将新版原型迁到根目录 `prototype/`，删除旧原型和旧路径。
+- 将已修整的原型组件接入真实 GUI，使两个宿主维护一份 UI 实现，并分别使用 mock 与 Tauri adapter。
+- 将原型未覆盖的运行时界面暂留空并暂停相关操作，沿用现有 `UI_COVERAGE` 与 `DESIGN_GAPS` 记录缺口；缺失设计与功能恢复由后续迭代逐项处理，不属于本次迭代的交付条件。
 - 更新 GUI 与 prototype 相关中文文档，使其准确说明组件、场景、目录和新增内容的方法。
-- 通过真实页面、真实应用操作和现有专项测试证明重构前后没有退化。
+- 通过原型前后成对材料、共享组件双宿主对照、真实应用操作和专项测试验证各阶段结果。
 
 ### 3.2 本次不做
 
-- 不把新版设计语言迁移到真实 GUI。
-- 不改变颜色、字体、间距、尺寸、圆角、阴影、模糊、层级、动效、文案、图标和响应式结果。
-- 不改变点击、键盘、focus、输入、提交、取消、错误、乱序、恢复等可观察交互。
+- 不改变新版原型已有的颜色、字体、间距、尺寸、圆角、阴影、模糊、层级、动效、文案、图标和响应式结果。
+- 不改变未暂停路径的产品行为；真实 GUI 的视觉切换及缺口暂停只限于本规范明确的范围。
 - 不替用户设计原型中缺少的页面、组件、状态或视觉效果。
 - 不重构 session、权限、设置、Dev Flow 等产品数据模型。
 - 不改变 Tauri IPC、native window 架构或 Rust production 代码，除非现有接口确实无法提供原型已经定义且本次必须使用的数据，并由用户另行批准扩展范围。
@@ -92,7 +93,7 @@
 
 ### 4.3 CSS 和组件的层级
 
-原型与真实 GUI 使用相同的概念层级，但各自维护自己的代码，不互相 import：
+原型修整按下列概念层级拆分；最终原型与真实 GUI 引用同一份生产组件，而不是各自维护代码：
 
 ```text
 基础标准 → 基础控件 → 复合组件 → 功能模块 → 页面布局 → 场景组合 → 加载入口
@@ -108,7 +109,7 @@
 | `scenes` | 选择某个布局、组件、初始状态和演示数据 | empty-session、complete-session、permission-request | 公共组件的重复 CSS 或 HTML |
 | `entries` | 按确定顺序加载 CSS 和启动脚本 | main、sidebar、prototype index | 组件实现和业务逻辑 |
 
-CSS 拆分以现有完整 rule block 为单位。只允许改变文件位置和加载位置，不允许改变 selector、declaration、specificity、media query、keyframe 或规则先后关系。`utilities.css` 中的规则必须回到实际负责的组件或基础层，不能换个名字继续作为兜底文件。
+原型修整的 CSS 拆分以完整 rule block 为单位，只改变文件位置和加载位置，不改变 selector、declaration、specificity、media query、keyframe 或规则先后关系。最终共享组件以验证后的原型 CSS 为依据，不保留另一套 runtime 组件样式。`utilities.css` 中的规则必须回到实际负责的组件或基础层，不能换个名字继续作为兜底文件。
 
 ### 4.4 原型的 `templates/` 与 `scripts/` 分别负责什么
 
@@ -136,7 +137,7 @@ template 决定“这个组件由哪些 DOM 部分组成”
 script 决定“这些部分何时显示、如何响应操作、数据从哪里进入”
 ```
 
-这里的外部 `templates/` 目录用于原型，因为原型需要把同一组件装进多个独立 scene。真实 GUI 不新增异步 template 加载：main/sidebar 的稳定 application shell 继续位于各自 HTML 中，数据决定的可复用结构由 `scripts/components/` 下唯一的 renderer 生成。两种方式都必须保证同一组件只有一份稳定 DOM 实现；区别只在于原型需要跨 scene 装配，而真实 GUI 需要保持现有 Tauri 启动与渲染时序。
+原型先用外部 `templates/` 将同一组件装进多个 scene。接入真实 GUI 时，组件的稳定 DOM 与 renderer 收敛为两个宿主共用的一份实现；main/sidebar 的持久窗口骨架仍可位于各自 HTML 中，并保持现有 Tauri 启动与渲染时序。
 
 ### 4.5 三类状态分别由谁管理
 
@@ -237,7 +238,7 @@ gallery 可以保留自己的展示布局；其中与应用场景相同的 Butto
 
 ## 6. 目标目录及每个目录的职责
 
-### 6.1 原型
+### 6.1 原型修整阶段
 
 ```text
 prototype/
@@ -282,19 +283,21 @@ prototype/
 
 目录代表责任，不要求每个概念都单独建立文件。只有在内容具有独立复用方、独立状态或独立交互时才拆成单独文件；小型且始终一起变化的内容可以放在同一文件。
 
-### 6.2 真实 GUI
+上述结构是原型修整阶段的产物。最终原型保留场景、gallery、mock、文档和宿主装配；已接入真实 GUI 的生产组件不在原型目录再维护第二份。
+
+### 6.2 共享 UI 与真实 GUI
 
 ```text
 crates/rozsa-gui/frontend/
 ├── index.html
 ├── sidebar.html
-├── styles/{foundations,primitives,composites,features,layouts,entries}/
-└── scripts/{core,components,features,flows,adapters,entries}/
+├── ui/{styles,templates,scripts}/
+└── runtime/{adapters,entries}/
 ```
 
-真实 GUI 保留 main/sidebar 两个 WebView 入口，因此需要 `scripts/entries/main.js` 和 `scripts/entries/sidebar.js`。两个入口可以引用公共组件和流程，但继续使用同一个现有产品状态、scene revision 和事件来源，不能各自复制一份状态。
+`ui/` 是原型和真实 GUI 共用的生产界面实现；`runtime/adapters/` 只负责连接现有 Tauri handler、event 和 IPC。真实 GUI 保留 main/sidebar 两个 WebView 入口、同一个现有产品状态、scene revision 和事件来源，不能各自复制一份状态。
 
-原型和真实 GUI 只共享组织规范，不直接共享文件：原型的数据接入层读取 mock，真实 GUI 的数据接入层连接现有 Tauri handler、event 和 IPC。
+原型从根目录 `prototype/` 的场景和 mock 启动同一份 `ui/`；真实 GUI 通过 Tauri adapter 启动它。共享组件不依赖 mock 或 Tauri API，生产应用包也不依赖原型场景和 mock。
 
 ## 7. 界面对照表与设计缺口表
 
@@ -359,7 +362,7 @@ crates/rozsa-gui/frontend/
 | `required_prototype` | 需要用户在原型中补充的明确内容 |
 | `blocked_scope` | 在原型补充前不能进行的界面实现范围 |
 
-`partial` 和 `missing` 项目可以整理真实 GUI 的现有文件位置，但必须保持现有视觉和行为。缺口关闭前不得根据其他组件推导或实现新效果。
+`partial` 项按原型实际覆盖的状态区分：已覆盖部分接入共享 UI；未覆盖部分与 `missing` 项暂留空并暂停相关操作。每项记录受影响入口和用户可见影响；若请求仍可能由后台送达且无法安全暂停，该区域不得宣称迁移完成。缺口关闭前不得根据其他组件推导或实现新效果。
 
 ## 8. 重构顺序
 
@@ -370,11 +373,12 @@ crates/rozsa-gui/frontend/
 3. 完成新版原型的 CSS、application shell、templates、component behavior、flow、scene、gallery 和 mock 重构。
 4. 原型迁移完成后统一验证：从最小文件组织单元逐层检查到 component、feature/flow 和完整 scene/gallery。
 5. 原型统一验证通过后，将其一次性迁到根目录 `prototype/`，同步引用并删除两个旧原型目录。
-6. 完成真实 GUI 的 CSS、renderer、component behavior、flow、Tauri adapter 和各功能区域重构。
-7. runtime 迁移完成后统一验证：从最小文件组织单元逐层检查到 component、feature/flow 和 main/sidebar 实际界面。
-8. 更新组件说明、GUI 架构和 prototype 文档，汇总全部验收结果。
+6. 将已验证的原型组件收敛为一份共享 UI，原型改由 mock adapter 加载它，并复核 scene/gallery 的原型基线。
+7. 真实 GUI 通过 Tauri adapter 接入同一份 UI；未覆盖界面按第 7 节处理。
+8. 从最小文件组织单元逐层验证到完整 scene/gallery 和 main/sidebar 实际界面，并核对生产状态、缺口与 mock 隔离。
+9. 更新组件说明、GUI 架构和 prototype 文档，汇总全部验收结果。
 
-原型和 runtime 各自作为完整迁移阶段处理，不要求每搬移一个文件或组件就执行一轮正式验证。统一验证发现差异后，应从对应的最小组织单元开始定位，再向上重放所有受影响组合，直至完整 scene 或真实 GUI 界面恢复重构前结果。
+原型修整与共享接入分别作为迁移阶段处理，不要求每搬移一个文件就执行一轮正式验证。统一验证发现差异后，从对应的最小组织单元定位，再向上重放所有受影响组合。
 
 ## 9. 重构前后如何一一验证
 
@@ -407,7 +411,7 @@ crates/rozsa-gui/frontend/
 
 重构后的检查使用同一个稳定 ID、同一份输入数据、相同环境设置和相同操作步骤。前后材料按 ID 成对保存，不能在看到差异后临时改 viewport、替换数据、裁掉区域或删除检查项。
 
-原型只能与原型重构前材料比较；runtime 只能与 runtime 重构前材料比较。两套界面即使最终长得不同，只要分别保持自身原状，就符合本次重构目标。
+原型修整与共享提取都以本迭代的原型重构前材料为视觉和交互基线。真实 GUI 中已覆盖组件与新版原型在等价数据、尺寸和主题下比较；旧 runtime 材料用于检查未暂停的产品状态、事件和业务结果。未覆盖界面按设计缺口检查空容器与暂停影响，不算作原功能通过。
 
 截图用于发现整体布局和视觉差异；DOM 与 computed style 用于定位差异；实际操作用于确认交互结果。不能只依靠任意一种证据，也不能用文件数量、selector 数量、页面可加载或测试通过代替真实视觉验证。
 
@@ -420,15 +424,15 @@ crates/rozsa-gui/frontend/
 3. **feature 与 flow**：检查多个 component 组合后的数据传递、操作顺序、成功、失败、取消和恢复路径。
 4. **实际界面**：原型检查完整 scene/gallery；runtime 检查 main/sidebar 中能够真实到达的界面和状态。
 
-前三级用于定位重构错误，不能分别作为最终通过结论。只有第四级的全部检查项目与重构前记录一致，才能认定该侧迁移验证通过。
+前三级用于定位重构错误，不能分别作为最终通过结论。第四级必须分别证明原型保持原有结果、真实 GUI 的已覆盖组件符合新版原型，以及缺口按记录处理，才能认定本迭代通过。
 
 某个下层单元被多个上层组合引用时，必须沿引用关系检查所有相关 component、feature/flow 和实际界面。`UI_COVERAGE` 的 `used_by` 与 `verification` 字段提供这条引用关系。
 
 ### 9.5 验证失败时如何处理
 
-任何 DOM、computed style、截图、文案、交互顺序、focus、错误、乱序恢复或业务结果差异都表示该项未通过。应停止相关拆分、定位搬移造成的差异并恢复原结果。
+原型出现非预期 DOM、computed style、截图、文案或交互差异，真实 GUI 已覆盖组件偏离新版原型，或未暂停的业务结果退化，都表示相应检查未通过。应停止相关迁移并定位原因。
 
-新的视觉或行为要求不属于本规范。若用户提出新要求，应停止当前重构并重新确认范围和对照记录，不能作为本次架构重构中的例外直接混入。
+除本规范明确的新版原型接入与缺口暂停外，新的视觉或行为要求须重新确认范围，不能顺手混入。
 
 ### 9.6 自动化测试的作用
 
@@ -473,23 +477,23 @@ macOS 完成实际 GUI 与 native split 验证。Linux/Windows 完成共享结�
 
 这些文档是统一规范和组件说明，不是记录“从哪个文件改到哪个文件”的迁移日志。GUI 架构、术语、主题、Dev Flow、native split、Related Docs、backlinks 和项目规则必须与最终实现同步，默认使用中文。
 
-最终 GUI 设计真源指向 `DESIGN.md` 与根目录 `prototype/`。`DESIGN.md` 只解释设计概念；本次重构的视觉判断仍以原型和真实 GUI 各自的重构前表现为准。
+最终 GUI 设计真源指向 `DESIGN.md` 与根目录 `prototype/`。`DESIGN.md` 只解释设计概念；原型修整以原型重构前表现为准，真实 GUI 的已覆盖组件以新版原型为准。最终文档须说明共享一份 UI 和两种 adapter。
 
 ## 12. 验收标准
 
 - SPEC-AC-001：中文界面规范和组件说明准确覆盖本规范，并与最终代码结构一致。
-- SPEC-AC-002：原型场景不再复制完整页面；应用公共页面骨架、组件 HTML、CSS 和交互分别只有一份实现。
+- SPEC-AC-002：原型场景不再复制完整页面；最终原型和真实 GUI 对已覆盖组件的 HTML、CSS 和交互引用同一份实现。
 - SPEC-AC-003：scene 与 gallery 的用途、入口和文件归属明确；视觉参考页保持原有布局和交互。
-- SPEC-AC-004：原型和真实 GUI 的 CSS 都按责任归类，稳定 CSS 全部外置，无循环加载、跨组件兜底文件或规则顺序变化。
-- SPEC-AC-005：原型重构前后、真实 GUI 重构前后的 DOM、computed style、截图、文案和响应式结果分别一致。
-- SPEC-AC-006：组件和跨组件流程拆分后，键盘、focus、hover、选择、展开、提交、取消、错误、乱序和恢复结果不变。
-- SPEC-AC-007：界面对照表双向覆盖新版原型与真实 GUI 的可见内容；所有设计缺口都有真实触发方式和缺失说明。
+- SPEC-AC-004：原型修整保持已验证的 CSS 规则与顺序；最终生产组件 CSS 只有一份，无循环加载或跨组件兜底文件。
+- SPEC-AC-005：原型修整及共享提取前后的 DOM、computed style、截图、文案和响应式结果一致；真实 GUI 的已覆盖组件与新版原型一致。
+- SPEC-AC-006：原型原有的键盘、focus、hover、选择、展开、提交、取消、错误、乱序和恢复结果保持；真实 GUI 的未暂停产品操作契约不退化。
+- SPEC-AC-007：界面对照表双向覆盖新版原型与真实 GUI；设计缺口记录真实触发方式、缺失内容及临时空容器和暂停影响。
 - SPEC-AC-008：原型演示数据集中位于 `prototype/mock/`；runtime、Rust、Tauri 配置和应用包对其零依赖。
 - SPEC-AC-009：根目录 `prototype/` 是唯一原型真源；旧原型目录、旧入口和当前有效旧引用全部删除。
-- SPEC-AC-010：真实 GUI 保留现有产品状态、handler、event、IPC、异步语义及 main/sidebar WebView 契约。
+- SPEC-AC-010：真实 GUI 保留现有产品状态、handler、event、IPC、异步语义及 main/sidebar WebView 契约；暂停操作不从隐藏入口触发或伪造结果。
 - SPEC-AC-011：文档准确说明最终组件、场景、mock、目录、验证方式和新增内容方法，不保留失效链接或迁移日志式说明。
-- SPEC-AC-012：受影响的现有 GUI 专项测试和实际关键流程通过；没有通过修改测试掩盖回归。
-- SPEC-AC-013：未经另行批准没有 Rust/IPC production 变化，也没有本规范之外的视觉、交互或业务变化。
+- SPEC-AC-012：受影响的 GUI 专项测试和未暂停的实际关键流程通过；暂停项单独报告，没有通过修改测试掩盖其他回归。
+- SPEC-AC-013：未经另行批准没有 Rust/IPC production 变化，也没有本规范及缺口清单之外的视觉、交互或业务变化。
 - SPEC-AC-014：macOS 完成实际视觉和 native split 验证；Linux/Windows 未完成的真实视觉验证保持 pending。
 
 ## 13. 主要风险与对应措施
@@ -499,14 +503,15 @@ macOS 完成实际 GUI 与 native split 验证。Linux/Windows 完成共享结�
 - **template 装配改变初始化顺序**：保持稳定 DOM root、listener 顺序、focus 和 session-specific UI state，并实际重放交互。
 - **mock 污染真实应用**：原型和真实 GUI 使用不同的数据接入层，并检查 production source 与应用包。
 - **遗漏某个引用页面**：公共文件的每个使用场景都登记在界面对照表中，修改后全部重放。
-- **实现者补画缺失原型**：设计缺口表明确记录并停止视觉实现，只搬移真实 GUI 已有代码。
+- **实现者补画缺失原型**：设计缺口表明确记录，未覆盖部分留空，不沿用旧 GUI 的第二套组件实现。
+- **暂停操作留下未回应请求**：核对后台和跨 WebView 触发路径；无法安全暂停的区域阻断迁移，不伪造响应。
 - **main/sidebar 状态分叉**：继续使用现有 scene identity、revision 和事件来源，不复制产品状态。
 
 ## 14. 测试计划
 
-- 使用第 9 节定义的成对材料验证原型和 runtime 各自的重构前后结果。
+- 使用第 9 节定义的成对材料验证原型修整、共享提取和真实 GUI 接入各阶段结果。
 - 实际操作所有登记的 hover、focus、展开、选择、提交、取消、错误、乱序和恢复路径。
 - 运行受影响的 `rozsa-gui` 专项测试，覆盖 scene continuity、IME、queue/steering、permission/question、settings、notification、Dev Flow、native split 和 platform fallback。
-- 使用结构测试检查 CSS 装配、公共实现唯一性、scene 组合、旧入口删除和 production/mock 隔离。
+- 使用结构测试检查 CSS 装配、双宿主公共实现唯一性、scene 组合、旧入口删除、缺口暂停和 production/mock 隔离。
 - 自引入 bug 必须增加能在修复前失败、修复后通过的回归测试。
 - 验证结束后关闭本地 HTTP server 和测试应用，不遗留运行实例。

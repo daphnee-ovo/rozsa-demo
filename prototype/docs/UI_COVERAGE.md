@@ -19,7 +19,23 @@ prototype 的统一入口是 `prototype/index.html`：`?scene=<id>` 装配 appli
 | `missing` | runtime 有可见内容，新版原型没有。 |
 | `non-visual` | 只有数据接线、路由或 native 行为，没有独立视觉表现。 |
 
-`partial` 与 `missing` 的具体阻断范围只在 [`DESIGN_GAPS.md`](./DESIGN_GAPS.md) 维护。它们可以整理 runtime 现有实现，但不得由实施者推导或补画新视觉。
+`partial` 的已覆盖状态接入共享 UI；未覆盖状态与 `missing` 项保留空容器并暂停相关操作。设计缺口沿用 [`DESIGN_GAPS.md`](./DESIGN_GAPS.md) 的原有 ID，缺失设计与功能恢复在后续迭代逐项处理，不由实施者补画。
+
+每个 `partial`/`missing` 项新增 `shared_migration`，记录本次迁移处置：
+
+| 字段 | 含义 |
+| --- | --- |
+| `gap_id` | 原有设计缺口 ID；不新增覆盖状态。 |
+| `owner_task` | 负责接入或暂停检查的开发任务。 |
+| `empty_container` | 未覆盖状态保留的区域或 slot；不授权新设计。 |
+| `paused_entries` | 需要暂停的可见入口及隐藏操作路径。 |
+| `user_impact` | 暂缺操作的用户影响及已覆盖部分的保留边界。 |
+| `safety_gate` | 切换前须满足的安全门槛；无法安全暂停则阻断对应区域迁移。 |
+| `safety_evidence` | 已核对的当前源码路径与入口；不代替实际操作验证。 |
+
+这些字段记录计划处置，不能据此声称操作已经暂停或区域已经迁移。后台事件、跨 WebView 路由和在途请求必须由对应开发任务验证；不自动回应请求、不丢弃真实错误、不生成假成功。共享切换与 T036 清理都以对应安全门槛及专项证据为前提。
+
+当前源码确认 permission-request 进入待回复队列，reply 失败保留请求，下一请求可能由队列继续展示；仅隐藏 trust 或 error 页面无法暂停 approval lifecycle。因此 GAP-008A/008B 在安全回应与恢复验证前阻断 permission 区域迁移。message/tool、running flow 和跨组件反馈也有被动入口，需分别在 T017/T038、T018、T021 核对，不以单纯隐藏 DOM 作为安全结论。
 
 ## 响应式布局验证（TASK-T024）
 
@@ -85,4 +101,4 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 - [`SPEC：GUI 原型与真实前端组件化重构`](../../.dev-doc/refactor/ui-architecture/SPEC.md)
 - [`设计缺口表`](./DESIGN_GAPS.md)
 - [`GUI 架构`](./ARCHITECTURE.md)
-- [`界面使用指南`](./UI_USAGE_GUIDELINES.md)
+- [`界面使用指南`](../../docs/gui/UI_USAGE_GUIDELINES.md)
