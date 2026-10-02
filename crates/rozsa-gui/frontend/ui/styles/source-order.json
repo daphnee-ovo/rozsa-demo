@@ -66,6 +66,26 @@
       "sha256": "f96592e33c90090ccee9a338518f597ee802862d59c16fc01636075ff609f1eb"
     },
     {
+      "file": "features/sidebar.css",
+      "sha256": "f138fc5b2cddf56a09d382d98cc6dc23a8b8c4b142a14f515872bd2abf55a42e"
+    },
+    {
+      "file": "features/dev-flow.css",
+      "sha256": "f31e964677e529f3bcbb6f9d92aa1c47da106d35f281216e860aa2fc236fb55c"
+    },
+    {
+      "file": "features/sidebar-window.css",
+      "sha256": "79dfdb7ee2767ca74cb21fe0810b47f7eba776f3dc1175d419df806b2108520e"
+    },
+    {
+      "file": "features/dev-flow-detail.css",
+      "sha256": "a9c46c87d359111609e096059af1d28952ca9f916f64d33f515eda2357a43b78"
+    },
+    {
+      "file": "features/dev-flow-runtime.css",
+      "sha256": "29ed37863af020f749d4aa0706c49864db16041ad97dc0177ff0f52c04c2bc19"
+    },
+    {
       "file": "composites/feedback.css",
       "sha256": "c917752c8e6c3b9fd0fffa35545498bebffc5082795026e1861c878dd9e06a32"
     }
@@ -99,6 +119,11 @@
     "features/thinking.css",
     "features/queue.css",
     "features/steering.css",
+    "features/sidebar.css",
+    "features/dev-flow.css",
+    "features/dev-flow-detail.css",
+    "features/sidebar-window.css",
+    "features/dev-flow-runtime.css",
     "foundations/motion.css",
     "features/tools.css"
   ],

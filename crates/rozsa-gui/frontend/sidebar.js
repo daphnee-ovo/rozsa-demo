@@ -104,32 +104,12 @@ function selectSidebarSettingsPane(pane) {
 }
 
 function renderSidebarSessions() {
-  const container = document.getElementById('sidebarSessionList');
+  const container = document.getElementById('sessionList');
   if (!container) return;
-  container.replaceChildren();
-  if (!sidebarSessions.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent = 'No sessions';
-    container.appendChild(empty);
-    return;
-  }
-  sidebarSessions.forEach(session => {
-    const item = document.createElement('div');
-    item.className = 'session-item' + (session.id === sidebarActiveSessionId ? ' active' : '');
-    item.tabIndex = 0;
-    item.onclick = () => switchSidebarSession(session.path);
-    const status = document.createElement('span');
-    status.className = 'session-status ' + (session.activity || 'idle');
-    const name = document.createElement('span');
-    name.className = 'session-name';
-    name.textContent = session.name || 'Untitled';
-    const meta = document.createElement('span');
-    meta.className = 'session-meta';
-    meta.textContent = formatSidebarSessionDate(session.modified);
-    item.append(status, name, meta);
-    container.appendChild(item);
-  });
+  container.innerHTML = window.RozsaSidebar.sessionsMarkup(sidebarSessions.map(session => ({
+    name: session.name || 'Untitled', date: formatSidebarSessionDate(session.modified),
+    activity: session.activity || 'idle', active: session.id === sidebarActiveSessionId,
+  })));
 }
 
 function renderSidebarState(snapshot) {
@@ -137,10 +117,10 @@ function renderSidebarState(snapshot) {
   sidebarSessions = Array.isArray(snapshot.sessions) ? snapshot.sessions : [];
   sidebarActiveSessionId = snapshot.activeSessionId || null;
   if (snapshot.git) {
-    setSidebarText('sidebarGitBranch', snapshot.git.label || snapshot.git.projectName || '—');
-    setSidebarText('sidebarGitAdd', '+' + Number(snapshot.git.added || 0));
-    setSidebarText('sidebarGitDel', '-' + Number(snapshot.git.deleted || 0));
-    setSidebarText('sidebarGitFiles', Number(snapshot.git.files || 0) + ' files');
+    setSidebarText('gitBranch', snapshot.git.label || snapshot.git.projectName || '—');
+    setSidebarText('gitAdd', '+' + Number(snapshot.git.added || 0));
+    setSidebarText('gitDel', '-' + Number(snapshot.git.deleted || 0));
+    setSidebarText('gitFiles', Number(snapshot.git.files || 0) + ' files');
   }
   renderSidebarQuota(snapshot);
   renderSidebarDevFlow(snapshot);
@@ -148,17 +128,18 @@ function renderSidebarState(snapshot) {
 }
 
 function renderSidebarQuota(snapshot) {
-  const group = document.getElementById('sidebarQuotaGroup');
+  const group = document.getElementById('quotaGroup');
   if (!group) return;
   const showQuota = Boolean(snapshot.showQuota);
   group.hidden = !showQuota;
+  group.style.display = showQuota ? '' : 'none';
   if (!showQuota) return;
-  const hourRow = document.getElementById('sidebarQuotaHourRow');
+  const hourRow = document.getElementById('quotaHourRow');
   if (hourRow) hourRow.hidden = !snapshot.showHourlyQuota;
-  renderSidebarQuotaWindow('sidebarQuotaHourBar', 'sidebarQuotaHour', snapshot.quota?.primary, snapshot.rateLimitDisplayMode);
-  const weekRow = document.getElementById('sidebarQuotaWeekRow');
+  renderSidebarQuotaWindow('quotaHourBar', 'quotaHour', snapshot.quota?.primary, snapshot.rateLimitDisplayMode);
+  const weekRow = document.getElementById('quotaWeekRow');
   if (weekRow) weekRow.hidden = !snapshot.showWeeklyQuota;
-  renderSidebarQuotaWindow('sidebarQuotaWeekBar', 'sidebarQuotaWeek', snapshot.quota?.secondary, snapshot.rateLimitDisplayMode);
+  renderSidebarQuotaWindow('quotaWeekBar', 'quotaWeek', snapshot.quota?.secondary, snapshot.rateLimitDisplayMode);
 }
 
 function renderSidebarQuotaWindow(barId, valueId, window, mode) {
@@ -168,7 +149,7 @@ function renderSidebarQuotaWindow(barId, valueId, window, mode) {
   const used = Math.min(100, Math.max(0, Number(window?.usedPercent || 0)));
   const display = mode === 'used' ? used : 100 - used;
   bar.style.width = window ? display + '%' : '0%';
-  bar.classList.toggle('warn', mode === 'used' ? used >= 80 : display <= 20);
+  bar.classList.remove('warn');
   value.textContent = window ? Math.round(display) + '%' : '—';
 }
 
@@ -177,7 +158,7 @@ function renderSidebarDevFlow(snapshot) {
   const showDashboard = Boolean(snapshot && snapshot.showDevFlowDashboard);
   sidebarDevFlow = df;
   sidebarLastDevFlowLayoutKey = '';
-  const group = document.getElementById('sidebarDevFlowGroup');
+  const group = document.getElementById('devFlowSidebarGroup');
   if (!group) return;
   const showSummary = Boolean(df) && df.availability === 'ready' && df.showSidebarStatus;
   group.hidden = !showSummary;
@@ -185,7 +166,7 @@ function renderSidebarDevFlow(snapshot) {
     updateDevFlowDashboardButton(df, showDashboard);
     return;
   }
-  const summary = document.getElementById('sidebarDevFlowSummary');
+  const summary = document.getElementById('devFlowSidebarSummary');
   if (summary) {
     summary.textContent = devFlowCountLabel(df.openTasks, 'Task') + ' · ' + devFlowCountLabel(df.openIssues, 'Issue');
     summary.classList.toggle('stale', Boolean(df.stale));
@@ -200,33 +181,18 @@ function devFlowCountLabel(count, noun) {
 }
 
 function renderDevFlowClaimedRows() {
-  const container = document.getElementById('sidebarDevFlowClaimed');
-  const more = document.getElementById('sidebarDevFlowMore');
+  const container = document.getElementById('devFlowSidebarClaimed');
+  const more = document.getElementById('devFlowSidebarMore');
   if (!container || !sidebarDevFlow) return;
   const rows = Array.isArray(sidebarDevFlow.claimed) ? sidebarDevFlow.claimed : [];
   const layout = computeDevFlowRowLayout(rows.length);
   const layoutKey = layout.visible + ':' + layout.hidden + ':' + layout.showMore;
   if (layoutKey === sidebarLastDevFlowLayoutKey) return;
   sidebarLastDevFlowLayoutKey = layoutKey;
-  container.replaceChildren();
   const visible = rows.slice(0, layout.visible);
-  visible.forEach(item => {
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'dev-flow-claimed-row';
-    row.title = item.title || '';
-    wireDevFlowDetailTrigger(row, { kind: 'item', id: item.id });
-    const dot = document.createElement('span');
-    dot.className = 'dev-flow-claimed-dot';
-    dot.setAttribute('aria-hidden', 'true');
-    const id = document.createElement('span');
-    id.className = 'dev-flow-claimed-id';
-    id.textContent = item.shortId || item.id;
-    const title = document.createElement('span');
-    title.className = 'dev-flow-claimed-title';
-    title.textContent = item.title || '';
-    row.append(dot, id, title);
-    container.appendChild(row);
+  container.innerHTML = visible.map(item => window.RozsaSidebar.claimedMarkup({ ...item, id: item.shortId || item.id })).join('');
+  container.querySelectorAll('.dev-flow-claimed-row').forEach((row, index) => {
+    wireDevFlowDetailTrigger(row, { kind: 'item', id: visible[index].id });
   });
   if (more) {
     more.hidden = !layout.showMore;
@@ -276,13 +242,13 @@ function dismissDevFlowHoverDetail() {
 function computeDevFlowRowLayout(totalRows) {
   const rowHeight = measureDevFlowRowHeight();
   if (rowHeight <= 0) return { visible: 0, hidden: totalRows, showMore: false };
-  const statusSection = document.getElementById('sidebarStatusSection');
+  const statusSection = document.querySelector('[data-od-id="sidebar-status"]');
   if (!statusSection) return { visible: 0, hidden: totalRows, showMore: false };
   const top = document.body.classList.contains('native-fullscreen') ? 0 : 24;
   const bottom = document.querySelector('.sidebar-bottom')?.getBoundingClientRect().height || 0;
   let base = statusSection.getBoundingClientRect().height;
-  const claimed = document.getElementById('sidebarDevFlowClaimed');
-  const more = document.getElementById('sidebarDevFlowMore');
+  const claimed = document.getElementById('devFlowSidebarClaimed');
+  const more = document.getElementById('devFlowSidebarMore');
   if (claimed) base -= claimed.getBoundingClientRect().height;
   if (more && !more.hidden) base -= more.getBoundingClientRect().height;
   const budget = window.innerHeight - top - base - bottom - SIDEBAR_SESSIONS_MIN_PX;
@@ -310,19 +276,10 @@ function measureDevFlowRowHeight() {
 
 function ensureDevFlowMeasureProbe() {
   if (sidebarDevFlowMeasureProbe) return sidebarDevFlowMeasureProbe;
-  const probe = document.createElement('button');
-  probe.type = 'button';
-  probe.className = 'dev-flow-claimed-row';
+  const template = document.createElement('template');
+  template.innerHTML = window.RozsaSidebar.claimedMarkup({ id: 'T001', title: 'Measure' });
+  const probe = template.content.firstElementChild;
   probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;left:-10000px;top:0;';
-  const dot = document.createElement('span');
-  dot.className = 'dev-flow-claimed-dot';
-  const id = document.createElement('span');
-  id.className = 'dev-flow-claimed-id';
-  id.textContent = 'T001';
-  const title = document.createElement('span');
-  title.className = 'dev-flow-claimed-title';
-  title.textContent = 'Measure';
-  probe.append(dot, id, title);
   document.getElementById('mainSidebarScene')?.appendChild(probe);
   sidebarDevFlowMeasureProbe = probe;
   sidebarDevFlowResizeObserver.observe(probe);
@@ -433,7 +390,7 @@ function renderSidebarError(error) {
 }
 
 function renderSidebarBootstrapError(error) {
-  const container = document.getElementById('sidebarSessionList');
+  const container = document.getElementById('sessionList');
   if (!container) return;
   const item = document.createElement('div');
   item.className = 'error';

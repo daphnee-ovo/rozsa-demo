@@ -460,7 +460,7 @@ function updateQuotaWindow(bar, valueEl, window, label) {
   const used = clampPercent(Number(window.usedPercent || 0));
   const display = rateLimitDisplayMode === 'used' ? used : 100 - used;
   bar.style.width = display + '%';
-  bar.classList.toggle('warn', rateLimitDisplayMode === 'used' ? used >= 80 : display <= 20);
+  bar.classList.remove('warn');
   valueEl.textContent = Math.round(display) + '%';
   setQuotaTooltip(row, bar, valueEl, formatResetTitle(label, window));
 }
@@ -893,12 +893,15 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
         continue;
       }
       if (view.disposition === 'covered') {
-        const title = resolveToolTitle(tc, null);
+        const devFlowPresentation = parseDevFlowBashPresentation(tc, result, devFlowTitleForItem);
+        if (devFlowPresentation && tc.id) requestDevFlowTitles(tc.id, devFlowPresentation);
+        const title = resolveToolTitle(tc, devFlowPresentation);
         const evidence = view.kind === 'output'
           ? window.RozsaTools.evidenceMarkup(view.label, view.output)
           : window.RozsaTools.evidenceViewMarkup(view.kind, view.content);
         body += window.RozsaTools.toolMarkup(tc.id || '', title.name, title.arg, '', view.status, {
           expanded: isToolCallExpanded(tc.id), bodyHtml: evidence,
+          className: devFlowPresentation ? 'dev-flow-tool-call' : '',
         }).replace(' tabindex="0"', ' data-session-id="' + escapeHtml(activeSessionId || '') + '" tabindex="0"');
         continue;
       }
@@ -2922,18 +2925,11 @@ function renderSessionList() {
   const renderKey = JSON.stringify(sessions) + ':' + activeSessionIdx + ':' + JSON.stringify(sessionStreamingState);
   if (renderKey === renderedSessionListKey) return;
   renderedSessionListKey = renderKey;
-  if (!sessions.length) {
-    el.innerHTML = '<div style="padding:12px;font-size:11px;color:var(--muted)">No sessions</div>';
-    return;
-  }
-  el.innerHTML = sessions.map((s, i) =>
-    '<div class="session-item' + (i === activeSessionIdx ? ' active' : '') + '" data-path="' + escapeHtml(s.path) +
-    '" onclick="doSwitchSession(' + i + ')">' +
-    '<span class="session-status ' + (sessionStreamingState[s.id] || 'idle') + '"></span>' +
-    '<div class="session-name">' + escapeHtml(s.name || s.first_message || 'Untitled') + '</div>' +
-    '<div class="session-meta"><span>' + escapeHtml(formatSessionDate(s.modified || s.last_modified)) + '</span>' +
-    '</div></div>'
-  ).join('');
+  el.innerHTML = window.RozsaSidebar.sessionsMarkup(sessions.map((session, index) => ({
+    name: session.name || session.first_message || 'Untitled',
+    date: formatSessionDate(session.modified || session.last_modified),
+    activity: sessionStreamingState[session.id] || 'idle', active: index === activeSessionIdx,
+  })));
 }
 
 function showSidebarError(id, message) {
@@ -3156,6 +3152,11 @@ function preparePlatformSceneDom() {
     return;
   }
   materializeFallbackTemplate('fallbackSidebarTemplate', 'fallbackSidebarMount');
+  window.RozsaSidebar.suspendQuotaTooltip();
+  window.RozsaSidebar.init({ boundModules: new Set(), byId: id => document.getElementById(id),
+    activateSession: doSwitchSession, newSession, toggleSettings,
+    openDevFlowDashboard: () => invoke('open_dev_flow_dashboard').catch(showError),
+  });
   materializeFallbackTemplate('fallbackSettingsNavigationTemplate', 'fallbackSettingsNavigationMount');
 }
 
@@ -3643,48 +3644,8 @@ function devFlowDependentControlsDisabled(settings) {
 }
 
 function renderDevFlowSettings() {
-  const s = devFlowSettings;
-  const enabled = document.getElementById('devFlowEnabled');
-  const sidebarStatus = document.getElementById('devFlowSidebarStatus');
-  const dashboardButton = document.getElementById('devFlowDashboardButton');
-  const dashboardAddress = document.getElementById('devFlowDashboardAddress');
-  const pathInput = document.getElementById('devFlowExecutablePath');
-  const pickExecutable = document.getElementById('devFlowPickExecutable');
-  if (!s) return;
-  setSettingSwitch(enabled, s.enabled);
-  setSettingSwitch(sidebarStatus, s.showSidebarStatus);
-  setSettingSwitch(dashboardButton, s.showDashboardButton);
-  setDevFlowText('devFlowVersion', s.cli.available ? (s.cli.version || 'unknown') : 'unknown');
-  const availability = !s.cli.available
-    ? 'Unavailable'
-    : s.project
-      ? s.project.availability.charAt(0).toUpperCase() + s.project.availability.slice(1)
-      : 'No active project';
-  setDevFlowText('devFlowDashboardAvailability', availability);
-  const statusElement = document.getElementById('devFlowDashboardStatus');
-  if (statusElement) statusElement.classList.toggle('is-ready', availability.toLowerCase() === 'ready');
-  const dashboardUrl = s.project?.dashboardUrl || '';
-  setDevFlowText('devFlowDashboardAddressText', dashboardUrl.replace(/^https?:\/\//, '') || 'Unavailable');
-  if (dashboardAddress) {
-    dashboardAddress.disabled = !dashboardUrl;
-    dashboardAddress.title = dashboardUrl ? 'Open Dev Flow dashboard' : 'Dashboard unavailable';
-  }
-  const memoryParts = formatDevFlowMemory(s.project?.memoryUseBytes).split(' ');
-  setDevFlowText('devFlowMemoryAmount', memoryParts[0] || 'Unavailable');
-  setDevFlowText('devFlowMemoryUnit', memoryParts[1] || '');
-  if (pathInput) pathInput.value = s.executablePath || s.cli.executable || 'Not detected';
-  const dependentDisabled = devFlowDependentControlsDisabled(s);
-  // The master switch must remain available even when the disabled runtime has
-  // not performed CLI discovery yet; enabling it is what triggers discovery.
-  setDevFlowDependentControlDisabled(enabled, false);
-  setDevFlowDependentControlDisabled(sidebarStatus, dependentDisabled);
-  setDevFlowDependentControlDisabled(dashboardButton, dependentDisabled);
-  setDevFlowDependentControlDisabled(pickExecutable, false);
-  setDevFlowDependentControlDisabled(pathInput, false);
-  const missing = document.getElementById('devFlowMissing');
-  if (missing) missing.hidden = s.cli.available;
+  window.RozsaDevFlow.renderSettings(window.RozsaDevFlow.devFlowSettingsView(devFlowSettings));
 }
-
 async function updateDevFlowSettings(command, args, optimistic, errorId, errorTitle) {
   const revision = ++devFlowSettingsRevision;
   const previous = devFlowSettings;
@@ -5586,20 +5547,7 @@ document.addEventListener('mouseout', function(e) {
 document.addEventListener('scroll', hideQuotaTooltip, true);
 
 function showQuotaTooltip(target) {
-  const tooltip = document.getElementById('quotaTooltip');
-  const text = target.dataset.quotaTooltip;
-  if (!tooltip || !text) return;
-  tooltip.textContent = text;
-  tooltip.classList.add('visible');
-  const rect = target.getBoundingClientRect();
-  const tipRect = tooltip.getBoundingClientRect();
-  const margin = 8;
-  let left = rect.right - tipRect.width;
-  left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
-  let top = rect.top - tipRect.height - margin;
-  if (top < margin) top = rect.bottom + margin;
-  tooltip.style.left = left + 'px';
-  tooltip.style.top = top + 'px';
+  window.RozsaSidebar.suspendQuotaTooltip();
 }
 
 function hideQuotaTooltip() {
@@ -5686,115 +5634,13 @@ function devFlowCountLabel(count, noun) {
 }
 
 function renderDevFlowDetail(payload) {
-  const revision = document.getElementById('devFlowDetailRevision');
-  if (revision) revision.textContent = payload.revision ? '#' + payload.revision : '';
-  const project = document.getElementById('devFlowDetailProject');
-  if (project) project.textContent = (payload.project.root || '') + ' · ' + (payload.project.revision || '');
-  const summary = document.getElementById('devFlowDetailSummary');
-  if (summary) {
-    summary.textContent = devFlowCountLabel(payload.openTasks, 'Task') + ' · ' + devFlowCountLabel(payload.openIssues, 'Issue') +
-      (payload.stale ? ' · stale' : '');
-  }
-  const list = document.getElementById('devFlowDetailList');
-  if (!list) return;
-  list.replaceChildren();
-  const items = Array.isArray(payload.items) ? payload.items : [];
-  if (!items.length) {
-    const empty = document.createElement('div');
-    empty.className = 'dev-flow-detail-empty';
-    empty.textContent = 'No open work';
-    list.appendChild(empty);
-    return;
-  }
-  items.forEach(item => {
-    const row = document.createElement('div');
-    row.className = 'dev-flow-detail-item';
-    row.setAttribute('role', 'listitem');
-    row.tabIndex = 0;
-    row.setAttribute('aria-label', (item.kind === 'issue' ? 'Issue ' : 'Task ') + item.shortId + ' ' + item.title);
-    const head = document.createElement('div');
-    head.className = 'dev-flow-detail-item-head';
-    const id = document.createElement('span');
-    id.className = 'dev-flow-detail-item-id';
-    id.textContent = item.shortId || item.id;
-    const title = document.createElement('span');
-    title.className = 'dev-flow-detail-item-title';
-    title.textContent = item.title || '';
-    const status = document.createElement('span');
-    status.className = 'dev-flow-detail-item-status' + (item.status === 'in-progress' ? ' in-progress' : '');
-    status.textContent = item.status || '';
-    head.append(id, title, status);
-    row.appendChild(head);
-    const metaParts = [];
-    if (item.priority) metaParts.push(item.priority);
-    if (item.complexity) metaParts.push(item.complexity);
-    if (item.taskType) metaParts.push(item.taskType);
-    if (item.severity) metaParts.push(item.severity);
-    if (item.dependsOn && item.dependsOn.length) metaParts.push('depends: ' + item.dependsOn.join(', '));
-    if (item.refs) metaParts.push(item.refs);
-    if (metaParts.length) {
-      const meta = document.createElement('div');
-      meta.className = 'dev-flow-detail-item-meta';
-      meta.textContent = metaParts.join(' · ');
-      row.appendChild(meta);
-    }
-    if (item.description) {
-      const desc = document.createElement('div');
-      desc.className = 'dev-flow-detail-item-desc';
-      desc.textContent = item.description;
-      row.appendChild(desc);
-    }
-    const files = [];
-    (item.filesCreate || []).forEach(file => files.push('CREATE: ' + file));
-    (item.filesModify || []).forEach(file => files.push('MODIFY: ' + file));
-    (item.filesTest || []).forEach(file => files.push('TEST: ' + file));
-    if (files.length) {
-      const fileDetails = document.createElement('details');
-      fileDetails.className = 'dev-flow-detail-disclosure';
-      const fileSummary = document.createElement('summary');
-      fileSummary.textContent = 'Files (' + files.length + ')';
-      const fileList = document.createElement('div');
-      fileList.className = 'dev-flow-detail-disclosure-body';
-      files.forEach(file => {
-        const entry = document.createElement('div');
-        entry.textContent = file;
-        fileList.appendChild(entry);
-      });
-      fileDetails.append(fileSummary, fileList);
-      row.appendChild(fileDetails);
-    }
-    if (item.doneWhen && item.doneWhen.length) {
-      const doneDetails = document.createElement('details');
-      doneDetails.className = 'dev-flow-detail-disclosure';
-      const doneSummary = document.createElement('summary');
-      doneSummary.textContent = 'Done when (' + item.doneWhen.length + ')';
-      const doneList = document.createElement('ul');
-      doneList.className = 'dev-flow-detail-disclosure-body';
-      item.doneWhen.forEach(criterion => {
-        const entry = document.createElement('li');
-        entry.textContent = criterion;
-        doneList.appendChild(entry);
-      });
-      doneDetails.append(doneSummary, doneList);
-      row.appendChild(doneDetails);
-    }
-    if (payload.focusId && payload.focusId === item.id) {
-      row.classList.add('focus');
-    }
-    list.appendChild(row);
-  });
-  const focusItem = payload.focusId
-    ? items.findIndex(item => item.id === payload.focusId)
-    : -1;
-  if (focusItem >= 0 && list.children[focusItem]) {
-    list.children[focusItem].scrollIntoView({ block: 'nearest' });
-  }
+  window.RozsaDevFlow.renderDetail(window.RozsaDevFlow.devFlowDetailView(payload));
 }
-
 function openDevFlowDetailPanel() {
   const overlay = document.getElementById('devFlowDetail');
   if (!overlay) return;
   overlay.hidden = false;
+  document.body.classList.add('dev-flow-detail-open');
   devFlowDetailOpen = true;
   const focusTarget = overlay.querySelector('.dev-flow-detail-item') || document.getElementById('devFlowDetailClose');
   if (focusTarget) focusTarget.focus();
@@ -5804,36 +5650,10 @@ function closeDevFlowDetail() {
   const overlay = document.getElementById('devFlowDetail');
   if (!overlay) return;
   overlay.hidden = true;
+  document.body.classList.remove('dev-flow-detail-open');
   devFlowDetailOpen = false;
 }
 
-document.getElementById('devFlowDetailClose')
-  ?.addEventListener('click', closeDevFlowDetail);
-
-document.addEventListener('pointerdown', event => {
-  if (devFlowDetailOpen && !event.target.closest('#devFlowDetail')) {
-    closeDevFlowDetail();
-  }
-});
-
-document.addEventListener('keydown', event => {
-  if (!devFlowDetailOpen) return;
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    closeDevFlowDetail();
-    return;
-  }
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    const items = Array.from(document.querySelectorAll('.dev-flow-detail-item'));
-    if (!items.length) return;
-    const index = items.indexOf(document.activeElement);
-    const next = event.key === 'ArrowDown'
-      ? (index + 1) % items.length
-      : (index - 1 + items.length) % items.length;
-    event.preventDefault();
-    items[next].focus();
-  }
-});
 
 const notificationToasts = new Map();
 const unresolvedErrors = new Map();

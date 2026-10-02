@@ -11,7 +11,6 @@
 @import url("./components/forms.css");
 @import url("./components/overlays.css");
 @import url("./features/settings.css");
-@import url("./features/sidebar.css");
 @import url("./utilities.css");
 @import url("./features/appearance.css");
 @import url("./components/feedback.css");
@@ -19,6 +18,11 @@
 /* Shared prototype foundations take precedence during component cutover.
  * Legacy feature consumers are removed after their own migration checks. */
 @import url("../ui/styles/entries/main.css");
+@import url("../ui/styles/features/sidebar.css");
+@import url("../ui/styles/features/dev-flow.css");
+@import url("../ui/styles/features/dev-flow-detail.css");
+@import url("../ui/styles/features/sidebar-window.css");
+@import url("../ui/styles/features/dev-flow-runtime.css");
 @import url("../ui/styles/primitives/actions.css");
 @import url("../ui/styles/features/conversation.css");
 @import url("../ui/styles/features/thinking.css");

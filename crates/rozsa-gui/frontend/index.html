@@ -43,76 +43,7 @@
 <div data-od-id="app-body">
 
   <!-- ======== 左侧边栏 ======== -->
-  <template id="fallbackSidebarTemplate">
-  <aside data-od-id="sidebar">
-    <!-- 会话列表 -->
-    <div class="sidebar-section">
-      <div class="sidebar-header">
-        <span>Sessions</span>
-        <button title="New session" onclick="newSession()">+</button>
-      </div>
-      <div class="sidebar-scroll" id="sessionList">
-        <!-- 动态填充 by renderSessionList() -->
-      </div>
-    </div>
-
-    <!-- 状态栏：工具计数 + 限额 -->
-    <div class="sidebar-section" data-od-id="sidebar-status">
-      <div class="sidebar-header">
-        <span>Status</span>
-      </div>
-      <div class="status-panel">
-        <!-- Git 状态 -->
-        <div class="status-group">
-          <div class="git-branch">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="4" r="1.5"/><path d="M5 5.5v5M12 5.5c0 3-3 4.5-7 4.5"/></svg>
-            <span class="git-branch-name" id="gitBranch">—</span>
-          </div>
-          <div class="git-diff-stats">
-            <span class="git-diff-add" id="gitAdd">—</span>
-            <span class="git-diff-del" id="gitDel">—</span>
-            <span class="git-diff-files" id="gitFiles">—</span>
-          </div>
-        </div>
-        <!-- 限额进度 -->
-        <div class="status-group" id="quotaGroup" hidden>
-          <div class="quota-row">
-            <div class="quota-label-row">
-              <span>5 hours</span>
-              <span class="quota-value" id="quotaHour">—</span>
-            </div>
-            <div class="quota-bar-track"><div class="quota-bar-fill" id="quotaHourBar"></div></div>
-          </div>
-          <div class="quota-row">
-            <div class="quota-label-row">
-              <span>This week</span>
-              <span class="quota-value" id="quotaWeek">—</span>
-            </div>
-            <div class="quota-bar-track"><div class="quota-bar-fill" id="quotaWeekBar"></div></div>
-          </div>
-        </div>
-        <div class="quota-tooltip" id="quotaTooltip"></div>
-        <!-- 工具调用计数 -->
-        <div class="status-group">
-          <div class="tool-chips" id="toolChips">
-            
-            
-            
-            
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 底部导航 -->
-    <div class="sidebar-bottom">
-      <button class="sidebar-btn" data-od-id="btn-settings" onclick="toggleSettings()">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="2.5" y1="4" x2="13.5" y2="4"/><circle cx="10" cy="4" r="1.5" fill="currentColor" stroke="none"/><line x1="2.5" y1="8" x2="13.5" y2="8"/><circle cx="5.5" cy="8" r="1.5" fill="currentColor" stroke="none"/><line x1="2.5" y1="12" x2="13.5" y2="12"/><circle cx="11.5" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
-        <span>Settings</span>
-      </button>
-    </div>
-  </aside>
-  </template>
+  <template id="fallbackSidebarTemplate"></template>
   <div id="fallbackSidebarMount" hidden></div>
 
   <!-- ======== 右侧主面板 ======== -->
@@ -330,18 +261,7 @@
 
 
 <!-- ============ Dev-flow 只读详情浮层：Main/Settings 根之外的全局层 ============ -->
-<div id="devFlowDetail" class="dev-flow-detail" role="dialog" aria-modal="false" aria-label="Dev-flow work details" hidden>
-  <div class="dev-flow-detail-panel">
-    <div class="dev-flow-detail-header">
-      <span class="dev-flow-detail-title">Dev-flow work</span>
-      <span class="dev-flow-detail-revision" id="devFlowDetailRevision"></span>
-      <button class="dev-flow-detail-close" id="devFlowDetailClose" type="button" aria-label="Close dev-flow details" title="Close">✕</button>
-    </div>
-    <div class="dev-flow-detail-project" id="devFlowDetailProject"></div>
-    <div class="dev-flow-detail-summary" id="devFlowDetailSummary"></div>
-    <div class="dev-flow-detail-list" id="devFlowDetailList" role="list"></div>
-  </div>
-</div>
+<div data-template-mount="dev-flow"></div>
 
 <!-- ============ Tauri IPC 脚本 ============ -->
 

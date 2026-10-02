@@ -18,6 +18,10 @@ import { createSettingsAdapter, bindSettingSwitch } from '../adapters/settings.j
 import * as notifications from '../../ui/scripts/features/notifications.js';
 import { bindToast, bindErrorTray } from '../../ui/scripts/components/notification.js';
 import { subscribeNotifications, showRuntimeError } from '../adapters/notifications.js';
+import * as sidebar from '../../ui/scripts/features/sidebar.js';
+import { loadTemplate } from '../../ui/scripts/core/template-loader.js';
+import * as devFlow from '../../ui/scripts/features/dev-flow.js';
+import { devFlowSettingsView, devFlowDetailView } from '../adapters/sidebar-dev-flow.js';
 
 window.RozsaUIHost = createUIHost(createTauriAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
@@ -26,11 +30,15 @@ window.RozsaUIReady = mountConversation(document.getElementById("mainContentScen
   { url: new URL("composites/interruption-panel.html", templateRoot), selector: "[data-template-mount=interruption-panel]", children: true },
   { url: new URL("features/settings.html", templateRoot), selector: "[data-template-mount=settings]", children: true },
   { url: new URL("composites/notification.html", templateRoot), selector: "[data-template-mount=notification]", children: true },
+  { url: new URL("features/dev-flow.html", templateRoot), selector: "[data-template-mount=dev-flow]", children: true },
 ])).then(async () => {
+  const sidebarTemplate = await loadTemplate(new URL('features/sidebar.html', templateRoot));
+  document.getElementById('fallbackSidebarTemplate').content.replaceChildren(sidebarTemplate);
+  window.RozsaSidebar = Object.freeze({ ...sidebar });
   window.RozsaNotifications = Object.freeze({ ...notifications, bindToast, bindErrorTray, subscribeNotifications, showRuntimeError });
   window.RozsaSettings = Object.freeze({ ...settings, bindSettingSwitch });
-  const deferred = document.getElementById('runtimeSettingsDeferredTemplate').content.querySelector('#pane-dev-flow');
-  document.getElementById('pane-dev-flow').replaceWith(deferred.cloneNode(true));
+  window.RozsaDevFlow = Object.freeze({ ...devFlow, devFlowSettingsView, devFlowDetailView });
+  devFlow.init({ boundModules: new Set(), byId: id => document.getElementById(id), closeDevFlowDetail });
   settings.init({ ...createSettingsAdapter({ switchSettingsTab, closeSettings, selectThemeModeCard,
     previewFontSize, commitFontSize }), boundModules: new Set(), byId: id => document.getElementById(id) });
   await tools.loadToolTemplate();

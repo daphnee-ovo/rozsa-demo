@@ -8,6 +8,19 @@ html[data-native-webview="sidebar"] body {
   min-height: 0;
 }
 
+html[data-native-webview="sidebar"] [data-sidebar-scene] { height: 100%; min-width: 0; }
+html[data-native-webview="sidebar"] [data-sidebar-scene][hidden] { display: none !important; }
+html[data-native-webview="sidebar"] #sidebar {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  padding-top: 24px;
+  transform: none;
+  visibility: visible;
+}
+html[data-native-webview="sidebar"] body.native-fullscreen #sidebar { padding-top: 0; }
+
 body.native-split-main {
   width: calc(100% / var(--ui-scale));
   --chrome-sidebar-boundary: 0px;

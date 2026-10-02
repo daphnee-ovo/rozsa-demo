@@ -44,6 +44,8 @@
   let sharedTools;
   let sharedPermissions;
   let sharedNotifications;
+  let sharedDevFlow;
+  let sharedSidebar;
 
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
@@ -185,36 +187,10 @@
       sidebar.setAttribute("data-od-id", "sidebar");
       appBody.insertBefore(sidebar, mainContent);
     }
-    mountDevFlowSidebar();
     const workspace = document.querySelector(".settings-workspace");
     if (workspace && !workspace.querySelector(".settings-tabs")) {
       const nav = byId("fallbackSettingsNavigationTemplate").content.cloneNode(true).querySelector(".settings-tabs");
       workspace.insertBefore(nav, settingsContent);
-    }
-  }
-
-  function mountDevFlowSidebar() {
-    const sidebar = byId("sidebar");
-    const statusPanel = sidebar?.querySelector(".status-panel");
-    if (!sidebar || !statusPanel || byId("devFlowSidebarGroup")) return;
-    const statusGroup = document.createElement("div");
-    statusGroup.className = "status-group";
-    statusGroup.dataset.odId = "dev-flow-sidebar-status";
-    statusGroup.innerHTML = '<div class="dev-flow-group" id="devFlowSidebarGroup" hidden>' +
-      '<button class="dev-flow-summary" id="devFlowSidebarSummary" type="button" title="Show dev-flow work details">—</button>' +
-      '<div class="dev-flow-claimed" id="devFlowSidebarClaimed"></div>' +
-      '<button class="dev-flow-more" id="devFlowSidebarMore" type="button" hidden></button></div>';
-    statusPanel.appendChild(statusGroup);
-    const bottom = sidebar.querySelector(".sidebar-bottom");
-    if (bottom && !byId("sidebarDevFlowDashboard")) {
-      const dashboard = document.createElement("button");
-      dashboard.className = "sidebar-btn";
-      dashboard.id = "sidebarDevFlowDashboard";
-      dashboard.type = "button";
-      dashboard.hidden = true;
-      dashboard.textContent = "Dashboard";
-      dashboard.title = "Open Dev Flow dashboard";
-      bottom.insertBefore(dashboard, bottom.firstChild);
     }
   }
 
@@ -225,13 +201,10 @@
   function renderSessionList() {
     const list = byId("sessionList");
     if (!list) return;
-    list.innerHTML = state.sessions.map((session, index) =>
-      '<div class="session-item' + (index === state.activeSession ? " active" : "") +
-      '" data-session-index="' + index + '" data-od-id="session-' + index + '" tabindex="0" role="button">' +
-      '<span class="session-status ' + (index === state.activeSession ? "running" : "idle") + '"></span>' +
-      '<div class="session-name">' + escapeHtml(sessionLabel(session)) + "</div>" +
-      '<div class="session-meta"><span>' + escapeHtml(session.date || "") + "</span></div></div>"
-    ).join("");
+    list.innerHTML = sharedSidebar.sessionsMarkup(state.sessions.map((session, index) => ({
+      name: sessionLabel(session), date: session.date || '',
+      activity: index === state.activeSession ? 'running' : 'idle', active: index === state.activeSession,
+    })));
   }
 
   function textMarkup(value) {
@@ -591,36 +564,14 @@
   function renderDevFlowFixture(fixture, { showDetail = false } = {}) {
     if (!fixture?.settings || !fixture.detail) throw new Error("Prototype Dev Flow mock is incomplete");
     devFlowFixture = fixture;
-    const missing = byId("devFlowMissing");
-    if (missing) missing.hidden = true;
-    const ready = byId("devFlowDashboardStatus");
-    ready?.classList.add("is-ready");
-    setText("devFlowDashboardAvailability", fixture.settings.availability);
-    setText("devFlowDashboardAddressText", fixture.settings.address);
-    setText("devFlowVersion", fixture.settings.version);
-    setText("devFlowMemoryAmount", fixture.settings.memory.amount);
-    setText("devFlowMemoryUnit", fixture.settings.memory.unit);
-    const address = byId("devFlowDashboardAddress");
-    if (address) address.disabled = false;
-    const path = byId("devFlowExecutablePath");
-    if (path) path.value = fixture.settings.executablePath;
-    setToggle("devFlowEnabled", fixture.settings.enabled);
-    setToggle("devFlowSidebarStatus", fixture.settings.sidebarEnabled);
-    setToggle("devFlowDashboardButton", fixture.settings.dashboardEnabled);
+    sharedDevFlow.renderSettings({ ...fixture.settings, dashboardAvailable: true, dependentDisabled: !fixture.settings.enabled, missing: false });
+    sharedDevFlow.renderDetail({ ...fixture.detail, items: fixture.detail.items.map(item => ({ ...item, focus: item.status === "in-progress" })) });
     const detail = byId("devFlowDetail");
     if (detail) {
       detail.hidden = !showDetail;
       document.body?.classList.toggle("dev-flow-detail-open", showDetail);
     }
-    setText("devFlowDetailRevision", fixture.detail.revision);
-    setText("devFlowDetailProject", fixture.detail.project);
-    setText("devFlowDetailSummary", fixture.detail.summary);
-    const list = byId("devFlowDetailList");
-    if (list) list.innerHTML = fixture.detail.items.map(item => '<div class="dev-flow-detail-item' + (item.status === "in-progress" ? " focus" : "") + '" role="listitem" tabindex="0"><div class="dev-flow-detail-item-head"><span class="dev-flow-detail-item-id">' +
-      escapeHtml(item.id) + '</span><span class="dev-flow-detail-item-title">' + escapeHtml(item.title) + '</span><span class="dev-flow-detail-item-status' + (item.status === "in-progress" ? " in-progress" : "") + '">' + escapeHtml(item.status) +
-      '</span></div><div class="dev-flow-detail-item-meta">' + escapeHtml(item.meta) + '</div><div class="dev-flow-detail-item-desc">' + escapeHtml(item.description) + '</div><details class="dev-flow-detail-disclosure"><summary>Files (' + item.files.length + ')</summary><div class="dev-flow-detail-disclosure-body">' + item.files.map(file => "<div>" + escapeHtml(file) + "</div>").join("") + '</div></details></div>').join("");
   }
-
   function renderDevFlowRuntimeFixture(fixture) {
     if (!fixture?.sidebar) throw new Error("Prototype Dev Flow sidebar mock is unavailable");
     closeSettings();
@@ -635,8 +586,7 @@
     group.hidden = false;
     summary.textContent = fixture.sidebar.summary;
     summary.disabled = false;
-    claimed.innerHTML = fixture.sidebar.claimed.map(({ id, title }) => '<button class="dev-flow-claimed-row" type="button" title="' + escapeHtml(title) + '" data-dev-flow-trigger="true"><span class="dev-flow-claimed-dot" aria-hidden="true"></span><span class="dev-flow-claimed-id">' +
-      escapeHtml(id) + '</span><span class="dev-flow-claimed-title">' + escapeHtml(title) + "</span></button>").join("");
+    claimed.innerHTML = fixture.sidebar.claimed.map(sharedDevFlow.claimedMarkup).join("");
     more.hidden = false;
     more.textContent = fixture.sidebar.more;
     dashboard.hidden = false;
@@ -877,6 +827,8 @@
       sharedTools = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/tools.js", legacyScriptUrl));
       sharedPermissions = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/permissions.js", legacyScriptUrl));
       sharedNotifications = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/notifications.js", legacyScriptUrl));
+      sharedSidebar = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/sidebar.js", legacyScriptUrl));
+      sharedDevFlow = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/dev-flow.js", legacyScriptUrl));
       await sharedTools.loadToolTemplate();
       loadState();
       mountTemplates();

@@ -1,4 +1,4 @@
 @import url("../../../crates/rozsa-gui/frontend/ui/styles/entries/sidebar.css");
-@import url("../features/sidebar.css");
-@import url("../features/sidebar-window.css");
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/features/sidebar.css");
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/features/sidebar-window.css");
 @import url("../foundations/motion.css");

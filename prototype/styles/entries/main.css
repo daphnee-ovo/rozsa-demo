@@ -1,5 +1,5 @@
 @import url("../../../crates/rozsa-gui/frontend/ui/styles/entries/main.css");
-@import url("../features/sidebar.css");
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/features/sidebar.css");
 @import url("../features/conversation.css");
 @import url("../features/tools.css");
 @import url("../composites/overlays.css");
@@ -7,11 +7,11 @@
 @import url("../features/appearance.css");
 @import url("../primitives/actions.css");
 @import url("../features/permissions.css");
-@import url("../features/dev-flow.css");
-@import url("../features/dev-flow-detail.css");
-@import url("../features/sidebar-window.css");
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/features/dev-flow.css");
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/features/dev-flow-detail.css");
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/features/sidebar-window.css");
 @import url("../composites/composer.css");
 @import url("../features/queue.css");
 @import url("../features/steering.css");
-@import url("../features/dev-flow-runtime.css");
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/features/dev-flow-runtime.css");
 @import url("../foundations/motion.css");
