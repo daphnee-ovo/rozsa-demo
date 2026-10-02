@@ -11,8 +11,8 @@ window.RozsaSidebarEmit = adapter.emit;
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
 window.RozsaSettings = Object.freeze({ isSettingsPaneAvailable });
 window.RozsaUIReady = (async () => {
-  await mountShell([{ url: new URL('composites/notification.html', templateRoot), selector: '[data-template-mount=notification]', children: true }]);
-  window.RozsaSidebarFeedback = createSidebarFeedback();
+  await mountShell([]);
+  window.RozsaSidebarFeedback = createSidebarFeedback(adapter);
   const template = await loadTemplate(new URL('features/settings.html', templateRoot));
   const navigation = template.querySelector('#fallbackSettingsNavigationTemplate').content.cloneNode(true);
   const root = document.getElementById('settingsSidebarScene');

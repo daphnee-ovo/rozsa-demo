@@ -78,7 +78,7 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 ### Notification 与错误反馈
 
 - 项目：`UI-NOTIFICATION-001`、`UI-NOTIFICATION-002`、`UI-FEEDBACK-001`。
-- 共享边界：两宿主共用 `ui/templates/composites/notification.html`、`ui/styles/composites/feedback.css` 和 notification renderer/事件绑定。运行时 adapter 接收真实 notification 事件，main 保留身份、计时、悬停暂停和 resolve；sidebar 的 IPC rejection 使用同一组件，关闭后保留未解决错误。
+- 共享边界：两宿主共用 `ui/templates/composites/notification.html`、`ui/styles/composites/feedback.css` 和 notification renderer/事件绑定。即时通知、未解决错误入口和列表统一位于整个窗口右上角。运行时仅 main 挂载全局通知中心，保留身份、计时、悬停暂停和 resolve；sidebar 的 IPC rejection 转交 main，关闭后保留未解决错误。
 - 暂停边界：跨组件异常 variant 仍为 `partial`，缺失 retry/cancel/恢复操作沿各区域缺口暂停。被动错误继续透明表达；共享 UI bootstrap 失败时保留旧错误出口，该分支不计为已迁移。sidebar 的完整宿主集成由 T022 复核，旧通知视觉规则由 T036 清理。
 
 ### Dev Flow

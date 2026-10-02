@@ -424,9 +424,15 @@ async function newSidebarSession() {
 
 function renderSidebarError(error) {
   if (window.RozsaSidebarFeedback) {
-    window.RozsaSidebarFeedback(String(error));
+    void window.RozsaSidebarFeedback(String(error)).catch(deliveryError => {
+      renderSidebarBootstrapError(String(error) + '\nFailed to deliver notification: ' + String(deliveryError));
+    });
     return;
   }
+  renderSidebarBootstrapError(error);
+}
+
+function renderSidebarBootstrapError(error) {
   const container = document.getElementById('sidebarSessionList');
   if (!container) return;
   const item = document.createElement('div');

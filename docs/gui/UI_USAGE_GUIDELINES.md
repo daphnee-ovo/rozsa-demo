@@ -376,7 +376,9 @@ Bash 调用参数中的 `description`，再其次是工具语义参数（路径�
 - 可展开元素必须有 hover、focus 和 chevron / 透明度提示。
 - notification toast 固定在应用右上角并向下堆叠，每条独立计时 6 秒；普通 info 和
   success 默认不通知。error 到时不丢失，而是折叠为带圆圈的 `!` 和未解决数量。
-  error 入口 hover 自动展开、移开收起，click 可固定；错误在确认解决前一直保留。
+  error 入口与列表也必须位于整个应用窗口右上角，列表向下展开。sidebar 的错误转交
+  main 的唯一通知中心，不在 sidebar 单独挂载。入口 hover 自动展开、移开收起，
+  click 可固定；错误在确认解决前一直保留。
 
 ## 7. 内容与语气
 
