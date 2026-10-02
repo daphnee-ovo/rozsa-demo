@@ -27,6 +27,12 @@ const sidebarSceneState = { revision: 0, scene: 'main', selectedPane: null };
 const sidebarThemeState = { revision: 0 };
 
 window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await window.RozsaUIReady;
+  } catch (error) {
+    renderSidebarError('Shared Settings UI failed to load: ' + String(error));
+    return;
+  }
   let retries = 0;
   while (!window.__TAURI__ && retries < 30) {
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -73,6 +79,7 @@ function renderSidebarScene(snapshot) {
 }
 
 async function requestSidebarScene(scene, selectedPane = null, allowRetry = true) {
+  if (scene === 'settings' && !window.RozsaSettings.isSettingsPaneAvailable(selectedPane)) return null;
   const expectedRevision = sidebarSceneState.revision;
   const snapshot = await sidebarInvoke('set_gui_scene', { scene, selectedPane, expectedRevision });
   applySidebarSceneSnapshot(snapshot);
@@ -85,7 +92,7 @@ async function requestSidebarScene(scene, selectedPane = null, allowRetry = true
 }
 
 function openSidebarSettings() {
-  void requestSidebarScene('settings', 'skills').catch(renderSidebarError);
+  void requestSidebarScene('settings', 'appearance').catch(renderSidebarError);
 }
 
 function closeSidebarSettings() {

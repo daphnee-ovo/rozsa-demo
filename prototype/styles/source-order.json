@@ -120,8 +120,9 @@
         649,
         726
       ],
-      "target": "prototype/styles/features/settings.css",
-      "sha256": "08b9922553c0e92ce50f6f40127c5ad01b49232d5a8b533ccca400d2ca0e30ab"
+      "target": "crates/rozsa-gui/frontend/ui/styles/features/settings.css",
+      "sha256": "08b9922553c0e92ce50f6f40127c5ad01b49232d5a8b533ccca400d2ca0e30ab",
+      "prototype_source": "prototype/styles/features/settings.css"
     },
     {
       "order": 12,
@@ -129,8 +130,9 @@
         727,
         899
       ],
-      "target": "prototype/styles/features/appearance.css",
-      "sha256": "d237c15e86a57c6683e169dbde188542b6c80060e6f8500ff6fac3f1eb5e189a"
+      "target": "crates/rozsa-gui/frontend/ui/styles/features/appearance.css",
+      "sha256": "d237c15e86a57c6683e169dbde188542b6c80060e6f8500ff6fac3f1eb5e189a",
+      "prototype_source": "prototype/styles/features/appearance.css"
     },
     {
       "order": 13,
@@ -269,10 +271,11 @@
         1099,
         1099
       ],
-      "owner_file": "prototype/styles/features/settings.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/settings.css",
       "owner": "settings",
       "media": "max-width: 900px",
-      "sha256": "700d2e143bfeb55c78425c942083fb0757898e7ada66ae979136b253180ba782"
+      "sha256": "700d2e143bfeb55c78425c942083fb0757898e7ada66ae979136b253180ba782",
+      "prototype_source": "prototype/styles/features/settings.css"
     },
     {
       "order": 23,
@@ -315,10 +318,11 @@
         1110,
         1116
       ],
-      "owner_file": "prototype/styles/features/settings.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/settings.css",
       "owner": "settings",
       "media": "max-width: 760px",
-      "sha256": "d18dc58f89e1971ee3c1127b2cdeee3ff0a1448c3f518f75dc1fa8045c43f475"
+      "sha256": "d18dc58f89e1971ee3c1127b2cdeee3ff0a1448c3f518f75dc1fa8045c43f475",
+      "prototype_source": "prototype/styles/features/settings.css"
     },
     {
       "order": 27,
@@ -382,10 +386,11 @@
         1134,
         1158
       ],
-      "owner_file": "prototype/styles/features/appearance.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/appearance.css",
       "owner": "appearance",
       "media": "max-width: 560px",
-      "sha256": "e0e54e84663f17c2a36aa0970945b814ff18279d79a2296e8b98d61d44209126"
+      "sha256": "e0e54e84663f17c2a36aa0970945b814ff18279d79a2296e8b98d61d44209126",
+      "prototype_source": "prototype/styles/features/appearance.css"
     },
     {
       "order": 33,

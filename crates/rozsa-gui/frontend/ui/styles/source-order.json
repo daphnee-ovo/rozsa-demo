@@ -56,6 +56,14 @@
     {
       "file": "features/tools.css",
       "sha256": "f2bc0cfaec15b24e5ee56af9c90e23e98fcf79e65336eceaf75f9361bfc2b26c"
+    },
+    {
+      "file": "features/settings.css",
+      "sha256": "db2b54cf3d90cc10c5b50da442313ba1b63a8ed5e8080060eee70bb75a2938c7"
+    },
+    {
+      "file": "features/appearance.css",
+      "sha256": "f96592e33c90090ccee9a338518f597ee802862d59c16fc01636075ff609f1eb"
     }
   ],
   "entries": {
@@ -64,14 +72,18 @@
       "foundations/reset.css",
       "foundations/base.css",
       "layouts/app-shell.css",
-      "layouts/sidebar-shell.css"
+      "layouts/sidebar-shell.css",
+      "features/settings.css",
+      "features/appearance.css"
     ],
     "sidebar": [
       "foundations/tokens.css",
       "foundations/reset.css",
       "foundations/base.css",
       "layouts/app-shell.css",
-      "layouts/sidebar-shell.css"
+      "layouts/sidebar-shell.css",
+      "features/settings.css",
+      "features/appearance.css"
     ]
   },
   "late_imports": [

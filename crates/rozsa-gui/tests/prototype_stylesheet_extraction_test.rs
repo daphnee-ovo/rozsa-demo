@@ -117,11 +117,15 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
     let manifest: Value = serde_json::from_str(SOURCE_ORDER).unwrap();
     let blocks = manifest["blocks"].as_array().unwrap();
     let mut expected_sidebar_owners = Vec::new();
-    for block in blocks {
-        if matches!(block["order"].as_u64(), Some(1 | 2 | 3 | 4 | 5 | 6 | 18)) {
-            let target = block["target"].as_str().unwrap();
-            expected_sidebar_owners.push(root.join(target).canonicalize().unwrap());
-        }
+    // Shared main foundations include Settings/Appearance owners before
+    // prototype sidebar supplements.
+    for order in [1, 2, 3, 4, 5, 11, 12, 6, 18] {
+        let block = blocks
+            .iter()
+            .find(|block| block["order"].as_u64() == Some(order))
+            .unwrap();
+        let target = block["target"].as_str().unwrap();
+        expected_sidebar_owners.push(root.join(target).canonicalize().unwrap());
     }
     expected_sidebar_owners.push(
         root.join("crates/rozsa-gui/frontend/ui/styles/foundations/motion.css")

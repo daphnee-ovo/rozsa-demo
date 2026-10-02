@@ -72,6 +72,8 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 
 - 项目：`UI-SETTINGS-001`、`UI-SETTINGS-002`、`UI-SETTINGS-003`、`UI-SETTINGS-004`、`UI-SETTINGS-005`、`UI-SETTINGS-006`。
 - 结论：Appearance 与 Extensions 空状态已覆盖；General、Skills/Tools、keyboard shortcut 和填充后的 permission rules 为 `missing`。
+- 共享边界：两宿主引用 `ui/templates/features/settings.html`、共享 Settings/Appearance CSS 和 `ui/scripts/features/settings.js`；native Settings 导航也从同一模板装配。原型使用 mock state，runtime adapter 保留真实 settings/theme IPC、持久化键与平台主题处理。
+- 暂停边界：五个未覆盖 pane 为空容器，main/sidebar 导航与路由、旧 renderer 和修改入口暂停；不预载 capability/permission settings。全局快捷键读取和真实审批流程保留。Dev Flow settings 由 T022 迁移，旧惰性模板与隔离样式由 T036 在验证门槛通过后清理。
 
 ### Notification 与错误反馈
 

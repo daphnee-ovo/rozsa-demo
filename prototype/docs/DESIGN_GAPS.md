@@ -181,7 +181,7 @@
 - `blocked_scope`：General settings family。
 - `shared_migration`：TASK-T020；空容器：#pane-general 内容 slot。暂停：main/sidebar General tab 与 pane 路由；General 内 model/provider/transport/retry 等更新入口。
 - `user_impact`：General 为空且无法通过该界面读写设置；既有配置及其他已覆盖 Settings pane 保留。
-- `safety_gate`：在 tab/跨 WebView 路由和 invoke 更新前守卫；进入迁移前确认无未完成保存，迟到 load/update 结果不重挂旧 pane且不伪造保存成功。
+- `safety_gate`：main/sidebar tab 与路由、General renderer 已暂停；共享初始化清空整个 #pane-general，迟到 load 回调不重挂旧控件。真实配置与已覆盖流程的设置 IPC 保留。
 
 ### GAP-010：Skills 与 Tools capability settings
 
@@ -193,7 +193,7 @@
 - `blocked_scope`：capability row、scope 与 update/reset flow。
 - `shared_migration`：TASK-T020；空容器：#pane-skills 与 #pane-tools 的 capability/scope slot。暂停：main/sidebar Skills/Tools tab 与 pane 路由；capability scope/update/reset 操作。
 - `user_impact`：暂停 GUI 的 Skills/Tools scope 与启用/继承/reset 修改；不修改实际 capability 配置。
-- `safety_gate`：同时守卫 main/sidebar 路由和 row handlers；确认无在途更新并检查迟到刷新不会重新插入旧 row。
+- `safety_gate`：main/sidebar 路由与 capability renderer 已暂停；不预载 get_capability_settings，不创建 scope/row handlers；迟到刷新保持 #pane-skills/#pane-tools 为空，实际 capability 配置保留。
 
 ### GAP-011：Keyboard shortcut settings
 
@@ -205,7 +205,7 @@
 - `blocked_scope`：shortcut list、search 与 edit/error flow。
 - `shared_migration`：TASK-T020；空容器：#pane-keyboard-shortcuts 的 search/list/editor slot。暂停：main/sidebar Keyboard shortcuts tab 与 pane 路由；shortcut 搜索/编辑/reset 入口。
 - `user_impact`：暂停通过缺失设置界面修改快捷键；不全局停用未暂停产品流程所用快捷键。
-- `safety_gate`：区分 shortcut 设置操作与既有运行快捷键；已开始编辑或保存的结果需安全收尾，不能把缺失编辑界面当成保存成功。
+- `safety_gate`：shortcut renderer/capture/save/reset 入口暂停，迟到读取不创建旧列表；get_key_bindings 继续提供全局快捷键定义，不能全局停用其他已覆盖流程的快捷键。
 
 ### GAP-012：Permission settings 与 rule editor
 
@@ -217,7 +217,7 @@
 - `blocked_scope`：permission rule list、row、editor 与更新流程。
 - `shared_migration`：TASK-T020；空容器：#pane-permissions 内 rule list 与 editor slot。暂停：main/sidebar Permissions settings tab 与 pane 路由；rule expand/reorder/delete/reset/add/edit/save 操作。
 - `user_impact`：暂停 GUI permission rule 编辑；现有真实规则及 runtime approval 契约保留。
-- `safety_gate`：暂停设置编辑不能自动改变 permission mode 或规则；确认无在途保存与迟到 rule editor 回填。runtime approval 的安全门槛另见 GAP-008A/008B。
+- `safety_gate`：不预载 get_permission_settings；rule renderer/editor/save/reset/move 入口暂停，迟到回调不回填。实际 permission mode、规则和真实审批通道保留；runtime approval 的安全门槛另见 GAP-008A/008B。
 
 ## Notification 与错误反馈
 

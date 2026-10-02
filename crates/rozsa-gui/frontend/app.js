@@ -3213,7 +3213,7 @@ function renderNativeMainScene(snapshot) {
   document.body.classList.toggle('settings-visible', settingsVisible);
   document.getElementById('settingsPanel')?.classList.toggle('visible', settingsVisible);
   if (settingsVisible) {
-    renderSettingsSelection(snapshot.selectedPane || 'skills');
+    renderSettingsSelection(snapshot.selectedPane || 'appearance');
     loadSettings().catch(() => {});
     loadKeyBindings().catch(() => {});
   } else if (returningMain) {
@@ -3222,6 +3222,7 @@ function renderNativeMainScene(snapshot) {
 }
 
 async function requestGuiScene(scene, selectedPane = null, allowRetry = true) {
+  if (scene === 'settings' && !window.RozsaSettings.isSettingsPaneAvailable(selectedPane)) return null;
   if (isInputComposing && scene !== guiSceneState.scene) {
     pendingGuiSceneIntent = { scene, selectedPane };
     return null;
@@ -3502,7 +3503,7 @@ function setNativeFullscreen(fullscreen) {
 function toggleSettings() {
   if (nativeSplitMode) {
     const scene = guiSceneState.scene === 'settings' ? 'main' : 'settings';
-    void requestGuiScene(scene, scene === 'settings' ? 'skills' : null)
+    void requestGuiScene(scene, scene === 'settings' ? 'appearance' : null)
       .catch(error => showError('Failed to switch GUI scene: ' + String(error)));
     return;
   }
@@ -3532,6 +3533,7 @@ function closeSettings() {
 }
 
 function switchSettingsTab(tabId, btn) {
+  if (!window.RozsaSettings.isSettingsPaneAvailable(tabId)) return;
   if (nativeSplitMode) {
     void requestGuiScene('settings', tabId)
       .catch(error => showError('Failed to switch Settings pane: ' + String(error)));
@@ -3541,6 +3543,10 @@ function switchSettingsTab(tabId, btn) {
 }
 
 function renderSettingsSelection(tabId, btn = null) {
+  if (!window.RozsaSettings.isSettingsPaneAvailable(tabId)) {
+    document.querySelectorAll('.settings-pane, .settings-tab').forEach(element => element.classList.remove('active'));
+    return;
+  }
   document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.settings-pane').forEach(p => p.classList.remove('active'));
   const selectedButton = btn || document.querySelector(`[data-settings-pane="${tabId}"]`);
@@ -3563,24 +3569,16 @@ function setSettingSwitch(control, checked) {
 function wireSettingSwitch(id, onChange) {
   const control = document.getElementById(id);
   if (!control) return;
-  control.onclick = () => {
-    const enabled = !isSettingSwitchOn(control);
-    setSettingSwitch(control, enabled);
-    onChange(enabled);
-  };
+  window.RozsaSettings.bindSettingSwitch(control, onChange, isSettingSwitchOn, setSettingSwitch);
 }
 
 async function loadSettings() {
   try {
-    [currentSettings, availableThemes, capabilitySettings, permissionSettings] = await Promise.all([
+    [currentSettings, availableThemes] = await Promise.all([
       invoke('get_settings'),
       invoke('list_themes'),
-      invoke('get_capability_settings'),
-      invoke('get_permission_settings'),
     ]);
     renderSettingsPane(currentSettings);
-    renderCapabilitySettings();
-    renderPermissionSettings();
     loadDevFlowSettings();
     await applySelectedTheme();
   } catch (e) {
@@ -3780,6 +3778,8 @@ function wireDevFlowSettings() {
 }
 
 function renderCapabilitySettings() {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   if (!capabilitySettings) return;
   renderCapabilityPane('tools', capabilitySettings.tools || []);
   const skills = capabilityScope.skills === 'project'
@@ -3798,6 +3798,8 @@ function mergeCapabilityItems(base, overlay) {
 }
 
 function renderCapabilityPane(kind, items) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   const scope = capabilityScope[kind];
   const scopeHost = document.getElementById(kind + 'Scope');
   const list = document.getElementById(kind === 'tools' ? 'settingsToolList' : 'settingsSkillList');
@@ -3950,6 +3952,8 @@ function renderPermissionRuleEmpty(list) {
 }
 
 function renderPermissionSettings() {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   if (!permissionSettings) return;
   const scopeHost = document.getElementById('permissionScope');
   if (scopeHost) {
@@ -4001,6 +4005,8 @@ function setPermissionSettingsError(message) {
 }
 
 function renderPermissionRuleList(kind) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   const host = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}List`);
   if (!host) return;
   const previousGroupOpen = new Map(
@@ -4092,6 +4098,8 @@ function wirePermissionRulePointerDrag(row, kind, rule) {
 }
 
 function openPermissionRuleEditor(kind) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   closePermissionRuleEditor();
   pendingPermissionRuleKind = kind;
   const host = document.getElementById(`permission${kind[0].toUpperCase()}${kind.slice(1)}List`);
@@ -4131,6 +4139,8 @@ function isPathPermissionTool(tool) {
 }
 
 function setupPermissionToolCombobox(tools) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   const input = document.getElementById('permissionRuleTool');
   const button = document.getElementById('permissionRuleToolButton');
   const combobox = input?.closest('.permission-tool-combobox');
@@ -4193,6 +4203,8 @@ function matchingPermissionTools(showAll = false) {
 }
 
 function renderPermissionToolOptions(open, showAll = false) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   const input = document.getElementById('permissionRuleTool');
   const list = document.getElementById('permissionRuleToolList');
   if (!input || !list) return;
@@ -4224,6 +4236,8 @@ function closePermissionToolOptions() {
 }
 
 function selectPermissionTool(item) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   const input = document.getElementById('permissionRuleTool');
   if (!input) return;
   input.value = item.label;
@@ -4268,6 +4282,8 @@ function highlightPermissionRulePattern() {
 }
 
 async function savePermissionRule() {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   const toolInput = document.getElementById('permissionRuleTool')?.value.trim() || '';
   const matchedTool = permissionToolOptions.find(item =>
     item.name.toLowerCase() === toolInput.toLowerCase()
@@ -4311,15 +4327,21 @@ async function savePermissionRule() {
 }
 
 async function removePermissionRule(kind, rule) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   const local = displayedPermissionRules(kind);
   await replacePermissionRules(kind, local.filter(candidate => candidate !== rule));
 }
 
 async function resetPermissionRules(kind) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   await replacePermissionRules(kind, null);
 }
 
 async function replacePermissionRules(kind, rules) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   try {
     permissionSettings = await invoke('update_permission_rules', {
       scope: permissionScope, kind, rules,
@@ -4332,6 +4354,8 @@ async function replacePermissionRules(kind, rules) {
 }
 
 async function movePermissionRule(fromKind, toKind, rule) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   if (fromKind === toKind) return;
   const ruleSet = Object.fromEntries(
     ['deny', 'ask', 'allow'].map(kind => [kind, displayedPermissionRules(kind)])
@@ -4403,6 +4427,8 @@ function matchesKeyBinding(event, action) {
 }
 
 function renderKeyBindings(query = '') {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   const list = document.getElementById('keyBindingList');
   const fixedList = document.getElementById('fixedKeyBindingList');
   if (!list || !fixedList) return;
@@ -4465,12 +4491,15 @@ function renderKeyBindings(query = '') {
 }
 
 function beginKeyBindingCapture(action) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   setKeyBindingError('');
   capturingKeyBindingAction = action;
   renderKeyBindings(document.getElementById('shortcutSearch')?.value || '');
 }
 
 async function saveCapturedKeyBinding(event) {
+  if (!window.RozsaSettings.isSettingsPaneAvailable('keyboard-shortcuts')) return false;
   if (!capturingKeyBindingAction) return false;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -4495,6 +4524,8 @@ async function saveCapturedKeyBinding(event) {
 }
 
 async function resetKeyBinding(action) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   try {
     keyBindingDefinitions = await invoke('reset_key_binding', { action });
     setKeyBindingError('');
@@ -4548,24 +4579,7 @@ function renderAppearanceSettings(appearance) {
   const range = document.getElementById('settingsFontSizeRange');
   const input = document.getElementById('settingsFontSizeInput');
   if (range && input) {
-    range.value = String(appearance.fontSize);
-    input.value = String(appearance.fontSize);
-    range.oninput = () => {
-      input.value = range.value;
-      applyFontSize(range.value);
-    };
-    range.onchange = () => saveSetting('appearance_font_size', range.value);
-    input.oninput = () => {
-      const value = clampFontSize(input.value);
-      range.value = String(value);
-      applyFontSize(value);
-    };
-    input.onchange = () => {
-      const value = clampFontSize(input.value);
-      input.value = String(value);
-      range.value = String(value);
-      saveSetting('appearance_font_size', String(value));
-    };
+    window.RozsaSettings.syncFontSizeControls(document, appearance.fontSize);
   }
 
   quotaDisplayEnabled = appearance.showRateLimits !== false;
@@ -4621,6 +4635,19 @@ function renderAppearanceSettings(appearance) {
   installSystemThemeListener();
 }
 
+function previewFontSize(value, control = null) {
+  if (String(value).trim() === '') return;
+  const size = clampFontSize(value);
+  window.RozsaSettings.syncFontSizeControls(document, size, { updateInput: control?.id === 'settingsFontSizeRange' });
+  applyFontSize(size);
+}
+
+function commitFontSize(value) {
+  const size = clampFontSize(value);
+  window.RozsaSettings.syncFontSizeControls(document, size);
+  return saveSetting('appearance_font_size', String(size));
+}
+
 function setRateLimitSettingsDisabled(disabled) {
   for (const id of [
     'settingsShowHourlyRateLimit',
@@ -4643,11 +4670,7 @@ function selectThemeModeCard(mode) {
 }
 
 function renderThemeModeCards(mode) {
-  document.querySelectorAll('[data-theme-mode-card]').forEach(card => {
-    const active = card.dataset.themeModeCard === mode;
-    card.classList.toggle('active', active);
-    card.setAttribute('aria-pressed', String(active));
-  });
+  window.RozsaSettings.renderThemeModeCards(document, mode);
 }
 
 function renderThemeSelect(mode, selectedId) {
@@ -4895,6 +4918,8 @@ function clampFontSize(value) {
 }
 
 function renderGeneralSettings(settings) {
+  // This settings UI has no approved prototype yet; late callbacks must stay inert.
+  return;
   // Thinking effort
   const thinkingSel = document.getElementById('settingsThinkingEffort');
   if (thinkingSel) {

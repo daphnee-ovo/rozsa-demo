@@ -4,7 +4,8 @@
 // ├── both_hosts_reference_the_same_ui_without_production_mock_dependencies()
 // ├── repository_root()
 // ├── shared_popover_positions_in_css_units_under_host_zoom()
-// └── native_ui_entry_exposes_readiness_before_delayed_template_loading()
+// ├── native_ui_entry_exposes_readiness_before_delayed_template_loading()
+// └── native_settings_sidebar_publishes_readiness_before_navigation_mount()
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -195,15 +196,18 @@ const modules = {
   '../../ui/scripts/components/interruption-panel.js': 'export function init(){}',
   '../../ui/scripts/flows/composer-interruption.js': 'export function init(){}',
   '../adapters/interruption.js': 'export function createInterruptionAdapter(){return {};}',
+  '../../ui/scripts/features/settings.js': 'export function init(){}',
+  '../adapters/settings.js': 'export function bindSettingSwitch(){} export function createSettingsAdapter(){return {};}',
 };
 let code = await readFile('crates/rozsa-gui/frontend/runtime/entries/main.js', 'utf8');
 for(const [path, module] of Object.entries(modules)) code = code.replace(path,url(module));
 globalThis.window={addEventListener(){}};
 globalThis.previewThinkingEffort=globalThis.selectThinkingEffort=()=>{};
 globalThis.toggleToolCall=globalThis.toggleTurnDiff=()=>{};
+for(const name of ['switchSettingsTab','closeSettings','selectThemeModeCard','previewFontSize','commitFontSize'])globalThis[name]=()=>{};
 for(const name of ['configureInterruptionSuspensions','respondPermission','enterPermissionTrust','enterPermissionHint','togglePermissionCommand','showPermissionMainPage','submitPermissionHint','submitUserQuestion','normalizePermissionHint','handlePermissionHintKeydown'])globalThis[name]=()=>{};
 for(const name of ['configureConversationSuspensions','attachFileReference','attachDirectoryReference','insertSlashCommandPrefix','showModelPicker','updateAbortButton','handleInput','handleCompositionStart','handleCompositionUpdate','handleCompositionEnd','toggleThinking'])globalThis[name]=()=>{};
-const element={content:{cloneNode(){}},replaceWith(){},prepend(){}};
+const element={content:{cloneNode(){},querySelector(){return {cloneNode(){return {};}};}},replaceWith(){},prepend(){}};
 globalThis.document={getElementById(){return element;},querySelector(){return element;}};
 let release, started;
 globalThis.shellPending=new Promise(resolve=>{release=resolve;});
@@ -220,6 +224,54 @@ const app=await readFile('crates/rozsa-gui/frontend/app.js','utf8');
 const initialization=app.slice(app.indexOf("window.addEventListener('DOMContentLoaded'"));
 assert(initialization.indexOf('await window.RozsaUIReady') < initialization.indexOf('preparePlatformSceneDom()'));
 assert(initialization.includes("showError('Shared UI failed to load: '"));
+"#;
+    let output = Command::new("node")
+        .args(["--input-type=module", "-e", source])
+        .current_dir(repository_root())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_settings_sidebar_publishes_readiness_before_navigation_mount() {
+    let source = r#"
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const url = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
+let release, started, mounted=false, bound=false;
+globalThis.pending=new Promise(resolve=>{release=resolve;});
+const loadingStarted=new Promise(resolve=>{started=resolve;});
+globalThis.templateStarted=()=>started();
+globalThis.window={addEventListener(){}};
+globalThis.selectSidebarSettingsPane=globalThis.closeSidebarSettings=()=>{};
+const navigation={};
+const template={querySelector(){return {content:{cloneNode(){return navigation;}}};}};
+globalThis.readyTemplate=template;
+globalThis.document={getElementById(id){assert.equal(id,'settingsSidebarScene');return {replaceChildren(value){assert.equal(value,navigation);mounted=true;}};}};
+globalThis.bindNavigation=()=>{assert.equal(mounted,true);bound=true;};
+const modules={
+  '../../ui/scripts/core/renderer.js':'export function createUIHost(){return {port:{dispose(){}}};}',
+  '../adapters/tauri.js':'export function createTauriAdapter(){return {};}',
+  '../../ui/scripts/core/shell.js':'export const templateRoot=new URL("https://fixture.invalid/");export async function mountShell(){}',
+  '../../ui/scripts/core/template-loader.js':'export async function loadTemplate(){globalThis.templateStarted();await globalThis.pending;return globalThis.readyTemplate;}',
+  '../../ui/scripts/features/settings.js':'export function configureSettingsSuspensions(){} export function isSettingsPaneAvailable(){} export function bindSettingsNavigation(){globalThis.bindNavigation();}',
+};
+let code=await readFile('crates/rozsa-gui/frontend/runtime/entries/sidebar.js','utf8');
+for(const [path,module] of Object.entries(modules))code=code.replace(path,url(module));
+await import(url(code));await loadingStarted;
+assert(window.RozsaUIReady instanceof Promise);
+assert.equal(mounted,false);assert.equal(bound,false);
+release();await window.RozsaUIReady;
+assert.equal(mounted,true);assert.equal(bound,true);
+const sidebar=await readFile('crates/rozsa-gui/frontend/sidebar.js','utf8');
+const initialization=sidebar.slice(sidebar.indexOf("window.addEventListener('DOMContentLoaded'"));
+assert(initialization.indexOf('await window.RozsaUIReady')<initialization.indexOf("sidebarInvoke ="));
+assert(initialization.includes("renderSidebarError('Shared Settings UI failed to load: '"));
 "#;
     let output = Command::new("node")
         .args(["--input-type=module", "-e", source])

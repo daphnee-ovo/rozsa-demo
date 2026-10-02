@@ -123,6 +123,9 @@
 <div data-template-mount="popover" hidden></div>
 
 <!-- ============ 设置面板 ============ -->
+<div data-template-mount="settings"></div>
+<!-- Inert legacy markup retained only for the T022 Dev Flow cutover and T036 cleanup gate. -->
+<template id="runtimeSettingsDeferredTemplate">
 <div class="settings-panel" id="settingsPanel" data-native-scene-root="settings-content" role="dialog" aria-modal="true" aria-label="Settings" onclick="if(event.target===this)closeSettings()">
   <div class="settings-dialog" data-od-id="settings-dialog">
     <div class="settings-workspace">
@@ -315,6 +318,7 @@
     <button class="settings-close" onclick="closeSettings()">✕</button>
   </div>
 </div>
+</template>
 
 <!-- ============ Main/Settings 共享的 native 交互层 ============ -->
 <div id="nativeGuiInteractionLayer" aria-hidden="true">

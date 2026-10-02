@@ -14,6 +14,11 @@ body.native-split-main {
   --settings-chrome-sidebar-boundary: 0px;
 }
 
+body.native-split-main .settings-dialog { max-height: none; border: 0; border-radius: 0; box-shadow: none; animation: none; }
+body.native-split-main .settings-workspace { display: block; height: 100%; }
+body.native-split-main .settings-content { height: 100%; max-height: none; }
+html[data-native-webview="sidebar"] #settingsSidebarScene .settings-tabs { height: 100%; display: flex; max-height: none; box-shadow: none; }
+
 html[data-native-webview="sidebar"] body {
   background: transparent;
   width: calc(100% / var(--ui-scale));

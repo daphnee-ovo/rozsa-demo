@@ -1,9 +1,20 @@
 import { createUIHost } from "../../ui/scripts/core/renderer.js";
 import { createTauriAdapter } from "../adapters/tauri.js";
-import { mountShell } from "../../ui/scripts/core/shell.js";
+import { mountShell, templateRoot } from "../../ui/scripts/core/shell.js";
+import { loadTemplate } from '../../ui/scripts/core/template-loader.js';
+import { configureSettingsSuspensions, isSettingsPaneAvailable, bindSettingsNavigation } from '../../ui/scripts/features/settings.js';
 
 const adapter = createTauriAdapter();
 window.RozsaUIHost = createUIHost(adapter);
 window.RozsaSidebarEmit = adapter.emit;
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
-await mountShell([]);
+window.RozsaSettings = Object.freeze({ isSettingsPaneAvailable });
+window.RozsaUIReady = (async () => {
+  await mountShell([]);
+  const template = await loadTemplate(new URL('features/settings.html', templateRoot));
+  const navigation = template.querySelector('#fallbackSettingsNavigationTemplate').content.cloneNode(true);
+  const root = document.getElementById('settingsSidebarScene');
+  root.replaceChildren(navigation);
+  configureSettingsSuspensions();
+  bindSettingsNavigation(root, { switchSettingsTab: selectSidebarSettingsPane, closeSettings: closeSidebarSettings });
+})();

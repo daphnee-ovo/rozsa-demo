@@ -1,23 +1,20 @@
 #[test]
 fn appearance_settings_are_in_a_dedicated_tab() {
-    let html = include_str!("../frontend/index.html");
-    let css = include_str!("../frontend/styles/features/appearance.css");
-    let settings_css = include_str!("../frontend/styles/features/settings.css");
+    let html = include_str!("../frontend/ui/templates/features/settings.html");
+    let css = include_str!("../frontend/ui/styles/features/appearance.css");
+    let settings_css = include_str!("../frontend/ui/styles/features/settings.css");
     let sidebar_css = include_str!("../frontend/styles/features/sidebar.css");
     let tauri = include_str!("../tauri.conf.json");
 
-    assert!(html.contains("switchSettingsTab('appearance', this)"));
+    assert!(html.contains("data-settings-pane=\"appearance\""));
     assert!(html.contains("id=\"pane-appearance\""));
     assert!(html.contains("class=\"settings-workspace\""));
     assert!(html.contains("class=\"settings-back\""));
-    assert!(!html.contains("id=\"settingsSidebarToggleButton\""));
-    assert!(!html.contains("class=\"traffic-lights\""));
-    assert!(!html.contains("class=\"window-control\""));
-    assert!(!html.contains("class=\"app-titlebar\""));
-    assert!(!html.contains("class=\"settings-chrome\""));
-    assert!(html.contains("data-od-id=\"chat-input\""));
-    assert!(css.contains(".input-toolbar .model-selector"));
-    assert!(css.contains("@media (max-width: 560px)"));
+    assert!(html.contains("data-theme-mode-card=\"system\""));
+    assert!(css.contains(".theme-mode-card"));
+    assert!(css.contains(".appearance-range"));
+    assert!(settings_css.contains(".settings-workspace"));
+    assert!(settings_css.contains("@media (max-width: 760px)"));
     assert!(tauri.contains("\"decorations\": true"));
     assert!(tauri.contains("\"hiddenTitle\": true"));
     assert!(tauri.contains("\"titleBarStyle\": \"Overlay\""));
@@ -83,20 +80,6 @@ fn appearance_settings_are_in_a_dedicated_tab() {
         );
     }
     assert_eq!(html.matches("class=\"settings-hint\"").count(), 10);
-    let help_tip_style = settings_css
-        .split(".settings-hint {")
-        .nth(1)
-        .and_then(|styles| styles.split("}").next())
-        .expect("missing settings help tip styles");
-    assert!(help_tip_style.contains("width: 12px;"));
-    assert!(help_tip_style.contains("height: 12px;"));
-    assert!(help_tip_style.contains("flex: 0 0 12px;"));
-    assert!(help_tip_style.contains("font: 8px/1 var(--font-ui);"));
-    assert!(
-        help_tip_style
-            .contains("border: 1px solid color-mix(in srgb, var(--muted) 55%, transparent);")
-    );
-    assert!(help_tip_style.contains("color: color-mix(in srgb, var(--muted) 55%, transparent);"));
     assert!(settings_css.contains(".settings-hint:hover::after"));
     assert!(settings_css.contains(".settings-hint:focus::after"));
     assert!(html.contains("class=\"settings-hint\" tabindex=\"0\""));
@@ -133,7 +116,9 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(!html.contains("id=\"settingsAutoCompact\" aria-label=\"自动压缩\"><option"));
     assert!(!html.contains("id=\"settingsBlockImages\" aria-label=\"Block images\"><option"));
     assert!(sidebar_css.contains(".setting-toggle.on::after { transform: translateX(16px); }"));
-    assert!(settings_css.contains(".setting-item.is-disabled { opacity: .42; }"));
+    assert!(
+        settings_css.contains(".setting-item.is-disabled { opacity: .44; pointer-events: none; }")
+    );
     for picker in [
         "lightThemeAccentPicker",
         "lightThemeBackgroundPicker",

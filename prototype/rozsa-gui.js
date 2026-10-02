@@ -378,6 +378,7 @@
   }
 
   function switchSettingsTab(tabId, button) {
+    if (["general", "skills", "tools", "keyboard-shortcuts", "permissions"].includes(tabId)) return;
     all(".settings-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.settingsPane === tabId));
     all(".settings-pane").forEach(pane => pane.classList.toggle("active", pane.id === "pane-" + tabId));
     if (button) button.classList.add("active");
@@ -402,7 +403,7 @@
     input.style.setProperty(propertyName, progress + "%");
   }
 
-  function setFontSize(value, persist = true) {
+  function setFontSize(value, persist = true, updateInput = true) {
     if (String(value).trim() === "") return;
     const next = Math.min(30, Math.max(5, Number(value) || state.fontSize));
     state.fontSize = next;
@@ -413,7 +414,7 @@
       range.value = String(next);
       syncRangeProgress(range, "--appearance-progress");
     }
-    if (input) input.value = String(next);
+    if (input && updateInput) input.value = String(next);
     if (persist) saveState();
   }
 
@@ -888,7 +889,6 @@
       mountTemplates();
       const popoverModule = await import(new URL("./scripts/components/popover.js", legacyScriptUrl));
       popoverModule.init(window.RozsaPrototype);
-      all(".settings-hint").forEach(hint => { hint.innerHTML = lucideIcon("circle-help"); });
       const sceneLoader = await import(new URL("./scripts/core/scene-loader.js", legacyScriptUrl));
       const scene = await sceneLoader.loadPrototypeScene();
       document.documentElement.dataset.rozsaScene = scene.id;
