@@ -31,7 +31,6 @@ The active product is implemented entirely in the five Rust crates above. Do not
 ## Documentation
 
 - Keep code, `Related Docs`, and Markdown backlinks synchronized.
-- Do not add or update file-header `FrameworkTree` comments or run `make-tree`. Existing tree comments may remain without maintenance.
 - Update this file when project structure, conventions, commands, or workflows change.
 - Do not edit dev-flow-managed files or generated sections by hand.
 

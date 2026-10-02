@@ -20,7 +20,6 @@ The tool uses `git ls-remote` and does not require a local Codex checkout. Use `
 ## Code Style
 
 - Rust: standard `rustfmt` and `clippy`
-- Do not add or maintain file-header `FrameworkTree` comments or run `make-tree`. Existing tree comments may remain.
 
 ## Testing
 
