@@ -112,7 +112,7 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
 }
 
 /* ============ 通知中心（主视图全局层，位于 Main/Settings 根之外） ============ */
-.notification-center {
+:where(.runtime-notification-legacy) .notification-center {
   position: fixed;
   top: 12px;
   right: 12px;
@@ -124,13 +124,13 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
   max-width: min(360px, calc(100vw - 24px));
   pointer-events: none;
 }
-.notification-stack {
+:where(.runtime-notification-legacy) .notification-stack {
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 100%;
 }
-.notification-toast {
+:where(.runtime-notification-legacy) .notification-toast {
   pointer-events: auto;
   display: flex;
   align-items: flex-start;
@@ -146,7 +146,7 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: none; }
 }
-.notification-icon {
+:where(.runtime-notification-legacy) .notification-icon {
   flex: none;
   width: 20px;
   height: 20px;
@@ -159,16 +159,16 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
   font-weight: 700;
   line-height: 1;
 }
-.notification-info .notification-icon { color: var(--accent); }
-.notification-success .notification-icon { color: var(--success); }
-.notification-warning .notification-icon { color: var(--accent); }
-.notification-error .notification-icon { color: var(--error); }
-.notification-warning { border-color: var(--accent-border); }
-.notification-error { border-color: var(--error); }
-.notification-body { min-width: 0; flex: 1; }
-.notification-title { font-weight: 600; font-size: 13px; color: var(--fg); }
-.notification-message { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }
-.notification-close {
+:where(.runtime-notification-legacy) .notification-info .notification-icon { color: var(--accent); }
+:where(.runtime-notification-legacy) .notification-success .notification-icon { color: var(--success); }
+:where(.runtime-notification-legacy) .notification-warning .notification-icon { color: var(--accent); }
+:where(.runtime-notification-legacy) .notification-error .notification-icon { color: var(--error); }
+:where(.runtime-notification-legacy) .notification-warning { border-color: var(--accent-border); }
+:where(.runtime-notification-legacy) .notification-error { border-color: var(--error); }
+:where(.runtime-notification-legacy) .notification-body { min-width: 0; flex: 1; }
+:where(.runtime-notification-legacy) .notification-title { font-weight: 600; font-size: 13px; color: var(--fg); }
+:where(.runtime-notification-legacy) .notification-message { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+:where(.runtime-notification-legacy) .notification-close {
   flex: none;
   border: none;
   background: none;
@@ -178,21 +178,21 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
   border-radius: 4px;
   font-size: 12px;
 }
-.notification-close:hover { background: var(--code-bg); color: var(--fg); }
-.notification-close:focus-visible,
-.notification-error-tray-button:focus-visible {
+:where(.runtime-notification-legacy) .notification-close:hover { background: var(--code-bg); color: var(--fg); }
+:where(.runtime-notification-legacy) .notification-close:focus-visible,
+:where(.runtime-notification-legacy) .notification-error-tray-button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: 2px;
 }
-.notification-error-tray {
+:where(.runtime-notification-legacy) .notification-error-tray {
   pointer-events: auto;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
 }
-.notification-error-tray[hidden] { display: none; }
-.notification-error-tray-button {
+:where(.runtime-notification-legacy) .notification-error-tray[hidden] { display: none; }
+:where(.runtime-notification-legacy) .notification-error-tray-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -205,7 +205,7 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
   font-size: 12px;
   font-weight: 600;
 }
-.notification-error-icon {
+:where(.runtime-notification-legacy) .notification-error-icon {
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -217,7 +217,7 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
   font-weight: 700;
   line-height: 1;
 }
-.notification-error-list {
+:where(.runtime-notification-legacy) .notification-error-list {
   width: 100%;
   max-height: 40vh;
   overflow-y: auto;
@@ -226,16 +226,16 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
   border-radius: var(--radius);
   box-shadow: 0 4px 16px rgb(20 10 15 / 20%);
 }
-.notification-error-list[hidden] { display: none; }
-.notification-error-item {
+:where(.runtime-notification-legacy) .notification-error-list[hidden] { display: none; }
+:where(.runtime-notification-legacy) .notification-error-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
 }
-.notification-error-item:last-child { border-bottom: none; }
-.notification-error-item-icon {
+:where(.runtime-notification-legacy) .notification-error-item:last-child { border-bottom: none; }
+:where(.runtime-notification-legacy) .notification-error-item-icon {
   flex: none;
   width: 18px;
   height: 18px;
@@ -248,5 +248,5 @@ ul.dev-flow-detail-disclosure-body { padding-left: 25px; }
   font-size: 11px;
   font-weight: 700;
 }
-.notification-error-item-title { font-weight: 600; font-size: 13px; color: var(--fg); }
-.notification-error-item-message { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+:where(.runtime-notification-legacy) .notification-error-item-title { font-weight: 600; font-size: 13px; color: var(--fg); }
+:where(.runtime-notification-legacy) .notification-error-item-message { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }

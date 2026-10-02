@@ -64,6 +64,10 @@
     {
       "file": "features/appearance.css",
       "sha256": "f96592e33c90090ccee9a338518f597ee802862d59c16fc01636075ff609f1eb"
+    },
+    {
+      "file": "composites/feedback.css",
+      "sha256": "93d4685ee0faf91ca28816edfd771bd280e6c325dea2e6524f32c87c57e5a414"
     }
   ],
   "entries": {
@@ -74,7 +78,8 @@
       "layouts/app-shell.css",
       "layouts/sidebar-shell.css",
       "features/settings.css",
-      "features/appearance.css"
+      "features/appearance.css",
+      "composites/feedback.css"
     ],
     "sidebar": [
       "foundations/tokens.css",
@@ -83,7 +88,8 @@
       "layouts/app-shell.css",
       "layouts/sidebar-shell.css",
       "features/settings.css",
-      "features/appearance.css"
+      "features/appearance.css",
+      "composites/feedback.css"
     ]
   },
   "late_imports": [

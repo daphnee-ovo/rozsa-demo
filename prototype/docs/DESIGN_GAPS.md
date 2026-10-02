@@ -232,6 +232,7 @@
 - `shared_migration`：TASK-T021（各区域任务共同核对）；空容器：各缺失异常状态所在 component slot（main/sidebar）。暂停：仅缺失异常 variant 的 retry/cancel/恢复操作。
 - `user_impact`：已覆盖 Notification 与错误表达保留；未覆盖异常 variant 不补画，不以空对象/通用成功提示替代真实失败。
 - `safety_gate`：error/notification/app-notification 与 invoke rejection 会被动到达；须逐组件核对真实错误是否仍可透明表达及安全退出。无已覆盖错误或恢复出口时阻断该组件迁移；不能静默丢弃错误或删掉必要取消操作。
+- `shared_boundary`：已覆盖 Notification 的结构、样式、关闭和错误列表绑定共用；main 的真实事件/计时/resolve 与 sidebar IPC rejection 接入共享组件。共享 UI 尚未就绪时的 bootstrap 错误出口保留旧实现并阻断该分支迁移；其余缺失异常 variant 仍按所属组件缺口处理，T021 不补充设计。
 
 ## Related Docs
 

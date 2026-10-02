@@ -15,6 +15,9 @@ import { init as bindInterruptionFlow } from '../../ui/scripts/flows/composer-in
 import { createInterruptionAdapter } from '../adapters/interruption.js';
 import * as settings from '../../ui/scripts/features/settings.js';
 import { createSettingsAdapter, bindSettingSwitch } from '../adapters/settings.js';
+import * as notifications from '../../ui/scripts/features/notifications.js';
+import { bindToast, bindErrorTray } from '../../ui/scripts/components/notification.js';
+import { subscribeNotifications, showRuntimeError } from '../adapters/notifications.js';
 
 window.RozsaUIHost = createUIHost(createTauriAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
@@ -22,7 +25,9 @@ window.RozsaUIReady = mountConversation(document.getElementById("mainContentScen
   { url: new URL("composites/popover.html", templateRoot), selector: "[data-template-mount=popover]", children: true },
   { url: new URL("composites/interruption-panel.html", templateRoot), selector: "[data-template-mount=interruption-panel]", children: true },
   { url: new URL("features/settings.html", templateRoot), selector: "[data-template-mount=settings]", children: true },
+  { url: new URL("composites/notification.html", templateRoot), selector: "[data-template-mount=notification]", children: true },
 ])).then(async () => {
+  window.RozsaNotifications = Object.freeze({ ...notifications, bindToast, bindErrorTray, subscribeNotifications, showRuntimeError });
   window.RozsaSettings = Object.freeze({ ...settings, bindSettingSwitch });
   const deferred = document.getElementById('runtimeSettingsDeferredTemplate').content.querySelector('#pane-dev-flow');
   document.getElementById('pane-dev-flow').replaceWith(deferred.cloneNode(true));

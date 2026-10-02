@@ -168,8 +168,9 @@
         1031,
         1057
       ],
-      "target": "prototype/styles/composites/feedback.css",
-      "sha256": "aa1f4da45fee31d4a577348bc275e5a40051474f970a3e6108ecb46a70a78a49"
+      "target": "crates/rozsa-gui/frontend/ui/styles/composites/feedback.css",
+      "sha256": "aa1f4da45fee31d4a577348bc275e5a40051474f970a3e6108ecb46a70a78a49",
+      "prototype_source": "prototype/styles/composites/feedback.css"
     },
     {
       "order": 17,
@@ -409,7 +410,7 @@
         1161,
         1162
       ],
-      "owner_file": "prototype/styles/composites/feedback.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/composites/feedback.css",
       "owner": "notification",
       "media": "max-width: 560px",
       "sha256": "6ccb21158a057d3295085761039a1d3c698ff649fff09fc84024c05097f68841"

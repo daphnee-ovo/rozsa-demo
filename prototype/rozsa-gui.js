@@ -43,6 +43,7 @@
   let sharedConversation;
   let sharedTools;
   let sharedPermissions;
+  let sharedNotifications;
 
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
@@ -350,12 +351,8 @@
   }
 
   function toast(text) {
-    const stack = byId("notificationStack");
-    if (!stack) return;
-    const item = document.createElement("div");
-    item.className = "notification-toast";
-    item.textContent = text;
-    stack.appendChild(item);
+    const item = sharedNotifications.createNotificationElement(typeof text === 'object' ? text : { id: 'mock-feedback', severity: 'info', title: 'Rózsa', message: text });
+    byId('notificationStack').appendChild(item);
     window.setTimeout(() => item.remove(), 2200);
   }
 
@@ -507,12 +504,7 @@
   }
 
   function notificationMarkup(item) {
-    const severity = item.severity || "info";
-    const iconName = severity === "success" ? "circle-check" : (severity === "error" ? "circle-x" : (severity === "warning" ? "triangle-alert" : "info"));
-    return '<div class="notification-toast notification-' + severity + '" role="' + (severity === "error" ? "alert" : "status") + '" data-notification-id="' + escapeHtml(item.id) + '">' +
-      '<div class="notification-icon" aria-hidden="true">' + lucideIcon(iconName) + '</div><div class="notification-body"><div class="notification-title">' +
-      escapeHtml(item.title) + '</div><div class="notification-message">' + escapeHtml(item.message) +
-      '</div></div><button class="notification-close" type="button" aria-label="Dismiss notification">' + lucideIcon("x") + '</button></div>';
+    return sharedNotifications.notificationMarkup(item);
   }
 
   function renderNotifications(items = [], errors = []) {
@@ -527,8 +519,7 @@
       tray.hidden = errors.length === 0;
       count.textContent = String(errors.length);
       list.hidden = true;
-      list.innerHTML = errors.map(error => '<div class="notification-error-item" role="listitem"><span class="notification-error-item-icon">' + lucideIcon("circle-alert") + '</span><div><div class="notification-error-item-title">' +
-        escapeHtml(error.title) + '</div><div class="notification-error-item-message">' + escapeHtml(error.message) + "</div></div></div>").join("");
+      list.innerHTML = errors.map(sharedNotifications.errorItemMarkup).join('');
     }
   }
 
@@ -849,6 +840,7 @@
     renderKeyBindings,
     renderMessages,
     renderNotifications,
+    dismissToast: id => document.querySelector('[data-notification-id="' + CSS.escape(id) + '"]')?.remove(),
     renderSessionList,
     saveState,
     selectQuestionOption: window.selectQuestionOption,
@@ -884,6 +876,7 @@
       sharedConversation = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/conversation.js", legacyScriptUrl));
       sharedTools = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/tools.js", legacyScriptUrl));
       sharedPermissions = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/permissions.js", legacyScriptUrl));
+      sharedNotifications = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/notifications.js", legacyScriptUrl));
       await sharedTools.loadToolTemplate();
       loadState();
       mountTemplates();

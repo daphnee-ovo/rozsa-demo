@@ -293,15 +293,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await listen('error', ev => showError(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
   await listen('dev-flow-detail', ev => showDevFlowDetail(ev.payload));
   await listen('dev-flow-detail-dismiss', () => closeDevFlowDetail());
-  await listen('app-notification', ev => {
-    const payload = ev.payload;
-    if (payload && payload.type === 'upsert') {
-      upsertNotification(payload);
-    } else if (payload && payload.type === 'resolve') {
-      resolveNotification(payload.id);
-    }
-  });
-  await listen('notification', ev => showNotification(typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)));
+  await window.RozsaNotifications.subscribeNotifications(window.RozsaUIHost.port, { upsertNotification, resolveNotification, showNotification, showError });
   await listen('models-updated', async () => {
     try {
       models = await invoke('list_models');
@@ -5648,6 +5640,10 @@ function toggleThinking(header) {
 }
 
 function showError(message) {
+  if (window.RozsaNotifications) {
+    window.RozsaNotifications.showRuntimeError(message, { upsertNotification, nextErrorId: () => 'runtime-error-' + (++legacyNotificationCounter) });
+    return;
+  }
   const container = document.getElementById('chatMessages');
   if (!container) return;
   const div = document.createElement('div');
@@ -5842,7 +5838,7 @@ document.addEventListener('keydown', event => {
 const notificationToasts = new Map();
 const unresolvedErrors = new Map();
 let legacyNotificationCounter = 0;
-let notificationErrorListPinned = false;
+let notificationErrorTrayController;
 
 function notificationStack() {
   return document.getElementById('notificationStack');
@@ -5865,20 +5861,11 @@ function notificationErrorCount() {
 }
 
 function notificationIcon(severity) {
-  if (severity === 'success') return '✓';
-  if (severity === 'error') return '!';
-  return 'i';
+  return window.RozsaNotifications.notificationIcon(severity);
 }
 
 function applyNotificationPresentation(toast, severity, title, message) {
-  toast.element.className = 'notification-toast notification-' + severity;
-  toast.element.setAttribute('role', severity === 'error' ? 'alert' : 'status');
-  toast.element.querySelector('.notification-icon').textContent = notificationIcon(severity);
-  toast.element.querySelector('.notification-title').textContent = title;
-  toast.element.querySelector('.notification-message').textContent = message;
-  toast.severity = severity;
-  toast.title = title;
-  toast.message = message;
+  window.RozsaNotifications.applyNotificationPresentation(toast, severity, title, message);
 }
 
 function showNotification(message) {
@@ -5921,21 +5908,8 @@ function upsertNotification(payload) {
     unresolvedErrors.delete(id);
     updateNotificationErrorTray();
   }
-  const element = document.createElement('div');
-  element.className = 'notification-toast notification-' + severity;
-  element.setAttribute('role', severity === 'error' ? 'alert' : 'status');
-  element.innerHTML =
-    '<div class="notification-icon" aria-hidden="true">' + notificationIcon(severity) + '</div>' +
-    '<div class="notification-body">' +
-    '<div class="notification-title"></div>' +
-    '<div class="notification-message"></div>' +
-    '</div>' +
-    '<button class="notification-close" type="button" aria-label="Dismiss notification">✕</button>';
-  element.querySelector('.notification-title').textContent = title;
-  element.querySelector('.notification-message').textContent = message;
-  element.querySelector('.notification-close').addEventListener('click', () => dismissToast(id));
-  element.addEventListener('pointerenter', () => pauseToastTimer(id));
-  element.addEventListener('pointerleave', () => resumeToastTimer(id));
+  const element = window.RozsaNotifications.createNotificationElement({ id, severity, title, message });
+  window.RozsaNotifications.bindToast(element, id, { dismissToast, pauseToastTimer, resumeToastTimer });
   notificationStack().appendChild(element);
   const toast = {
     element,
@@ -6023,26 +5997,12 @@ function openNotificationErrorList() {
 function closeNotificationErrorList() {
   notificationErrorList().hidden = true;
   notificationErrorTrayButton().setAttribute('aria-expanded', 'false');
-  notificationErrorListPinned = false;
+  notificationErrorTrayController?.resetPin();
 }
 
 function renderNotificationErrorList() {
   const list = notificationErrorList();
-  list.textContent = '';
-  for (const [id, entry] of unresolvedErrors) {
-    const item = document.createElement('div');
-    item.className = 'notification-error-item';
-    item.setAttribute('role', 'listitem');
-    item.innerHTML =
-      '<span class="notification-error-item-icon" aria-hidden="true">!</span>' +
-      '<div class="notification-error-item-body">' +
-      '<div class="notification-error-item-title"></div>' +
-      '<div class="notification-error-item-message"></div>' +
-      '</div>';
-    item.querySelector('.notification-error-item-title').textContent = entry.title;
-    item.querySelector('.notification-error-item-message').textContent = entry.message;
-    list.appendChild(item);
-  }
+  list.innerHTML = [...unresolvedErrors.values()].map(window.RozsaNotifications.errorItemMarkup).join('');
 }
 
 function updateNotificationErrorTray() {
@@ -6054,27 +6014,9 @@ function updateNotificationErrorTray() {
 }
 
 function setupNotificationErrorTray() {
-  const tray = notificationErrorTray();
-  const button = notificationErrorTrayButton();
-  button.addEventListener('click', () => {
-    if (isNotificationErrorListOpen()) {
-      closeNotificationErrorList();
-    } else {
-      openNotificationErrorList();
-      notificationErrorListPinned = true;
-    }
-  });
-  tray.addEventListener('pointerenter', () => {
-    if (unresolvedErrors.size > 0) openNotificationErrorList();
-  });
-  tray.addEventListener('pointerleave', () => {
-    if (!notificationErrorListPinned) closeNotificationErrorList();
-  });
-  button.addEventListener('focusin', () => {
-    if (unresolvedErrors.size > 0) openNotificationErrorList();
-  });
-  button.addEventListener('focusout', () => {
-    if (!notificationErrorListPinned) closeNotificationErrorList();
+  notificationErrorTrayController = window.RozsaNotifications.bindErrorTray({
+    byId: id => document.getElementById(id), hasErrors: () => unresolvedErrors.size > 0,
+    isNotificationErrorListOpen, openNotificationErrorList, closeNotificationErrorList,
   });
 }
 

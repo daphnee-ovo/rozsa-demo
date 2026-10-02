@@ -1,0 +1,11 @@
+<div id="notificationCenter" class="notification-center" data-od-id="notification-center" aria-live="polite">
+  <div id="notificationStack" class="notification-stack"></div>
+  <div id="notificationErrorTray" class="notification-error-tray" hidden>
+    <button id="notificationErrorTrayButton" type="button" class="notification-error-tray-button"
+      data-od-id="notification-errors" aria-label="Unresolved errors" aria-expanded="false">
+      <span class="notification-error-icon" aria-hidden="true"><svg class="lucide" data-lucide="circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg></span>
+      <span id="notificationErrorCount">0</span>
+    </button>
+    <div id="notificationErrorList" class="notification-error-list" role="list" hidden></div>
+  </div>
+</div>

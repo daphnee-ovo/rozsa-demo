@@ -423,6 +423,10 @@ async function newSidebarSession() {
 }
 
 function renderSidebarError(error) {
+  if (window.RozsaSidebarFeedback) {
+    window.RozsaSidebarFeedback(String(error));
+    return;
+  }
   const container = document.getElementById('sidebarSessionList');
   if (!container) return;
   const item = document.createElement('div');

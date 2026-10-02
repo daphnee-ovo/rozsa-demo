@@ -198,6 +198,9 @@ const modules = {
   '../adapters/interruption.js': 'export function createInterruptionAdapter(){return {};}',
   '../../ui/scripts/features/settings.js': 'export function init(){}',
   '../adapters/settings.js': 'export function bindSettingSwitch(){} export function createSettingsAdapter(){return {};}',
+  '../../ui/scripts/features/notifications.js': 'export function createNotificationElement(){}',
+  '../../ui/scripts/components/notification.js': 'export function bindToast(){} export function bindErrorTray(){}',
+  '../adapters/notifications.js': 'export function subscribeNotifications(){} export function showRuntimeError(){}',
 };
 let code = await readFile('crates/rozsa-gui/frontend/runtime/entries/main.js', 'utf8');
 for(const [path, module] of Object.entries(modules)) code = code.replace(path,url(module));
@@ -260,6 +263,7 @@ const modules={
   '../../ui/scripts/core/shell.js':'export const templateRoot=new URL("https://fixture.invalid/");export async function mountShell(){}',
   '../../ui/scripts/core/template-loader.js':'export async function loadTemplate(){globalThis.templateStarted();await globalThis.pending;return globalThis.readyTemplate;}',
   '../../ui/scripts/features/settings.js':'export function configureSettingsSuspensions(){} export function isSettingsPaneAvailable(){} export function bindSettingsNavigation(){globalThis.bindNavigation();}',
+  '../adapters/notifications.js':'export function createSidebarFeedback(){return ()=>{};}',
 };
 let code=await readFile('crates/rozsa-gui/frontend/runtime/entries/sidebar.js','utf8');
 for(const [path,module] of Object.entries(modules))code=code.replace(path,url(module));
