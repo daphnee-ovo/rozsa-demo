@@ -21,6 +21,24 @@ The tool uses `git ls-remote` and does not require a local Codex checkout. Use `
 
 - Rust: standard `rustfmt` and `clippy`
 
+## Testing
+
+Use the implementation language directly for tests of a small feature. Keep
+JavaScript tests in the corresponding module's `js-tests/` directory; do not
+wrap Node tests in Rust or Cargo subprocesses. GUI JavaScript tests live in
+`crates/rozsa-gui/js-tests/`:
+
+```bash
+npm ci --prefix crates/rozsa-gui/js-tests
+npm test --prefix crates/rozsa-gui/js-tests
+```
+
+Prefer shell scripts in `devtools/` to coordinate whole-module integration
+and end-to-end tests across languages. `bash devtools/test-gui.sh` runs the GUI
+JavaScript suite and Rust library/integration tests; `--js` or `--rust` runs one
+language. DOM and logic tests do not establish visual parity or native Tauri
+behavior; verify those in the actual prototype and app.
+
 ## Pull Requests
 
 - Keep changes focused and minimal

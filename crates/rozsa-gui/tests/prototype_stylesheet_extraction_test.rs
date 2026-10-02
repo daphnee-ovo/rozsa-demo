@@ -41,15 +41,26 @@ fn component_files_have_explicit_owners() {
     }
 
     let main_entry = fs::read_to_string(root.join("prototype/styles/entries/main.css")).unwrap();
+    let main_owners = imported_owners(&root.join("prototype/styles/entries/main.css"));
     for import in [
         "@import url(\"../composites/composer.css\");",
         "@import url(\"../features/queue.css\");",
         "@import url(\"../features/steering.css\");",
-        "@import url(\"../features/dev-flow-runtime.css\");",
     ] {
         assert!(
             main_entry.contains(import),
             "main entry 缺少公共 owner: {import}"
+        );
+    }
+    for owner in [
+        "crates/rozsa-gui/frontend/ui/styles/composites/composer.css",
+        "crates/rozsa-gui/frontend/ui/styles/features/queue.css",
+        "crates/rozsa-gui/frontend/ui/styles/features/steering.css",
+        "crates/rozsa-gui/frontend/ui/styles/features/dev-flow-runtime.css",
+    ] {
+        assert!(
+            main_owners.contains(&root.join(owner).canonicalize().unwrap()),
+            "main stylesheet graph must include shared owner {owner}"
         );
     }
     assert!(!main_entry.contains("../primitives/forms.css"));
@@ -114,19 +125,20 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
     assert!(!main_entry.contains("utilities.css"));
     assert!(!sidebar_entry.contains("utilities.css"));
 
-    let manifest: Value = serde_json::from_str(SOURCE_ORDER).unwrap();
-    let blocks = manifest["blocks"].as_array().unwrap();
-    let mut expected_sidebar_owners = Vec::new();
-    // Shared main foundations include Settings/Appearance/Notification owners before
-    // prototype sidebar supplements.
-    for order in [1, 2, 3, 4, 5, 11, 12, 16, 6, 18] {
-        let block = blocks
-            .iter()
-            .find(|block| block["order"].as_u64() == Some(order))
-            .unwrap();
-        let target = block["target"].as_str().unwrap();
-        expected_sidebar_owners.push(root.join(target).canonicalize().unwrap());
-    }
+    // The prototype sidebar imports the shared sidebar entry, then applies its
+    // two prototype-specific owner shims and motion tokens.
+    let mut expected_sidebar_owners =
+        imported_owners(&root.join("crates/rozsa-gui/frontend/ui/styles/entries/sidebar.css"));
+    expected_sidebar_owners.push(
+        root.join("crates/rozsa-gui/frontend/ui/styles/features/sidebar.css")
+            .canonicalize()
+            .unwrap(),
+    );
+    expected_sidebar_owners.push(
+        root.join("crates/rozsa-gui/frontend/ui/styles/features/sidebar-window.css")
+            .canonicalize()
+            .unwrap(),
+    );
     expected_sidebar_owners.push(
         root.join("crates/rozsa-gui/frontend/ui/styles/foundations/motion.css")
             .canonicalize()

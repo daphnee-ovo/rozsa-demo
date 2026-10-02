@@ -4,8 +4,6 @@
 // ├── dev_flow_settings_are_global_and_persist_typed_updates()
 // ├── relative_custom_path_is_rejected_and_does_not_persist()
 // ├── settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hints()
-// ├── stale_dev_flow_setting_responses_cannot_replace_the_latest_intent()
-// ├── enabling_dev_flow_restores_dependent_controls_when_cli_is_available()
 // ├── typed_ipc_commands_cover_every_dev_flow_setting_operation()
 // ├── development_bundle_launches_with_the_repository_as_its_explicit_project()
 // └── stable_notification_ids_follow_the_spec()
@@ -14,7 +12,6 @@
 //! contract, typed IPC coverage, and stable error-ID conventions.
 
 use std::path::PathBuf;
-use std::process::Command;
 
 use rozsa_app::settings::SettingsManager;
 
@@ -71,10 +68,12 @@ fn relative_custom_path_is_rejected_and_does_not_persist() {
 #[test]
 fn settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hints() {
     let index = include_str!("../frontend/index.html");
-    let sidebar = include_str!("../frontend/sidebar.html");
+    let settings = include_str!("../frontend/ui/templates/features/settings.html");
     let app_js = include_str!("../frontend/app.js");
+    let main_entry = include_str!("../frontend/runtime/entries/main.js");
+    let runtime_adapter = include_str!("../frontend/runtime/adapters/sidebar-dev-flow.js");
 
-    for markup in [index, sidebar] {
+    for markup in [index, settings] {
         assert!(markup.contains("data-settings-pane=\"dev-flow\""));
     }
     assert!(index.contains("id=\"pane-dev-flow\""));
@@ -108,6 +107,12 @@ fn settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hint
     assert!(!index.contains("id=\"devFlowSourceAuto\""));
     assert!(!index.contains("id=\"devFlowSourceCustom\""));
 
+    // The shared settings template is the runtime owner for this pane; the
+    // native sidebar WebView owns navigation only.
+    assert!(settings.contains("id=\"devFlowEnabled\""));
+    assert!(settings.contains("id=\"devFlowExecutablePath\""));
+    assert!(main_entry.contains("features/settings.html"));
+
     // The pane shows the official Homebrew, npm, and Cargo install commands
     // as static hints without any execution control.
     assert!(index.contains("brew install daphnee-ovo/tap/dev-flow"));
@@ -125,8 +130,10 @@ fn settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hint
     assert!(app_js.contains("pathInput.addEventListener('blur'"));
     assert!(app_js.contains("set_dev_flow_executable_path"));
     assert!(app_js.contains("function setDevFlowDependentControlDisabled"));
-    assert!(app_js.contains("const dependentDisabled = devFlowDependentControlsDisabled(s);"));
-    assert!(app_js.contains("setDevFlowDependentControlDisabled(enabled, false);"));
+    assert!(
+        runtime_adapter.contains("dependentDisabled: !settings.enabled || !settings.cli.available")
+    );
+    assert!(app_js.contains("window.RozsaDevFlow.renderSettings("));
     assert!(app_js.contains("let devFlowSettingsRevision = 0;"));
     assert!(app_js.contains("revision !== devFlowSettingsRevision"));
     assert!(app_js.contains("{ ...devFlowSettings, ...optimistic }"));
@@ -153,42 +160,6 @@ fn settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hint
     let path_position = index.find("id=\"devFlowExecutablePath\"").unwrap();
     assert!(settings_start > overview_start);
     assert!(path_position > settings_start);
-}
-
-#[test]
-fn stale_dev_flow_setting_responses_cannot_replace_the_latest_intent() {
-    let app_js = include_str!("../frontend/app.js");
-    let start = app_js
-        .find("function acceptDevFlowSettingsSnapshot")
-        .unwrap();
-    let end = app_js[start..]
-        .find("\n\nasync function loadDevFlowSettings")
-        .unwrap()
-        + start;
-    let function = &app_js[start..end];
-    let script = format!(
-        "let devFlowSettings={{enabled:true}};let devFlowSettingsRevision=2;let renders=0;function renderDevFlowSettings(){{renders++;}}\n{function}\nif(acceptDevFlowSettingsSnapshot(1,{{enabled:false}})!==false)process.exit(1);if(!devFlowSettings.enabled||renders!==0)process.exit(2);if(acceptDevFlowSettingsSnapshot(2,{{enabled:false}})!==true)process.exit(3);if(devFlowSettings.enabled||renders!==1)process.exit(4);"
-    );
-    let status = Command::new("node").arg("-e").arg(script).status().unwrap();
-    assert!(status.success());
-}
-
-#[test]
-fn enabling_dev_flow_restores_dependent_controls_when_cli_is_available() {
-    let app_js = include_str!("../frontend/app.js");
-    let start = app_js
-        .find("function devFlowDependentControlsDisabled")
-        .unwrap();
-    let end = app_js[start..]
-        .find("\n\nfunction renderDevFlowSettings")
-        .unwrap()
-        + start;
-    let function = &app_js[start..end];
-    let script = format!(
-        "{function}\nif(!devFlowDependentControlsDisabled({{enabled:false,cli:{{available:true}}}}))process.exit(1);if(devFlowDependentControlsDisabled({{enabled:true,cli:{{available:true}}}}))process.exit(2);if(!devFlowDependentControlsDisabled({{enabled:true,cli:{{available:false}}}}))process.exit(3);"
-    );
-    let status = Command::new("node").arg("-e").arg(script).status().unwrap();
-    assert!(status.success());
 }
 
 #[test]

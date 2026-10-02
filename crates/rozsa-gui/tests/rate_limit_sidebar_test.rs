@@ -1,18 +1,19 @@
 #[test]
 fn native_sidebar_renders_codex_oauth_rate_limits_from_sidebar_state() {
-    let html = include_str!("../frontend/sidebar.html");
+    let html = include_str!("../frontend/ui/templates/features/sidebar.html");
     let css = include_str!("../frontend/styles/features/sidebar-window.css");
     let js = include_str!("../frontend/sidebar.js");
     let state = include_str!("../src/state.rs");
     let commands = include_str!("../src/commands.rs");
 
     for id in [
-        "sidebarQuotaGroup",
-        "sidebarQuotaHour",
-        "sidebarQuotaHourBar",
-        "sidebarQuotaWeekRow",
-        "sidebarQuotaWeek",
-        "sidebarQuotaWeekBar",
+        "quotaGroup",
+        "quotaHourRow",
+        "quotaHour",
+        "quotaHourBar",
+        "quotaWeekRow",
+        "quotaWeek",
+        "quotaWeekBar",
     ] {
         assert!(html.contains(&format!("id=\"{id}\"")), "missing {id}");
     }
