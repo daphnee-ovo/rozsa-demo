@@ -3,6 +3,7 @@
 // ├── thinking_rendering_preserves_expand_state_and_patches_streaming_dom()
 // ├── thinking_animation_does_not_restart_on_each_token()
 // ├── thinking_block_uses_the_shared_prototype_card_and_disclosure()
+// ├── hide_thinking_setting_hides_expanded_and_collapsed_shared_cards()
 // └── thinking_effort_picker_uses_model_support_and_compacts_missing_levels()
 
 #[test]
@@ -35,6 +36,22 @@ fn thinking_block_uses_the_shared_prototype_card_and_disclosure() {
     assert!(source.contains(".thinking-block:not(.expanded) .thinking-content"));
     assert!(source.contains(".thinking-block.expanded .thinking-content { display: block; }"));
     assert!(!source.contains(".thinking-header:hover"));
+}
+
+#[test]
+fn hide_thinking_setting_hides_expanded_and_collapsed_shared_cards() {
+    let app = include_str!("../frontend/app.js");
+    let css = include_str!("../frontend/ui/styles/features/thinking.css");
+    assert!(app.contains("classList.toggle('hide-thinking', Boolean(settings.hide_thinking))"));
+    assert!(app.contains("classList.toggle('hide-thinking', enabled)"));
+    let hidden_rule = css
+        .split("body.hide-thinking .thinking-block {")
+        .nth(1)
+        .and_then(|tail| tail.split('}').next())
+        .expect(
+            "shared thinking cards must honor the hide-thinking setting in either expand state",
+        );
+    assert!(hidden_rule.contains("display: none;"));
 }
 
 #[test]

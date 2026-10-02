@@ -21,3 +21,4 @@
 .thinking-block.active .thinking-label,
 .thinking-block.active .thinking-icon { color: var(--accent); }
 .thinking-markdown { font-size: inherit; }
+body.hide-thinking .thinking-block { display: none; }
