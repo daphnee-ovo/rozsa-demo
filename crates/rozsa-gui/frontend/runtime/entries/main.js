@@ -6,12 +6,18 @@ import { init as bindComposer, renderSendState } from "../../ui/scripts/componen
 import { init as bindConversation, emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup } from "../../ui/scripts/features/conversation.js";
 import { mountConversation, createConversationFlow } from "../../ui/scripts/flows/conversation.js";
 import { createConversationAdapter } from "../adapters/conversation.js";
+import * as tools from '../../ui/scripts/features/tools.js';
+import { init as bindTools } from '../../ui/scripts/components/tool-call.js';
+import { toolView, activityView } from '../adapters/tools.js';
 
 window.RozsaUIHost = createUIHost(createTauriAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
 window.RozsaUIReady = mountConversation(document.getElementById("mainContentScene")).then(() => mountShell([
   { url: new URL("composites/popover.html", templateRoot), selector: "[data-template-mount=popover]", children: true },
-])).then(() => {
+])).then(async () => {
+  await tools.loadToolTemplate();
+  window.RozsaTools = Object.freeze({ ...tools, toolView, activityView });
+  bindTools({ boundModules: new Set(), byId: id => document.getElementById(id), toggleToolCall, toggleTurnDiff });
   const interruption = document.querySelector("[data-template-mount=interruption-panel]");
   interruption.replaceWith(document.getElementById("runtimeInterruptionTemplate").content.cloneNode(true));
   document.querySelector('[data-od-id="chat-input"]').prepend(document.getElementById("runtimeSubagentTemplate").content.cloneNode(true));

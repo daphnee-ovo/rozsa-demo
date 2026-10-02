@@ -63,7 +63,7 @@
         286
       ],
       "target": "prototype/styles/features/sidebar.css",
-      "sha256": "54f3d3eebd9ebae76b1741fbb7199fcf721612eabee8fc404ca9683cf6615999"
+      "sha256": "f138fc5b2cddf56a09d382d98cc6dc23a8b8c4b142a14f515872bd2abf55a42e"
     },
     {
       "order": 7,
@@ -82,10 +82,11 @@
         489
       ],
       "target": "prototype/styles/features/tools.css",
-      "sha256": "a5ee443d18536236e06a2d2d65714a1dccedb2cd1079d3ba197bba5ce0896490",
+      "sha256": "45354a4cd26467d9faee04336d5612425cb3354a885e4e33e05a336d86a9aefe",
       "original_sha256": "ffd6b3964aa2baf398b853811e74afc0b67a5df9f580d797342b26920c5dcb87",
       "owners": [
-        "crates/rozsa-gui/frontend/ui/styles/features/thinking.css"
+        "crates/rozsa-gui/frontend/ui/styles/features/thinking.css",
+        "crates/rozsa-gui/frontend/ui/styles/features/tools.css"
       ]
     },
     {

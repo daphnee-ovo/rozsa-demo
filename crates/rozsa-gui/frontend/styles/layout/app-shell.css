@@ -118,11 +118,11 @@
 .tool-status {
   width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
-.tool-status.s-success, .tool-call-status.s-success { background: var(--success); }
-.tool-status.s-error, .tool-call-status.s-error { background: var(--error); }
-.tool-status.s-running, .tool-call-status.s-running { background: var(--warning); animation: pulse 1.2s infinite; }
+.tool-status.s-success, [data-tool-ui="legacy"] .tool-call-status.s-success { background: var(--success); }
+.tool-status.s-error, [data-tool-ui="legacy"] .tool-call-status.s-error { background: var(--error); }
+.tool-status.s-running, [data-tool-ui="legacy"] .tool-call-status.s-running { background: var(--warning); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-.tool-name { color: var(--fg); font-weight: 500; }
+[data-tool-ui="legacy"] .tool-name { color: var(--fg); font-weight: 500; }
 
 /* 侧边栏底部 */
 .sidebar-bottom {

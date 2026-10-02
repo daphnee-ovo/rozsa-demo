@@ -27,6 +27,7 @@ function escapeHtml(value) {{ return String(value ?? '').replace(/&/g, '&amp;').
 function extractText(content) {{ return Array.isArray(content) ? content.filter(block => block.type === 'text').map(block => block.text).join('\\n') : ''; }}
 function extractThinking() {{ return null; }}
 function renderMarkdown(text) {{ return String(text ?? ''); }}
+window.RozsaTools = {{ messageTextMarkup: renderMarkdown }};
 function trackTool() {{}}
 function isToolCallExpanded() {{ return false; }}
 function parseDevFlowBashPresentation() {{ return null; }}

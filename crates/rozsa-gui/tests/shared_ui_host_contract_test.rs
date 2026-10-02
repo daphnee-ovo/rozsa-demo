@@ -188,11 +188,15 @@ const modules = {
   '../../ui/scripts/features/conversation.js': 'export function init(){};export function emptyConversationMarkup(){};export function messageFrame(){};export function createMessageFrame(){};export function runningPanelMarkup(){};export function thinkingMarkup(){}',
   '../../ui/scripts/flows/conversation.js': 'export function mountConversation(){globalThis.shellStarted();return globalThis.shellPending;}export function createConversationFlow(){return {};}',
   '../adapters/conversation.js': 'export function createConversationAdapter(){return {};}',
+  '../../ui/scripts/features/tools.js': 'export async function loadToolTemplate(){}',
+  '../../ui/scripts/components/tool-call.js': 'export function init(){}',
+  '../adapters/tools.js': 'export function toolView(){} export function activityView(){}',
 };
 let code = await readFile('crates/rozsa-gui/frontend/runtime/entries/main.js', 'utf8');
 for(const [path, module] of Object.entries(modules)) code = code.replace(path,url(module));
 globalThis.window={addEventListener(){}};
 globalThis.previewThinkingEffort=globalThis.selectThinkingEffort=()=>{};
+globalThis.toggleToolCall=globalThis.toggleTurnDiff=()=>{};
 for(const name of ['configureConversationSuspensions','attachFileReference','attachDirectoryReference','insertSlashCommandPrefix','showModelPicker','updateAbortButton','handleInput','handleCompositionStart','handleCompositionUpdate','handleCompositionEnd','toggleThinking'])globalThis[name]=()=>{};
 const element={content:{cloneNode(){}},replaceWith(){},prepend(){}};
 globalThis.document={getElementById(){return element;},querySelector(){return element;}};

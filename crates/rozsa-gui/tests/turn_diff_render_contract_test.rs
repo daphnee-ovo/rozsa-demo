@@ -1,3 +1,7 @@
+// FrameworkTree
+// turn_diff_render_contract_test.rs
+// └── frontend_keeps_prototype_write_edit_and_turn_diff_contracts()
+
 #[test]
 fn frontend_keeps_prototype_write_edit_and_turn_diff_contracts() {
     let app = include_str!("../frontend/app.js");
@@ -7,7 +11,7 @@ fn frontend_keeps_prototype_write_edit_and_turn_diff_contracts() {
     let form_css = include_str!("../frontend/styles/components/forms.css");
 
     assert!(app.contains("function renderCodeView(content)"));
-    assert!(app.contains("tc.arguments.content"));
+    assert!(app.contains("typeof args.content === 'string' ? args.content : null"));
     assert!(app.contains("let expandedToolCallsBySession = {}"));
     assert!(app.contains("data-tool-call-id"));
     assert!(app.contains("if (snap.streamUpdate)"));

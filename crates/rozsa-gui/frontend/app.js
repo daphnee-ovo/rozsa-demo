@@ -869,7 +869,7 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
 
   if (role === 'user') {
     const text = extractText(content);
-    return window.RozsaConversation.createMessageFrame('user', renderMarkdown(text), messageIndex);
+    return window.RozsaConversation.createMessageFrame('user', window.RozsaTools.messageTextMarkup(text), messageIndex);
 
   } else if (role === 'assistant') {
     let body = '';
@@ -895,16 +895,31 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
       trackTool(tc.name);
       // 通过 tc.id 查找对应的 toolResult
       const result = toolResultMap && tc.id ? toolResultMap[tc.id] : null;
+      const view = window.RozsaTools.toolView(tc, result);
+      if (view.disposition === 'suspended') {
+        body += '<div data-ui-suspended="' + view.coverage + '" data-tool-call-id="' + escapeHtml(tc.id || '') + '"></div>';
+        continue;
+      }
+      if (view.disposition === 'covered') {
+        const title = resolveToolTitle(tc, null);
+        const evidence = view.kind === 'output'
+          ? window.RozsaTools.evidenceMarkup(view.label, view.output)
+          : window.RozsaTools.evidenceViewMarkup(view.kind, view.content);
+        body += window.RozsaTools.toolMarkup(tc.id || '', title.name, title.arg, '', view.status, {
+          expanded: isToolCallExpanded(tc.id), bodyHtml: evidence,
+        }).replace(' tabindex="0"', ' data-session-id="' + escapeHtml(activeSessionId || '') + '" tabindex="0"');
+        continue;
+      }
       const devFlowPresentation = parseDevFlowBashPresentation(tc, result, devFlowTitleForItem);
       if (devFlowPresentation && tc.id) requestDevFlowTitles(tc.id, devFlowPresentation);
       const tcStatus = result ? (result.isError ? 's-error' : 's-success') : 's-running';
       const toolTitle = resolveToolTitle(tc, devFlowPresentation);
       const toolEvidence = renderToolEvidence(tc, result, devFlowPresentation);
 
-      body += '<div class="tool-call' + (isToolCallExpanded(tc.id) ? ' expanded' : '') +
+      body += '<div data-tool-ui="legacy" data-ui-migration-blocked="' + view.coverage + '" class="tool-call' + (isToolCallExpanded(tc.id) ? ' expanded' : '') +
         (devFlowPresentation ? ' dev-flow-tool-call' : '') +
         '" data-tool-call-id="' + escapeHtml(tc.id || '') + '" data-session-id="' +
-        escapeHtml(activeSessionId || '') + '" onclick="toggleToolCall(this)">' +
+        escapeHtml(activeSessionId || '') + '">' +
         '<div class="tool-track"><div class="tool-icon">' + toolIcon(tc.name) + '</div>' +
         '</div>' +
         '<div class="tool-content"><div class="tool-header">' +
@@ -921,7 +936,8 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
     if (text) {
       const textActive = isActiveStream && latestType === 'text';
       body += '<div class="msg-content markdown-body"' + (textActive ? ' data-stream-cursor-target="text"' : '') +
-        '>' + renderMarkdown(text) + '</div>';
+        '>' + (isActiveStream || !showAssistantIdentity || errorMessage
+          ? renderMarkdown(text) : window.RozsaTools.messageTextMarkup(text)) + '</div>';
     }
 
     if (turnActivity && ((turnActivity.changedFiles && turnActivity.changedFiles.length) || turnActivity.verification)) {
@@ -1750,33 +1766,11 @@ function resolveToolTitle(tc, devFlowPresentation) {
 }
 
 function renderCodeView(content) {
-  return content.split('\n').map((line, index) =>
-    '<div class="code-line"><span class="code-ln">' + (index + 1) + '</span>' +
-    '<span class="code-text">' + escapeHtml(line) + '</span></div>'
-  ).join('');
+  return window.RozsaTools.codeViewMarkup(content);
 }
 
 function renderDiffView(patch) {
-  let oldLine = 1;
-  let newLine = 1;
-  const rows = [];
-  for (const line of patch.split('\n')) {
-    const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-    if (hunk) {
-      oldLine = Number.parseInt(hunk[1], 10);
-      newLine = Number.parseInt(hunk[2], 10);
-      continue;
-    }
-    if (line.startsWith('---') || line.startsWith('+++') || !line) continue;
-    if (line.startsWith('-')) {
-      rows.push('<div class="diff-line diff-del"><span class="diff-sign">−</span><span class="diff-ln">' +
-        oldLine++ + '</span><span class="diff-text">' + escapeHtml(line.slice(1)) + '</span></div>');
-    } else if (line.startsWith('+')) {
-      rows.push('<div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-ln">' +
-        newLine++ + '</span><span class="diff-text">' + escapeHtml(line.slice(1)) + '</span></div>');
-    }
-  }
-  return rows.join('');
+  return window.RozsaTools.diffViewMarkup(patch);
 }
 
 // =============== Content Block Extraction ===============
@@ -1914,6 +1908,8 @@ function handleToolEvent(ev) {
 }
 
 function renderTurnActivityCard(activity) {
+  const view = window.RozsaTools.activityView(activity);
+  if (view.disposition === 'covered') return window.RozsaTools.changesMarkup(view.files, view.verification);
   const changes = activity && Array.isArray(activity.fileChanges) ? activity.fileChanges : [];
   const files = changes.length ? changes.map(change => change.path) : (activity && activity.changedFiles ? activity.changedFiles : []);
   const verification = activity && activity.verification;
@@ -1925,7 +1921,7 @@ function renderTurnActivityCard(activity) {
     const payload = change ? escapeHtml(JSON.stringify(change)) : '';
     return '<div class="change-entry"><div class="change-row"><span class="change-icon ' + (status === 'added' ? 'new' : 'mod') +
       '" title="' + label + '">' + icon + '</span>' +
-      '<button class="change-name" aria-expanded="false" ' + (change ? 'data-turn-diff="' + payload + '" onclick="toggleTurnDiff(this)"' : '') + '>' +
+      '<button class="change-name" aria-expanded="false" ' + (change ? 'data-turn-diff="' + payload + '"' : '') + '>' +
       escapeHtml(path) + '</button>' +
       (change ? '<span class="change-add">+' + change.added + '</span><span class="change-del">-' + change.deleted + '</span>' : '') +
       (change ? '<span class="change-toggle">›</span>' : '') + '</div>' +
@@ -1944,8 +1940,8 @@ function renderTurnActivityCard(activity) {
     ? '<div class="changes-footer"><span class="change-del">Diff incomplete</span><span class="changes-runtime">' +
       escapeHtml(activity.captureLimitation || 'workspace capture limit reached') + '</span></div>'
     : '';
-  return '<div class="changes-card"><div class="changes-header"><span>Changes: ' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</span></div>' +
-    (rows ? '<div class="changes-list">' + rows + '</div>' : '') + verificationSummary + limitation + '</div>';
+  return '<div data-tool-ui="legacy" data-ui-migration-blocked="UI-EVIDENCE-001"><div class="changes-card"><div class="changes-header"><span>Changes: ' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</span></div>' +
+    (rows ? '<div class="changes-list">' + rows + '</div>' : '') + verificationSummary + limitation + '</div></div>';
 }
 
 function toggleTurnDiff(button) {

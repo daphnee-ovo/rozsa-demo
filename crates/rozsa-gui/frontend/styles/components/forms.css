@@ -9,11 +9,11 @@
   cursor: pointer;
 }
 .turn-activity-file:hover { text-decoration: underline; }
-.turn-diff-inline {
+[data-tool-ui="legacy"] .turn-diff-inline {
   margin: 2px 0 5px 22px;
 }
-.turn-diff-inline[hidden] { display: none; }
-.turn-diff-inline .diff-view { max-height: 260px; overflow: auto; padding: 2px 0 !important; }
+[data-tool-ui="legacy"] .turn-diff-inline[hidden] { display: none; }
+[data-tool-ui="legacy"] .turn-diff-inline .diff-view { max-height: 260px; overflow: auto; padding: 2px 0 !important; }
 .input-wrapper.valid-token {
   border-color: color-mix(in oklch, var(--success) 48%, var(--accent));
 }

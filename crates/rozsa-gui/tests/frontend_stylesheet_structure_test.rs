@@ -104,15 +104,27 @@ fn shared_style_owners_are_reachable_from_both_hosts() {
             .canonicalize()
             .unwrap();
         let forward = fs::read_to_string(root.join("prototype/styles").join(file)).unwrap();
-        assert_eq!(
-            forward.lines().count(),
-            1,
-            "prototype holds a second implementation: {file}"
+        let imports: Vec<_> = forward.lines().collect();
+        assert!(
+            imports.contains(
+                &format!("@import url(\"../../../crates/rozsa-gui/frontend/ui/styles/{file}\");")
+                    .as_str()
+            )
         );
-        assert_eq!(
-            forward.trim(),
-            format!("@import url(\"../../../crates/rozsa-gui/frontend/ui/styles/{file}\");")
-        );
+        for import in imports {
+            let target = import
+                .strip_prefix("@import url(\"../../../crates/rozsa-gui/frontend/ui/styles/")
+                .and_then(|line| line.strip_suffix("\");"))
+                .expect("prototype shim must contain only shared imports");
+            assert!(
+                manifest["owners"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|owner| owner["file"].as_str() == Some(target)),
+                "shim references an unregistered owner: {target}"
+            );
+        }
         if file != "primitives/forms.css" {
             assert!(
                 runtime_owners.contains(&shared),

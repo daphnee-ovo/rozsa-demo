@@ -27,7 +27,6 @@
 .session-meta { flex: 0 0 auto; color: var(--muted); font: 10px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
 .session-status,
 .tool-status,
-.tool-call-status,
 .status-dot,
 .dev-flow-claimed-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--muted); }
 .session-status.running,
@@ -35,8 +34,7 @@
 .session-status.approval { background: var(--warning); }
 .session-status.running,
 .session-status.approval,
-.tool-status.s-running,
-.tool-call-status.s-running { animation: quiet-pulse 1.4s ease-in-out infinite; }
+.tool-status.s-running { animation: quiet-pulse 1.4s ease-in-out infinite; }
 @keyframes quiet-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .42; transform: scale(.84); } }
 .sidebar-bottom { flex: 0 0 auto; display: flex; flex-direction: column; gap: 3px; padding: 12px 10px 18px; }
 .sidebar-btn { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius-control); color: var(--muted); font-size: 12px; text-align: left; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 100ms ease; }
@@ -72,13 +70,9 @@
 .tool-count-summary { color: var(--muted); font: 10px/1.4 var(--font-mono); }
 .tool-log-item { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: var(--radius-control); color: var(--muted); font: 10.5px/1.4 var(--font-mono); }
 .tool-log-item:hover { background: var(--fg-soft); }
-.tool-status.s-success,
-.tool-call-status.s-success { background: var(--success); }
-.tool-status.s-error,
-.tool-call-status.s-error { background: var(--error); }
-.tool-status.s-running,
-.tool-call-status.s-running { background: var(--warning); }
-.tool-name { color: var(--fg); font-weight: 560; }
+.tool-status.s-success { background: var(--success); }
+.tool-status.s-error { background: var(--error); }
+.tool-status.s-running { background: var(--warning); }
 
 /* Subagent status is a sidebar feature, independent of the scene that exposes it. */
 .subagent-sidebar-panel {

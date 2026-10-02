@@ -51,7 +51,11 @@
     },
     {
       "file": "features/thinking.css",
-      "sha256": "c5d79a52d70ec4236d6ebc905cdaef5fac6e7ab7df40333007d2de1e9eff7572"
+      "sha256": "ecd17e92c51ee7a4c6f1acbb13cc4e9cf7852d6e5d946b03be5142227ae3de4b"
+    },
+    {
+      "file": "features/tools.css",
+      "sha256": "f2bc0cfaec15b24e5ee56af9c90e23e98fcf79e65336eceaf75f9361bfc2b26c"
     }
   ],
   "entries": {
@@ -77,7 +81,8 @@
     "features/thinking.css",
     "features/queue.css",
     "features/steering.css",
-    "foundations/motion.css"
+    "foundations/motion.css",
+    "features/tools.css"
   ],
   "unloaded": [
     "primitives/forms.css"

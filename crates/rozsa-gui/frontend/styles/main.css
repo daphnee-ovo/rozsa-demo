@@ -22,6 +22,7 @@
 @import url("../ui/styles/primitives/actions.css");
 @import url("../ui/styles/features/conversation.css");
 @import url("../ui/styles/features/thinking.css");
+@import url("../ui/styles/features/tools.css");
 @import url("../ui/styles/composites/composer.css");
 @import url("../ui/styles/features/queue.css");
 @import url("../ui/styles/features/steering.css");

@@ -186,7 +186,7 @@ check(formatToolTitle({{name:'unknown', arguments:{{a:1}}}}).arg === '{{"a":1}}'
 #[test]
 fn frontend_normalizes_tool_icons_and_status_styles() {
     let source = include_str!("../frontend/app.js");
-    let css = include_str!("../frontend/styles/layout/app-shell.css");
+    let css = include_str!("../frontend/ui/styles/features/tools.css");
     assert!(
         source.contains("const toolName = normalizeToolName(name);"),
         "tool icons should normalize tool names"
@@ -208,6 +208,9 @@ fn frontend_renders_structured_tool_evidence_without_losing_output() {
     let end = source[start..].find("function extractText(").unwrap() + start;
     let script = format!(
         r#"
+const sharedToolsSource = require('node:fs').readFileSync(process.argv[2], 'utf8');
+const tools = new Function(sharedToolsSource.replace(/^import .*;$/gm, '').replace(/export /g, '') + ';return {{codeViewMarkup,diffViewMarkup}};')();
+const window = {{RozsaTools:tools}};
 function escapeHtml(value) {{
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }}
@@ -273,13 +276,19 @@ check(error.html.includes('error') && error.html.includes('permission denied'), 
 "#,
         &source[start..end]
     );
-    let directory = tempfile::tempdir().unwrap();
+    let tmp = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let directory = tempfile::tempdir_in(tmp).unwrap();
     let path = directory
         .path()
         .join("dev_flow_structured_tool_evidence_test.js");
     std::fs::write(&path, script).unwrap();
     let output = Command::new("node")
         .arg(path)
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/frontend/ui/scripts/features/tools.js"
+        ))
         .output()
         .expect("Node.js is required for frontend behavior tests");
     assert!(

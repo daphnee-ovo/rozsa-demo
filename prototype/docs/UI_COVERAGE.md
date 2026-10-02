@@ -58,6 +58,8 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 
 - 项目：`UI-TOOL-001`、`UI-TOOL-002`、`UI-EVIDENCE-001`、`UI-MARKDOWN-001`。
 - 结论：code/diff/file changes/turn activity 已覆盖；tool lifecycle 与 rich Markdown 完整状态为 `partial`。
+- Runtime 边界：Read/Bash 非空成功输出、Edit 单文件完整 patch 与普通完成消息的纯文本/fenced code 已共享；未覆盖的正常 evidence/Markdown block 留空并暂停操作。真实工具错误、待回答问题和被动 streaming/continuation/error 消息保留现有处理，迁移受阻，T036 不得删除这些出口。
+- File changes/verification 的成功且元数据完整状态共用 renderer；失败、不完整 capture 与未覆盖文件元数据状态保留现有处理，标记 `UI-EVIDENCE-001` migration-blocked。
 
 ### PermissionRequest 与 AskUserQuestion
 

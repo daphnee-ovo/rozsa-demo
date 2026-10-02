@@ -96,6 +96,8 @@
 ### GAP-003A：Read、Edit 与 Bash tool lifecycle
 
 - `coverage_id`：`UI-TOOL-001`
+- `implementation_boundary`：Read/Bash 非空成功输出及 Edit 单文件完整 patch 使用共享实现；无结果、空输出、截断与未覆盖输出变体留空，暂停展开。真实错误仍由现有 renderer 呈现，迁移受阻；后台工具执行和原始结果不改写。
+- `evidence_boundary`：`UI-EVIDENCE-001` 的成功且元数据完整 file changes/verification 已共享；失败 verification、不完整 capture 和未覆盖文件元数据保留真实处理并标记 migration-blocked，T036 不得删除。
 - `runtime_trigger`：分别执行 Read/Edit/Bash 的成功、失败、取消和 missing-result，在 desktop/narrow 展开收起。
 - `current_runtime`：支持 pending/running/success/error/cancelled、collapsed/expanded、empty/long output 和连续调用。
 - `prototype_missing`：`tool-calls` 未实际呈现每个 tool family 的完整生命周期和极端内容。
@@ -108,6 +110,7 @@
 ### GAP-003B：Subagent、Question 与 generic tool lifecycle
 
 - `coverage_id`：`UI-TOOL-002`
+- `implementation_boundary`：未覆盖 specialized/generic 成功 evidence 留空并暂停展开；真实错误与待回答 AskUserQuestion 保留现有处理和回答出口，迁移受阻。
 - `runtime_trigger`：执行 Subagent、AskUserQuestion 与 generic tool 的成功、失败、取消和 missing-result。
 - `current_runtime`：每类有专用或 generic evidence renderer，并支持生命周期与展开状态。
 - `prototype_missing`：只有少量静态实例，没有完整 lifecycle、empty/long/error output。
@@ -120,6 +123,7 @@
 ### GAP-002B：Rich Markdown 状态矩阵
 
 - `coverage_id`：`UI-MARKDOWN-001`
+- `implementation_boundary`：普通完成消息的纯文本/fenced code 使用共享 renderer；未覆盖 rich Markdown block 留空并暂停链接等操作，原始消息不改写。被动 streaming、continuation 和错误消息保留现有 renderer，迁移受阻。
 - `runtime_trigger`：在 desktop/narrow 渲染 heading、nested list、blockquote、link、inline code、table、blocked image、长 CJK 和 code overflow。
 - `current_runtime`：`renderMarkdown`/`renderTable` 对各 Markdown 构造及 overflow 产生可见结构。
 - `prototype_missing`：现有消息未覆盖完整 Markdown 构造与极端长度。

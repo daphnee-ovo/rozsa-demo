@@ -41,6 +41,7 @@
   let questionRequest = null;
   let prototypeResponses = null;
   let sharedConversation;
+  let sharedTools;
 
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
@@ -232,9 +233,7 @@
   }
 
   function textMarkup(value) {
-    return escapeHtml(value || "").split(/\n{2,}/).filter(Boolean).map(paragraph =>
-      "<p>" + paragraph.replace(/\n/g, "<br>") + "</p>"
-    ).join("");
+    return sharedTools.textMarkup(value);
   }
 
   function messageFrame(role, body, index, continuation = false) {
@@ -242,15 +241,7 @@
   }
 
   function toolMarkup(id, name, arg, output, status, options = {}) {
-    const stateClass = options.expanded ? " expanded" : "";
-    const extraClass = options.className ? " " + options.className : "";
-    const body = options.bodyHtml || '<pre style="white-space:pre-wrap;margin:0">' + escapeHtml(output || "") + "</pre>";
-    return '<div class="tool-call' + stateClass + extraClass + '" data-tool-call-id="' + escapeHtml(id) + '" data-od-id="tool-call-' + escapeHtml(id) + '" tabindex="0">' +
-      '<div class="tool-track"><div class="tool-icon">' + lucideIcon("corner-down-right") + '</div></div>' +
-      '<div class="tool-content"><div class="tool-header"><span class="tool-call-status ' + status + '"></span>' +
-      '<span class="tool-name">' + escapeHtml(name) + '</span><span class="tool-call-args">' + escapeHtml(arg) +
-      '</span><span class="tool-call-toggle">' + lucideIcon("chevron-right") + '</span></div></div>' +
-      '<div class="tool-call-body' + (options.bodyClass ? " " + options.bodyClass : "") + '">' + body + "</div></div>";
+    return sharedTools.toolMarkup(id, name, arg, output, status, options);
   }
 
   function thinkingMarkup(text, expanded = true, active = false, duration = "") {
@@ -258,55 +249,20 @@
   }
 
   function codeViewMarkup(content) {
-    return String(content || "").split("\n").map((line, index) =>
-      '<div class="code-line"><span class="code-ln">' + (index + 1) + '</span><span class="code-text">' + escapeHtml(line) + "</span></div>"
-    ).join("");
+    return sharedTools.codeViewMarkup(content);
   }
 
   function diffViewMarkup(patch) {
-    let oldLine = 1;
-    let newLine = 1;
-    return String(patch || "").split("\n").map(line => {
-      const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      if (hunk) {
-        oldLine = Number.parseInt(hunk[1], 10);
-        newLine = Number.parseInt(hunk[2], 10);
-        return "";
-      }
-      if (line.startsWith("---") || line.startsWith("+++") || !line) return "";
-      if (line.startsWith("-")) {
-        return '<div class="diff-line diff-del"><span class="diff-sign">−</span><span class="diff-ln">' +
-          oldLine++ + '</span><span class="diff-text">' + escapeHtml(line.slice(1)) + "</span></div>";
-      }
-      if (line.startsWith("+")) {
-        return '<div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-ln">' +
-          newLine++ + '</span><span class="diff-text">' + escapeHtml(line.slice(1)) + "</span></div>";
-      }
-      const lineNumber = newLine;
-      oldLine++;
-      newLine++;
-      return '<div class="diff-line"><span class="diff-sign"> </span><span class="diff-ln">' +
-        lineNumber + '</span><span class="diff-text">' + escapeHtml(line.slice(1)) + "</span></div>";
-    }).join("");
+    return sharedTools.diffViewMarkup(patch);
   }
 
   function evidenceMarkup(label, output) {
-    return '<div class="tool-evidence"><div class="tool-evidence-section"><div class="tool-evidence-label">' +
-      escapeHtml(label) + '</div><pre class="tool-evidence-output">' + escapeHtml(output || "") + "</pre></div></div>";
+    return sharedTools.evidenceMarkup(label, output);
   }
 
   function changesMarkup(files, verification) {
-    const rows = (files || []).map(file => '<div class="change-entry"><div class="change-row">' +
-      '<span class="change-icon ' + (file.status === "added" ? "new" : "mod") + '">' + lucideIcon(file.status === "added" ? "file-plus-2" : "file-pen-line") + '</span>' +
-      '<button class="change-name" type="button" aria-expanded="false" data-turn-diff="' + escapeHtml(JSON.stringify({ patch: file.patch || "" })) + '">' +
-      escapeHtml(file.path) + '</button><span class="change-add">+' + escapeHtml(file.added) + '</span><span class="change-del">-' + escapeHtml(file.deleted) + '</span><span class="change-toggle">' + lucideIcon("chevron-right") + '</span>' +
-      '</div><div class="turn-diff-inline" hidden></div></div>').join("");
-    const footer = verification ? '<div class="changes-footer"><span class="change-add">Verified</span><span class="changes-runtime">' +
-      escapeHtml(verification.command) + " · exit " + escapeHtml(verification.exitCode) + " · " + escapeHtml(verification.duration) + "</span></div>" : "";
-    return '<div class="changes-card"><div class="changes-header"><span>Changes: ' + (files || []).length + ' files</span></div>' +
-      '<div class="changes-list">' + rows + '</div>' + footer + "</div>";
+    return sharedTools.changesMarkup(files, verification);
   }
-
   function toggleTurnDiff(button) {
     const entry = button.closest(".change-entry");
     const panel = entry && entry.querySelector(".turn-diff-inline");
@@ -327,8 +283,8 @@
     if (message.tool) body += toolMarkup("read-" + index, "Read", "crates/rozsa-gui/frontend/index.html", "Read the current GUI entry and preserve its existing structure.", "s-success", { expanded: Boolean(message.toolExpanded) });
     if (Array.isArray(message.tools)) message.tools.forEach((tool, toolIndex) => {
       let bodyHtml = "";
-      if (tool.kind === "code") bodyHtml = '<div class="tool-evidence"><div class="tool-evidence-section"><div class="tool-evidence-label">File content</div><div class="code-view tool-evidence-code-view">' + codeViewMarkup(tool.content) + "</div></div></div>";
-      else if (tool.kind === "diff") bodyHtml = '<div class="tool-evidence"><div class="tool-evidence-section"><div class="tool-evidence-label">Diff</div><div class="diff-view tool-evidence-diff-view">' + diffViewMarkup(tool.patch) + "</div></div></div>";
+      if (tool.kind === "code") bodyHtml = sharedTools.evidenceViewMarkup("code", tool.content);
+      else if (tool.kind === "diff") bodyHtml = sharedTools.evidenceViewMarkup("diff", tool.patch);
       else bodyHtml = evidenceMarkup(tool.evidenceLabel || "Output", tool.output);
       body += toolMarkup(tool.id || ("tool-" + index + "-" + toolIndex), tool.name, tool.args, tool.output, tool.status || "s-success", {
         expanded: tool.expanded !== false,
@@ -940,6 +896,8 @@
   document.addEventListener("DOMContentLoaded", () => {
     const bootstrap = async () => {
       sharedConversation = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/conversation.js", legacyScriptUrl));
+      sharedTools = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/tools.js", legacyScriptUrl));
+      await sharedTools.loadToolTemplate();
       loadState();
       mountTemplates();
       const popoverModule = await import(new URL("./scripts/components/popover.js", legacyScriptUrl));
