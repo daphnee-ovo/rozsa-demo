@@ -37,9 +37,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  sidebarInvoke = window.__TAURI__.core.invoke;
-  sidebarListen = window.__TAURI__.event.listen;
-  sidebarEmit = window.__TAURI__.event.emit;
+  sidebarInvoke = window.RozsaUIHost.port.request;
+  sidebarListen = (event, receive) => window.RozsaUIHost.port.subscribe(event, payload => receive({ payload }));
+  sidebarEmit = window.RozsaSidebarEmit;
   await sidebarListen('gui-scene-snapshot', event => applySidebarSceneSnapshot(event.payload));
   await sidebarListen('sidebar-state', event => renderSidebarState(event.payload));
   await sidebarListen('theme-state', event => applySidebarThemeState(event.payload));

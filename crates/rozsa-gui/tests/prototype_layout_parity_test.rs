@@ -12,10 +12,13 @@ use std::path::{Path, PathBuf};
 #[test]
 fn application_mounts_preserve_grid_item_semantics() {
     let root = repository_root();
-    let app_shell = fs::read_to_string(root.join("prototype/styles/layouts/app-shell.css"))
-        .expect("application shell stylesheet must be readable");
-    let sidebar_shell = fs::read_to_string(root.join("prototype/styles/layouts/sidebar-shell.css"))
-        .expect("sidebar shell stylesheet must be readable");
+    let app_shell =
+        fs::read_to_string(root.join("crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css"))
+            .expect("application shell stylesheet must be readable");
+    let sidebar_shell = fs::read_to_string(
+        root.join("crates/rozsa-gui/frontend/ui/styles/layouts/sidebar-shell.css"),
+    )
+    .expect("sidebar shell stylesheet must be readable");
 
     assert!(app_shell.contains(
         "[data-od-id=\"app-body\"] > [data-template-mount=\"sidebar\"],\n[data-od-id=\"app-body\"] > [data-template-mount=\"conversation\"] { display: contents; }"
@@ -62,12 +65,18 @@ fn complete_session_keeps_public_running_panel_style_contract() {
     let root = repository_root();
     let sidebar_styles = fs::read_to_string(root.join("prototype/styles/features/sidebar.css"))
         .expect("sidebar stylesheet must be readable");
-    let composer_styles = fs::read_to_string(root.join("prototype/styles/composites/composer.css"))
-        .expect("composer stylesheet must be readable");
-    let input = fs::read_to_string(root.join("prototype/templates/primitives/input.html"))
-        .expect("input template must be readable");
-    let composer = fs::read_to_string(root.join("prototype/templates/composites/composer.html"))
-        .expect("composer template must be readable");
+    let composer_styles = fs::read_to_string(
+        root.join("crates/rozsa-gui/frontend/ui/styles/composites/composer.css"),
+    )
+    .expect("composer stylesheet must be readable");
+    let input = fs::read_to_string(
+        root.join("crates/rozsa-gui/frontend/ui/templates/primitives/input.html"),
+    )
+    .expect("input template must be readable");
+    let composer = fs::read_to_string(
+        root.join("crates/rozsa-gui/frontend/ui/templates/composites/composer.html"),
+    )
+    .expect("composer template must be readable");
 
     for selector in [
         ".subagent-sidebar-panel",
@@ -94,8 +103,9 @@ fn composer_mount_preserves_baseline_direct_children() {
     let root = repository_root();
     let shell = fs::read_to_string(root.join("prototype/scripts/core/shell.js"))
         .expect("prototype shell must be readable");
-    let renderer = fs::read_to_string(root.join("prototype/scripts/core/renderer.js"))
-        .expect("prototype renderer must be readable");
+    let renderer =
+        fs::read_to_string(root.join("crates/rozsa-gui/frontend/ui/scripts/core/renderer.js"))
+            .expect("prototype renderer must be readable");
 
     assert!(shell.contains("mountTemplateChildren(inputFragment"));
     assert!(renderer.contains("export function mountTemplateChildren"));

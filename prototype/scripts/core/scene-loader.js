@@ -1,12 +1,10 @@
 import { getSceneDefinition, resolveSceneId } from "../../scenarios/registry.js";
-import { adaptSceneData, loadMockSet } from "../adapters/mock-adapter.js";
 
 export async function loadPrototypeScene(search = window.location.search) {
   const requested = new URLSearchParams(search).get("scene") || document.documentElement.dataset.rozsaScene;
   const id = resolveSceneId(requested);
   const definition = getSceneDefinition(id);
-  const mocks = await loadMockSet(definition.mocks);
-  return adaptSceneData(definition, mocks);
+  return window.RozsaUIHost.port.request("load-scene", definition);
 }
 
 export function applyPrototypeScene(api, scene) {

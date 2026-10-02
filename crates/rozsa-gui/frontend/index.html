@@ -116,31 +116,8 @@
   <div id="fallbackSidebarMount" hidden></div>
 
   <!-- ======== 右侧主面板 ======== -->
-  <main data-od-id="main-panel" id="mainContentScene" data-native-scene-root="main-content">
-    <!-- 面板头部 -->
-    <div data-od-id="panel-header">
-      <span class="current-session-name" id="currentSessionName">Rózsa</span>
-      <div class="header-spacer"></div>
-    </div>
-
-    <!-- 聊天消息（由 renderState 动态填充） -->
-    <div class="chat-messages" data-od-id="chat-messages" id="chatMessages">
-      <!-- 初始空状态 -->
-      <div class="chat-empty" id="emptyState">
-        <div class="chat-empty-icon">R</div>
-        <div class="chat-empty-title">Start a new conversation</div>
-        <div class="chat-empty-hint">Describe your coding task to Rózsa<div class="chat-empty-kbd"><kbd>Enter</kbd> Send <kbd>⇧ Enter</kbd> New line</div></div>
-      </div>
-    </div>
-
-    <!-- 输入框 -->
-    <div data-od-id="chat-input">
-      <div class="autocomplete-popup" id="autocomplete"></div>
-      <div class="running-messages" id="subagentPanel" hidden></div>
-      <div class="running-messages" id="forkPicker" hidden></div>
-      <div class="running-messages" id="queuedMessages" hidden></div>
-      <div class="running-messages" id="steeringConversation" hidden></div>
-      <div class="input-wrapper">
+  <main data-od-id="main-panel" id="mainContentScene" data-native-scene-root="main-content" aria-label="Conversation workspace"></main>
+  <template id="runtimeInterruptionTemplate">
         <div class="perm-panel" id="permPanel">
           <div class="perm-panel-context" id="permPanelContext">
             <div class="perm-panel-title">Permission Request</div>
@@ -193,38 +170,11 @@
             </div>
           </div>
         </div>
-        <div id="msgInput" class="rich-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Message Rózsa, supports Markdown…" oninput="handleInput(this, event)" oncompositionstart="handleCompositionStart(event)" oncompositionupdate="handleCompositionUpdate(this)" oncompositionend="handleCompositionEnd(this)"></div>
-        <div class="input-toolbar">
-          <button class="input-tool-btn" id="attachFileButton" title="Attach file" aria-label="Attach file" onclick="attachFileReference()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13.5 7.5l-5.8 5.8a3.2 3.2 0 01-4.5-4.5l5.8-5.8a2.1 2.1 0 013 3L6.2 11.8a1.1 1.1 0 01-1.5-1.5L10 5"/></svg></button>
-          <button class="input-tool-btn" id="attachDirectoryButton" title="Attach folder" aria-label="Attach folder" onclick="attachDirectoryReference()" hidden><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 4.5h4l1.4 1.5h7.1v6.75a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/></svg></button>
-          <button class="input-tool-btn" title="Slash commands" aria-label="Slash commands" onclick="insertSlashCommandPrefix()"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 2.5L6 13.5"/></svg></button>
-          <div class="context-ring" data-od-id="context-info">
-            <svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" stroke="var(--border)" stroke-width="2" fill="none"/><circle cx="9" cy="9" r="7" stroke="var(--accent)" stroke-width="2" fill="none" stroke-dasharray="44" stroke-dashoffset="34.8" stroke-linecap="round" transform="rotate(-90 9 9)"/></svg>
-            <span class="context-tokens" id="contextTokens">0k</span>
-          </div>
-          <div class="input-spacer"></div>
-          <button class="model-selector" data-od-id="model-badge" title="Switch model" id="modelSelector" onclick="showModelPicker()">(not configured)</button>
-          <div class="thinking-level-control">
-            <button class="thinking-level-badge" id="thinkingEffort" type="button" title="Choose thinking effort" aria-haspopup="dialog" aria-expanded="false" onclick="toggleThinkingEffortPicker(event)">off</button>
-          </div>
-          <select class="model-selector" id="runningSendMode" title="Send mode while running" onchange="updateAbortButton()" hidden><option value="queue">Queue</option><option value="steer">Steer</option></select>
-          <button class="send-btn" data-od-id="send-btn" onclick="sendMessage()">Send</button>
-        </div>
-      </div>
-    </div>
-  </main>
+  </template>
+  <template id="runtimeSubagentTemplate"><div class="running-messages" id="subagentPanel" hidden></div></template>
 </div>
 
-<div class="thinking-level-popover" id="thinkingEffortPopover" role="dialog" aria-label="Thinking effort picker" hidden>
-  <div class="thinking-level-popover-header">
-    <span class="thinking-level-popover-title" id="thinkingEffortPickerTitle">Thinking effort</span>
-    <span class="thinking-level-popover-value" id="thinkingEffortPickerValue">Off</span>
-  </div>
-  <div class="thinking-level-slider-wrap">
-    <input class="thinking-level-slider" id="thinkingEffortSlider" type="range" min="0" max="5" step="1" value="0" aria-label="Thinking effort" oninput="previewThinkingEffort(this.value)" onchange="selectThinkingEffort(this.value)">
-    <div class="thinking-level-marks" id="thinkingEffortMarks" aria-hidden="true"></div>
-  </div>
-</div>
+<div data-template-mount="popover" hidden></div>
 
 <!-- ============ 设置面板 ============ -->
 <div class="settings-panel" id="settingsPanel" data-native-scene-root="settings-content" role="dialog" aria-modal="true" aria-label="Settings" onclick="if(event.target===this)closeSettings()">
@@ -456,6 +406,7 @@
 <!-- ============ Tauri IPC 脚本 ============ -->
 
 <script src="gui_shared.js"></script>
+<script type="module" src="runtime/entries/main.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

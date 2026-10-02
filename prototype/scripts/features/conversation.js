@@ -1,6 +1,1 @@
-export function init(api) {
-  if (api.boundModules.has("conversation")) return;
-  api.boundModules.add("conversation");
-  api.renderMessages();
-}
-
+export { init } from "../../../crates/rozsa-gui/frontend/ui/scripts/features/conversation.js";

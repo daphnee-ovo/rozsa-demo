@@ -12,8 +12,9 @@
         1,
         102
       ],
-      "target": "prototype/styles/foundations/tokens.css",
-      "sha256": "efa704b8b7eb2e825c9b8450d726779776b35f2b6b5c23adc94b6ac59f2c355c"
+      "target": "crates/rozsa-gui/frontend/ui/styles/foundations/tokens.css",
+      "sha256": "efa704b8b7eb2e825c9b8450d726779776b35f2b6b5c23adc94b6ac59f2c355c",
+      "prototype_source": "prototype/styles/foundations/tokens.css"
     },
     {
       "order": 2,
@@ -21,8 +22,9 @@
         103,
         115
       ],
-      "target": "prototype/styles/foundations/reset.css",
-      "sha256": "6852851a0a5d99c34299e0e3951ed7d029f04201c116b19f11a49ac0c597cab2"
+      "target": "crates/rozsa-gui/frontend/ui/styles/foundations/reset.css",
+      "sha256": "6852851a0a5d99c34299e0e3951ed7d029f04201c116b19f11a49ac0c597cab2",
+      "prototype_source": "prototype/styles/foundations/reset.css"
     },
     {
       "order": 3,
@@ -30,8 +32,9 @@
         116,
         170
       ],
-      "target": "prototype/styles/foundations/base.css",
-      "sha256": "0e181a7ae24b72b1bd387dccf5b9a23c5f70331b634a00dada2fdd644e9d76a2"
+      "target": "crates/rozsa-gui/frontend/ui/styles/foundations/base.css",
+      "sha256": "0e181a7ae24b72b1bd387dccf5b9a23c5f70331b634a00dada2fdd644e9d76a2",
+      "prototype_source": "prototype/styles/foundations/base.css"
     },
     {
       "order": 4,
@@ -39,8 +42,9 @@
         171,
         190
       ],
-      "target": "prototype/styles/layouts/app-shell.css",
-      "sha256": "9c062bb699e8307d29c9dee4bbc33fe5db722d4b762d5b9a28920322954a0aba"
+      "target": "crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css",
+      "sha256": "9c062bb699e8307d29c9dee4bbc33fe5db722d4b762d5b9a28920322954a0aba",
+      "prototype_source": "prototype/styles/layouts/app-shell.css"
     },
     {
       "order": 5,
@@ -48,8 +52,9 @@
         191,
         204
       ],
-      "target": "prototype/styles/layouts/sidebar-shell.css",
-      "sha256": "5bd0a97a2ff11b174727f1454038ea290ca8b318ecebaaf7f4fe702b70a14722"
+      "target": "crates/rozsa-gui/frontend/ui/styles/layouts/sidebar-shell.css",
+      "sha256": "5bd0a97a2ff11b174727f1454038ea290ca8b318ecebaaf7f4fe702b70a14722",
+      "prototype_source": "prototype/styles/layouts/sidebar-shell.css"
     },
     {
       "order": 6,
@@ -66,8 +71,9 @@
         287,
         402
       ],
-      "target": "prototype/styles/features/conversation.css",
-      "sha256": "b0a87541083dd9db82bdc525fb48c472b2658f692600cdd7166ac6f4267021c3"
+      "target": "crates/rozsa-gui/frontend/ui/styles/features/conversation.css",
+      "sha256": "b0a87541083dd9db82bdc525fb48c472b2658f692600cdd7166ac6f4267021c3",
+      "prototype_source": "prototype/styles/features/conversation.css"
     },
     {
       "order": 8,
@@ -76,7 +82,11 @@
         489
       ],
       "target": "prototype/styles/features/tools.css",
-      "sha256": "ffd6b3964aa2baf398b853811e74afc0b67a5df9f580d797342b26920c5dcb87"
+      "sha256": "a5ee443d18536236e06a2d2d65714a1dccedb2cd1079d3ba197bba5ce0896490",
+      "original_sha256": "ffd6b3964aa2baf398b853811e74afc0b67a5df9f580d797342b26920c5dcb87",
+      "owners": [
+        "crates/rozsa-gui/frontend/ui/styles/features/thinking.css"
+      ]
     },
     {
       "order": 9,
@@ -84,8 +94,9 @@
         490,
         524
       ],
-      "target": "prototype/styles/composites/composer.css",
-      "sha256": "ac79930b63b9d42712bd65b5f346e8fd54f8d6b334681777a670cfa5d85033f6"
+      "target": "crates/rozsa-gui/frontend/ui/styles/composites/composer.css",
+      "sha256": "ac79930b63b9d42712bd65b5f346e8fd54f8d6b334681777a670cfa5d85033f6",
+      "prototype_source": "prototype/styles/composites/composer.css"
     },
     {
       "order": 10,
@@ -93,8 +104,14 @@
         525,
         648
       ],
-      "target": "prototype/styles/composites/overlays.css",
-      "sha256": "afb36943249d9756ce06e02cf0a07a6e837b265357c187495b071255f7873c10"
+      "target": "crates/rozsa-gui/frontend/ui/styles/composites/overlays.css",
+      "sha256": "84cfa69ca9976cd1b02f72c12d6ab6754935e663027077f2204848e458e6fa03",
+      "original_sha256": "afb36943249d9756ce06e02cf0a07a6e837b265357c187495b071255f7873c10",
+      "prototype_source": "prototype/styles/composites/overlays.css",
+      "owners": [
+        "crates/rozsa-gui/frontend/ui/styles/composites/permission-question.css",
+        "crates/rozsa-gui/frontend/ui/styles/composites/popover.css"
+      ]
     },
     {
       "order": 11,
@@ -120,8 +137,9 @@
         900,
         931
       ],
-      "target": "prototype/styles/primitives/actions.css",
-      "sha256": "cbb3380e2c103f61a7a356d6979815f7088e3f19765e40b16c8a3c4a4f615fee"
+      "target": "crates/rozsa-gui/frontend/ui/styles/primitives/actions.css",
+      "sha256": "cbb3380e2c103f61a7a356d6979815f7088e3f19765e40b16c8a3c4a4f615fee",
+      "prototype_source": "prototype/styles/primitives/actions.css"
     },
     {
       "order": 14,
@@ -227,10 +245,11 @@
         1097,
         1097
       ],
-      "owner_file": "prototype/styles/layouts/app-shell.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 900px",
-      "sha256": "82f5d2e02faac94bb34a08ce6f59ee85e236ca32ac136cf509c1bd8a8ecfd71d"
+      "sha256": "82f5d2e02faac94bb34a08ce6f59ee85e236ca32ac136cf509c1bd8a8ecfd71d",
+      "prototype_source": "prototype/styles/layouts/app-shell.css"
     },
     {
       "order": 21,
@@ -238,7 +257,7 @@
         1098,
         1098
       ],
-      "owner_file": "prototype/styles/features/conversation.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 900px",
       "sha256": "cb34449713e4c12d09bd9d964b103f96393436714b6dee970eec39349eaf6b56"
@@ -271,11 +290,12 @@
         1103,
         1107
       ],
-      "owner_file": "prototype/styles/layouts/app-shell.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 760px",
       "current_media": "max-width: 780px",
-      "sha256": "ffbc20201f12797d740fb3a85ac0f8aff0b5ab6648f6b8a2a1a093fdf4411bec"
+      "sha256": "ffbc20201f12797d740fb3a85ac0f8aff0b5ab6648f6b8a2a1a093fdf4411bec",
+      "prototype_source": "prototype/styles/layouts/app-shell.css"
     },
     {
       "order": 25,
@@ -283,7 +303,7 @@
         1108,
         1109
       ],
-      "owner_file": "prototype/styles/features/conversation.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 760px",
       "sha256": "451299d51bebb018188dac39e58bfe6c84df9054d33a92dce49e89a756f83798"
@@ -338,10 +358,11 @@
         1125,
         1125
       ],
-      "owner_file": "prototype/styles/layouts/app-shell.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 560px",
-      "sha256": "d57d02b31922b164639dd82b54ba7f63d597b29de496fbffb0088b33d30b4494"
+      "sha256": "d57d02b31922b164639dd82b54ba7f63d597b29de496fbffb0088b33d30b4494",
+      "prototype_source": "prototype/styles/layouts/app-shell.css"
     },
     {
       "order": 31,
@@ -349,7 +370,7 @@
         1126,
         1133
       ],
-      "owner_file": "prototype/styles/features/conversation.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 560px",
       "sha256": "35b9714050faa7955fab0bd429f49e75cd4c9a78341b23c73d7edcbcb74e81e6"
@@ -404,10 +425,11 @@
         1167,
         1171
       ],
-      "owner_file": "prototype/styles/foundations/motion.css",
+      "owner_file": "crates/rozsa-gui/frontend/ui/styles/foundations/motion.css",
       "owner": "motion",
       "media": "prefers-reduced-motion: reduce",
-      "sha256": "f76acab354454f9e31e038674318abf8e2a43558956e111c281c453536ca1d59"
+      "sha256": "f76acab354454f9e31e038674318abf8e2a43558956e111c281c453536ca1d59",
+      "prototype_source": "prototype/styles/foundations/motion.css"
     }
   ]
 }

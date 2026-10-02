@@ -15,3 +15,16 @@
 @import url("./utilities.css");
 @import url("./features/appearance.css");
 @import url("./components/feedback.css");
+
+/* Shared prototype foundations take precedence during component cutover.
+ * Legacy feature consumers are removed after their own migration checks. */
+@import url("../ui/styles/entries/main.css");
+@import url("../ui/styles/primitives/actions.css");
+@import url("../ui/styles/features/conversation.css");
+@import url("../ui/styles/features/thinking.css");
+@import url("../ui/styles/composites/composer.css");
+@import url("../ui/styles/features/queue.css");
+@import url("../ui/styles/features/steering.css");
+@import url("../ui/styles/composites/popover.css");
+@import url("../ui/styles/foundations/motion.css");
+@import url("./native-host.css");

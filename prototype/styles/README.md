@@ -1,6 +1,6 @@
 # 新版 GUI 原型样式组件库
 
-本目录是 `prototype/` 的 CSS 实现真源。它由原来的单体 `rozsa-gui.css` 以及场景内稳定 `<style>` 机械拆分而来，只改变文件位置和 import 组装，不改变任何视觉或交互结果。
+本目录装配 `prototype/` 的 CSS。已提取的 foundations、primitives 和 layouts 规则只有一份实现，位于 [`frontend/ui/styles/`](../../crates/rozsa-gui/frontend/ui/styles/README.md)；本目录中的对应路径只转发，不保存第二份规则。其余组件规则由各区域任务继续接入共享目录，scene/gallery 专属内容留在原型宿主。
 
 ## 分层
 
@@ -23,6 +23,6 @@
 2. 不得在拆分过程中改写 selector、declaration、custom property、media query、keyframe、specificity 或 rule 内声明顺序。
 3. application scene 只在 registry 中声明配置，由 shell 装配稳定 template；不得声明或动态加载 scene stylesheet。visual demo gallery 保持自己的独立加载入口。
 4. 新增原型场景应直接复用本组件库；属于组件状态、feature 状态或响应式布局的规则必须进入对应 owner，不得用 scene ID 选择器承载。
-5. runtime 迁移优先使用同路径文件直接搬移；若目标 runtime 尚无对应文件，应保留本目录中的组件边界，不重新混入大文件。
+5. 原型与 runtime 引用同一共享 owner；不得把共享规则复制回本目录。缺失组件设计仍按已有缺口记录留待后续迭代，不重新混入大文件。
 
-`source-order.json` 保存拆分前单体 CSS 的 SHA-256、每个连续静态块的原始行号和目标摘要、响应式源区间及当前 owner 文件映射，并保存 780/820 sidebar 边界、640×480 最低窗口和实测几何；`extracted_inline_styles` 为空表示应用场景不再承载运行时内联样式。`prototype_stylesheet_extraction_test.rs` 会验证 owner 映射、入口顺序、最低尺寸与运行时入口形状，scene ownership 测试会验证没有场景 CSS 加载边界。
+`source-order.json` 保存拆分前单体 CSS 的 SHA-256、每个连续静态块的原始行号和目标摘要、响应式源区间及当前 owner 文件映射；已提取条目的 `target`/`owner_file` 指向共享实现，`prototype_source` 保留其原型来源。它还保存 780/820 sidebar 边界、640×480 最低窗口和实测几何；`extracted_inline_styles` 为空表示应用场景不再承载运行时内联样式。`prototype_stylesheet_extraction_test.rs` 通过完整 import 图验证实际 owner 顺序，scene ownership 测试验证没有场景 CSS 加载边界。

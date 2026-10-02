@@ -1,3 +1,13 @@
+// FrameworkTree
+// session_title_test.rs
+// ├── user_message()
+// ├── selected_session_uses_name_then_preview_then_untitled()
+// ├── frontend_places_thinking_effort_next_to_model_and_reserves_brand_for_no_session()
+// ├── composer_thinking_effort_offers_six_model_aware_persisted_choices()
+// ├── thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame()
+// ├── thinking_slider_uses_compact_composer_scale()
+// └── title_generation_starts_before_the_main_prompt_and_exposes_small_models()
+
 use rozsa_app::session::manager::SessionManager;
 use rozsa_core::messages::AgentMessage;
 use rozsa_gui::state::{SessionTab, session_display_name};
@@ -70,13 +80,14 @@ fn frontend_places_thinking_effort_next_to_model_and_reserves_brand_for_no_sessi
 #[test]
 fn composer_thinking_effort_offers_six_model_aware_persisted_choices() {
     let html = include_str!("../frontend/index.html");
+    let popover = include_str!("../frontend/ui/templates/composites/popover.html");
     let app = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"thinkingEffort\""));
     assert!(html.contains("aria-haspopup=\"dialog\""));
-    assert!(html.contains("id=\"thinkingEffortSlider\""));
-    assert!(html.contains("type=\"range\""));
-    assert!(html.contains("aria-label=\"Thinking effort\""));
+    assert!(popover.contains("id=\"thinkingEffortSlider\""));
+    assert!(popover.contains("type=\"range\""));
+    assert!(popover.contains("aria-label=\"Thinking effort\""));
     assert!(app.contains("const THINKING_EFFORT_OPTIONS = Object.freeze("));
     assert!(app.contains("'off', 'low', 'medium', 'high', 'xhigh', 'max'"));
     assert!(app.contains("unavailable[option.value] !== null"));
@@ -86,8 +97,9 @@ fn composer_thinking_effort_offers_six_model_aware_persisted_choices() {
 
 #[test]
 fn thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame() {
+    let component = include_str!("../frontend/ui/scripts/components/popover.js");
     let html = include_str!("../frontend/index.html");
-    let css = include_str!("../frontend/styles/layout/app-shell.css");
+    let css = include_str!("../frontend/ui/styles/composites/popover.css");
     let app = include_str!("../frontend/app.js");
     let settings_start = html
         .find("<!-- ============ 设置面板")
@@ -96,33 +108,32 @@ fn thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame() {
         .rfind("</main>")
         .expect("main content boundary must exist");
     let popover = html
-        .find("id=\"thinkingEffortPopover\"")
+        .find("data-template-mount=\"popover\"")
         .expect("thinking popover must exist");
 
     assert!(
         popover > main_end,
         "popover must live outside the clipped composer"
     );
-    assert!(css.contains(".thinking-level-popover {\n  position: fixed;"));
+    assert!(css.contains(".thinking-level-popover { position: fixed;"));
     assert!(app.contains("function positionThinkingEffortPopover()"));
-    assert!(app.contains("popover.style.top = 'auto';"));
-    assert!(app.contains("popover.style.right = Math.round(Math.max(margin, window.innerWidth - triggerRect.right)) + 'px';"));
-    assert!(app.contains("popover.style.bottom = Math.round(Math.max(margin, window.innerHeight - triggerRect.top + gap)) + 'px';"));
-    assert!(app.contains("popover.style.top ="));
+    assert!(app.contains("window.RozsaPopover?.position()"));
+    assert!(component.contains("box.width / popover.offsetWidth"));
+    assert!(component.contains("Math.max(16, rect.left - 150)"));
 }
 
 #[test]
 fn thinking_slider_uses_compact_composer_scale() {
-    let css = include_str!("../frontend/styles/layout/app-shell.css");
+    let css = include_str!("../frontend/ui/styles/composites/popover.css");
 
     assert!(css.contains("width: min(320px, calc(100vw - 32px));"));
     assert!(css.contains("max-height: calc(100vh - 32px);"));
     assert!(css.contains("overflow: auto;"));
     assert!(
-        css.contains(".thinking-level-slider::-webkit-slider-runnable-track {\n  height: 28px;")
+        css.contains(".thinking-level-slider::-webkit-slider-runnable-track {\n  height: 18px;")
     );
     assert!(css.contains(
-        ".thinking-level-slider::-webkit-slider-thumb {\n  width: 38px;\n  height: 38px;"
+        ".thinking-level-slider::-webkit-slider-thumb {\n  width: 30px;\n  height: 28px;"
     ));
     assert!(!css.contains("width: min(420px, calc(100vw - 32px));"));
     assert!(!css.contains("height: 54px;"));

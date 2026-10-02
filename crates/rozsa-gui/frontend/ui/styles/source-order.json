@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "owners": [
+    {
+      "file": "foundations/tokens.css",
+      "sha256": "6b00a975a785b5555c83f4ce00870a1364f3b4a0c63236b91c2cc7747b444d45"
+    },
+    {
+      "file": "foundations/reset.css",
+      "sha256": "6852851a0a5d99c34299e0e3951ed7d029f04201c116b19f11a49ac0c597cab2"
+    },
+    {
+      "file": "foundations/base.css",
+      "sha256": "2cf731a8a0ae09372bdf8196c6fb95c33c8456aa847b0f4e516967e2280cab05"
+    },
+    {
+      "file": "foundations/motion.css",
+      "sha256": "38ab80d3d6e8121a95694ac71bd30de8b328828e935c6bf730bc2c79d4be7bcf"
+    },
+    {
+      "file": "primitives/actions.css",
+      "sha256": "c713b8e16e28b00c334989c05da4d2ad317e94ba144a66680f7dacd18a5984e3"
+    },
+    {
+      "file": "primitives/forms.css",
+      "sha256": "ad8ac18c38b8a2e6c4d8192346bf721f9eed54bc80fc41a4ea9824fc0a77a8fe"
+    },
+    {
+      "file": "layouts/app-shell.css",
+      "sha256": "ebb9449accde0886da019a54a1cf9f83d0a2947f8b6f25a913af8ce52db951bf"
+    },
+    {
+      "file": "layouts/sidebar-shell.css",
+      "sha256": "bfec2b9aa7e1c9c6e2a1b93f25ecf64cd941df7dfef45788c3fb86db8ae7dcd0"
+    },
+    {
+      "file": "composites/composer.css",
+      "sha256": "95aacd4534533af46687fdd0443cb96f450bfb5674829a088becfe5a5df5b712"
+    },
+    {
+      "file": "features/conversation.css",
+      "sha256": "dcf3bd42e406c03211e8441e2aca857645e693d81bcb7fc6106f754bcfb00107"
+    },
+    {
+      "file": "features/queue.css",
+      "sha256": "e448d991b6a2de8963ad3ae8695d447b4b96d4f9781af93a4ec90628124cc59a"
+    },
+    {
+      "file": "features/steering.css",
+      "sha256": "cb2cae252a46495f76b7cff4b7d0272247e2df4600a235877280add370ae115c"
+    },
+    {
+      "file": "features/thinking.css",
+      "sha256": "c5d79a52d70ec4236d6ebc905cdaef5fac6e7ab7df40333007d2de1e9eff7572"
+    }
+  ],
+  "entries": {
+    "main": [
+      "foundations/tokens.css",
+      "foundations/reset.css",
+      "foundations/base.css",
+      "layouts/app-shell.css",
+      "layouts/sidebar-shell.css"
+    ],
+    "sidebar": [
+      "foundations/tokens.css",
+      "foundations/reset.css",
+      "foundations/base.css",
+      "layouts/app-shell.css",
+      "layouts/sidebar-shell.css"
+    ]
+  },
+  "late_imports": [
+    "primitives/actions.css",
+    "composites/composer.css",
+    "features/conversation.css",
+    "features/thinking.css",
+    "features/queue.css",
+    "features/steering.css",
+    "foundations/motion.css"
+  ],
+  "unloaded": [
+    "primitives/forms.css"
+  ]
+}

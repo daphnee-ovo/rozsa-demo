@@ -3,6 +3,7 @@
 // ├── component_files_have_explicit_owners()
 // ├── scene_artifacts_do_not_carry_runtime_css()
 // ├── stylesheet_entries_are_external_acyclic_and_runtime_shaped()
+// ├── imported_owners()
 // └── repository_root()
 
 use std::fs;
@@ -22,9 +23,21 @@ fn component_files_have_explicit_owners() {
         let target = block["target"].as_str().unwrap();
         let content = fs::read_to_string(root.join(target)).unwrap();
         assert!(
-            !content.contains("@import"),
+            !content.contains("@import") || block["owners"].is_array(),
             "owner CSS 不得形成隐藏 import 图：{target}"
         );
+        if let Some(owners) = block["owners"].as_array() {
+            let imported = imported_owners(&root.join(target));
+            for owner in owners {
+                let owner = owner.as_str().unwrap();
+                assert!(imported.contains(&root.join(owner).canonicalize().unwrap()));
+                assert!(
+                    !fs::read_to_string(root.join(owner))
+                        .unwrap()
+                        .contains("@import")
+                );
+            }
+        }
     }
 
     let main_entry = fs::read_to_string(root.join("prototype/styles/entries/main.css")).unwrap();
@@ -103,20 +116,21 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
 
     let manifest: Value = serde_json::from_str(SOURCE_ORDER).unwrap();
     let blocks = manifest["blocks"].as_array().unwrap();
-    let mut expected_sidebar_imports = Vec::new();
+    let mut expected_sidebar_owners = Vec::new();
     for block in blocks {
         if matches!(block["order"].as_u64(), Some(1 | 2 | 3 | 4 | 5 | 6 | 18)) {
             let target = block["target"].as_str().unwrap();
-            expected_sidebar_imports.push(format!(
-                "@import url(\"../{}\");",
-                target.strip_prefix("prototype/styles/").unwrap()
-            ));
+            expected_sidebar_owners.push(root.join(target).canonicalize().unwrap());
         }
     }
-    expected_sidebar_imports.push("@import url(\"../foundations/motion.css\");".to_owned());
+    expected_sidebar_owners.push(
+        root.join("crates/rozsa-gui/frontend/ui/styles/foundations/motion.css")
+            .canonicalize()
+            .unwrap(),
+    );
     assert_eq!(
-        sidebar_entry.lines().collect::<Vec<_>>(),
-        expected_sidebar_imports
+        imported_owners(&root.join("prototype/styles/entries/sidebar.css")),
+        expected_sidebar_owners
     );
 
     for html in [
@@ -149,6 +163,29 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
         assert!(source.contains("href=\"../styles/main.css\""));
         assert!(!source.contains("href=\"../rozsa-gui.css\""));
     }
+}
+
+fn imported_owners(path: &Path) -> Vec<PathBuf> {
+    let source = fs::read_to_string(path).unwrap();
+    let imports: Vec<_> = source
+        .lines()
+        .filter(|line| line.trim_start().starts_with("@import"))
+        .map(|line| {
+            line.split("url(\"")
+                .nth(1)
+                .unwrap()
+                .split("\")")
+                .next()
+                .unwrap()
+        })
+        .collect();
+    if imports.is_empty() {
+        return vec![path.canonicalize().unwrap()];
+    }
+    imports
+        .into_iter()
+        .flat_map(|relative| imported_owners(&path.parent().unwrap().join(relative)))
+        .collect()
 }
 
 fn repository_root() -> PathBuf {

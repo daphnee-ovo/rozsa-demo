@@ -1,1 +1,1 @@
-/* Composer styles moved to composites/composer.css; this file remains as an explicit empty primitive boundary. */
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/primitives/forms.css");

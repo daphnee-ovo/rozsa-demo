@@ -1,9 +1,20 @@
 const mockRoot = new URL("../../mock/", import.meta.url);
 
-async function readMock(reference) {
+export function createMockConversationAdapter(api) {
+  return Object.freeze({
+    attachFile: api.attachFileReference,
+    attachDirectory: api.attachDirectoryReference,
+    slashCommand: api.insertSlashCommandPrefix,
+    chooseModel: api.showModelPicker,
+    submit: api.addMessage,
+    refreshSendState: api.updateAbortButton,
+  });
+}
+
+async function readMock(reference, signal) {
   if (!reference) throw new Error("Prototype scene mock reference is missing");
   const url = new URL(reference + ".json", mockRoot);
-  const response = await fetch(url);
+  const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`Prototype mock could not be loaded: ${reference}`);
   try {
     return await response.json();
@@ -12,11 +23,25 @@ async function readMock(reference) {
   }
 }
 
-export async function loadMockSet(references) {
+export async function loadMockSet(references, signal) {
   const entries = Object.entries(references || {});
   if (!entries.length) throw new Error("Prototype scene has no mock references");
-  const loaded = await Promise.all(entries.map(async ([key, reference]) => [key, await readMock(reference)]));
+  const loaded = await Promise.all(entries.map(async ([key, reference]) => [key, await readMock(reference, signal)]));
   return Object.fromEntries(loaded);
+}
+
+export function createMockAdapter() {
+  return Object.freeze({
+    async request(intent, definition, { signal } = {}) {
+      if (intent !== "load-scene") throw new Error(`Unsupported prototype intent: ${intent}`);
+      return adaptSceneData(definition, await loadMockSet(definition.mocks, signal));
+    },
+    subscribe(event, receive) {
+      const listener = message => receive(message.detail);
+      document.addEventListener(event, listener);
+      return () => document.removeEventListener(event, listener);
+    },
+  });
 }
 
 function resolveMessages(messages, tools, sceneId) {

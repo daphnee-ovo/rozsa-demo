@@ -1,7 +1,1 @@
-#steeringConversation {
-  margin: 0;
-  padding: 13px 17px 11px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
-  border-radius: 0;
-  background: transparent;
-}
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/features/steering.css");

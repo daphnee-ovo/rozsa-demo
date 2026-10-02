@@ -17,8 +17,10 @@ fn running_state_markup_keeps_baseline_ownership() {
         .expect("sidebar template must be readable");
     let composer = fs::read_to_string(root.join("prototype/templates/composites/composer.html"))
         .expect("composer template must be readable");
-    let input = fs::read_to_string(root.join("prototype/templates/primitives/input.html"))
-        .expect("input template must be readable");
+    let input = fs::read_to_string(
+        root.join("crates/rozsa-gui/frontend/ui/templates/primitives/input.html"),
+    )
+    .expect("input template must be readable");
     let shell = fs::read_to_string(root.join("prototype/scripts/core/shell.js"))
         .expect("prototype shell must be readable");
 

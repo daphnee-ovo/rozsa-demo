@@ -203,6 +203,13 @@ const LOCAL_COMMANDS = new Set([
 // =============== Initialization ===============
 
 window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    if (!window.RozsaUIReady) throw new Error('Shared UI entry not loaded');
+    await window.RozsaUIReady;
+  } catch (error) {
+    showError('Shared UI failed to load: ' + String(error));
+    return;
+  }
   nativeSplitMode = window.RozsaGuiShared.isNativeSplitPlatform();
   preparePlatformSceneDom();
   setupChatScrollLock();
@@ -222,8 +229,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       '<div class="chat-empty-title">Tauri API not loaded</div></div>';
     return;
   }
-  invoke = window.__TAURI__.core.invoke;
-  listen = window.__TAURI__.event.listen;
+  invoke = window.RozsaUIHost.port.request;
+  listen = (event, receive) => window.RozsaUIHost.port.subscribe(event, payload => receive({ payload }));
   configureAttachmentPicker();
   await configureNativeFileDrag();
   setupComposerHints();
@@ -540,16 +547,13 @@ function updateAbortButton() {
         mode.dataset.initialized = 'true';
       }
       const selected = mode ? mode.value : 'queue';
-      sendBtn.textContent = selected === 'steer' ? 'Steer' : 'Queue';
-      sendBtn.onclick = sendMessage;
+      window.RozsaComposer.renderSendState(sendBtn, selected === 'steer' ? 'steer' : 'queue');
     } else {
-      sendBtn.textContent = 'Stop';
-      sendBtn.onclick = abortAgent;
+      window.RozsaComposer.renderSendState(sendBtn, 'stop');
     }
   } else {
     if (mode) mode.hidden = true;
-    sendBtn.textContent = 'Send';
-    sendBtn.onclick = sendMessage;
+    window.RozsaComposer.renderSendState(sendBtn, 'send');
   }
 }
 
@@ -569,10 +573,7 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
     (sessionChanged ? !savedView : isChatNearBottom(container));
 
   if (!messages || messages.length === 0) {
-    container.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">R</div>' +
-      '<div class="chat-empty-title">Start a new conversation</div>' +
-      '<div class="chat-empty-hint">Describe your coding task to Rózsa' +
-      '<div class="chat-empty-kbd"><kbd>Enter</kbd> Send <kbd>Shift+Enter</kbd> New line</div></div></div>';
+    container.innerHTML = window.RozsaConversation.emptyConversationMarkup();
     renderedMessageSessionId = sessionId;
     renderedMessageKeys = [];
     renderedRawMessageCount = 0;
@@ -672,6 +673,7 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
         thinkingDurationForIndex(i),
         isThinkingExpanded(sessionId, i),
         assistantGroupPosition !== 'continuation',
+        i,
       ));
     }
   }
@@ -787,7 +789,7 @@ function assistantMessageGroupPosition(messages, index) {
   return isAssistantMessageRaw(messages[index - 1]) ? 'continuation' : 'start';
 }
 
-function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false, showAssistantIdentity = true) {
+function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false, showAssistantIdentity = true, messageIndex = 0) {
   const div = document.createElement('div');
 
   if (raw.kind === 'custom') {
@@ -813,17 +815,11 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
   const content = msg.content || [];
 
   if (role === 'user') {
-    div.className = 'msg msg-user';
     const text = extractText(content);
-    div.innerHTML = '<div class="msg-avatar">U</div><div class="msg-body">' +
-      '<div class="msg-role">You</div>' +
-      '<div class="msg-content markdown-body">' + renderMarkdown(text) + '</div></div>';
+    return window.RozsaConversation.createMessageFrame('user', renderMarkdown(text), messageIndex);
 
   } else if (role === 'assistant') {
-    div.className = 'msg msg-assistant' + (showAssistantIdentity ? '' : ' msg-assistant-continuation');
-    let body = showAssistantIdentity
-      ? '<div class="msg-avatar">R</div><div class="msg-body"><div class="msg-role">Rozsa</div>'
-      : '<div class="msg-body">';
+    let body = '';
     const errorMessage = msg.errorMessage || '';
     if (errorMessage) {
       body += '<div class="msg-content msg-error"><pre>' + escapeHtml(errorMessage) + '</pre></div>';
@@ -833,17 +829,12 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
     const latestType = content.length ? content[content.length - 1].type : '';
     if (thinking) {
       const thinkingActive = isActiveStream && latestType === 'thinking';
-      const thinkingLabel = thinkingActive ? 'THINKING' : 'THINKED';
       const thinkingDuration = thinkingActive || thinkingDurationMs === null
         ? ''
         : formatThinkingDuration(thinkingDurationMs);
-      body += '<div class="thinking-block' + (thinkingActive ? ' active' : '') + (thinkingExpanded ? ' expanded' : '') + '"><div class="thinking-header" role="button" tabindex="0" aria-expanded="' + String(thinkingExpanded) + '" onclick="toggleThinking(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();toggleThinking(this)}">' +
-        '<svg class="thinking-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1.5C5 1.5 3 3.5 3 6c0 1.5.8 2.7 2 3.5V12a1 1 0 001 1h4a1 1 0 001-1V9.5c1.2-.8 2-2 2-3.5 0-2.5-2-4.5-5-4.5z"/><path d="M6 14.5h4"/></svg>' +
-        '<span class="thinking-label">' + thinkingLabel + '</span>' +
-        (thinkingDuration ? '<span class="thinking-duration">' + thinkingDuration + '</span>' : '') +
-        '<span class="thinking-chevron">▸</span></div>' +
-        '<div class="thinking-content"' + (thinkingActive ? ' data-stream-cursor-target="thinking"' : '') + '>' +
-        '<div class="thinking-markdown markdown-body">' + renderMarkdown(thinking) + '</div></div></div>';
+      body += window.RozsaConversation.thinkingMarkup(renderMarkdown(thinking), {
+        expanded: thinkingExpanded, active: thinkingActive, duration: thinkingDuration,
+      });
     }
 
     const toolCalls = content.filter(b => b.type === 'toolCall');
@@ -884,8 +875,7 @@ function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity 
       body += renderTurnActivityCard(turnActivity);
     }
 
-    body += '</div>';
-    div.innerHTML = body;
+    return window.RozsaConversation.createMessageFrame('assistant', body, messageIndex, !showAssistantIdentity);
 
   } else if (role === 'toolResult') {
     div.className = 'msg msg-assistant';
@@ -1929,20 +1919,17 @@ function renderRunningMessages(queuedMessages, steeringConversation) {
 
   if (queue && queueKey !== renderedQueueKey) {
     queue.hidden = queued.length === 0;
-    queue.innerHTML = queued.length
-      ? '<div class="running-messages-title">Queue <span>' + queued.length + '</span></div><ol>' +
-        queued.map(message => '<li>' + escapeHtml(message) + '</li>').join('') + '</ol>'
-      : '';
+    queue.innerHTML = window.RozsaConversation.runningPanelMarkup(queued.length
+      ? { title: 'Queue', count: queued.length, items: queued }
+      : null);
     renderedQueueKey = queueKey;
   }
 
   if (steering && steeringKey !== renderedSteeringKey) {
     steering.hidden = steeringMessages.length === 0;
-    steering.innerHTML = steeringMessages.length
-      ? '<div class="running-messages-title">Steering conversation</div><ol>' +
-        steeringMessages.map(message => '<li><span>' + escapeHtml(message.text || '') +
-          '</span><em>Awaiting tool result</em></li>').join('') + '</ol>'
-      : '';
+    steering.innerHTML = window.RozsaConversation.runningPanelMarkup(steeringMessages.length
+      ? { title: 'Steering conversation', items: steeringMessages.map(message => (message.text || '') + ' · Awaiting tool result') }
+      : null);
     renderedSteeringKey = steeringKey;
   }
 }
@@ -3013,95 +3000,34 @@ function normalizeThinkingEffort(options, requested) {
 
 function renderThinkingEffortPicker(effort) {
   const popover = document.getElementById('thinkingEffortPopover');
-  const slider = document.getElementById('thinkingEffortSlider');
-  const value = document.getElementById('thinkingEffortPickerValue');
   const title = document.getElementById('thinkingEffortPickerTitle');
-  const marks = document.getElementById('thinkingEffortMarks');
-  if (!popover || !slider || !value || !title || !marks) return;
-
+  if (!popover || !title) return;
   const options = supportedThinkingEfforts();
-  const requested = String(
-    effort
-      || currentSettings?.thinkingEffort
-      || document.getElementById('thinkingEffort')?.textContent
-      || 'off'
-  ).toLowerCase();
+  const requested = String(effort || currentSettings?.thinkingEffort
+    || document.getElementById('thinkingEffort')?.textContent || 'off').toLowerCase();
   const selected = normalizeThinkingEffort(options, requested);
   const selectedIndex = Math.max(0, options.indexOf(selected));
-  const progress = options.length > 1 ? (selectedIndex / (options.length - 1)) * 100 : 0;
-
   title.textContent = options.length > 1 ? 'Thinking effort' : 'Thinking unavailable for this model';
-  value.textContent = selected.label;
-  slider.min = '0';
-  slider.max = String(Math.max(0, options.length - 1));
-  slider.value = String(selectedIndex);
-  slider.disabled = options.length === 1;
-  slider.setAttribute('aria-valuetext', selected.label);
-  slider.style.setProperty('--thinking-progress', progress + '%');
-  marks.innerHTML = options.map((option, index) =>
-    '<span class="thinking-level-mark' + (index === selectedIndex ? ' active' : '') +
-    '" title="' + escapeHtml(option.label) + '"></span>'
-  ).join('');
+  window.RozsaPopover.renderChoice(options, selectedIndex);
   if (!popover.hidden) positionThinkingEffortPopover();
 }
 
 function positionThinkingEffortPopover() {
-  const popover = document.getElementById('thinkingEffortPopover');
-  const trigger = document.getElementById('thinkingEffort');
-  if (!popover || !trigger || popover.hidden) return;
-  const triggerRect = trigger.getBoundingClientRect();
-  const margin = 16;
-  const gap = 12;
-  if (triggerRect.left >= window.innerWidth - triggerRect.right) {
-    popover.style.left = 'auto';
-    popover.style.right = Math.round(Math.max(margin, window.innerWidth - triggerRect.right)) + 'px';
-  } else {
-    popover.style.right = 'auto';
-    popover.style.left = Math.round(Math.max(margin, triggerRect.left)) + 'px';
-  }
-  if (triggerRect.top - margin >= window.innerHeight - triggerRect.bottom - margin) {
-    popover.style.top = 'auto';
-    popover.style.bottom = Math.round(Math.max(margin, window.innerHeight - triggerRect.top + gap)) + 'px';
-  } else {
-    popover.style.bottom = 'auto';
-    popover.style.top = Math.round(Math.max(margin, triggerRect.bottom + gap)) + 'px';
-  }
+  window.RozsaPopover?.position();
 }
 
 function toggleThinkingEffortPicker(event) {
-  event?.stopPropagation();
-  const popover = document.getElementById('thinkingEffortPopover');
-  const trigger = document.getElementById('thinkingEffort');
-  if (!popover || !trigger) return;
-  const opening = popover.hidden;
-  dismissTransientPopups();
-  if (!opening) return;
-  renderThinkingEffortPicker();
-  popover.hidden = false;
-  positionThinkingEffortPopover();
-  trigger.setAttribute('aria-expanded', 'true');
-  document.getElementById('thinkingEffortSlider')?.focus();
+  window.RozsaPopover.toggle(event);
 }
 
 function hideThinkingEffortPicker() {
-  const popover = document.getElementById('thinkingEffortPopover');
-  if (popover) popover.hidden = true;
-  document.getElementById('thinkingEffort')?.setAttribute('aria-expanded', 'false');
+  window.RozsaPopover?.close();
 }
 
 function previewThinkingEffort(index) {
   const options = supportedThinkingEfforts();
   const selectedIndex = Math.max(0, Math.min(options.length - 1, Number(index)));
-  const option = options[selectedIndex];
-  const slider = document.getElementById('thinkingEffortSlider');
-  if (!option || !slider) return;
-  const progress = options.length > 1 ? (selectedIndex / (options.length - 1)) * 100 : 0;
-  document.getElementById('thinkingEffortPickerValue').textContent = option.label;
-  slider.setAttribute('aria-valuetext', option.label);
-  slider.style.setProperty('--thinking-progress', progress + '%');
-  document.querySelectorAll('#thinkingEffortMarks .thinking-level-mark').forEach((mark, markIndex) => {
-    mark.classList.toggle('active', markIndex === selectedIndex);
-  });
+  window.RozsaPopover.renderChoice(options, selectedIndex);
 }
 
 async function selectThinkingEffort(index) {
@@ -5088,7 +5014,7 @@ function formatFileReference(path) {
 
 function autoResize(el) {
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  el.style.height = Math.min(el.scrollHeight, 220) + 'px';
 }
 
 // =============== Slash Command Autocomplete ===============
@@ -5136,7 +5062,7 @@ function acHighlight(index) {
   const popup = document.getElementById('autocomplete');
   if (!popup) return;
   popup.querySelectorAll('.ac-item').forEach((el, i) => {
-    el.classList.toggle('selected', i === index);
+    el.classList.toggle('active', i === index);
   });
 }
 
@@ -5152,7 +5078,7 @@ function navigateAutocomplete(direction) {
     acSelectedIndex = acSelectedIndex <= 0 ? items.length - 1 : acSelectedIndex - 1;
   }
 
-  items.forEach((el, i) => el.classList.toggle('selected', i === acSelectedIndex));
+  items.forEach((el, i) => el.classList.toggle('active', i === acSelectedIndex));
   items[acSelectedIndex].scrollIntoView({ block: 'nearest' });
   return true;
 }
@@ -5190,7 +5116,10 @@ function selectAutocomplete(index) {
 
 function hideAutocomplete(clearMatch = true) {
   const popup = document.getElementById('autocomplete');
-  if (popup) popup.classList.remove('visible');
+  if (popup) {
+    popup.classList.remove('visible');
+    popup.replaceChildren();
+  }
   acVisible = false;
   acSelectedIndex = -1;
   acPrefix = '';

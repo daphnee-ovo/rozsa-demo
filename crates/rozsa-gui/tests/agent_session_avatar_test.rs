@@ -1,3 +1,8 @@
+// FrameworkTree
+// agent_session_avatar_test.rs
+// ├── frontend_groups_consecutive_agent_messages_without_repeating_identity()
+// └── frontend_styles_continuation_messages_as_one_agent_group()
+
 use std::process::Command;
 
 #[test]
@@ -15,7 +20,9 @@ fn frontend_groups_consecutive_agent_messages_without_repeating_identity() {
         .expect("renderMessage should precede tool presentation helpers");
     let script = format!(
         r#"
-const document = {{ createElement: () => ({{ className: '', innerHTML: '', textContent: '' }}) }};
+const document = {{ createElement: kind => kind === 'template' ? {{content: {{}}, set innerHTML(html){{this.content.firstElementChild={{className:html.match(/class="([^"]+)"/)[1],innerHTML:html}};}}}} : ({{ className: '', innerHTML: '', textContent: '' }}) }};
+{}
+const window={{RozsaConversation:{{createMessageFrame}}}};
 function escapeHtml(value) {{ return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }}
 function extractText(content) {{ return Array.isArray(content) ? content.filter(block => block.type === 'text').map(block => block.text).join('\\n') : ''; }}
 function extractThinking() {{ return null; }}
@@ -43,14 +50,12 @@ check(!continuation.innerHTML.includes('msg-avatar'), 'continuation omits avatar
 check(!continuation.innerHTML.includes('msg-role'), 'continuation omits role');
 check(continuation.className.includes('msg-assistant-continuation'), 'continuation uses group class');
 "#,
+        include_str!("../frontend/ui/scripts/features/conversation.js").replace("export ", ""),
         &source[start..render_start],
         &source[render_start..end]
     );
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("agent_session_avatar_test.js");
-    std::fs::write(&path, script).unwrap();
     let output = Command::new("node")
-        .arg(path)
+        .args(["-e", &script])
         .output()
         .expect("Node.js is required for frontend behavior tests");
     assert!(
@@ -62,12 +67,13 @@ check(continuation.className.includes('msg-assistant-continuation'), 'continuati
 
 #[test]
 fn frontend_styles_continuation_messages_as_one_agent_group() {
-    let css = include_str!("../frontend/styles/features/conversation.css");
+    let css = include_str!("../frontend/ui/styles/features/conversation.css");
     let continuation = css
         .split(".msg-assistant-continuation {")
         .nth(1)
         .and_then(|tail| tail.split('}').next())
         .expect("continuation style should exist");
-    assert!(continuation.contains("padding-left: 40px"));
+    assert!(!continuation.contains("padding-left"));
+    assert!(css.contains(".msg-avatar { display: none; }"));
     assert!(continuation.contains("margin-top: -12px"));
 }

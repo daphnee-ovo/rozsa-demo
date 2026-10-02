@@ -4,3 +4,8 @@
 @import url("./layout/sidebar-shell.css");
 @import url("./components/actions.css");
 @import url("./features/sidebar-window.css");
+
+@import url("../ui/styles/entries/sidebar.css");
+@import url("../ui/styles/primitives/actions.css");
+@import url("../ui/styles/foundations/motion.css");
+@import url("./native-host.css");

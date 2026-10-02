@@ -1,8 +1,4 @@
-@import url("../foundations/tokens.css");
-@import url("../foundations/reset.css");
-@import url("../foundations/base.css");
-@import url("../layouts/app-shell.css");
-@import url("../layouts/sidebar-shell.css");
+@import url("../../../crates/rozsa-gui/frontend/ui/styles/entries/main.css");
 @import url("../features/sidebar.css");
 @import url("../features/conversation.css");
 @import url("../features/tools.css");

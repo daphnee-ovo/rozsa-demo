@@ -40,10 +40,14 @@
   let permissionRequest = null;
   let questionRequest = null;
   let prototypeResponses = null;
+  let sharedConversation;
 
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
     if (!api) throw new Error("Prototype behavior API is unavailable");
+    const { createConversationFlow } = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/flows/conversation.js", legacyScriptUrl));
+    const { createMockConversationAdapter } = await import(new URL("./scripts/adapters/mock-adapter.js", legacyScriptUrl));
+    Object.assign(api, createConversationFlow(createMockConversationAdapter(api)));
     const flowEntry = document.body?.dataset.rozsaFlowEntry;
     const paths = behaviorModulePaths.filter(path => !path.startsWith("flows/") || flowEntry);
     const modules = await Promise.all(paths.map(path => import(new URL("./scripts/" + path, legacyScriptUrl))));
@@ -234,15 +238,7 @@
   }
 
   function messageFrame(role, body, index, continuation = false) {
-    const avatar = role === "user" ? "U" : "R";
-    const name = role === "user" ? "You" : "Rozsa";
-    if (continuation && role === "assistant") {
-      return '<div class="msg msg-assistant msg-assistant-continuation" data-od-id="message-' + index + '">' +
-        '<div class="msg-body"><div class="msg-content markdown-body">' + body + "</div></div></div>";
-    }
-    return '<div class="msg msg-' + role + '" data-od-id="message-' + index + '">' +
-      '<div class="msg-avatar">' + avatar + '</div><div class="msg-body">' +
-      '<div class="msg-role">' + name + '</div><div class="msg-content markdown-body">' + body + "</div></div></div>";
+    return sharedConversation.messageFrame(role, body, index, continuation);
   }
 
   function toolMarkup(id, name, arg, output, status, options = {}) {
@@ -258,13 +254,7 @@
   }
 
   function thinkingMarkup(text, expanded = true, active = false, duration = "") {
-    return '<div class="thinking-block' + (expanded ? " expanded" : "") + (active ? " active" : "") + '">' +
-      '<div class="thinking-header" role="button" tabindex="0" aria-expanded="' + String(expanded) + '">' +
-      lucideIcon("lightbulb", "thinking-icon") +
-      '<span class="thinking-label">' + (active ? "THINKING" : "THINKED") + '</span>' +
-      (duration ? '<span class="thinking-duration">' + escapeHtml(duration) + '</span>' : "") +
-      '<span class="thinking-chevron">' + lucideIcon("chevron-right") + '</span></div>' +
-      '<div class="thinking-content"><div class="thinking-markdown markdown-body">' + textMarkup(text) + "</div></div></div>";
+    return sharedConversation.thinkingMarkup(textMarkup(text), { expanded, active, duration });
   }
 
   function codeViewMarkup(content) {
@@ -355,10 +345,7 @@
     const chat = byId("chatMessages");
     if (!chat) return;
     if (!state.messages.length) {
-      chat.innerHTML = '<div class="chat-empty" data-od-id="chat-empty"><div class="chat-empty-icon">R</div>' +
-        '<div class="chat-empty-title">Start a new conversation</div>' +
-        '<div class="chat-empty-hint">Describe your coding task to Rózsa' +
-        '<div class="chat-empty-kbd"><kbd>Enter</kbd> Send <kbd>⇧ Enter</kbd> New line</div></div></div>';
+      chat.innerHTML = sharedConversation.emptyConversationMarkup();
       return;
     }
     chat.innerHTML = state.messages.map((message, index) => messageFrame(
@@ -448,18 +435,7 @@
   }
 
   function toggleThinkingEffortPicker(event) {
-    const popover = byId("thinkingEffortPopover");
-    const trigger = event && event.currentTarget ? event.currentTarget : byId("thinkingEffort");
-    if (!popover || !trigger) return;
-    const hidden = popover.hidden;
-    popover.hidden = !hidden;
-    trigger.setAttribute("aria-expanded", String(hidden));
-    if (hidden) {
-      const rect = trigger.getBoundingClientRect();
-      popover.style.top = Math.min(window.innerHeight - 190, rect.bottom + 6) + "px";
-      popover.style.left = Math.min(window.innerWidth - 330, Math.max(16, rect.left - 150)) + "px";
-      byId("thinkingEffortSlider")?.focus();
-    }
+    window.RozsaPrototype.popover.toggle(event);
   }
 
   function syncRangeProgress(input, propertyName) {
@@ -490,11 +466,7 @@
     const labels = ["Off", "Low", "Medium", "High", "XHigh", "Max"];
     const index = Math.min(labels.length - 1, Math.max(0, Number(value) || 0));
     const label = labels[index];
-    const slider = byId("thinkingEffortSlider");
-    if (slider) {
-      slider.value = String(index);
-      syncRangeProgress(slider, "--thinking-progress");
-    }
+    window.RozsaPrototype.popover.renderChoice(labels.map(label => ({ label })), index);
     if (byId("thinkingEffort")) byId("thinkingEffort").textContent = label.toLowerCase();
     if (byId("thinkingEffortPickerValue")) byId("thinkingEffortPickerValue").textContent = label;
   }
@@ -564,9 +536,7 @@
   }
 
   function runningPanelMarkup(panel) {
-    if (!panel) return "";
-    const count = panel.count ? " <span>" + escapeHtml(panel.count) + "</span>" : "";
-    return '<div class="running-messages-title">' + escapeHtml(panel.title) + count + "</div><ol>" + panel.items.map(item => "<li>" + escapeHtml(item) + "</li>").join("") + "</ol>";
+    return sharedConversation.runningPanelMarkup(panel);
   }
 
   function renderRunningFixture(config) {
@@ -969,8 +939,11 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     const bootstrap = async () => {
+      sharedConversation = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/conversation.js", legacyScriptUrl));
       loadState();
       mountTemplates();
+      const popoverModule = await import(new URL("./scripts/components/popover.js", legacyScriptUrl));
+      popoverModule.init(window.RozsaPrototype);
       all(".settings-hint").forEach(hint => { hint.innerHTML = lucideIcon("circle-help"); });
       const sceneLoader = await import(new URL("./scripts/core/scene-loader.js", legacyScriptUrl));
       const scene = await sceneLoader.loadPrototypeScene();

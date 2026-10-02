@@ -480,7 +480,6 @@ body.native-split-main.native-fullscreen [data-od-id="app-body"] { padding-top: 
 body.native-split-main [data-od-id="main-panel"] {
   width: 100%;
   height: 100%;
-  align-items: center;
 }
 body.native-split-main [data-od-id="panel-header"] { align-self: stretch; }
 body.native-split-main.sidebar-collapsed:not(.native-fullscreen) [data-od-id="panel-header"] {
@@ -503,11 +502,6 @@ body.native-split-main.sidebar-collapsed #nativeSidebarEdgeTrigger {
   display: block;
   width: 18px;
   pointer-events: auto;
-}
-[data-od-id="chat-messages"],
-[data-od-id="chat-input"] {
-  width: 100%;
-  max-width: var(--main-content-max-width);
 }
 body.native-split-main .settings-workspace { display: block; height: 100%; }
 body.native-split-main .settings-content { height: 100%; max-height: none; }

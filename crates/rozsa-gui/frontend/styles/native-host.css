@@ -1,0 +1,21 @@
+/* Native panes are viewports, not the prototype's complete two-pane window.
+ * Keep these host constraints separate from shared component rules. */
+html:has(> body.native-split-main),
+html[data-native-webview="sidebar"],
+body.native-split-main,
+html[data-native-webview="sidebar"] body {
+  min-width: 0;
+  min-height: 0;
+}
+
+body.native-split-main {
+  width: calc(100% / var(--ui-scale));
+  --chrome-sidebar-boundary: 0px;
+  --settings-chrome-sidebar-boundary: 0px;
+}
+
+html[data-native-webview="sidebar"] body {
+  background: transparent;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+}

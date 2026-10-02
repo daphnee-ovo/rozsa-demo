@@ -1,6 +1,12 @@
 import { loadTemplate } from "./template-loader.js";
-import { mountTemplate, mountTemplateChildren } from "./renderer.js";
+import { mountTemplateChildren } from "./renderer.js";
+import { mountShell } from "../../../crates/rozsa-gui/frontend/ui/scripts/core/shell.js";
 import { resolveSceneId } from "../../scenarios/registry.js";
+import { createUIHost } from "../../../crates/rozsa-gui/frontend/ui/scripts/core/renderer.js";
+import { createMockAdapter } from "../adapters/mock-adapter.js";
+
+window.RozsaUIHost = createUIHost(createMockAdapter());
+window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
 
 const templateRoot = new URL("../../", import.meta.url);
 const mounts = [
@@ -15,10 +21,7 @@ const mounts = [
 
 async function bootstrapPrototypeShell() {
   const sceneId = resolveSceneId(new URLSearchParams(window.location.search).get("scene"));
-  for (const [relativePath, selector] of mounts) {
-    const fragment = await loadTemplate(new URL(relativePath, templateRoot));
-    mountTemplate(fragment, selector);
-  }
+  await mountShell(mounts.map(([relativePath, selector]) => ({ url: new URL(relativePath, templateRoot), selector })));
   const interruptionPanelFragment = await loadTemplate(
     new URL("templates/composites/interruption-panel.html", templateRoot),
   );
