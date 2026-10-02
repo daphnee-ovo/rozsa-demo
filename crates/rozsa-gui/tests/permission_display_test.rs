@@ -1,6 +1,6 @@
 #[test]
 fn permission_panel_matches_the_requested_action_layout() {
-    let html = include_str!("../frontend/index.html");
+    let html = include_str!("../frontend/ui/templates/composites/interruption-panel.html");
 
     assert!(html.contains("class=\"perm-panel-tool\" id=\"permTool\""));
     assert!(html.contains("class=\"perm-panel-desc\" id=\"permDesc\""));

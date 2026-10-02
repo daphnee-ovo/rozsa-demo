@@ -138,26 +138,36 @@
 ### GAP-008A：Permission main/hint 未覆盖状态
 
 - `coverage_id`：`UI-PERMISSION-001`
+- `implementation_boundary`：正常 main/hint 共用原型面板与绑定；长/复合命令、被动排队及真实失败保留 runtime renderer/handler，迁移受阻，禁止 T036 删除回应出口。
 - `runtime_trigger`：收到 permission-request，进入 hint，操作长命令、键盘选择、提交并触发失败。
 - `current_runtime`：支持 main、hint、selected、长命令展开/收起、responding、failure 与 session-specific UI state。
 - `prototype_missing`：主页面和 hint 只覆盖部分正常路径，缺少响应失败、长命令、键盘和窄屏组合。
 - `required_prototype`：补充上述 main/hint variant 与可重复操作步骤。
 - `blocked_scope`：未覆盖的 permission main/hint 状态；不得由其他面板推导视觉。
-- `shared_migration`：TASK-T019；空容器：#permPanel 中未覆盖 main/hint 状态 slot。暂停：仅未覆盖 main/hint variant 的交互。
-- `user_impact`：已覆盖 main/hint 决策路径保留；未覆盖长命令/失败/键盘与窄屏组合不补画。
+- `shared_migration`：TASK-T019；正常 main/hint 已共享；未覆盖且不能安全隐藏的请求/失败路径保留真实 runtime 处理，迁移受阻。
+- `user_impact`：已覆盖 main/hint 决策路径保留；未覆盖长/复合命令、失败与完整生命周期不补画，也不丢弃必须回应的请求。
 - `safety_gate`：当前 permission-request 入 pendingPermissions 并等待真实 respond_permission；仅隐藏面板不能安全暂停。未覆盖请求/响应失败无已覆盖回应和恢复出口时阻断 permission 区域迁移；不得自动允许或拒绝。
 
 ### GAP-008B：Permission trust 与 approval lifecycle
 
 - `coverage_id`：`UI-PERMISSION-002`
+- `implementation_boundary`：主面板保留四个选项，Trust 按钮禁用，后续面板为空 slot；直接调用、快捷键与 trust renderer/选择入口均暂停，不会因没有 trust group 自动 allow。被动 queue/error/cancel 继续真实处理，迁移受阻。
 - `runtime_trigger`：进入 trust，排队第二个 request，切换 session，并强制 response failure/cancel。
 - `current_runtime`：支持 trust level、queued/responding、failure、cancelled/stale 与 focus/state 恢复。
 - `prototype_missing`：trust handler 只重新打开主 demo，没有 trust renderer 或 queue/error/cancel state。
 - `required_prototype`：补充 trust-level、queued/responding/error/cancelled 和窄屏场景。
 - `blocked_scope`：permission trust、队列与 approval lifecycle。
-- `shared_migration`：TASK-T019；空容器：#permPanelTrust 内 trust slot；permission queue/responding/error/cancelled 未覆盖状态 slot。暂停：enterPermissionTrust 与 trust 选择快捷键；未覆盖 approval lifecycle 的操作。
+- `shared_migration`：TASK-T019；空容器：#permPanelTrust 内 trust slot。暂停：Trust 按钮、enterPermissionTrust 与 trust 选择快捷键；被动 approval lifecycle 保留真实处理，迁移受阻。
 - `user_impact`：暂停缺失 trust 操作；不能把缺失 queue/error/cancelled 状态伪装成已审批或已恢复。
 - `safety_gate`：当前队列在 showPermission 中追加，成功回复后才移除；下一请求调用 prepare_permission。隐藏 trust 入口不能阻止被动排队或 response failure。因此 approval lifecycle 在验证安全回应/恢复之前阻断迁移；不得丢弃 pending 请求或自动答复。
+
+### GAP-008C：AskUserQuestion 多问题与多选
+
+- `coverage_id`：`UI-QUESTION-001`
+- `进入日期`：2026-10-02
+- `implementation_boundary`：单问题单选、Other 校验与提交使用共享 UI；多问题进度、Next 与多选 checkbox 没有完整原型定义，保留 runtime renderer 与真实回答/取消出口，迁移受阻。
+- `required_prototype`：在后续迭代补充多问题、多选以及真实响应失败/取消与 session 恢复场景。
+- `safety_gate`：这些请求由后台触发并等待真实回答，不能通过隐藏面板暂停；不得丢弃请求或伪造回答，T036 不得删除旧处理。
 
 ## Settings、Appearance 与 permission settings
 

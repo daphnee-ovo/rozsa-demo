@@ -9,17 +9,30 @@ import { createConversationAdapter } from "../adapters/conversation.js";
 import * as tools from '../../ui/scripts/features/tools.js';
 import { init as bindTools } from '../../ui/scripts/components/tool-call.js';
 import { toolView, activityView } from '../adapters/tools.js';
+import * as permissions from '../../ui/scripts/features/permissions.js';
+import { init as bindInterruption } from '../../ui/scripts/components/interruption-panel.js';
+import { init as bindInterruptionFlow } from '../../ui/scripts/flows/composer-interruption.js';
+import { createInterruptionAdapter } from '../adapters/interruption.js';
 
 window.RozsaUIHost = createUIHost(createTauriAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
 window.RozsaUIReady = mountConversation(document.getElementById("mainContentScene")).then(() => mountShell([
   { url: new URL("composites/popover.html", templateRoot), selector: "[data-template-mount=popover]", children: true },
+  { url: new URL("composites/interruption-panel.html", templateRoot), selector: "[data-template-mount=interruption-panel]", children: true },
 ])).then(async () => {
   await tools.loadToolTemplate();
   window.RozsaTools = Object.freeze({ ...tools, toolView, activityView });
   bindTools({ boundModules: new Set(), byId: id => document.getElementById(id), toggleToolCall, toggleTurnDiff });
-  const interruption = document.querySelector("[data-template-mount=interruption-panel]");
-  interruption.replaceWith(document.getElementById("runtimeInterruptionTemplate").content.cloneNode(true));
+  window.RozsaPermissions = permissions;
+  const interruption = {
+    ...createInterruptionAdapter({ respondPermission, enterPermissionTrust, enterPermissionHint,
+      togglePermissionCommand, showPermissionMainPage, submitPermissionHint, submitUserQuestion,
+      normalizePermissionHint, handlePermissionHintKeydown }),
+    boundModules: new Set(), byId: id => document.getElementById(id),
+  };
+  configureInterruptionSuspensions();
+  bindInterruption(interruption);
+  bindInterruptionFlow(interruption);
   document.querySelector('[data-od-id="chat-input"]').prepend(document.getElementById("runtimeSubagentTemplate").content.cloneNode(true));
   configureConversationSuspensions();
   window.RozsaConversation = Object.freeze({ emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup });

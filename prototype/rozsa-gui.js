@@ -42,6 +42,7 @@
   let prototypeResponses = null;
   let sharedConversation;
   let sharedTools;
+  let sharedPermissions;
 
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
@@ -332,9 +333,7 @@
   }
 
   function renderPermissionCommand(command, tool) {
-    if (String(tool).toLowerCase() !== "bash") return escapeHtml(command);
-    return '<span class="perm-syn-prompt">$ </span><span class="perm-syn-command">' +
-      escapeHtml(command.split(/\s+/)[0]) + "</span>" + escapeHtml(command.slice(command.indexOf(" ") + 1));
+    return sharedPermissions.permissionCommandMarkup(command, tool);
   }
 
   function hidePermission() {
@@ -541,20 +540,11 @@
     const error = byId("questionPanelError");
     if (!panel || !options || !otherInput || !error) return;
     setText("questionPanelTitle", request.title);
-    options.innerHTML = request.options.map(({ label, description, other }, index) => '<label class="question-panel-option"><span class="question-panel-option-key">' + (index + 1) +
-      '</span><input type="radio" name="question-demo" value="' + escapeHtml(label) + '" data-option-number="' + (index + 1) + '" data-other="' + String(Boolean(other)) + '"><span class="question-panel-option-copy"><span class="question-panel-option-label">' +
-      escapeHtml(label) + '</span><span class="question-panel-option-description">' + escapeHtml(description) + "</span></span></label>").join("");
+    options.innerHTML = sharedPermissions.questionOptionsMarkup(request.options, "question-demo");
     otherInput.value = "";
     otherInput.hidden = true;
     error.textContent = "";
-    all("#questionPanelOptions input").forEach(input => input.addEventListener("change", () => {
-      const isOther = input.dataset.other === "true";
-      otherInput.hidden = !(isOther && input.checked);
-      if (otherInput.hidden) otherInput.value = "";
-      error.textContent = "";
-      if (!otherInput.hidden) otherInput.focus();
-    }));
-    otherInput.addEventListener("input", () => { error.textContent = ""; });
+    sharedPermissions.bindQuestionOptions(options, otherInput, error);
     panel.classList.add("visible");
     options.querySelector("input")?.focus();
     emitFlowEvent("rozsa:interruption-open", { kind: "question" });
@@ -566,22 +556,17 @@
   }
 
   function submitQuestionDemo() {
-    const panel = byId("questionPanel");
-    const selected = panel?.querySelector("input:checked");
+    const options = byId("questionPanelOptions");
     const error = byId("questionPanelError");
     const otherInput = byId("questionPanelOtherInput");
     if (!prototypeResponses?.error || !prototypeResponses.success?.questionSubmittedNotification) {
       throw new Error("Prototype question response mock is unavailable");
     }
-    if (!selected) {
-      if (error) error.textContent = prototypeResponses.error.questionMissing;
-      return;
-    }
-    if (selected.dataset.other === "true" && !otherInput?.value.trim()) {
-      if (error) error.textContent = prototypeResponses.error.questionOtherMissing;
-      otherInput?.focus();
-      return;
-    }
+    const answer = sharedPermissions.collectSingleQuestionAnswer(options, otherInput, error, {
+      missing: prototypeResponses.error.questionMissing,
+      otherMissing: prototypeResponses.error.questionOtherMissing,
+    });
+    if (answer === null) return;
     hideQuestionDemo();
     state.messages.push({ role: "assistant", continuation: true, text: prototypeResponses.success.questionSubmittedText });
     renderMessages();
@@ -897,6 +882,7 @@
     const bootstrap = async () => {
       sharedConversation = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/conversation.js", legacyScriptUrl));
       sharedTools = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/tools.js", legacyScriptUrl));
+      sharedPermissions = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/permissions.js", legacyScriptUrl));
       await sharedTools.loadToolTemplate();
       loadState();
       mountTemplates();

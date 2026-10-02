@@ -102,14 +102,14 @@ async fn cancellation_resolves_only_the_requested_session() {
 
 #[test]
 fn frontend_contract_always_exposes_custom_input() {
-    let html = include_str!("../frontend/index.html");
-    let css = include_str!("../frontend/styles/components/overlays.css");
+    let html = include_str!("../frontend/ui/templates/composites/interruption-panel.html");
+    let css = include_str!("../frontend/ui/styles/composites/permission-question.css");
     let source = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"questionPanel\""));
     assert!(html.contains("id=\"questionPanelTitle\""));
-    assert!(css.contains("padding: 6px 8px;"));
-    assert!(css.contains("min-height: 28px;"));
+    assert!(css.contains("padding: 20px;"));
+    assert!(css.contains("min-height: 48px;"));
     assert!(css.contains(".question-panel-error:empty { display: none; }"));
     assert!(css.contains("align-items: center;"));
     assert!(css.contains("margin-left: auto;"));
@@ -118,7 +118,8 @@ fn frontend_contract_always_exposes_custom_input() {
     assert!(!html.contains("id=\"questionPanelQuestion\""));
     assert!(source.contains("question-request"));
     assert!(source.contains("respond_user_question"));
-    assert!(source.contains("title.textContent = '['"));
+    assert!(source.contains("title.textContent = '[1/1] ' + (question.question || '');"));
+    assert!(source.contains("ev.questions.length === 1 && !question.multiSelect"));
     assert!(source.contains("'Other'"));
     assert!(source.contains("data-option-number"));
     assert!(source.contains("clearQuestionOtherInput"));

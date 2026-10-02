@@ -64,7 +64,9 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 ### PermissionRequest 与 AskUserQuestion
 
 - 项目：`UI-PERMISSION-001`、`UI-PERMISSION-002`、`UI-QUESTION-001`。
-- 结论：AskUserQuestion 已覆盖；permission main/hint 为 `partial`，trust、排队、错误与取消为 `missing`。
+- 结论：AskUserQuestion 单问题单选已覆盖，完整状态为 `partial`；permission main/hint 为 `partial`，trust、排队、错误与取消为 `missing`。
+- Runtime 边界：正常 permission main/hint 与单问题单选共用 `ui/templates/composites/interruption-panel.html`、`ui/styles/composites/permission-question.css`、共享 component/feature/focus flow；真实请求、队列与 IPC 留在 runtime adapter/handler。
+- 主面板保留原型四个选项；Trust 按钮禁用，后续空 slot 与选择入口暂停。多问题、多选、长/复合命令、排队及真实响应失败保留现有处理，迁移受阻；T036 不得删除这些出口。缺失设计留待后续迭代。
 
 ### Settings、Appearance 与 permission settings
 

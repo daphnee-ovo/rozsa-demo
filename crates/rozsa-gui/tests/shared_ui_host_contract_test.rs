@@ -191,12 +191,17 @@ const modules = {
   '../../ui/scripts/features/tools.js': 'export async function loadToolTemplate(){}',
   '../../ui/scripts/components/tool-call.js': 'export function init(){}',
   '../adapters/tools.js': 'export function toolView(){} export function activityView(){}',
+  '../../ui/scripts/features/permissions.js': 'export function questionOptionsMarkup(){}',
+  '../../ui/scripts/components/interruption-panel.js': 'export function init(){}',
+  '../../ui/scripts/flows/composer-interruption.js': 'export function init(){}',
+  '../adapters/interruption.js': 'export function createInterruptionAdapter(){return {};}',
 };
 let code = await readFile('crates/rozsa-gui/frontend/runtime/entries/main.js', 'utf8');
 for(const [path, module] of Object.entries(modules)) code = code.replace(path,url(module));
 globalThis.window={addEventListener(){}};
 globalThis.previewThinkingEffort=globalThis.selectThinkingEffort=()=>{};
 globalThis.toggleToolCall=globalThis.toggleTurnDiff=()=>{};
+for(const name of ['configureInterruptionSuspensions','respondPermission','enterPermissionTrust','enterPermissionHint','togglePermissionCommand','showPermissionMainPage','submitPermissionHint','submitUserQuestion','normalizePermissionHint','handlePermissionHintKeydown'])globalThis[name]=()=>{};
 for(const name of ['configureConversationSuspensions','attachFileReference','attachDirectoryReference','insertSlashCommandPrefix','showModelPicker','updateAbortButton','handleInput','handleCompositionStart','handleCompositionUpdate','handleCompositionEnd','toggleThinking'])globalThis[name]=()=>{};
 const element={content:{cloneNode(){}},replaceWith(){},prepend(){}};
 globalThis.document={getElementById(){return element;},querySelector(){return element;}};

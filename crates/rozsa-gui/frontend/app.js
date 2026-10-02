@@ -2017,6 +2017,18 @@ function toolIcon(name) {
 
 const QUESTION_OTHER_VALUE = '__rozsa_other__';
 
+function configureInterruptionSuspensions() {
+  const trust = document.querySelector('#permPanelActions [data-permission-action="trust"]');
+  trust.disabled = true;
+  trust.title = 'Unavailable until its UI design is complete';
+  trust.dataset.uiSuspended = 'permission-trust';
+  document.getElementById('permPanelTrust').dataset.uiSuspended = 'permission-trust';
+}
+
+function emitInterruptionState(type, kind) {
+  document.dispatchEvent(new CustomEvent('rozsa:interruption-' + type, { detail: { kind } }));
+}
+
 function showUserQuestion(ev) {
   if (!ev || !ev.sessionId || !ev.requestId || !Array.isArray(ev.questions) || !ev.questions.length) return;
   const queue = pendingUserQuestions[ev.sessionId] || [];
@@ -2051,8 +2063,10 @@ async function displayQuestionPanelIfNeeded() {
     const panel = document.getElementById('questionPanel');
     if (!panel) return;
     panel.classList.add('visible');
+    emitInterruptionState('open', 'question');
     const input = document.getElementById('msgInput');
     if (input) input.style.display = 'none';
+    panel.querySelector('#questionPanelOptions input')?.focus();
   } finally {
     questionDisplayInFlight = false;
   }
@@ -2067,6 +2081,28 @@ function renderQuestionPage(ev) {
   const error = document.getElementById('questionPanelError');
   const submit = document.getElementById('questionPanelSubmit');
   if (!title || !options || !otherInput || !error || !submit) return;
+
+  const panel = document.getElementById('questionPanel');
+  const covered = ev.questions.length === 1 && !question.multiSelect;
+  panel.dataset.interruptionUi = covered ? 'shared' : 'legacy';
+  if (!submit.dataset.sharedMarkup) submit.dataset.sharedMarkup = submit.innerHTML;
+  if (covered) {
+    title.textContent = '[1/1] ' + (question.question || '');
+    title.title = question.question || '';
+    options.innerHTML = window.RozsaPermissions.questionOptionsMarkup([
+      ...(question.options || []).map(option => ({ ...option, value: option.label || '' })),
+      { label: 'Other', description: 'Type a custom answer.', value: QUESTION_OTHER_VALUE, other: true },
+    ], 'question-' + ev.requestId);
+    otherInput.value = '';
+    otherInput.hidden = true;
+    error.textContent = '';
+    window.RozsaPermissions.bindQuestionOptions(options, otherInput, error, { selectOtherOnInput: true });
+    submit.innerHTML = submit.dataset.sharedMarkup;
+    submit.setAttribute('aria-label', 'Done (D)');
+    submit.disabled = false;
+    options.querySelector('input')?.focus();
+    return;
+  }
 
   const questionText = question.question || '';
   title.textContent = '[' + (currentQuestionIndex + 1) + '/' + ev.questions.length + '] ' + questionText;
@@ -2184,6 +2220,12 @@ function collectQuestionAnswer(question) {
   const otherInput = document.getElementById('questionPanelOtherInput');
   const error = document.getElementById('questionPanelError');
   if (!options || !otherInput || !error) return null;
+  if (document.getElementById('questionPanel').dataset.interruptionUi === 'shared') {
+    return window.RozsaPermissions.collectSingleQuestionAnswer(options, otherInput, error, {
+      missing: 'Select an option or choose Other.',
+      otherMissing: 'Type your answer in the Other field.',
+    });
+  }
   const checked = Array.from(options.querySelectorAll('input:checked'));
   const values = [];
   let otherSelected = false;
@@ -2256,6 +2298,7 @@ function hideQuestionPanel() {
   currentQuestionSessionId = null;
   currentQuestionIndex = 0;
   currentQuestionAnswers = {};
+  emitInterruptionState('close', 'question');
 }
 
 function discardCurrentQuestionUi() {
@@ -2322,8 +2365,8 @@ async function displayPermPanelIfNeeded() {
       }
       const savedPermission = permissionUiStateBySession[ev.session_id];
       const canRestore = savedPermission && savedPermission.requestId === ev.request_id;
-      currentPermissionTrustIndex = canRestore ? savedPermission.trustIndex : -1;
-      currentPermissionTrustKeys = canRestore ? [...savedPermission.trustKeys] : [];
+      currentPermissionTrustIndex = -1;
+      currentPermissionTrustKeys = [];
       const panel = document.getElementById('permPanel');
       if (!panel) return;
       const tool = document.getElementById('permTool');
@@ -2332,8 +2375,12 @@ async function displayPermPanelIfNeeded() {
       const desc = document.getElementById('permDesc');
       if (tool) tool.textContent = ev.tool || '—';
       const command = ev.command || ev.summary || '—';
+      const covered = queue.length === 1 && !/[;\n|&]/.test(command);
+      panel.dataset.interruptionUi = covered ? 'shared' : 'legacy';
       if (cmd) {
-        cmd.innerHTML = renderPermissionCommand(command, ev.tool || '');
+        cmd.innerHTML = covered
+          ? window.RozsaPermissions.permissionCommandMarkup(command, ev.tool || '')
+          : renderPermissionCommand(command, ev.tool || '');
         cmd.classList.remove('expanded');
         cmd.classList.add('collapsed');
       }
@@ -2347,11 +2394,13 @@ async function displayPermPanelIfNeeded() {
         requestAnimationFrame(() => {
           const overflowing = cmd.scrollHeight > cmd.clientHeight + 1;
           cmdToggle.hidden = !overflowing;
+          if (overflowing) panel.dataset.interruptionUi = 'legacy';
         });
       }
       if (currentPermissionTrustIndex >= 0) renderPermissionTrustPage();
       else showPermissionMainPage();
       panel.classList.add('visible');
+      emitInterruptionState('open', 'permission');
       document.getElementById('msgInput').style.display = 'none';
       focusPermissionAction(canRestore ? savedPermission.focusIndex : 0);
       capturePermissionUiState(ev.session_id);
@@ -2456,17 +2505,12 @@ function submitPermissionHint() {
 }
 
 function enterPermissionTrust() {
-  if (!currentPermissionTrustGroups.length) {
-    void respondPermission('allow');
-    return;
-  }
-  currentPermissionTrustIndex = 0;
-  currentPermissionTrustKeys = [];
-  renderPermissionTrustPage();
-  capturePermissionUiState(currentPermissionSessionId);
+  // The trust flow has no covered design; its runtime entry is suspended.
+  return;
 }
 
 function renderPermissionTrustPage() {
+  if (document.getElementById('permPanelTrust').dataset.uiSuspended) return;
   const group = currentPermissionTrustGroups[currentPermissionTrustIndex];
   if (!group) {
     void respondPermission('allow-session');
@@ -2498,6 +2542,7 @@ function renderPermissionTrustPage() {
 }
 
 function choosePermissionTrust(trustKey) {
+  if (document.getElementById('permPanelTrust').dataset.uiSuspended) return;
   if (trustKey) currentPermissionTrustKeys.push(trustKey);
   currentPermissionTrustIndex += 1;
   renderPermissionTrustPage();
@@ -2506,7 +2551,7 @@ function choosePermissionTrust(trustKey) {
 function activePermissionActions() {
   const id = currentPermissionTrustIndex >= 0 ? 'permTrustActions' : 'permPanelActions';
   const container = document.getElementById(id);
-  return container ? Array.from(container.querySelectorAll('.perm-panel-opt')) : [];
+  return container ? Array.from(container.querySelectorAll('.perm-panel-opt:not(:disabled)')) : [];
 }
 
 function movePermissionSelection(delta) {
@@ -2558,6 +2603,7 @@ async function respondPermission(choice, hint = null) {
     });
   } catch (e) {
     console.error('respond_permission:', e);
+    document.getElementById('permPanel').dataset.interruptionUi = 'legacy';
     showError('Permission response failed: ' + String(e));
     return;
   }
@@ -2588,6 +2634,7 @@ function hidePermPanel() {
   currentPermissionTrustIndex = -1;
   currentPermissionTrustKeys = [];
   showPermissionMainPage();
+  emitInterruptionState('close', 'permission');
 }
 
 // =============== Send Message & Slash Command Dispatch ===============

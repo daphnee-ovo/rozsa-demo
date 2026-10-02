@@ -1,13 +1,15 @@
 #[test]
 fn deny_and_hints_opens_a_prefixed_editable_input() {
-    let html = include_str!("../frontend/index.html");
+    let html = include_str!("../frontend/ui/templates/composites/interruption-panel.html");
+    let component = include_str!("../frontend/ui/scripts/components/interruption-panel.js");
     let source = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"permHintInput\""));
     assert!(html.contains("value=\"Deny, \""));
-    assert!(html.contains("oninput=\"normalizePermissionHint(this)\""));
-    assert!(html.contains("onkeydown=\"handlePermissionHintKeydown(event)\""));
-    assert!(html.contains("onclick=\"submitPermissionHint()\""));
+    assert!(component.contains("api.normalizePermissionHint(event.currentTarget)"));
+    assert!(component.contains("addEventListener(\"keydown\", api.handlePermissionHintKeydown)"));
+    assert!(html.contains("data-permission-action=\"submit-hint\""));
+    assert!(component.contains("api.submitPermissionHint()"));
     assert!(source.contains("const PERMISSION_HINT_PREFIX = 'Deny, ';"));
     assert!(source.contains("input.value = PERMISSION_HINT_PREFIX + suffix;"));
     assert!(source.contains("void respondPermission('deny-hint', hint);"));
