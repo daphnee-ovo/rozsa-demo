@@ -35,8 +35,11 @@ const activityAdapter=new Function(read('frontend/runtime/adapters/tools.js').re
   assert(diff.includes('>20</span>'));assert(diff.includes('same'));assert(diff.includes('>11</span>'));assert(diff.includes('>21</span>'));
   assert(tools.codeViewMarkup('<tag>\nnext').includes('&lt;tag&gt;'));
   assert.equal(tools.messageTextMarkup('plain\ntext\n\nnext'),tools.textMarkup('plain\ntext\n\nnext'));
+  for(const plain of ['QA_PERMISSION_ALLOW','QA_PERMISSION_DENY','QA_PERMISSION_HINT','some_identifier_name','some__identifier__name','中文_标识符_名称','prefix_emphasis_suffix','snake_case and another_identifier_name']) {
+    assert.equal(tools.messageTextMarkup(plain),tools.textMarkup(plain),'word-internal underscores must remain visible: '+plain);
+  }
   assert(tools.messageTextMarkup('```rust\n<tag>\n```').includes('&lt;tag&gt;'));
-  for(const missing of ['# Heading','- List','> Quote','[link](https://example.com)','[link][ref]','| Table |','**bold**','*emphasis*','_emphasis_','<b>html</b>','title\n===','~~~\ncode\n~~~','    indented','`inline`','```\nunclosed']) {
+  for(const missing of ['# Heading','- List','> Quote','[link](https://example.com)','[link][ref]','| Table |','**bold**','*emphasis*','_emphasis_','__strong__','___strong emphasis___','_some_identifier_name_','before _emphasis_ after','中文 _强调_ 内容','(_emphasis_)','<b>html</b>','title\n===','~~~\ncode\n~~~','    indented','`inline`','```\nunclosed']) {
     assert.equal(tools.messageTextMarkup(missing),'<div data-ui-suspended="UI-MARKDOWN-001"></div>');
   }
   assert(tools.messageTextMarkup('visible\n\n# Missing\n\nvisible too').includes('<p>visible too</p>'));

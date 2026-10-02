@@ -90,7 +90,9 @@ export function messageTextMarkup(value) {
   const flush = () => {
     if (!paragraph.length) return;
     const text = paragraph.join('\n');
-    const missing = /(^|\n)(?: {4}|\t)|(^|\n)\s*(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\||~{3,}|={3,}$|(?:[-*_]\s*){3,}$)|!?\[[^\]]*\](?:\(|\[|:)|<\/?[A-Za-z!]|`|\*[^*\n]+\*|_[^_\n]+_|\*\*|__/m.test(text);
+    // Underscores inside identifiers are plain text, including Unicode words.
+    const underscoreEmphasis = /(?:^|[^\p{L}\p{N}\p{M}_])_{1,3}[^_\s](?:[^\n]*[^\s])?_{1,3}(?![\p{L}\p{N}\p{M}_])/u.test(text);
+    const missing = underscoreEmphasis || /(^|\n)(?: {4}|\t)|(^|\n)\s*(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\||~{3,}|={3,}$|(?:[-*_]\s*){3,}$)|!?\[[^\]]*\](?:\(|\[|:)|<\/?[A-Za-z!]|`|\*[^*\n]+\*|\*\*/m.test(text);
     blocks.push(missing ? '<div data-ui-suspended="UI-MARKDOWN-001"></div>' : textMarkup(text));
     paragraph = [];
   };
