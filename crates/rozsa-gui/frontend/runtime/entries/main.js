@@ -15,13 +15,14 @@ window.RozsaUIReady = mountConversation(document.getElementById("mainContentScen
   const interruption = document.querySelector("[data-template-mount=interruption-panel]");
   interruption.replaceWith(document.getElementById("runtimeInterruptionTemplate").content.cloneNode(true));
   document.querySelector('[data-od-id="chat-input"]').prepend(document.getElementById("runtimeSubagentTemplate").content.cloneNode(true));
+  configureConversationSuspensions();
   window.RozsaConversation = Object.freeze({ emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup });
   bindConversation({ boundModules: new Set(), byId: id => document.getElementById(id), toggleThinking, renderMessages: () => {} });
   window.RozsaComposer = Object.freeze({ renderSendState });
   const flow = createConversationFlow(createConversationAdapter({
     attachFileReference, attachDirectoryReference, insertSlashCommandPrefix, showModelPicker,
     updateAbortButton,
-    submit: () => isStreaming && !getInputText(document.getElementById("msgInput")).trim() ? abortAgent() : sendMessage(),
+    submit: () => isStreaming ? abortAgent() : sendMessage(),
   }));
   bindComposer({
     ...flow, boundModules: new Set(), byId: id => document.getElementById(id),

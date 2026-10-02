@@ -35,7 +35,8 @@
 - `required_prototype`：补充使用最终公共 message 实现的状态 gallery 或 scene variant。
 - `blocked_scope`：未在原型实际呈现的 message 状态；现有 complete-session fixture 可继续整理。
 - `shared_migration`：TASK-T017 / TASK-T038；空容器：#chatMessages 中未覆盖 message 状态的 slot。暂停：未覆盖 message 状态的交互入口。
-- `user_impact`：已覆盖消息继续呈现；未覆盖 streaming/continuation/error 和极端内容变体留空，不标记为消息功能通过。
+- `user_impact`：已覆盖消息使用共享 frame；未覆盖 streaming/continuation/error 和极端内容状态的迁移受阻，保留现有真实状态与错误处理，不得在 T036 清除。
+- `implementation_status`：blocked-passive-states。`#chatMessages[data-ui-migration-blocked="UI-CONV-002"]` 标明边界；不隐藏在途输出或真实错误，不声明完整消息状态矩阵已迁移。
 - `safety_gate`：ui-state 与 streamUpdate 可被动到达；迁移前逐状态验证留空仍保留真实产品状态和必要操作出口。无法安全处理在途输出或真实错误则阻断 conversation 区域迁移。
 
 ### GAP-004：Slash-command autocomplete
@@ -48,6 +49,7 @@
 - `blocked_scope`：autocomplete 组件与交互；Composer shell 不受阻断。
 - `shared_migration`：TASK-T038；空容器：Composer 的 #autocomplete。暂停：autocomplete 的 input 更新与异步 suggestion 回填；suggestion 的点击/hover 和 Up/Down/Enter/Escape 路径。
 - `user_impact`：输入文本及原型已有 slash prefix 动作保留；不提供 suggestion 列表与选择。
+- `implementation_status`：suspended。`#autocomplete` 保持为空；input、选择、键盘与迟到结果均由 runtime 守卫暂停，普通输入和 IME 保留。
 - `safety_gate`：停用 suggestion 入口并验证旧异步结果不会回填；不得误停 Composer 普通输入与 IME。slash action 对其他缺失界面的转发按对应 gap 一并守卫。
 
 ### GAP-005：附件、文件引用与拖放反馈
@@ -58,7 +60,8 @@
 - `prototype_missing`：file/directory handler 是显式 no-op，没有应用内 reference token 或 drag feedback。
 - `required_prototype`：补充 attachment/reference token 和 drag feedback 场景。
 - `blocked_scope`：应用内附件、引用与拖放视觉；操作系统 picker chrome 不在本缺口范围。
-- `shared_migration`：TASK-T038；空容器：Composer 的附件/reference 与 drag feedback slot。暂停：attachFileReference 与 attachDirectoryReference；native 文件拖放及 reference 插入路径。
+- `shared_migration`：TASK-T038；空容器：Composer 的 #attachmentReferences 与 #attachmentDragFeedback。暂停：attachFileReference 与 attachDirectoryReference；native 文件拖放及 reference 插入路径。
+- `implementation_status`：suspended。附件按钮禁用；picker 调用前、返回后与引用插入前均守卫，native/HTML drop 不插入内容。
 - `user_impact`：暂停通过 GUI 添加附件/目录和拖放引用；不启动 picker 后伪装完成，也不改变已有 session 产品数据。
 - `safety_gate`：在打开 picker 和插入引用前阻止入口；对已经打开的 picker 与 native drag 回调验证取消/迟到结果不会修改 draft 或恢复旧 UI。
 
@@ -70,7 +73,8 @@
 - `prototype_missing`：只有静态 model badge，`showModelPicker` 是 no-op。
 - `required_prototype`：补充 model picker 的正常、空、错误、滚动和窄屏状态。
 - `blocked_scope`：model picker；Composer 静态 badge 不受阻断。
-- `shared_migration`：TASK-T038；空容器：#modelSelector 所属区域的 picker slot。暂停：showModelPicker 的按钮/快捷键入口；slash action modelPicker 与 picker selection。
+- `shared_migration`：TASK-T038；空容器：#modelPickerSlot。暂停：showModelPicker 的按钮/快捷键入口；/model 命令、slash action modelPicker 与 picker selection。
+- `implementation_status`：suspended。真实 model badge 与 registry 刷新保留，picker 按钮禁用，迟到刷新不打开 picker。
 - `user_impact`：静态 model badge 与真实当前 model 保留；暂停通过未覆盖 picker 切换 model。
 - `safety_gate`：models-updated 可继续更新真实 registry/badge；验证迟到刷新不打开 picker且停用入口不改变已选 model。General 的 model 修改入口另由 GAP-009 暂停。
 
@@ -84,6 +88,7 @@
 - `blocked_scope`：Queue、Steering、Fork、Subagent 与 running composer 跨组件流程。
 - `shared_migration`：TASK-T038；空容器：Composer 的 #queuedMessages 与 #steeringConversation 未覆盖状态 slot；#forkPicker 与 #subagentPanel 未覆盖状态 slot。暂停：running send 的未覆盖 queue/steer 操作及对应快捷键；未覆盖 queue action/remove 与 fork/subagent 操作；slash action forkPicker/subagentPanel。
 - `user_impact`：已覆盖 populated 呈现与已覆盖 Stop/abort 出口保留；缺失的操作和变体暂停，不清空后端已有 queue 或 subagent 状态。
+- `implementation_status`：operations-suspended-passive-state-retained。fork/subagent 容器为空；运行中 queue/steer 提交及其快捷键暂停且保留 draft，按钮始终为 Stop；已有 queue/steering 继续真实呈现和消费。不自动 abort，不停止后台 subagent，不清除承载被动状态的处理代码。
 - `safety_gate`：ui-state 含 queuedMessages/steeringConversation，sendMessage 在 streaming 时调用 send_running_message；须验证已有队列和在途工作仍有安全处理与退出路径。无法安全暂停则阻断 running flow 迁移，不能自动 abort 或伪造完成。
 
 ## Tool call、evidence、diff 与 Markdown

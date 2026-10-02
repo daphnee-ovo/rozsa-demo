@@ -28,6 +28,54 @@
 // ===================================================================
 
 let invoke, listen;
+// Runtime-only design gaps. Passive message/error delivery remains active until
+// its state matrix has a safe shared replacement (UI-CONV-002).
+const conversationSuspensions = Object.freeze({
+  autocomplete: 'UI-COMPOSER-002',
+  attachments: 'UI-COMPOSER-003',
+  modelPicker: 'UI-COMPOSER-004',
+  runningSubmit: 'UI-FLOW-001',
+  fork: 'UI-FLOW-001',
+  subagents: 'UI-FLOW-001',
+});
+
+function conversationOperationSuspended(operation) {
+  return Object.hasOwn(conversationSuspensions, operation);
+}
+
+function suspendedConversationCommand(text) {
+  const operations = { model: 'modelPicker', fork: 'fork', subagent: 'subagents', subagents: 'subagents' };
+  return text.split(/\s+/).some(token => token.startsWith('/') &&
+    conversationOperationSuspended(operations[token.slice(1).toLowerCase()]));
+}
+
+function configureConversationSuspensions() {
+  for (const id of ['autocomplete', 'forkPicker', 'subagentPanel']) {
+    const slot = document.getElementById(id);
+    if (!slot) continue;
+    slot.replaceChildren();
+    slot.hidden = true;
+    slot.dataset.uiSuspended = id === 'autocomplete' ? 'UI-COMPOSER-002' : 'UI-FLOW-001';
+  }
+  for (const action of ['attach-file', 'attach-directory', 'model-picker', 'running-send-mode']) {
+    const control = document.querySelector('[data-action="' + action + '"]');
+    if (!control) continue;
+    control.disabled = true;
+    control.setAttribute('aria-disabled', 'true');
+    control.title = 'Unavailable until its UI design is complete';
+  }
+  const composer = document.getElementById('composer');
+  for (const id of ['attachmentReferences', 'attachmentDragFeedback', 'modelPickerSlot']) {
+    const slot = document.createElement('div');
+    slot.id = id;
+    slot.hidden = true;
+    slot.dataset.uiSuspended = id === 'modelPickerSlot' ? 'UI-COMPOSER-004' : 'UI-COMPOSER-003';
+    composer?.appendChild(slot);
+  }
+  // Streaming, continuation and real errors cannot safely be hidden. Their
+  // existing state handling is retained and must survive T036 cleanup.
+  document.getElementById('chatMessages')?.setAttribute('data-ui-migration-blocked', 'UI-CONV-002');
+}
 let sessions = [];
 let models = [];
 let currentPermissionId = null;
@@ -539,6 +587,11 @@ function updateAbortButton() {
   const input = document.getElementById('msgInput');
   if (!sendBtn) return;
   if (isStreaming) {
+    if (conversationOperationSuspended('runningSubmit')) {
+      if (mode) mode.hidden = true;
+      window.RozsaComposer.renderSendState(sendBtn, 'stop');
+      return;
+    }
     const hasText = !!getInputText(input).trim();
     if (mode) mode.hidden = !hasText;
     if (hasText) {
@@ -2673,10 +2726,12 @@ function restoreSessionDraft(sessionId) {
 }
 
 async function sendMessage() {
+  if (isStreaming && conversationOperationSuspended('runningSubmit')) return;
   const input = document.getElementById('msgInput');
   if (!input) return;
   const text = getInputText(input).trim();
   if (!text) return;
+  if (suspendedConversationCommand(text)) return;
   setInputText(input, '');
   input.style.height = 'auto';
   updateInputHighlight([]);
@@ -2708,6 +2763,7 @@ async function sendMessage() {
 }
 
 async function dispatchSlashCommand(text) {
+  if (suspendedConversationCommand(text)) return true;
   try {
     const result = await invoke('dispatch_slash_command', { text });
     if (!result || !result.handled) return false;
@@ -2761,10 +2817,12 @@ async function handleSlashAction(action, value) {
 }
 
 async function showForkPicker() {
+  if (conversationOperationSuspended('fork')) return;
   const panel = document.getElementById('forkPicker');
   if (!panel) return;
   try {
     const points = await invoke('get_fork_points');
+    if (conversationOperationSuspended('fork')) return;
     panel.hidden = false;
     panel.innerHTML = '<div class="running-messages-title">Fork conversation</div><ol>' +
       (points.length ? points.map(point => '<li><button class="turn-activity-file" onclick="forkAtMessage(' + point.messageIndex + ')">' +
@@ -2773,6 +2831,7 @@ async function showForkPicker() {
 }
 
 async function forkAtMessage(messageIndex) {
+  if (conversationOperationSuspended('fork')) return;
   try {
     await invoke('fork_session', { messageIndex });
     sessions = await invoke('get_sessions');
@@ -2783,10 +2842,12 @@ async function forkAtMessage(messageIndex) {
 }
 
 async function showSubagentPanel() {
+  if (conversationOperationSuspended('subagents')) return;
   const panel = document.getElementById('subagentPanel');
   if (!panel) return;
   try {
     const subagents = await invoke('get_subagents');
+    if (conversationOperationSuspended('subagents')) return;
     panel.hidden = false;
     panel.innerHTML = '<div class="running-messages-title">Subagents</div><ol>' +
       (subagents.length ? subagents.map(agent => '<li><strong>' + escapeHtml(agent.name) +
@@ -2940,6 +3001,7 @@ async function onModelChange(modelId) {
 }
 
 async function showModelPicker() {
+  if (conversationOperationSuspended('modelPicker')) return;
   if (!models.length) {
     try {
       models = await invoke('list_models');
@@ -2954,6 +3016,7 @@ async function showModelPicker() {
     return;
   }
   // 使用 autocomplete popup 显示模型列表
+  if (conversationOperationSuspended('modelPicker')) return;
   const popup = document.getElementById('autocomplete');
   if (!popup) return;
   popup.innerHTML = models.map((m, i) =>
@@ -2965,6 +3028,7 @@ async function showModelPicker() {
 }
 
 function selectModel(idx) {
+  if (conversationOperationSuspended('modelPicker')) return;
   const m = models[idx];
   if (!m) return;
   hideAutocomplete();
@@ -4926,6 +4990,7 @@ const nativeFileDragEvents = {
 };
 
 function handleNativeFileDrag(type, payload = {}) {
+  if (conversationOperationSuspended('attachments')) return;
   const inputWrapper = document.querySelector('.input-wrapper');
   const active = type === 'enter' || type === 'over';
   inputWrapper?.classList.toggle('file-drop-active', active);
@@ -4959,17 +5024,21 @@ async function configureNativeFileDrag() {
 }
 
 async function attachFileReference() {
+  if (conversationOperationSuspended('attachments')) return;
   const mode = usesCombinedAttachmentPicker() ? 'any' : 'file';
   await attachReference(mode);
 }
 
 async function attachDirectoryReference() {
+  if (conversationOperationSuspended('attachments')) return;
   await attachReference('directory');
 }
 
 async function attachReference(mode) {
+  if (conversationOperationSuspended('attachments')) return;
   try {
     const path = await invoke('pick_attachment', { mode });
+    if (conversationOperationSuspended('attachments')) return;
     if (!path) return;
     insertFileReferences([path]);
   } catch (e) {
@@ -4997,6 +5066,7 @@ function insertInputText(text) {
 }
 
 function insertFileReferences(paths) {
+  if (conversationOperationSuspended('attachments')) return;
   const input = document.getElementById('msgInput');
   if (!input || !Array.isArray(paths) || paths.length === 0) return;
   const current = getInputText(input);
@@ -5022,6 +5092,7 @@ function autoResize(el) {
 let acVisible = false;
 
 async function updateAutocomplete() {
+  if (conversationOperationSuspended('autocomplete')) return;
   const input = document.getElementById('msgInput');
   const popup = document.getElementById('autocomplete');
   if (!input || !popup) return;
@@ -5036,6 +5107,7 @@ async function updateAutocomplete() {
     return;
   }
   if (isInputComposing || seq !== acRequestSeq) return;
+  if (conversationOperationSuspended('autocomplete')) return;
   const highlightRanges = result.highlightRanges || [];
   setInputMatchState(!!result.validMatch || highlightRanges.length > 0);
   updateInputHighlight(highlightRanges);
@@ -5058,6 +5130,7 @@ async function updateAutocomplete() {
 }
 
 function acHighlight(index) {
+  if (conversationOperationSuspended('autocomplete')) return;
   acSelectedIndex = index;
   const popup = document.getElementById('autocomplete');
   if (!popup) return;
@@ -5067,6 +5140,7 @@ function acHighlight(index) {
 }
 
 function navigateAutocomplete(direction) {
+  if (conversationOperationSuspended('autocomplete')) return false;
   const popup = document.getElementById('autocomplete');
   if (!popup || !acVisible) return false;
   const items = popup.querySelectorAll('.ac-item');
@@ -5084,6 +5158,7 @@ function navigateAutocomplete(direction) {
 }
 
 function confirmAutocomplete() {
+  if (conversationOperationSuspended('autocomplete')) return false;
   if (!acVisible) return false;
   const popup = document.getElementById('autocomplete');
   if (!popup) return false;
@@ -5099,6 +5174,7 @@ function confirmAutocomplete() {
 }
 
 function selectAutocomplete(index) {
+  if (conversationOperationSuspended('autocomplete')) return;
   const input = document.getElementById('msgInput');
   const item = acItems[index];
   if (!input || !item || !acPrefix) return;

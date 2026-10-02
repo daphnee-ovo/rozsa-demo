@@ -51,6 +51,7 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 ### Conversation、Composer、Queue 与 Steering
 
 - 项目：`UI-CONV-001`、`UI-CONV-002`、`UI-CONV-003`、`UI-COMPOSER-001`、`UI-COMPOSER-002`、`UI-COMPOSER-003`、`UI-COMPOSER-004`、`UI-COMPOSER-005`、`UI-FLOW-001`。
+- Runtime 边界：autocomplete、附件/拖放、model picker、fork/subagent 操作及运行中 queue/steer 提交暂停，未覆盖容器为空；输入、IME、draft、真实 model badge、已覆盖 populated queue/steering 与 Stop 保留。`UI-CONV-002` 的被动 streaming/continuation/error 状态迁移受阻，现有处理不得在 T036 删除。具体入口与状态见 [DESIGN_GAPS](./DESIGN_GAPS.md)。
 - 结论：空会话、thinking、Composer 与 thinking effort 已覆盖；完整消息矩阵、queue/steering/fork/subagent 为 `partial`；autocomplete、附件/拖放和 model picker 为 `missing`。
 
 ### Tool call、evidence、diff 与 Markdown

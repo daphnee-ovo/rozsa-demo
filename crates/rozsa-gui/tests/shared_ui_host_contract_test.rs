@@ -193,7 +193,7 @@ let code = await readFile('crates/rozsa-gui/frontend/runtime/entries/main.js', '
 for(const [path, module] of Object.entries(modules)) code = code.replace(path,url(module));
 globalThis.window={addEventListener(){}};
 globalThis.previewThinkingEffort=globalThis.selectThinkingEffort=()=>{};
-for(const name of ['attachFileReference','attachDirectoryReference','insertSlashCommandPrefix','showModelPicker','updateAbortButton','handleInput','handleCompositionStart','handleCompositionUpdate','handleCompositionEnd','toggleThinking'])globalThis[name]=()=>{};
+for(const name of ['configureConversationSuspensions','attachFileReference','attachDirectoryReference','insertSlashCommandPrefix','showModelPicker','updateAbortButton','handleInput','handleCompositionStart','handleCompositionUpdate','handleCompositionEnd','toggleThinking'])globalThis[name]=()=>{};
 const element={content:{cloneNode(){}},replaceWith(){},prepend(){}};
 globalThis.document={getElementById(){return element;},querySelector(){return element;}};
 let release, started;
