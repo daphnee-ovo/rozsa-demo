@@ -85,6 +85,7 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 
 - 项目：`UI-DEVFLOW-001`、`UI-DEVFLOW-002`、`UI-DEVFLOW-003`、`UI-DEVFLOW-004`、`UI-DEVFLOW-005`。
 - 结论：settings、sidebar、runtime detail、Bash presentation 与双 WebView/native ownership 均已分类；native host 项为 `non-visual`。
+- 已覆盖 Sidebar 与 Dev Flow 结构、样式和交互共用生产 `ui/`；原型使用 mock，runtime adapter 连接真实 Tauri 数据。quota tooltip 暂停；native snapshot 未提供的 tool chip/subagent 数据保持空 slot。详情中的 done_when 与空列表提示为 `partial`，沿用 [GAP-014](./DESIGN_GAPS.md) 留待后续设计。
 
 ### Gallery 视觉参考
 

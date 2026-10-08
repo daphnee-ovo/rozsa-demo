@@ -74,7 +74,6 @@ export function init(api) {
     items[next].focus();
   });
   document.addEventListener('click', event => {
-    if (event.target.closest('#sidebarDevFlowDashboard')) api.openDevFlowDashboard?.();
-    else if (event.target.closest('#devFlowSidebarSummary, #devFlowSidebarMore, [data-dev-flow-trigger]')) api.openDevFlowDetail?.();
+    if (event.target.closest('#devFlowSidebarSummary, #devFlowSidebarMore, [data-dev-flow-trigger]')) api.openDevFlowDetail?.();
   });
 }

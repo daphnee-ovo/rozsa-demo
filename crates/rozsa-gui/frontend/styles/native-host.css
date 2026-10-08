@@ -30,6 +30,7 @@ body.native-split-main {
 body.native-split-main .settings-dialog { max-height: none; border: 0; border-radius: 0; box-shadow: none; animation: none; }
 body.native-split-main .settings-workspace { display: block; height: 100%; }
 body.native-split-main .settings-content { height: 100%; max-height: none; }
+body.native-split-main.dev-flow-detail-open .dev-flow-detail { --main-sidebar-width: 0px; left: 12px; }
 html[data-native-webview="sidebar"] #settingsSidebarScene .settings-tabs { height: 100%; display: flex; max-height: none; box-shadow: none; }
 
 html[data-native-webview="sidebar"] body {

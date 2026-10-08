@@ -5642,7 +5642,7 @@ function openDevFlowDetailPanel() {
   overlay.hidden = false;
   document.body.classList.add('dev-flow-detail-open');
   devFlowDetailOpen = true;
-  const focusTarget = overlay.querySelector('.dev-flow-detail-item') || document.getElementById('devFlowDetailClose');
+  const focusTarget = document.getElementById('devFlowDetailClose');
   if (focusTarget) focusTarget.focus();
 }
 

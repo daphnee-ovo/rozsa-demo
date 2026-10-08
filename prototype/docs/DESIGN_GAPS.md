@@ -23,6 +23,21 @@
 - `shared_migration`：TASK-T022；空容器：main 的 #quotaTooltip；main/sidebar quota 区域中的未覆盖限额变体 slot。暂停：限额条的 tooltip hover/focus 展示；未覆盖限额变体的可见操作。
 - `user_impact`：已覆盖基本 quota bar 保留；未覆盖 tooltip 和限额变体不展示。
 - `safety_gate`：限额数据接收可保留；切换前验证被动刷新不会重新挂载旧变体或影响已覆盖栏位。
+- `implementation_status`：suspended。共享 tooltip 容器清空并隐藏，runtime hover 不填回旧内容；基本 quota bar 继续接收真实数据。Native snapshot 未提供的 tool chip/subagent 数据保持空 slot。
+
+## Dev Flow
+
+### GAP-014：详情验收条目与空列表状态
+
+- `coverage_id`：`UI-DEVFLOW-003`
+- `runtime_trigger`：详情 payload 包含 done_when，或没有 open task/issue。
+- `current_runtime`：共享只读详情显示任务、issue、元信息和 Files；保留原始 payload，未覆盖状态使用空 slot。
+- `prototype_missing`：新版原型没有 done_when disclosure 与专用空列表提示。
+- `required_prototype`：后续迭代补充验收条目展开与无 open task/issue 的详情状态。
+- `blocked_scope`：done_when disclosure 与专用空列表提示；已覆盖列表、Files 和关闭操作保留。
+- `shared_migration`：TASK-T022；对应列表区域留空，暂停未覆盖 disclosure；已覆盖详情和 Files 展开共用生产 renderer。
+- `user_impact`：暂不展示验收条目和专用空列表提示；原始产品 payload 保留，Close 与 Escape 始终可用。
+- `safety_gate`：详情只读，不修改任务状态，不因空列表伪造完成结果。缺失状态在后续迭代补齐。
 
 ## Conversation、Composer、Queue 与 Steering
 
