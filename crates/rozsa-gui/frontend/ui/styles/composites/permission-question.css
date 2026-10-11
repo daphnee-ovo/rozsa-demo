@@ -25,6 +25,8 @@
   -webkit-backdrop-filter: blur(26px) saturate(1.10);
   backdrop-filter: blur(26px) saturate(1.10);
 }
+[data-rozsa-scene="permission-request"] [data-od-id="chat-input"] > .input-wrapper,
+[data-rozsa-scene="ask-user-question"] [data-od-id="chat-input"] > .input-wrapper,
 [data-od-id="chat-input"]:has(> .perm-panel.visible) > .input-wrapper,
 [data-od-id="chat-input"]:has(> .question-panel.visible) > .input-wrapper { display: none; }
 :where(.perm-panel:not([data-interruption-ui="legacy"]), .question-panel:not([data-interruption-ui="legacy"])) .perm-panel-context { display: grid; gap: 8px; }
