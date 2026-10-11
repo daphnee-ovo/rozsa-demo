@@ -164,7 +164,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
 use rozsa_app::agent_session::{AgentSession, normalize_thinking_effort};
@@ -247,7 +247,7 @@ pub async fn gui_webview_ready(
     if update.all_webviews_ready {
         #[cfg(target_os = "macos")]
         reveal_native_split(&app)?;
-        app.get_webview_window("main")
+        crate::window_visibility::main_window(&app)
             .ok_or_else(|| "main GUI window is unavailable".to_owned())?
             .show()
             .map_err(|error| format!("failed to show ready GUI window: {error}"))?;

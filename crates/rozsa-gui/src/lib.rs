@@ -38,6 +38,7 @@ pub mod notifications;
 pub mod scene_router;
 pub mod state;
 pub mod turn_diff;
+mod window_visibility;
 
 pub use git_diff::read_workspace_diff;
 
