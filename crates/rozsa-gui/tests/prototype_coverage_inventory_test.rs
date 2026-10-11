@@ -63,7 +63,12 @@ fn coverage_schema_matches_specification() {
             let values = item[field]
                 .as_array()
                 .unwrap_or_else(|| panic!("{id}.{field} 必须是数组"));
-            assert!(!values.is_empty(), "{id}.{field} 不得为空");
+            let non_visual_surface =
+                item["status"] == "non-visual" && matches!(field, "css" | "markup");
+            assert!(
+                non_visual_surface || !values.is_empty(),
+                "{id}.{field} 不得为空"
+            );
             assert!(
                 values.iter().all(Value::is_string),
                 "{id}.{field} 只能包含字符串"
@@ -88,9 +93,16 @@ fn coverage_schema_matches_specification() {
 
 #[test]
 fn application_shell_templates_preserve_mount_contract() {
-    let sidebar =
+    let sidebar_forwarder =
         fs::read_to_string(repository_root().join("prototype/templates/features/sidebar.html"))
             .expect("prototype sidebar template must be readable");
+    assert!(sidebar_forwarder.contains(
+        "data-ui-template-src=\"../../../crates/rozsa-gui/frontend/ui/templates/features/sidebar.html\""
+    ), "prototype sidebar must load its shared source");
+    let sidebar = fs::read_to_string(
+        repository_root().join("crates/rozsa-gui/frontend/ui/templates/features/sidebar.html"),
+    )
+    .expect("shared sidebar template must be readable");
     assert!(
         sidebar.contains("<aside id=\"sidebar\" data-od-id=\"sidebar\""),
         "shared sidebar template must preserve the legacy mount id"
@@ -103,10 +115,21 @@ fn application_shell_templates_preserve_mount_contract() {
         ),
         "legacy bootstrap must read the application-shell entry marker from body"
     );
-    let interruption = fs::read_to_string(
+    let interruption_forwarder = fs::read_to_string(
         repository_root().join("prototype/scripts/components/interruption-panel.js"),
     )
     .expect("prototype interruption component must be readable");
+    assert!(
+        interruption_forwarder.contains(
+            "../../../crates/rozsa-gui/frontend/ui/scripts/components/interruption-panel.js"
+        ),
+        "prototype interruption must load its shared source"
+    );
+    let interruption = fs::read_to_string(
+        repository_root()
+            .join("crates/rozsa-gui/frontend/ui/scripts/components/interruption-panel.js"),
+    )
+    .expect("shared interruption component must be readable");
     assert!(
         interruption.contains("document.querySelector('[data-od-id=\"chat-input\"]')"),
         "interruption component must bind to the template's data-od-id root"
@@ -236,7 +259,9 @@ fn runtime_inventory_and_visible_events_are_bidirectional() {
         .collect();
     for (path, events) in declared_events {
         let source = fs::read_to_string(repository_root().join(path)).unwrap();
-        let prefix = if path.ends_with("sidebar.js") {
+        let prefix = if path.ends_with("runtime/adapters/notifications.js") {
+            "port.subscribe('"
+        } else if path.ends_with("sidebar.js") {
             "sidebarListen('"
         } else {
             "listen('"

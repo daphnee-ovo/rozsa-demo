@@ -13,10 +13,14 @@ use serde_json::Value;
 #[test]
 fn running_state_markup_keeps_baseline_ownership() {
     let root = repository_root();
-    let sidebar = fs::read_to_string(root.join("prototype/templates/features/sidebar.html"))
-        .expect("sidebar template must be readable");
-    let composer = fs::read_to_string(root.join("prototype/templates/composites/composer.html"))
-        .expect("composer template must be readable");
+    let sidebar = fs::read_to_string(
+        root.join("crates/rozsa-gui/frontend/ui/templates/features/sidebar.html"),
+    )
+    .expect("sidebar template must be readable");
+    let composer = fs::read_to_string(
+        root.join("crates/rozsa-gui/frontend/ui/templates/composites/composer.html"),
+    )
+    .expect("composer template must be readable");
     let input = fs::read_to_string(
         root.join("crates/rozsa-gui/frontend/ui/templates/primitives/input.html"),
     )

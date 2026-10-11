@@ -700,7 +700,7 @@ fn sidebar_and_detail_static_contracts() {
     let capabilities = include_str!("../capabilities/default.json");
     let sidebar_css = include_str!("../frontend/styles/features/sidebar-window.css");
     let sidebar_actions_css = include_str!("../frontend/styles/components/actions.css");
-    let feedback_css = include_str!("../frontend/styles/components/feedback.css");
+    let detail_css = include_str!("../frontend/ui/styles/features/dev-flow-runtime.css");
     let shared_dev_flow = include_str!("../frontend/ui/scripts/features/dev-flow.js");
     let dev_flow_adapter = include_str!("../frontend/runtime/adapters/sidebar-dev-flow.js");
 
@@ -759,7 +759,9 @@ fn sidebar_and_detail_static_contracts() {
         );
     }
     assert!(index_html.contains("data-template-mount=\"dev-flow\""));
-    assert!(feedback_css.contains("@media (max-width: 720px)"));
+    assert!(detail_css.contains("@media (max-width: 900px)"));
+    assert!(detail_css.contains("@media (max-width: 760px)"));
+    assert!(detail_css.contains("pointer-events: auto;"));
     assert!(app_js.contains("listen('dev-flow-detail'"));
     assert!(app_js.contains("payload.revision < baseline"));
     assert!(app_js.contains("DEV_FLOW_DETAIL_BASELINE_LIMIT = 32"));

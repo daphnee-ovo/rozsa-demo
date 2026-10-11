@@ -67,7 +67,7 @@ fn selected_session_uses_name_then_preview_then_untitled() {
 
 #[test]
 fn frontend_places_thinking_effort_next_to_model_and_reserves_brand_for_no_session() {
-    let html = include_str!("../frontend/index.html");
+    let html = include_str!("../frontend/ui/templates/primitives/input.html");
     let app = include_str!("../frontend/app.js");
     let model = html.find("id=\"modelSelector\"").unwrap();
     let thinking = html.find("id=\"thinkingEffort\"").unwrap();
@@ -79,7 +79,7 @@ fn frontend_places_thinking_effort_next_to_model_and_reserves_brand_for_no_sessi
 
 #[test]
 fn composer_thinking_effort_offers_six_model_aware_persisted_choices() {
-    let html = include_str!("../frontend/index.html");
+    let html = include_str!("../frontend/ui/templates/primitives/input.html");
     let popover = include_str!("../frontend/ui/templates/composites/popover.html");
     let app = include_str!("../frontend/app.js");
 

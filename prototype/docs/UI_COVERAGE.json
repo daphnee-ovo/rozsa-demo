@@ -54,7 +54,8 @@
     "entries": ["crates/rozsa-gui/frontend/index.html", "crates/rozsa-gui/frontend/sidebar.html"],
     "scripts": ["crates/rozsa-gui/frontend/app.js", "crates/rozsa-gui/frontend/sidebar.js", "crates/rozsa-gui/frontend/gui_shared.js"],
     "visible_events": {
-      "crates/rozsa-gui/frontend/app.js": ["gui-scene-snapshot", "theme-state", "ui-state", "tool-event", "permission-request", "question-request", "error", "dev-flow-detail", "dev-flow-detail-dismiss", "app-notification", "notification", "models-updated", "native-sidebar-toggle", "native-sidebar-state", "native-fullscreen"],
+      "crates/rozsa-gui/frontend/app.js": ["gui-scene-snapshot", "theme-state", "ui-state", "tool-event", "permission-request", "question-request", "error", "dev-flow-detail", "dev-flow-detail-dismiss", "models-updated", "native-sidebar-toggle", "native-sidebar-state", "native-fullscreen"],
+      "crates/rozsa-gui/frontend/runtime/adapters/notifications.js": ["app-notification", "notification"],
       "crates/rozsa-gui/frontend/sidebar.js": ["gui-scene-snapshot", "sidebar-state", "theme-state", "native-fullscreen"]
     }
   },

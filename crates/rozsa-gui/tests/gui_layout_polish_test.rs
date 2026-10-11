@@ -23,13 +23,13 @@ fn sidebar_and_settings_keep_compact_titlebar_spacing() {
 
 #[test]
 fn composer_controls_follow_the_requested_order_and_hint_behavior() {
-    let html = include_str!("../frontend/index.html");
+    let html = include_str!("../frontend/ui/templates/primitives/input.html");
     let css = include_str!("../frontend/styles/features/appearance.css");
-    let layout_css = include_str!("../frontend/styles/layout/app-shell.css");
-    let form_css = include_str!("../frontend/styles/components/forms.css");
+    let layout_css = include_str!("../frontend/ui/styles/features/sidebar.css");
+    let form_css = include_str!("../frontend/ui/styles/features/conversation.css");
     let js = include_str!("../frontend/app.js");
     let input = html.split("id=\"msgInput\"").nth(1).unwrap();
-    let toolbar = html.split("<div class=\"input-toolbar\">").nth(1).unwrap();
+    let toolbar = html.split("<div class=\"input-toolbar\"").nth(1).unwrap();
 
     let slash = toolbar.find("Slash commands").unwrap();
     let context = toolbar.find("data-od-id=\"context-info\"").unwrap();
@@ -41,8 +41,8 @@ fn composer_controls_follow_the_requested_order_and_hint_behavior() {
     assert!(!input.contains("data-default-placeholder"));
 
     assert!(css.contains("border-radius: 8px;\n  background: transparent;"));
-    assert!(layout_css.contains("border: 0;\n  appearance: none;"));
-    assert!(form_css.contains("flex: 0 1 auto;"));
+    assert!(layout_css.contains(".sidebar-toggle-button { border: 0; background: transparent;"));
+    assert!(form_css.contains(".model-selector { max-width: 170px;"));
     assert!(!form_css.contains("flex: 0 1 clamp(110px, 22vw, 220px)"));
     assert!(js.contains("const COMPOSER_HINTS = ["));
     assert!(js.contains("const COMPOSER_HINT_ROTATION_MS = 30_000"));
@@ -57,21 +57,24 @@ fn composer_controls_follow_the_requested_order_and_hint_behavior() {
 #[test]
 fn native_main_content_stays_centered_while_resizing() {
     let css = include_str!("../frontend/styles/features/appearance.css");
+    let conversation = include_str!("../frontend/ui/styles/features/conversation.css");
+    let composer = include_str!("../frontend/ui/styles/composites/composer.css");
     let split = include_str!("../src/native_split_view.rs");
 
     assert!(css.contains("--main-content-max-width: 960px"));
     assert!(css.contains("body.native-split-main {\n  width: 100%;\n}"));
     assert!(css.contains(
-        "body.native-split-main [data-od-id=\"main-panel\"] {\n  width: 100%;\n  height: 100%;\n  align-items: center;\n}"
+        "body.native-split-main [data-od-id=\"main-panel\"] {\n  width: 100%;\n  height: 100%;\n}"
     ));
     assert!(
         css.contains(
             "body.native-split-main [data-od-id=\"panel-header\"] { align-self: stretch; }"
         )
     );
-    assert!(css.contains(
-        "[data-od-id=\"chat-messages\"],\n[data-od-id=\"chat-input\"] {\n  width: 100%;\n  max-width: var(--main-content-max-width);\n}"
-    ));
+    assert!(conversation.contains("align-items: center;"));
+    assert!(conversation.contains("calc((100% - 960px) / 2)"));
+    assert!(composer.contains("margin: 0 auto;"));
+    assert!(composer.contains("width: min(100%, 900px);"));
 
     let install = split
         .split("fn install_native_split(")

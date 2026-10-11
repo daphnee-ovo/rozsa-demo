@@ -180,6 +180,10 @@
 
 - `coverage_id`：`UI-QUESTION-001`
 - `进入日期`：2026-10-02
+- `runtime_trigger`：收到多问题或多选 question-request，操作 Next、回答、取消，或在请求期间切换 session。
+- `current_runtime`：单问题单选和 Other 使用共享 UI；多问题、多选保留真实 runtime renderer 与响应出口。
+- `prototype_missing`：没有完整多问题进度、Next、多选 checkbox 及其恢复状态。
+- `blocked_scope`：多问题与多选请求的 UI 迁移；保留现有真实回答、取消及 session 恢复处理。
 - `implementation_boundary`：单问题单选、Other 校验与提交使用共享 UI；多问题进度、Next 与多选 checkbox 没有完整原型定义，保留 runtime renderer 与真实回答/取消出口，迁移受阻。
 - `required_prototype`：在后续迭代补充多问题、多选以及真实响应失败/取消与 session 恢复场景。
 - `safety_gate`：这些请求由后台触发并等待真实回答，不能通过隐藏面板暂停；不得丢弃请求或伪造回答，T036 不得删除旧处理。

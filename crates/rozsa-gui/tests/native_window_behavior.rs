@@ -159,7 +159,7 @@ fn native_frontend_does_not_run_the_css_width_threshold() {
 #[test]
 fn prototype_and_tauri_share_the_measured_minimum_window() {
     let config = include_str!("../tauri.conf.json");
-    let reset = include_str!("../../../prototype/styles/foundations/reset.css");
+    let reset = include_str!("../frontend/ui/styles/foundations/reset.css");
 
     assert!(config.contains("\"minWidth\": 640"));
     assert!(config.contains("\"minHeight\": 480"));

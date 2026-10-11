@@ -63,8 +63,9 @@ fn application_scenes_use_public_styles_and_static_shell() {
 #[test]
 fn complete_session_keeps_public_running_panel_style_contract() {
     let root = repository_root();
-    let sidebar_styles = fs::read_to_string(root.join("prototype/styles/features/sidebar.css"))
-        .expect("sidebar stylesheet must be readable");
+    let sidebar_styles =
+        fs::read_to_string(root.join("crates/rozsa-gui/frontend/ui/styles/features/sidebar.css"))
+            .expect("sidebar stylesheet must be readable");
     let composer_styles = fs::read_to_string(
         root.join("crates/rozsa-gui/frontend/ui/styles/composites/composer.css"),
     )

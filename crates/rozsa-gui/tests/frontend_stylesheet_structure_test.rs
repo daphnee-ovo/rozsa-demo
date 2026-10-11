@@ -37,9 +37,25 @@ fn stylesheet_entries_share_foundations_and_keep_feature_boundaries() {
         assert!(SIDEBAR_CSS.contains(&import));
     }
 
-    for layer in ["layout/", "components/", "features/"] {
-        assert!(MAIN_CSS.contains(layer), "main entry lacks {layer}");
-        assert!(SIDEBAR_CSS.contains(layer), "sidebar entry lacks {layer}");
+    let frontend = Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend");
+    for entry in ["main", "sidebar"] {
+        let mut owners = HashSet::new();
+        visit_imports(
+            &frontend.join(format!("styles/{entry}.css")),
+            &mut HashSet::new(),
+            &mut owners,
+        );
+        for layer in ["foundations", "layouts", "composites", "features"] {
+            let shared_layer = frontend
+                .join("ui/styles")
+                .join(layer)
+                .canonicalize()
+                .unwrap();
+            assert!(
+                owners.iter().any(|owner| owner.starts_with(&shared_layer)),
+                "{entry} cannot reach shared {layer} styles"
+            );
+        }
     }
 }
 
