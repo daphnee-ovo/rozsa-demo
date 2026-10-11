@@ -1,8 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { loadApp } from './helpers/browser.js';
+import { loadApp, readFrontend } from './helpers/browser.js';
 import { permissionCommandMarkup } from '../frontend/ui/scripts/features/permissions.js';
 import { JSDOM } from 'jsdom';
+
+test('closing a visible interruption restores the composer in both prototype scenes', () => {
+  for (const [scene, panelClass] of [['ask-user-question', 'question-panel'], ['permission-request', 'perm-panel']]) {
+    const dom = new JSDOM(`<html data-rozsa-scene="${scene}"><head><style>${readFrontend('ui/styles/composites/permission-question.css')}</style></head><body><div data-od-id="chat-input"><div class="${panelClass} visible"></div><div class="input-wrapper"><textarea></textarea></div></div></body></html>`);
+    try {
+      const composer = dom.window.document.querySelector('.input-wrapper');
+      assert.equal(dom.window.getComputedStyle(composer).display, 'none');
+      dom.window.document.querySelector(`.${panelClass}`).classList.remove('visible');
+      assert.notEqual(dom.window.getComputedStyle(composer).display, 'none', scene);
+    } finally { dom.window.close(); }
+  }
+});
 
 test('permission command preview preserves the exact requested command text', () => {
   const dom = new JSDOM('<div id="preview"></div>');
