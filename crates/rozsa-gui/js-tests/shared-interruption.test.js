@@ -1,6 +1,24 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadApp } from './helpers/browser.js';
+import { permissionCommandMarkup } from '../frontend/ui/scripts/features/permissions.js';
+import { JSDOM } from 'jsdom';
+
+test('permission command preview preserves the exact requested command text', () => {
+  const dom = new JSDOM('<div id="preview"></div>');
+  try {
+    const preview = dom.window.document.getElementById('preview');
+    for (const command of ["printf 'ROZSA_PERMISSION_ALLOW\\n'", 'pwd', 'git  status', 'git\tstatus', 'git\nstatus', '  git status', 'printf "<unsafe>&"', '']) {
+      preview.innerHTML = permissionCommandMarkup(command, 'bash');
+      assert.equal(preview.textContent, '$ ' + command, JSON.stringify(command));
+      assert.equal(preview.querySelector('.perm-syn-command').textContent, command.match(/\S+/)?.[0] ?? '');
+      assert.equal(preview.querySelector('unsafe'), null);
+    }
+    preview.innerHTML = permissionCommandMarkup('<unsafe>&', 'read');
+    assert.equal(preview.textContent, '<unsafe>&');
+    assert.equal(preview.querySelector('unsafe'), null);
+  } finally { dom.window.close(); }
+});
 
 test('question validation, binding and dispatch preserve user input', async () => {
   const feature = await import('../frontend/ui/scripts/features/permissions.js');

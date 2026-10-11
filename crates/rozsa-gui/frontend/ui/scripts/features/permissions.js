@@ -34,6 +34,7 @@ export function collectSingleQuestionAnswer(options, otherInput, error, messages
 
 export function permissionCommandMarkup(command, tool) {
   if (String(tool).toLowerCase() !== 'bash') return escapeText(command);
-  return '<span class="perm-syn-prompt">$ </span><span class="perm-syn-command">' +
-    escapeText(command.split(/\s+/)[0]) + '</span>' + escapeText(command.slice(command.indexOf(' ') + 1));
+  const [, leading, executable, argumentsText] = command.match(/^(\s*)(\S*)([\s\S]*)$/);
+  return '<span class="perm-syn-prompt">$ </span>' + escapeText(leading) + '<span class="perm-syn-command">' +
+    escapeText(executable) + '</span>' + escapeText(argumentsText);
 }
