@@ -759,8 +759,8 @@ fn sidebar_and_detail_static_contracts() {
         );
     }
     assert!(index_html.contains("data-template-mount=\"dev-flow\""));
-    assert!(detail_css.contains("@media (max-width: 900px)"));
-    assert!(detail_css.contains("@media (max-width: 760px)"));
+    assert!(detail_css.contains("data-ui-max-width~=\"900\""));
+    assert!(detail_css.contains("data-ui-max-width~=\"760\""));
     assert!(detail_css.contains("pointer-events: auto;"));
     assert!(app_js.contains("listen('dev-flow-detail'"));
     assert!(app_js.contains("payload.revision < baseline"));

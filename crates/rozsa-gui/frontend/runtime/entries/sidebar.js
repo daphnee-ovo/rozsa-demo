@@ -1,5 +1,6 @@
 import { createUIHost } from "../../ui/scripts/core/renderer.js";
 import { createTauriAdapter } from "../adapters/tauri.js";
+import { bindNativeViewport } from '../adapters/viewport.js';
 import { mountShell, templateRoot } from "../../ui/scripts/core/shell.js";
 import { loadTemplate } from '../../ui/scripts/core/template-loader.js';
 import { configureSettingsSuspensions, isSettingsPaneAvailable, bindSettingsNavigation } from '../../ui/scripts/features/settings.js';
@@ -14,7 +15,7 @@ window.RozsaSidebarEmit = adapter.emit;
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
 window.RozsaSettings = Object.freeze({ isSettingsPaneAvailable });
 window.RozsaUIReady = (async () => {
-  await mountShell([{ url: new URL('features/sidebar.html', templateRoot), selector: '[data-template-mount=sidebar]', children: true }]);
+  await Promise.all([bindNativeViewport(), mountShell([{ url: new URL('features/sidebar.html', templateRoot), selector: '[data-template-mount=sidebar]', children: true }])]);
   window.RozsaSidebar = Object.freeze({ ...sidebar, claimedMarkup });
   sidebar.suspendQuotaTooltip();
   sidebar.init({ boundModules: new Set(), byId: id => document.getElementById(id),

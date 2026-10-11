@@ -1,11 +1,11 @@
 /* Composer：输入框、工具栏和排队/steering 的共同承载区域。 */
 /* Composer：悬浮在消息流上方，不与消息区平级。 */
-[data-od-id="chat-input"] { position: absolute; inset: auto 0 0; z-index: 8; padding: 14px clamp(16px, 3vw, 42px) 24px; background: transparent; pointer-events: none; }
+[data-od-id="chat-input"] { position: absolute; inset: auto 0 0; z-index: 8; padding: 14px clamp(16px, calc(3 * var(--ui-vw)), 42px) 24px; background: transparent; pointer-events: none; }
 [data-od-id="chat-input"] > * { pointer-events: auto; }
 .input-wrapper { position: relative; width: min(100%, 900px); margin: 0 auto; padding: 0; border: 1px solid color-mix(in oklch, var(--border) 58%, transparent); border-radius: var(--radius-panel); background: color-mix(in oklch, var(--surface) 66%, transparent); box-shadow: var(--shadow-2); -webkit-backdrop-filter: blur(26px) saturate(1.10); backdrop-filter: blur(26px) saturate(1.10); transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
 .input-wrapper:focus-within { border-color: color-mix(in oklch, var(--accent) 64%, var(--border)); background: color-mix(in oklch, var(--surface) 76%, transparent); box-shadow: var(--shadow-2), 0 0 0 2px var(--accent-soft); }
 .input-wrapper > .running-messages:not([hidden]) ~ .rich-input { min-height: 52px; padding-top: 12px; }
-.rich-input { min-height: 56px; max-height: 220px; overflow-y: auto; padding: 15px 17px 8px; color: var(--fg); font-size: clamp(14px, 1vw, 16px); line-height: 1.55; outline: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rich-input { min-height: 56px; max-height: 220px; overflow-y: auto; padding: 15px 17px 8px; color: var(--fg); font-size: clamp(14px, calc(1 * var(--ui-vw)), 16px); line-height: 1.55; outline: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rich-input:empty::before { content: attr(data-placeholder); color: color-mix(in oklch, var(--muted) 76%, transparent); pointer-events: none; }
 .input-toolbar { min-height: 54px; display: flex; align-items: center; gap: 4px; padding: 4px 9px 9px; }
 .input-spacer { flex: 1; min-width: 12px; }

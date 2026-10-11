@@ -20,19 +20,14 @@ body.settings-visible [data-od-id="app-body"] { visibility: hidden; }
 
 /* 780px = 约 220px sidebar + 560px 主内容舒适下限；低于此宽度
    让主内容优先，sidebar 退为可由 edge trigger / native host 重开的 drawer。 */
-@media (max-width: 900px) {
-  :root { --main-sidebar-width: clamp(220px, 28vw, 270px); }
-}
 
-@media (max-width: 780px) {
-  [data-od-id="app-body"] { display: block; }
-  [data-od-id="main-panel"] { width: 100%; height: 100%; min-width: 0; }
-  [data-od-id="panel-header"] { min-height: 56px; height: 60px; padding-inline: 16px; }
-}
+:root:where([data-ui-max-width~="900"]) { --main-sidebar-width: clamp(220px, calc(28 * var(--ui-vw)), 270px); }
 
-@media (max-width: 560px) {
-  [data-od-id="panel-header"] { padding-inline: 14px; }
-}
+:where(:root[data-ui-max-width~="780"]) [data-od-id="app-body"] { display: block; }
+:where(:root[data-ui-max-width~="780"]) [data-od-id="main-panel"] { width: 100%; height: 100%; min-width: 0; }
+:where(:root[data-ui-max-width~="780"]) [data-od-id="panel-header"] { min-height: 56px; height: 60px; padding-inline: 16px; }
+
+:where(:root[data-ui-max-width~="560"]) [data-od-id="panel-header"] { padding-inline: 14px; }
 
 /* The root entry adds a shell and stable template mounts around the original
    grid items. Keep those wrappers layout-neutral and viewport-constrained. */

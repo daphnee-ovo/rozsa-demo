@@ -48,15 +48,9 @@
 .dev-flow-claimed-id { flex: 0 0 auto; color: var(--accent); font: 10px/1.4 var(--font-mono); }
 .dev-flow-claimed-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-@media (max-width: 900px) {
-  .dev-flow-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
+:where(:root[data-ui-max-width~="900"]) .dev-flow-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-@media (max-width: 760px) {
-  .dev-flow-path-control { width: 100%; }
-}
+:where(:root[data-ui-max-width~="760"]) .dev-flow-path-control { width: 100%; }
 
-@media (max-width: 560px) {
-  .dev-flow-overview { grid-template-columns: 1fr; }
-  .dev-flow-overview-card { justify-content: flex-start; text-align: left; }
-}
+:where(:root[data-ui-max-width~="560"]) .dev-flow-overview { grid-template-columns: 1fr; }
+:where(:root[data-ui-max-width~="560"]) .dev-flow-overview-card { justify-content: flex-start; text-align: left; }

@@ -25,6 +25,4 @@
 .notification-error-item-title { color: var(--fg); font: 600 11px/1.4 var(--font-ui); }
 .notification-error-item-message { margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 
-@media (max-width: 560px) {
-  .notification-center { right: 12px; width: calc(100vw - 24px); }
-}
+:where(:root[data-ui-max-width~="560"]) .notification-center { right: 12px; width: calc(100vw - 24px); }

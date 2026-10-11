@@ -4,6 +4,7 @@ import { mountShell } from "../../../crates/rozsa-gui/frontend/ui/scripts/core/s
 import { resolveSceneId } from "../../scenarios/registry.js";
 import { createUIHost } from "../../../crates/rozsa-gui/frontend/ui/scripts/core/renderer.js";
 import { createMockAdapter } from "../adapters/mock-adapter.js";
+import { bindViewport } from '../../../crates/rozsa-gui/frontend/ui/scripts/core/viewport.js';
 
 window.RozsaUIHost = createUIHost(createMockAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
@@ -20,6 +21,7 @@ const mounts = [
 ];
 
 async function bootstrapPrototypeShell() {
+  await bindViewport(window);
   const sceneId = resolveSceneId(new URLSearchParams(window.location.search).get("scene"));
   await mountShell(mounts.map(([relativePath, selector]) => ({ url: new URL(relativePath, templateRoot), selector })));
   const interruptionPanelFragment = await loadTemplate(

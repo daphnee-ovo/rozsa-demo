@@ -14,7 +14,7 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(css.contains(".theme-mode-card"));
     assert!(css.contains(".appearance-range"));
     assert!(settings_css.contains(".settings-workspace"));
-    assert!(settings_css.contains("@media (max-width: 760px)"));
+    assert!(settings_css.contains("data-ui-max-width~=\"760\""));
     assert!(tauri.contains("\"decorations\": true"));
     assert!(tauri.contains("\"hiddenTitle\": true"));
     assert!(tauri.contains("\"titleBarStyle\": \"Overlay\""));

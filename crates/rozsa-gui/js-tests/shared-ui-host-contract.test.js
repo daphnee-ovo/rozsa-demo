@@ -121,6 +121,9 @@ async function withCallbacks(harness, names, action) {
 }
 
 async function checkDelayedEntry(entry, mounted) {
+  window.__TAURI__ = { window: { getCurrentWindow: () => ({
+    outerSize: async () => ({ width: 1280 }), scaleFactor: async () => 1,
+  }) } };
   const localFetch = globalThis.fetch;
   let release;
   let started;
@@ -144,6 +147,7 @@ async function checkDelayedEntry(entry, mounted) {
 
 test('main entry publishes readiness before loading actual shared templates', async () => {
   const harness = loadApp({ html: readFrontend('index.html') });
+  harness.evaluate(readFrontend('gui_shared.js'));
   harness.window.testStops = 0;
   harness.evaluate('isStreaming=true;abortAgent=async()=>{testStops++;};');
   await withCallbacks(harness, [
@@ -171,6 +175,7 @@ test('main entry publishes readiness before loading actual shared templates', as
 test('sidebar entry publishes readiness before mounting actual settings navigation', async () => {
   const harness = loadClassic('sidebar.js', { html: readFrontend('sidebar.html'),
     globals: { ResizeObserver: class { observe() {} disconnect() {} } } });
+  harness.evaluate(readFrontend('gui_shared.js'));
   await withCallbacks(harness, ['selectSidebarSettingsPane', 'closeSidebarSettings', 'newSidebarSession',
     'openSidebarSettings', 'openDevFlowDashboard', 'switchSidebarSession'], async () => {
     await checkDelayedEntry('../frontend/runtime/entries/sidebar.js', () => Boolean(document.querySelector('#settingsSidebarScene [data-settings-pane]')));

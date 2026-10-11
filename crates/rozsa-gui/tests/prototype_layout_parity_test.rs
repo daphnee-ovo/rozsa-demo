@@ -29,7 +29,7 @@ fn application_mounts_preserve_grid_item_semantics() {
     assert!(app_shell.contains("grid-template-columns: var(--main-sidebar-width) minmax(0, 1fr)"));
     assert!(app_shell.contains("overflow: hidden"));
     assert!(app_shell.contains("[data-od-id=\"app-body\"] { display: block; }"));
-    assert!(sidebar_shell.contains("@media (max-width: 780px)"));
+    assert!(sidebar_shell.contains("data-ui-max-width~=\"780\""));
     assert!(sidebar_shell.contains("position: absolute"));
     assert!(
         sidebar_shell

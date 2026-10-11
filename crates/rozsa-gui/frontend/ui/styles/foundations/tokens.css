@@ -5,6 +5,7 @@
  */
 
 :root {
+  --ui-vw: 1vw;
   --bg: oklch(96.8% 0.018 82) !important;
   --surface: oklch(98.6% 0.010 82) !important;
   --surface-raised: color-mix(in oklch, var(--surface) 82%, var(--fg) 18%) !important;
@@ -58,7 +59,7 @@
 
   --ui-font-size: 14px;
   --ui-scale: 1;
-  --main-sidebar-width: clamp(236px, 20vw, 304px);
+  --main-sidebar-width: clamp(236px, calc(20 * var(--ui-vw)), 304px);
   --native-titlebar-offset: 42px;
 }
 

@@ -1,5 +1,6 @@
 import { createUIHost } from "../../ui/scripts/core/renderer.js";
 import { createTauriAdapter } from "../adapters/tauri.js";
+import { bindNativeViewport } from '../adapters/viewport.js';
 import { mountShell, templateRoot } from "../../ui/scripts/core/shell.js";
 import { init as bindPopover } from "../../ui/scripts/components/popover.js";
 import { init as bindComposer, renderSendState } from "../../ui/scripts/components/composer.js";
@@ -25,7 +26,7 @@ import { devFlowSettingsView, devFlowDetailView } from '../adapters/sidebar-dev-
 
 window.RozsaUIHost = createUIHost(createTauriAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
-window.RozsaUIReady = mountConversation(document.getElementById("mainContentScene")).then(() => mountShell([
+window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(document.getElementById("mainContentScene"))]).then(() => mountShell([
   { url: new URL("composites/popover.html", templateRoot), selector: "[data-template-mount=popover]", children: true },
   { url: new URL("composites/interruption-panel.html", templateRoot), selector: "[data-template-mount=interruption-panel]", children: true },
   { url: new URL("features/settings.html", templateRoot), selector: "[data-template-mount=settings]", children: true },

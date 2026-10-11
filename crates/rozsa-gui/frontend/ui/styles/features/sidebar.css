@@ -1,10 +1,10 @@
-.sidebar-brand { flex: 0 0 auto; padding: clamp(18px, 2.2vw, 28px) clamp(16px, 1.8vw, 24px) clamp(22px, 2.8vw, 34px); }
+.sidebar-brand { flex: 0 0 auto; padding: clamp(18px, calc(2.2 * var(--ui-vw)), 28px) clamp(16px, calc(1.8 * var(--ui-vw)), 24px) clamp(22px, calc(2.8 * var(--ui-vw)), 34px); }
 .sidebar-brand-kicker { display: block; color: var(--muted); font: 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
-.sidebar-brand strong { display: block; max-width: 12ch; margin-top: 12px; color: var(--fg); font: 500 clamp(21px, 2vw, 27px)/1.08 var(--font-display); letter-spacing: -.025em; }
+.sidebar-brand strong { display: block; max-width: 12ch; margin-top: 12px; color: var(--fg); font: 500 clamp(21px, calc(2 * var(--ui-vw)), 27px)/1.08 var(--font-display); letter-spacing: -.025em; }
 .sidebar-section { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 [data-od-id="sidebar-sessions"] { flex: 1 1 auto; min-height: 0; }
 [data-od-id="sidebar-status"] { flex: 0 0 auto; margin-top: auto; }
-.sidebar-header { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 clamp(16px, 1.8vw, 24px) 8px; color: var(--muted); font: 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.sidebar-header { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 clamp(16px, calc(1.8 * var(--ui-vw)), 24px) 8px; color: var(--muted); font: 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
 .sidebar-header button,
 .sidebar-btn,
 .sidebar-toggle-button { border: 0; background: transparent; color: var(--muted); -webkit-app-region: no-drag; transition: background-color 150ms ease, color 150ms ease, transform 100ms ease; }
@@ -104,7 +104,5 @@
   content: "";
 }
 
-@media (max-width: 560px) {
-  .sidebar-brand { padding-inline: 16px; }
-  .sidebar-brand strong { font-size: 22px; }
-}
+:where(:root[data-ui-max-width~="560"]) .sidebar-brand { padding-inline: 16px; }
+:where(:root[data-ui-max-width~="560"]) .sidebar-brand strong { font-size: 22px; }
