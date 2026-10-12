@@ -95,3 +95,7 @@ If rebase conflicts occur:
 - Shared prototype CSS and JavaScript may be extracted when doing so improves scene reuse without changing behavior.
 - GUI components that interact with the operating system, such as native file pickers, must support macOS, Linux, and Windows in addition to the cross-platform requirements above.
 - Use Gaussian blur to make hierarchical relationships feel more elegant.
+
+## ABOUT TODO
+
+新增待办必须标注 `进入日期：YYYY-MM-DD`，按 Asia/Singapore 日期记录。后续修改条目时保留原进入日期，方便判断是否过时；历史条目仅在有可靠记录时补记，不猜填日期。
