@@ -15,7 +15,7 @@ fn gui_docs_describe_the_current_native_split_architecture() {
     }
     assert!(architecture.contains("两个持久 WebView"));
     assert!(architecture.contains("main/sidebar targeted event"));
-    assert!(architecture.contains("emit_to(\"main\""));
+    assert!(architecture.contains("emit_to"));
     assert!(frontend.contains("设置不是另一个 sidebar 容器"));
     assert!(frontend.contains("复用同一 native split"));
 }
@@ -24,13 +24,13 @@ fn gui_docs_describe_the_current_native_split_architecture() {
 fn validation_separates_product_harness_and_non_macos_results() {
     let validation = include_str!("../../../docs/gui/NATIVE_SPLIT_VALIDATION.md");
 
-    assert!(validation.contains("## Product app acceptance (2026-07-14)"));
-    assert!(validation.contains("## Foreground observations"));
-    assert!(validation.contains("## Automated acceptance"));
-    assert!(validation.contains("Real non-macOS GUI | UNVERIFIED"));
-    assert!(validation.contains("Harness or automated evidence"));
-    assert!(validation.contains("Translucent Dark sidebar | PASS"));
-    assert!(validation.contains("Rows marked `UNVERIFIED`"));
+    assert!(validation.contains("## 验证方法"));
+    assert!(validation.contains("## 本次共享 UI 验证范围"));
+    assert!(validation.contains("## 自动化与限制"));
+    assert!(validation.contains("Linux / Windows 真实视觉 | pending platform visual verification"));
+    assert!(validation.contains("不能把浏览器 fixture 或 source contract 当成原生操作结果"));
+    assert!(validation.contains("未重新执行的 fullscreen"));
+    assert!(validation.contains("不因共享 UI 验收被宣称为本次实际验证通过"));
 }
 
 #[test]

@@ -30,6 +30,8 @@ Tauri 的 `index.html` 和 `sidebar.html` 加载 `runtime/entries/main.js`、`si
 
 macOS 使用一个 NSWindow 和持久 NSSplitViewController，sidebar/main 各有一个真实 WKWebView。原生 titlebar、divider、sidebar material 与收起状态由 AppKit host 管理；Main/Settings 切换复用 WebView。两端 readiness handshake 完成后统一显示 split root。
 
+实现入口为 [native_split_view.rs](../../crates/rozsa-gui/src/native_split_view.rs)、[native_titlebar.rs](../../crates/rozsa-gui/src/native_titlebar.rs) 与 [scene_router.rs](../../crates/rozsa-gui/src/scene_router.rs)。两个持久 WebView 使用 main/sidebar targeted event；后端通过 `emit_to` 向对应 ready consumer 发布，避免 app-global 重复消费。
+
 ```text
 NativeTitlebarHost + NativeSplitHost
   ├─ sidebar WebView：MainSidebar / SettingsSidebar
