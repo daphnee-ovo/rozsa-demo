@@ -12,11 +12,11 @@
 
 ## Composer interruption
 
-`interruption-panel.js` 接收 permission/question 的选择、键盘和提交意图；`composer-interruption.js` 负责暂时替换 Composer、禁用冲突操作、等待 mock 响应，并在成功、失败、取消和 restore 路径中恢复原有 focus 与可见状态。组件不直接决定 mock 响应，flow 不创建稳定 HTML。
+`interruption-panel.js` 接收 permission/question 的选择、键盘和提交意图；`composer-interruption.js` 负责暂时替换 Composer、禁用冲突操作、等待 mock 响应，并在成功、失败、取消和 restore 路径中恢复对应宿主的 focus 与可见状态。固定 interruption demo 保持 Composer 隐藏；runtime 完成后恢复 Composer。组件不直接决定 mock 响应，flow 不创建稳定 HTML。
 
 ## PermissionRequest
 
-进入 permission → 显示主面板 → 选择 allow/deny/trust 或进入 hint → 提交 → mock 返回 success/error/cancel → 显示结果或保留错误 → 恢复 Composer/焦点。长命令展开、键盘选择和 hint 输入属于组件 UI state。
+进入 permission → 显示 Allow、Trust、Hint、Deny 四个选项 → 选择或进入 Hint → 提交 → mock 返回 success/error/cancel → 显示结果或保留错误 → 恢复 Composer/焦点。长命令展开、键盘选择和 hint 输入属于组件 UI state。
 
 ## AskUserQuestion
 
@@ -27,5 +27,7 @@
 - Settings feature 根据初始 pane 装配 Appearance、Permissions、Dev Flow 等模块；tab、theme 和控件状态由 settings script 管理。
 - Notification component 管理 dismiss、error tray 和可见状态；跨组件取消路径仍由 flow 触发。
 - Dev Flow feature 将 runtime mock 转成状态卡、detail 和 dashboard affordance；detail 的打开/关闭不改变 application shell 的公共结构。
+
+产品 Trust 未覆盖操作禁用，其他缺失入口按 [DESIGN_GAPS](./DESIGN_GAPS.md) 暂停；原型 mock 演示不表示产品操作可用。
 
 所有流程都要求覆盖正常、成功、失败、取消和恢复路径。新增流程时同步 UI_COVERAGE 的 behavior/used_by/verification 字段。

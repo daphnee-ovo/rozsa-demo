@@ -1,43 +1,15 @@
-# Runtime CSS architecture
+# Runtime 样式入口
 
-共同 foundations、primitives 和 layouts 的实现位于 [`../ui/styles/`](../ui/styles/README.md)。main/sidebar 入口引用同一共享基础前缀，并在后置位置加载 actions 与 motion；原型直接引用这些 owner，生产入口不依赖原型资源。
+本目录的 `main.css`、`sidebar.css` 装配 [共享 UI 样式](../ui/styles/README.md)。已覆盖组件规则只有一份生产 owner，原型也引用它；生产入口不依赖原型 CSS 或 mock。
 
-`native-host.css` 最后加载，只处理独立 WebView 的 viewport 和背景边界：main 的 native split 不再预留内嵌 sidebar 背景，sidebar 由原生容器提供背景且不继承整个原型窗口的最小宽度。它不定义组件外观；单 WebView 的非 macOS 布局保留共享窗口约束。
+`native-host.css` 最后加载，只处理独立 WebView 的 viewport 与背景边界。main 不预留内嵌 sidebar 背景，sidebar 背景由原生容器提供；单 WebView 平台保持共享窗口约束。
 
-本目录尚存各区域的旧组件消费方；它们按区域接入共享 UI 并验证后，由 T036 清理。下面的旧层级描述用于定位现有规则，不是新增第二套组件或 `utilities.css` 规则的依据。
+本目录尚存的 `components/`、`features/` 和 `utilities.css` 只服务于设计缺口中无法安全暂停的被动状态、在途恢复及错误出口，或处于 inert template 中的受阻内容，不构成第二套已覆盖组件。未覆盖主动操作已暂停。逐项边界见 [DESIGN_GAPS](../../../../prototype/docs/DESIGN_GAPS.md)，不宣称这些区域已经迁移。
 
-The Tauri webviews load two stylesheet entry points:
+新增组件规则进入 `ui/styles/` 最窄 owner；宿主差异只进入平台边界。保持入口 cascade，无循环 import，不向遗留目录新增共享实现。
 
-- `main.css` for the main window.
-- `sidebar.css` for the native sidebar webview.
+## 相关文档
 
-Import order is part of the visual contract. Keep imports ordered from broad,
-stable foundations to narrow state overrides:
-
-1. `tokens.css` and `reset.css`
-2. `base.css` and `layout/`
-3. `components/`
-4. `features/`
-5. `utilities.css` and late compatibility overrides
-
-## Responsibilities
-
-- `tokens.css`: semantic color, typography, radius, and scale custom properties.
-- `reset.css`: shared browser normalization that is safe in every webview.
-- `base.css`: main-window document defaults.
-- `layout/`: window shells and region geometry; no feature-specific presentation.
-- `components/`: reusable controls, overlays, forms, and feedback surfaces.
-- `features/`: styles coupled to a product feature or scene.
-- `utilities.css`: cross-feature state helpers and rich-content utilities.
-
-Add a rule to the narrowest stable responsibility. Create a new feature file
-when a scene grows independently; do not add runtime `<style>` tags or static
-`style` attributes to HTML. Dynamic values such as progress width may still be
-set by JavaScript when they represent runtime state.
-
-## Related docs
-
-- [`docs/gui/ARCHITECTURE.md`](../../../../docs/gui/ARCHITECTURE.md)
-- [`docs/gui/UI_USAGE_GUIDELINES.md`](../../../../docs/gui/UI_USAGE_GUIDELINES.md)
-- [`docs/gui/FRONTEND_TERMINOLOGY.md`](../../../../docs/gui/FRONTEND_TERMINOLOGY.md)
-- [`docs/gui/themes.md`](../../../../docs/gui/themes.md)
+- [GUI 架构](../../../../docs/gui/ARCHITECTURE.md)
+- [界面规范](../../../../docs/gui/FRONTEND_INTERFACE_STANDARD.md)
+- [主题配置](../../../../docs/gui/themes.md)

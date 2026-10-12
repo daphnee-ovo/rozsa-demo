@@ -11,7 +11,7 @@
 | `empty-session` | 空会话、settings closed、无 interruption | 发送消息、打开 thinking effort |
 | `complete-session` | 完整会话、tool call、queue、steering | 展开 tool、切换 thinking、打开 fork/queue/steering |
 | `tool-calls` | tool call 组合 | 展开 tool、切换 thinking |
-| `permission-request` | permission interruption | allow、trust、输入 hint、cancel |
+| `permission-request` | permission interruption | Allow、Trust、Hint、Deny；Hint 输入与 Cancel |
 | `ask-user-question` | AskUserQuestion interruption | 选择问题、编辑 other、提交、取消 |
 | `settings-appearance` | Appearance settings | 切换 settings tab、theme、font size |
 | `permissions` | Permissions settings | 打开 rule editor、切换 permission setting |
@@ -19,6 +19,8 @@
 | `dev-flow-runtime` | Dev Flow runtime detail 与 notification | 打开/关闭 detail、打开 dashboard |
 | `dev-flow-active` | active Dev Flow settings | 打开 dashboard、切换 Dev Flow setting |
 | `dev-flow` | Dev Flow settings | 打开 dashboard、切换 Dev Flow setting |
+
+固定 `permission-request` 与 `ask-user-question` demo 关闭面板后保持 Composer 隐藏；运行时交互完成则恢复 Composer 与焦点。这两种演示语义分别验证。
 
 每个 scene 只选择公共布局、组件、初始 state、mock ID 和操作步骤；数据文件集中在 `mock/`。
 `dev-flow-runtime`、`dev-flow-active` 和 `dev-flow` 的 session 列表优先来自 `mock/dev-flow/runtime.json`，workspace 展示数据仍可来自 `mock/sessions/complete.json`；这样不会因为共享 workspace fixture 把当前 Dev Flow session 替换成空会话。

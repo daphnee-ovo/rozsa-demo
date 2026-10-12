@@ -5,8 +5,10 @@
 从仓库根目录运行：
 
 ```text
-uv run python -m http.server 4173 --bind 127.0.0.1 --directory prototype
+uv run python -m http.server 4173 --bind 127.0.0.1 --directory .
 ```
+
+访问 `http://127.0.0.1:4173/prototype/index.html`。HTTP root 必须是仓库根目录，原型才能引用共享 UI。
 
 记录浏览器/WebView、viewport、DPR、theme、字体、reduced-motion、滚动位置、focus、展开项、选中项和使用的 mock。每个检查 ID 使用 fresh browser context，明确将页面 zoom 固定为 100%，并在截图 metadata 中记录 zoom；不得用被浏览器缩放或裁切的截图替代整体截图。验证结束关闭 server。
 
@@ -21,7 +23,7 @@ uv run python -m http.server 4173 --bind 127.0.0.1 --directory prototype
 
 ## 全部入口
 
-逐一打开 `scenarios/registry.js` 中的 11 个 scene 与 `?gallery=visual-direction`。检查没有 alert、`shellError`、未知 fallback、横向溢出或资源 404，并核对完整页面中 sidebar、main content、running panels、Composer 和 settings 的位置。application scene 还必须确认 `data-template-mount="sidebar|conversation"` 不改变原始 grid sizing，Composer 必须确认 `forkPicker → input-wrapper(queuedMessages, steeringConversation, #msgInput, input-toolbar)` 的 DOM 顺序，并确认 input template 挂载不会增加中间视觉容器、迁移前的 scene selector 仍能命中 `#msgInput`。同时确认 registry 没有 application scene stylesheet，shell 没有动态 scene CSS 加载，状态规则由公共 owner 提供；窄视口至少检查 780、760 和 640。对 gallery 的 Empty、Active、Appearance 分别保存整体截图、稳定 DOM、computed style、focus 和 tab 操作结果。
+逐一打开 `scenarios/registry.js` 中的 11 个 scene 与 `?gallery=visual-direction`。检查没有 alert、`shellError`、未知 fallback、横向溢出或资源 404，并核对完整页面中 sidebar、main content、running panels、Composer 和 settings 的位置。application scene 还必须确认 `data-template-mount="sidebar|conversation"` 不改变原始 grid sizing，Composer 必须确认 `forkPicker → input-wrapper(queuedMessages, steeringConversation, #msgInput, input-toolbar)` 的 DOM 顺序，并确认 input template 挂载不会增加中间视觉容器、迁移前的 scene selector 仍能命中 `#msgInput`。同时确认 registry 没有 application scene stylesheet，shell 没有动态 scene CSS 加载，状态规则由公共 owner 提供；窄视口至少检查 780、760 和 640；native split 用全窗口宽度与相同 viewport 条件比较。Linux/Windows 没有真实图形环境时保持 `pending platform visual verification`。对 gallery 的 Empty、Active、Appearance 分别保存整体截图、稳定 DOM、computed style、focus 和 tab 操作结果。
 
 ## 交互重放
 
@@ -37,4 +39,4 @@ cargo fmt --all -- --check
 git diff --check
 ```
 
-专项测试检查路径、coverage 双向闭合、CSS source order、外置样式、gallery 入口和旧路径删除；视觉等价仍以实际页面证据为准。详细本阶段记录见 `tmp/ui-architecture-refactor/TASK-T016/verification.md`。
+专项测试检查路径、coverage 双向闭合、CSS source order、外置样式、gallery 入口和旧路径删除；视觉等价仍以实际页面证据为准。运行共享 UI 专项编排可用 `bash devtools/test-shared-gui-acceptance.sh`。验证材料放在项目 `tmp/`，不写入规范或组件说明。

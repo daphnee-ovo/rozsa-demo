@@ -1,148 +1,55 @@
-# Dev Flow GUI integration
+# Dev Flow GUI 集成
 
-Rózsa treats Dev Flow as an optional, project-scoped integration. The GUI only
-enables it after finding a compatible `dow` executable through the shared
-discovery layer; Homebrew, npm, Cargo and `PATH` installations are searched by
-default, while Settings may hold one explicit absolute path.
+Dev Flow 是可选的项目级集成。app 层发现兼容 `dow`，提供 typed snapshot；共享 UI 显示 Settings、sidebar 状态与只读详情。原型通过 mock adapter 演示同一份组件，产品通过 [runtime adapter](../../crates/rozsa-gui/frontend/runtime/adapters/sidebar-dev-flow.js) 接入。
 
-Discovery validates candidates with bounded `dow --version` execution. An
-explicit invalid custom path is reported as an error and never silently falls
-back to another installation. A project becomes available only after its
-current revision has a readable `STATUS.yaml` and `dow status` succeeds; a
-later `dow init` is detected without restarting Rózsa.
+## 发现与设置
 
-## Settings pane
+共享发现层搜索 Homebrew、npm、Cargo 与 PATH，Settings 可指定一个绝对路径。候选经有时限的 `dow --version` 验证；显式无效路径透明报错，不静默改用其他安装。项目当前 revision 的 STATUS.yaml 可读且 `dow status` 成功后才可用；后续初始化可被检测。
 
-The Dev Flow pane follows the same typography, hairlines, switches, inputs and
-buttons as the other Settings panes. Overview and Settings are separate
-submodules. Settings keeps a light rounded container; Overview keeps one shared
-layout parent without an outer border, and each field carries its own compact
-border. This preserves the module relationship without turning Overview into a
-large outlined panel.
-It contains:
+Dev Flow pane 使用共享 typography、hairline、switch、input 与 button。Overview 和 Settings 是独立子模块：Overview 共用布局且各字段承担边框，Settings 保留轻圆角容器。
 
-- the Dev Flow positioning and a short description beneath the title;
-- missing-CLI installation guidance plus `Check again`;
-- an `Overview` with a green Dashboard/Ready status, a shortened clickable
-  loopback address, the compact `v<version>` value, and icon-led Memory Use;
-- a `Settings` group with an editable Executable Path input saved on blur and
-  an icon-based chooser;
-  `Enable Dev Flow`, `Show Dev Flow status in sidebar`, and `Show Dashboard
-  button` switches.
+- 未发现 CLI：安装说明与 Check again。
+- Overview：Dashboard availability、可点击 loopback 地址、版本与 Memory Use。
+- Settings：可输入/粘贴的 Executable Path、picker，以及 Enable Dev Flow、Show Dev Flow status in sidebar、Show Dashboard button。
 
-The description presents Dev Flow as optional but recommended in one naturally
-wrapping paragraph: **Engineering discipline for coding agents.** Connect this
-project to Dev Flow for lightweight workflow structure, project status, and a
-local dashboard. Optional, but recommended for reliable delivery.
+路径失焦时保存，picker 使用同一保存命令；清空后恢复自动发现。总开关始终可操作，关闭或 CLI 不可用时禁用两个依赖开关。后端串行写入，前端用单调 intent revision 拒绝迟到响应；成功后立即发布 sidebar snapshot。自动安装与 system-prompt 注入未实现，见 [TODO](../TODO.md)。
 
-Clicking the Dashboard address uses the same restricted loopback opener as the
-sidebar Dashboard action. It starts or reuses the current project's shared
-service and opens the address in the system browser.
+## Sidebar 与详情
 
-The Executable Path field is a real text input: users can type or paste an
-absolute path directly, and the value is persisted when the field loses focus.
-The chooser writes to the same field and uses the same persistence command.
-Clearing the field and leaving it restores automatic discovery; no second path
-icon is shown for that recovery action.
+Status 不增加独立 Dev Flow 标题，只统计未关闭项为 `N Tasks · N Issues`。Claimed row 单行截断，保证 Sessions 最小高度；溢出合为 more N。Hover 延时打开只读详情，离开关闭；click 固定同一 surface。Dashboard 位于 Settings 上方，在总开关或对应偏好关闭时不显示。
 
-The master switch always remains operable. The two dependent switches are
-disabled when the master switch is off or the CLI is unavailable. Setting
-mutations are serialized in the backend and carry a monotonically increasing
-frontend intent revision so a late response cannot restore stale controls.
-Every successful mutation publishes a new sidebar snapshot immediately.
+已覆盖详情使用共享 renderer，显示 task/issue、元信息与 Files，支持 Close/Escape。done_when disclosure 与专用空列表状态未覆盖，保留空 slot；不伪造完成，也不提供 mutation controls。恢复条件见 [DESIGN_GAPS](../../prototype/docs/DESIGN_GAPS.md)。
 
-Automatic installation/setup and Dev Flow-owned system-prompt injection are
-not implemented. Their cross-project contracts are tracked in
-[`docs/TODO.md`](../TODO.md).
+## 产品 ownership 与接口
 
-## Sidebar behavior
+同一 canonical project root/revision 的 session 共用服务与 snapshot。named branch、unborn branch、detached commit 与非 Git 项目保持不同 identity。切换项目保留旧服务供返回复用；无活跃 session 15 分钟后进入回收候选，软预算为 `max(system memory × 5%, 256 MiB)`。活跃/current 服务和可能的外部 dashboard clients 受保护。Memory Use 为服务 child RSS 加项目 registry cache 估算。
 
-The Status section has no separate Dev Flow heading. When enabled and ready it
-shows open, non-closed work counts as `N Tasks · N Issues`, followed by as many
-claimed rows as fit without shrinking Sessions below its minimum height. Hidden
-rows collapse into `more N`.
+Status/sidebar/dashboard 通过 app adapter 和 GUI typed DevFlowRuntime facade。只调用 loopback REST v1 读取 status、tasks、issues；SSE events 只提供 invalidation，再重新获取并原子发布完整验证 snapshot。GUI 不读取任务文件，不解析 raw REST/SSE，不调用 dashboard mutation/document routes。
 
-Hover opens the read-only detail surface after a short delay and closes it when
-the pointer leaves; click pins the same surface. The Dashboard action is placed
-directly above Settings and is absent, rather than merely disabled, when its
-preference or the master integration is off.
+Dashboard 地址和 sidebar action 共用受限 loopback opener，启动或复用当前项目服务，并在系统浏览器打开。
 
-## Ownership and failure behavior
+## Bash 工具摘要
 
-Dashboard services belong to a project identity, not to a session. Sessions for
-the same canonical project root and revision share the service and snapshot.
-Named branches, unborn branches, detached commits and non-Git projects remain
-distinct identities. Project switches retain old services for later reuse,
-subject to 15-minute inactive-session reclamation and the soft
-`max(system memory × 5%, 256 MiB)` budget. Active/current services and possible
-external dashboard clients are protected. Memory Use is the current service
-child RSS plus its project-local registry cache estimate.
+Bash card 是独立的消息内容转换，不消费 status snapshot、不持久化 presentation state，也不通过 app 调用命令。成功且未截断的工具结果可识别：
 
-The status/sidebar/dashboard path talks to Dev Flow through the internal
-adapter in `rozsa-app` and the typed `DevFlowRuntime` facade in `rozsa-gui`;
-frontend Bash-card rendering is a separate message-derived display transform.
-It does not consume status snapshots, persist presentation state, or invoke
-commands through the app layer.
+- Task：create、update、remove、done、reopen。
+- Issue：create、update、remove、close、reopen。
+- Claim：claim、claim --revoke。
 
-The adapter uses only the loopback REST v1 read routes: `GET /api/v1/status`,
-`GET /api/v1/tasks`, and `GET /api/v1/issues`. `GET /api/v1/events` supplies SSE
-invalidation signals; each update causes the adapter to re-fetch and atomically
-publish a fully validated combined snapshot. Rózsa does not expose or invoke
-the dashboard's mutation or document routes. A real-`dow` test validates
-discovery at `GET /api/v1` (without a trailing slash) and these read contracts
-inside an isolated `tmp/test_env/` project.
+摘要显示 action、resource、短 ID 与可用 title；每个 ID 至多一次有界 detail GET，不用 collection lookup。删除后无法获取 title 时保留 ID 和 Details unavailable。show/list/schema、status/init/doctor/iterate/version 等保持普通 Bash 摘要。
 
-## Bash tool-call presentation
+识别支持 -H/--human、已知参数值、input redirection 和正确的 `2>&1`；不能把错误的 `2&>1` 或多命令最终 exit code 当作单项成功证据。
 
-The GUI derives a structured collapsed summary from a successful, non-truncated
-Bash tool call and its matching result. It recognizes these resource actions:
+## 错误与验证
 
-- Task: `create`, `update`, `remove`, `done`, and `reopen`.
-- Issue: `create`, `update`, `remove`, `close`, and `reopen`.
-- Claims: `claim` and `claim --revoke`.
+所有错误经共享通知中心在右上角显示，6 秒后保留在 unresolved error tray，恢复成功明确 resolve；普通 ready/success 保持安静。
 
-The summary displays the action, resource type, short ID, and title when one is
-available. Task/Issue titles are enriched with one bounded detail request per
-ID: `GET /api/v1/tasks/:id` or `GET /api/v1/issues/:id`. Collection GETs are not
-used for title lookup. A removed resource may no longer have a detail route, so
-its summary keeps the ID and shows `Details unavailable` when no title was
-captured in the command result.
+真实 dow 契约测试使用 `tmp/test_env/` 的隔离 Git 项目、明确 cwd 与 9800–9900 端口，并清理自己启动的服务。macOS watcher/FSEvents/SSE 测试需要 host permissions，沙箱内 timeout 不能直接归因于产品。DOM/契约测试不替代真实原型与 app 验证；Linux/Windows 视觉保持 pending。
 
-`task/issue show`, `list`, and `schema`, along with `status`, `init`, `doctor`,
-`iterate`, `version`, `changelog`, `rollback`, and other non-resource commands,
-remain ordinary Bash summaries. They are intentionally separate from the
-Dev-flow status/sidebar linkage.
+## 相关文档
 
-The recognizer accepts `-H`/`--human`, known option values, input redirection,
-and a captured `2>&1`. It does not treat `2&>1` as captured output and does not
-claim success for semicolon-separated commands such as `dow task update T001
-2>&1; echo "==="`, because one tool result cannot attribute the final exit code
-to each command.
-
-Errors use the shared notification center. They appear for six seconds, then
-remain reachable through the unresolved-error indicator until explicitly
-resolved by recovery. Routine ready/success states stay silent.
-
-## Verification and diagnostics
-
-Real-`dow` contract tests create a unique Git project beneath
-`tmp/test_env/<test-name>-<unique-id>/`, give every command an explicit temporary
-working directory, reserve a port in 9800–9900, reap every owned dashboard PID,
-and verify that the development project's `.dev-doc` fingerprint is unchanged.
-On macOS, tests that depend on FSEvents or watcher-driven SSE must run with host
-permissions: a sandbox can allow REST/socket traffic while suppressing file
-events and producing a false watcher timeout.
-
-When status is unavailable, diagnose in this order: resolved `dow` path and
-version, current project/revision identity, readable initialization marker,
-`dow status`, dashboard process/loopback URL, initial REST resources, then SSE
-updates. API or transport changes stop at the app-layer adapter; frontend code
-must not parse raw Dev Flow payloads or inspect `.dev-doc` task/issue files.
-
-## Related documents
-
-- [GUI architecture](./ARCHITECTURE.md)
-- [GUI runtime terminology](./TERMINOLOGY.md)
-- [Frontend terminology](./FRONTEND_TERMINOLOGY.md)
-- [UI usage guidelines](./UI_USAGE_GUIDELINES.md)
-- [Deferred product work](../TODO.md)
+- [GUI 架构](./ARCHITECTURE.md)
+- [组件目录](./FRONTEND_COMPONENTS.md)
+- [运行时术语](./TERMINOLOGY.md)
+- [前端术语](./FRONTEND_TERMINOLOGY.md)
+- [界面使用指南](./UI_USAGE_GUIDELINES.md)

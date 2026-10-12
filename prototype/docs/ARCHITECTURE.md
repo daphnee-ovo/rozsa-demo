@@ -1,44 +1,32 @@
 # 原型架构
 
-## 真源与入口
+根目录 `prototype/` 保存唯一可编辑的原型场景、gallery 和 mock。已覆盖组件的模板、CSS 与交互唯一位于 `crates/rozsa-gui/frontend/ui/`，原型与真实 GUI 引用同一份实现。设计概念见 [DESIGN.md](../../DESIGN.md)，生产职责见 [GUI 架构](../../docs/gui/ARCHITECTURE.md)。
 
-项目根目录 `prototype/` 是唯一可编辑的 Rózsa 原型真源。统一入口是 `prototype/index.html`：
+## 入口与加载
 
-- `?scene=<id>` 通过 `scenarios/registry.js` 校验 scene，并由 `scripts/core/shell.js` 装配 application shell。
-- `?gallery=visual-direction` 校验 gallery，加载 `gallery/visual-direction.html`、`gallery/visual-direction.css` 和 `gallery/visual-direction.js`。
-- 无参数等同于 `?scene=empty-session`。
-- 未知 scene 或 gallery 在装配前显示明确错误，不进入部分页面，也不使用未定义 fallback。
+统一入口 `prototype/index.html`：
 
-gallery 是视觉研究与组件变体的集中展示，不是 runtime application scene。它可以拥有独立 topbar、说明和展示布局；公共 token 与已确认相同的控件仍从本原型公共 CSS/脚本边界复用。
+- `?scene=<id>`：registry 校验 ID，shell 装配共享模板，mock adapter 提供初始数据。
+- `?gallery=visual-direction`：加载独立 gallery 的 HTML、CSS 和 module script。
+- 无参数：`empty-session`。
+- 未知 ID：装配前明确失败，不 fallback。
 
-## 目录职责
-
-| 目录 | 职责 |
+| 位置 | 职责 |
 | --- | --- |
-| `styles/foundations` | tokens、reset、base、motion 和全局视觉标准 |
-| `styles/primitives` | forms、actions 等低层控件 |
-| `styles/composites` | overlays、feedback 等复合表面 |
-| `styles/features` | conversation、settings、sidebar、permissions、Dev Flow 和 gallery 视觉规则 |
-| `styles/layouts` | application shell 与 sidebar 的几何关系 |
-| `styles/scenes` | 迁移遗留标记目录；application scene 不加载这里的 CSS，公共规则归组件、feature 或 layout owner |
-| `styles/entries` | 保持既有 cascade 顺序的 import 清单 |
-| `templates` | 公共稳定 HTML 结构，不包含 mock 和事件处理 |
-| `scripts/core` | template 加载、DOM 挂载、scene 启动和 shell 入口 |
-| `scripts/components` | Composer、interruption、popover、notification、tool-call 行为 |
-| `scripts/features` | Conversation、Settings、Sidebar、Dev Flow 的功能装配 |
-| `scripts/flows` | 跨组件提交、取消、focus restore 和 scene 时序 |
-| `scripts/adapters` | mock 读取与输入转换 |
-| `scenarios` | scene/gallery ID、初始状态、mock 和操作配置 |
-| `mock` | 原型专用演示数据，runtime 不得依赖 |
-| `gallery` | visual direction 的 HTML、CSS、行为和说明组合 |
-| `docs` | 原型组织、组件、场景、流程、mock、验证和对照资料 |
+| `scenarios/registry.js`、`scenes/` | 11 个 application scene 的 ID、初始状态、mock 与操作配置 |
+| `scripts/core/` | 原型启动、scene 选择与共享 shell/template loader 接入 |
+| `scripts/components/`、`scripts/features/` | 接入共享组件与原型演示能力，不保存第二套组件 |
+| `scripts/flows/` | 场景时序和 mock 操作协调 |
+| `scripts/adapters/mock-adapter.js`、`mock/` | 演示数据与可重复结果 |
+| `templates/` | `data-ui-template-src` 转发到共享 template |
+| `styles/` | 有序 import 与共享 CSS 转发；gallery 专属规则保留在原型 |
+| `gallery/` | 视觉参考的 topbar、说明、布局与视图切换 |
+| `docs/` | 场景、组件、流程、数据、覆盖、缺口与验证说明 |
 
-## 加载边界
+Application scene 不复制 shell，不动态加载 scene stylesheet。input template 只挂 children，保持 Queue、Steering、输入与 toolbar 的既有 DOM 关系。CSS source order 由 [样式入口](../styles/README.md) 说明。
 
-`styles/main.css` 和 `styles/sidebar.css` 只是稳定 shim，真正的 import 顺序记录在 `styles/source-order.json` 和 `styles/entries/`。application scene 的稳定 shell 来自 `templates/`；scene 文件只提供页面配置和场景专属入口，不复制公共 shell，也不声明或动态加载 stylesheet。gallery 仍通过自己的独立 stylesheet 入口加载展示规则。
+## 数据与新增方法
 
-`scripts/core/shell.js` 先加载模板，再以固定顺序挂载 root，最后加载 `rozsa-gui.js` 的行为入口。mock 只由 `scripts/adapters/mock-adapter.js` 读取。真实 GUI 位于 `crates/rozsa-gui/frontend/`，与本原型保持实现和数据边界，不直接 import 本目录文件。
+Mock 只由原型 adapter 读取；生产 runtime、Rust、Tauri 配置与 bundle 对它零依赖。新增 scene 先登记 registry、mock 与初始状态，复用共享 UI，然后更新 [场景](./SCENARIOS.md)、[覆盖](./UI_COVERAGE.md) 和验证材料。新增组件在共享 owner 实现，通过 mock/Tauri adapter 接入；不在 scene 建组件副本。
 
-## 新增内容
-
-新增 application scene 时，应先在 `scenarios/registry.js` 登记 ID、布局、组件、初始状态、mock 和操作，再复用已有 template、CSS 和 script；组件状态、queue/steering 与窄视口规则必须落在对应 owner，最后更新 `docs/UI_COVERAGE.*`、`docs/SCENARIOS.md` 和 baseline。新增 gallery view 只放展示特有结构，公共实现必须沿现有责任边界复用，并登记独立 verification ID。
+原型没有覆盖的产品状态按 [设计缺口](./DESIGN_GAPS.md) 留待后续迭代，当前不推导新视觉。

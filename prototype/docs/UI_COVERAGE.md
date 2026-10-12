@@ -4,9 +4,9 @@
 
 ## 使用方式
 
-每个 `items` 项目都有不会随文件移动改变的稳定 ID，并记录 runtime 入口与触发方式、prototype 入口、覆盖状态、重构后的 CSS/markup/behavior 责任位置、全部使用方和重构前后验证 ID。`prototype_inventory` 覆盖 `index.html` 主入口、兼容入口、11 个 application scene、gallery HTML/脚本与 shell/renderer/legacy behavior 脚本；`runtime_inventory` 覆盖 main/sidebar HTML、三个运行脚本和所有已注册可见事件。
+每个 `items` 项目都有不会随文件移动改变的稳定 ID，并记录 runtime 入口与触发方式、prototype 入口、覆盖状态、重构后的 CSS/markup/behavior 责任位置、全部使用方和重构前后验证 ID。`prototype_inventory` 覆盖 `index.html` 主入口、11 个 application scene、gallery HTML/脚本与 shell/renderer/legacy behavior 脚本；`runtime_inventory` 覆盖 main/sidebar HTML、三个运行脚本和所有已注册可见事件。
 
-prototype 的统一入口是 `prototype/index.html`：`?scene=<id>` 装配 application scene，`?gallery=visual-direction` 装配 `gallery/visual-direction.html`。T015 的独立 visual demo 基线材料只用于重构前后成对比较，不能替代 gallery 入口。
+prototype 的统一入口是 `prototype/index.html`：`?scene=<id>` 装配 application scene，`?gallery=visual-direction` 装配 `gallery/visual-direction.html`。独立 visual demo 基线材料只用于重构前后成对比较，不能替代 gallery 入口。
 
 后续移动文件时更新责任路径，不更换项目 ID。公共实现的每个 `used_by` 都必须进入同一项目的验证范围。`verification` 在 TASK-T002 建立重构前材料后成为前后成对检查的稳定键。
 
@@ -33,13 +33,13 @@ prototype 的统一入口是 `prototype/index.html`：`?scene=<id>` 装配 appli
 | `safety_gate` | 切换前须满足的安全门槛；无法安全暂停则阻断对应区域迁移。 |
 | `safety_evidence` | 已核对的当前源码路径与入口；不代替实际操作验证。 |
 
-这些字段记录计划处置，不能据此声称操作已经暂停或区域已经迁移。后台事件、跨 WebView 路由和在途请求必须由对应开发任务验证；不自动回应请求、不丢弃真实错误、不生成假成功。共享切换与 T036 清理都以对应安全门槛及专项证据为前提。清理已验收区域时保留受阻区域的必要实现；这些区域不计为已迁移，设计补齐留待后续迭代。
+这些字段记录处置边界；实际实施状态结合 `implementation_status` 与专项证据核对，覆盖状态本身不等于迁移完成。后台事件、跨 WebView 路由和在途请求必须由对应开发任务验证；不自动回应请求、不丢弃真实错误、不生成假成功。共享切换与 T036 清理都以对应安全门槛及专项证据为前提。清理已验收区域时保留受阻区域的必要实现；这些区域不计为已迁移，设计补齐留待后续迭代。
 
-当前源码确认 permission-request 进入待回复队列，reply 失败保留请求，下一请求可能由队列继续展示；仅隐藏 trust 或 error 页面无法暂停 approval lifecycle。因此 GAP-008A/008B 在安全回应与恢复验证前阻断 permission 区域迁移。message/tool、running flow 和跨组件反馈也有被动入口，需分别在 T017/T038、T018、T021 核对，不以单纯隐藏 DOM 作为安全结论。
+Permission request 队列、reply 失败、被动 message/tool 状态与在途恢复保留真实出口；只迁移原型覆盖的正常状态，未覆盖部分仍标为受阻。主动 Trust 与缺失操作已暂停，不以隐藏 DOM 作为被动事件安全结论。
 
-## 响应式布局验证（TASK-T024）
+## 响应式布局与平台
 
-sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 560px 主内容舒适宽度得到 780px 收起边界；恢复展开使用 820px 滞回边界。产品与 prototype 的最低窗口约束统一为 640×480，正常 PC、820px 分屏和最低尺寸的几何、Composer 与 sidebar 状态记录在 [`TASK-T024 verification`](../../tmp/ui-architecture-refactor/TASK-T024/verification.md) 与 [`source-order.json`](../styles/source-order.json) 中。响应式规则归属实际 owner CSS，不再以断点生成独立 CSS 文件。
+浏览器 shell 的 sidebar 自动收起边界为 780px，恢复展开为 820px；macOS native split 的收起由 AppKit 管理。共享 viewport 以全窗口宽度提供响应式 token，避免分栏宽度触发整窗断点。最低窗口约束为 640×480，规则归属实际 owner CSS，入口顺序见 [source-order.json](../styles/source-order.json)。macOS 已实际重放共享 UI；Linux/Windows 真实视觉保持 pending platform visual verification。
 
 ## 区域汇总
 
@@ -73,13 +73,13 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 - 项目：`UI-SETTINGS-001`、`UI-SETTINGS-002`、`UI-SETTINGS-003`、`UI-SETTINGS-004`、`UI-SETTINGS-005`、`UI-SETTINGS-006`。
 - 结论：Appearance 与 Extensions 空状态已覆盖；General、Skills/Tools、keyboard shortcut 和填充后的 permission rules 为 `missing`。
 - 共享边界：两宿主引用 `ui/templates/features/settings.html`、共享 Settings/Appearance CSS 和 `ui/scripts/features/settings.js`；native Settings 导航也从同一模板装配。原型使用 mock state，runtime adapter 保留真实 settings/theme IPC、持久化键与平台主题处理。
-- 暂停边界：五个未覆盖 pane 为空容器，main/sidebar 导航与路由、旧 renderer 和修改入口暂停；不预载 capability/permission settings。全局快捷键读取和真实审批流程保留。Dev Flow settings 由 T022 迁移，旧惰性模板与隔离样式由 T036 在验证门槛通过后清理。
+- 暂停边界：五个未覆盖 pane 为空容器，main/sidebar 导航与路由、旧 renderer 和修改入口暂停；不预载 capability/permission settings。全局快捷键读取和真实审批流程保留。Dev Flow settings 已共享；受阻区域所需的惰性模板与隔离规则保留，不计入已迁移范围。
 
 ### Notification 与错误反馈
 
 - 项目：`UI-NOTIFICATION-001`、`UI-NOTIFICATION-002`、`UI-FEEDBACK-001`。
 - 共享边界：两宿主共用 `ui/templates/composites/notification.html`、`ui/styles/composites/feedback.css` 和 notification renderer/事件绑定。即时通知、未解决错误入口和列表统一位于整个窗口右上角。运行时仅 main 挂载全局通知中心，保留身份、计时、悬停暂停和 resolve；sidebar 的 IPC rejection 转交 main，关闭后保留未解决错误。
-- 暂停边界：跨组件异常 variant 仍为 `partial`，缺失 retry/cancel/恢复操作沿各区域缺口暂停。被动错误继续透明表达；共享 UI bootstrap 失败时保留旧错误出口，该分支不计为已迁移。sidebar 的完整宿主集成由 T022 复核，旧通知视觉规则由 T036 清理。
+- 暂停边界：跨组件异常 variant 仍为 `partial`，缺失 retry/cancel/恢复操作沿各区域缺口暂停。被动错误继续透明表达；共享 UI bootstrap 失败时保留旧错误出口，该分支不计为已迁移。sidebar 已接入同一全局通知出口，已覆盖通知视觉只有一份共享 owner。
 
 ### Dev Flow
 
@@ -101,9 +101,9 @@ sidebar 的自动收起由主内容可用宽度驱动：约 220px sidebar 加 56
 - prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features` 或 `layouts` 的唯一 owner；`styles/scenes` 不是 application runtime owner，响应式规则直接归属于实际 owner，入口只负责保持 import source order。
 - application shell 的稳定 HTML 只能来自 `templates/`，入口只提供 mount；`scripts/core/` 只负责加载、装配和 renderer 边界，scene 文件是配置输入且不得带有运行时 stylesheet 加载。
 - scene/gallery 的唯一路由登记入口是 `scenarios/registry.js`；scene 读取路径经过 `scripts/core/scene-loader.js` 和 `scripts/adapters/mock-adapter.js`，gallery 通过统一 entry route 装配；mock 文件及每个 scene 的全部使用方必须登记在 JSON `scenario_inventory`，未知 ID 必须明确报错且不能 fallback 到未定义页面。
-- 已提升的 Composer、conversation 与 Popover 由 `crates/rozsa-gui/frontend/ui/` 定义模板、样式与组件行为，prototype 同路径文件转发到共享 owner。尚未提升的区域继续使用 prototype owner；各组件使用方必须在 JSON 的 `behavior` 和 `used_by` 中闭合记录。
-- 跨组件 flow 的唯一归属是 `scripts/flows/`：`composer-interruption.js` 只协调 interruption 与 composer 的 focus restore，`scenario-flow.js` 只协调 scene-ready 与 application shell 的装配时序；两者的 component、feature、scene 使用方登记在 JSON `flow_inventory`，交由 T015 统一验证。
-- 本清单与自动化测试只证明分类和引用闭合，不证明视觉或交互等价；最终结论必须来自 TASK-T002 建立的成对材料与后续实际重放。
+- 已提升的 Composer、conversation 与 Popover 由 `crates/rozsa-gui/frontend/ui/` 定义模板、样式与组件行为，prototype 同路径文件转发到共享 owner。未覆盖受阻区域保留必要的 runtime owner；各组件使用方必须在 JSON 的 `behavior` 和 `used_by` 中闭合记录。
+- 跨组件 flow 的唯一归属是 `scripts/flows/`：`composer-interruption.js` 只协调 interruption 与 composer 的 focus restore，`scenario-flow.js` 只协调 scene-ready 与 application shell 的装配时序；两者的 component、feature、scene 使用方登记在 JSON `flow_inventory`，按全部使用方统一验证。
+- 本清单与自动化测试只证明分类和引用闭合，不证明视觉或交互等价；实际验收使用 baseline 与真实宿主重放；gallery 仅浏览器验证，缺口不计为迁移完成。
 
 ## Related Docs
 

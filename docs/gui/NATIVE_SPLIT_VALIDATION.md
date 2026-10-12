@@ -1,126 +1,30 @@
-# Native split validation
+# 原生分栏验证
 
-This document is the GO/NO-GO record for moving the Rózsa macOS GUI to a
-persistent `NSSplitViewController` containing two real Tauri WKWebViews.
+macOS 产品窗口使用持久 NSSplitViewController 和两个真实 Tauri WKWebView。实现入口为 [native_split_view.rs](../../crates/rozsa-gui/src/native_split_view.rs)、[native_titlebar.rs](../../crates/rozsa-gui/src/native_titlebar.rs) 与 [scene_router.rs](../../crates/rozsa-gui/src/scene_router.rs)。架构与共享 UI 边界见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 
-Current implementation: `crates/rozsa-gui/src/native_split_view.rs`,
-`crates/rozsa-gui/src/native_titlebar.rs`, and
-`crates/rozsa-gui/src/scene_router.rs`.
-Inspector launch: `crates/rozsa-gui/src/inspector.rs`. It is disabled by
-default and can be enabled explicitly with `ROZSA_WEB_INSPECTOR=1`.
-Reusable product-app deployment: `devtools/deploy-test-app.sh`.
-The product window can begin loading after both WKWebViews are installed, but
-the complete native split root remains hidden. The main and sidebar readiness
-handshake reveals that root in one AppKit operation, so neither pane is exposed
-ahead of the other.
-Foreground harness: `temp/native-split-validation/`.
-Related design: `.dev-doc/main/SPEC.md`.
+## 验证方法
 
-## Fixed dependency boundary
+用 `./run.sh` 启动 staged debug app，`./run.sh --prepare-only` 核对 bundle。需要 Inspector 时显式设置 `ROZSA_WEB_INSPECTOR=1`，默认不开启。用真实窗口操作验证，不能把浏览器 fixture 或 source contract 当成原生操作结果。验证结束关闭测试 app。
 
-- Tauri: `2.11.5`
-- tauri-runtime-wry: `2.11.4`
-- Wry: `0.55.1`
-- Tauri feature: `unstable`
+检查 main/sidebar readiness 后统一显示、Main/Settings 切换、divider、collapse/restore、主题 backing、focus、viewport 与正常退出。原生分栏的收起和背景由 AppKit 管理，不交给浏览器自动收起逻辑。响应式以全窗口 outer width / scale factor 为准；共享 DOM 的布局仍按所在 main 区域计算。
 
-## Compile checks
+## 本次共享 UI 验证范围
 
-| Check | Result | Evidence |
-| --- | --- | --- |
-| `cargo check --offline --manifest-path temp/native-split-validation/Cargo.toml` | PASS | Finished `dev` profile successfully on 2026-07-14 |
-| `cargo clippy --offline --manifest-path temp/native-split-validation/Cargo.toml -- -D warnings` | PASS | Finished without warnings on 2026-07-14 |
-| `cargo build --offline --manifest-path temp/native-split-validation/Cargo.toml` | PASS | Produced the foreground validation app successfully on 2026-07-14 |
-| Exact dependency versions resolved | PASS | `cargo tree`: Tauri `2.11.5` → tauri-runtime-wry `2.11.4` → Wry `0.55.1` |
+| 范围 | 验证结论 |
+| --- | --- |
+| macOS 双 WebView 与 Main/Settings | 真实 app 重放已覆盖页面与操作，共享 UI 正常展示 |
+| 全窗口响应式 | 1280px 窗口与 705px 窄窗口实际重放；原生 sidebar 收起后 question 与原型同条件几何一致 |
+| Permission / Question | 本地模拟 AI API 通过真实 agent/tool 路径触发；选择、Hint、提交及 session 切换恢复实际验证 |
+| Read / Edit / Bash、thinking / Markdown | 真实 app 展示工具结果与代码，DOM/style 与同 payload 的共享原型成对核对 |
+| Notification | 实际设置写入失败显示右上角通知与 tray；修复条件后重试成功 resolve |
+| Dev Flow | 实际 Settings、sidebar claimed row、detail 与 Files 操作；未覆盖 done_when slot 留空 |
+| 异步失败/乱序契约 | Node 与 Rust 契约验证；未人为制造所有原生 transport failure |
+| Linux / Windows 真实视觉 | pending platform visual verification；自动化契约不替代实际图形环境 |
 
-## Foreground observations
+本表只描述本次迭代的验收范围。未重新执行的 fullscreen、Finder drop、活动中文 IME 和 sidebar Inspector 等原生组合，不因共享 UI 验收被宣称为本次实际验证通过。产品附件/拖放入口还受设计缺口约束。
 
-Run the normal validation app, then complete every row. Identity values and
-`bootCount=1` must remain unchanged throughout all non-close operations.
+## 自动化与限制
 
-| Behavior | Result | Evidence |
-| --- | --- | --- |
-| Two real WKWebViews show different stable identities | PASS | Native pointers and DOM UUIDs remained distinct; both DOM `bootCount` values remained `1` |
-| Native parent, frame, and Tauri bounds agree | PASS | Stable geometry logs matched at 1120×720, 960×640, 1280×800, and sidebar widths 190/300 |
-| Continuous window resize | PASS | Foreground sequence 960×640 → 1280×800 → 1120×720 preserved both identities and matching sizes |
-| Programmatic divider movement | PASS | Native splitter changed from 190 to 300; main/sidebar bounds became 820/300 without reload |
-| Mouse divider drag | PASS | User foreground observation confirmed both panes resize with the native divider |
-| Sidebar collapse and restore | PASS | Sidebar disappeared and returned with the same UUID, `bootCount=1`, and textarea value |
-| Fullscreen enter and exit | PASS | Native window controls disappeared/reappeared; both WebView identities remained stable |
-| Focus transfer between WebViews | PASS | AX focus moved from main content to sidebar HTML content and back |
-| Direct Chinese text value survives collapse/restore | PASS | Sidebar textarea retained `中文输入保持` after collapse/restore |
-| Chinese IME behavior during focus-moving layout actions | PASS | User confirmed active composition ends when collapse/fullscreen moves focus; this is the accepted behavior, while committed textarea and DOM state persist |
-| File drag and drop reaches the main WebView | PASS | After granting only `core:event:allow-listen` and `allow-unlisten`, the main WebView reported `native_file_drop: PASS` for Finder `drag-sample.txt` |
-| Native window drag | PASS | Split-root titlebar drag view moved the window in the foreground without covering traffic lights or page controls |
-| Native titlebar double-click zoom | PASS | User foreground observation confirmed double-clicking the same drag view performs window zoom |
-| Main and sidebar devtools open | UNVERIFIED | TASK-T011 verified the product main Inspector independently; the combined harness row still needs a fresh run for the sidebar Inspector |
-| Normal close releases the native host | PASS | Process exited `0` after AppKit hierarchy cleanup log |
+相关 Rust 测试位于 crate 的 `tests/`，覆盖 native split host、window behavior、theme surface、scene continuity 和非 macOS 单 WebView 布局契约。共享 UI 专项编排见 [CONTRIBUTING.md](../../CONTRIBUTING.md)。
 
-## Product app acceptance (2026-07-14)
-
-This table records direct observation of `cargo run --offline -p rozsa-cli`.
-Harness or automated evidence is named explicitly and does not replace a
-product-app observation. `UNVERIFIED` means the behavior was not claimed as a
-foreground product result.
-
-| Behavior | Product app | Evidence |
-| --- | --- | --- |
-| Ordinary window, sidebar expanded | PASS | One `NSWindow` displayed the native divider, persistent sidebar WebView, main WebView, and normal traffic lights |
-| Narrow window, sidebar expanded | PASS | Requested 700×600 was correctly clamped to configured 900×600 minimum; both panes remained usable |
-| Narrow window, sidebar collapsed | UNVERIFIED | The automation used an unstable button index and closed the window before this combination could be observed |
-| Maximized window, expanded/collapsed | UNVERIFIED | The attempted Option-click entered fullscreen; the earlier harness double-click zoom result remains PASS |
-| Fullscreen enter, sidebar expanded | PASS | Runtime emitted `native-fullscreen=true`, frame became 1408×881, safe-area top became 0, and divider stayed at 340 |
-| Fullscreen exit and collapsed combination | UNVERIFIED | External approval reviewer reached its usage limit before the remaining Space transition could be observed |
-| Main/sidebar WKWebView and split-item identity | PASS | One installation log reported distinct stable WKWebView pointers; main/settings scene switches, collapse/restore, divider changes, and fullscreen emitted no reinstall or teardown |
-| Divider movement and persistence | PASS | Accessibility changed the native splitter from 264 to 340; collapse/restore and fullscreen still reported 340 |
-| Main/settings reuse the same sidebar container | PASS | Settings and main content switched inside the installed host; the same native Sidebar button collapsed/restored both scenes |
-| Focus transfer | UNVERIFIED | Foreground harness PASS; no separate product-app focus trace was captured |
-| Chinese IME | UNVERIFIED | Foreground harness accepted composition interruption with committed state retained; not repeated in the product app |
-| Finder file drag-and-drop | UNVERIFIED | Foreground harness PASS; not repeated in the product app |
-| Main Web Inspector | PASS | TASK-T011 foreground run emitted `frontend loaded and detached`; Accessibility reported separate `Rózsa` 1280×820 and `Web Inspector — localhost` 1000×650 standard windows, with unchanged geometry and no intervening native resize logs |
-| Sidebar Web Inspector | UNVERIFIED | Foreground harness PASS; not repeated in the product app |
-| Traffic lights and sidebar control | PASS | Standard close/fullscreen/minimize buttons and the native Sidebar button remained visible and operable |
-| Native window drag | UNVERIFIED | Foreground harness and user observation PASS; not repeated after product migration |
-| Titlebar double-click zoom | UNVERIFIED | Foreground harness and user observation PASS; product-app maximize was not captured |
-| Normal close | PASS | Earlier product run emitted `native-split teardown: child WebView closed` and exited 0 |
-| Close with pending approval denies request | UNVERIFIED | Permission-controller tests cover denial semantics; no live pending product request was created |
-| Opaque Dark sidebar | PASS | After making the sidebar WKWebView transparent, both AppKit backing and WebView content rendered Dark without a light layer |
-| Translucent Dark sidebar | PASS | Initial test exposed light `NSVisualEffectView`; applying `NSAppearanceNameDarkAqua` fixed the contrast on retest |
-| Live theme/surface ordering | PASS | Light/Dark and opaque/translucent switches updated both panes together; no visible backing flash was observed |
-
-The Inspector PASS above was captured with `ROZSA_WEB_INSPECTOR=1`. Normal
-product and test-app launches show only the product window.
-
-## Automated acceptance
-
-| Check | Result | Evidence |
-| --- | --- | --- |
-| macOS native split/source contract | PASS | `native_split_host`, `native_window_behavior`, `theme_surface`, targeted routing, and scene continuity suites pass |
-| Non-macOS frontend fallback | PASS | `frontend_platform_fallback` verifies the single-WebView CSS Grid pane fallback remains available outside macOS; this layout fallback is distinct from the `main.css` / `sidebar.css` stylesheet entries |
-| Real non-macOS GUI | UNVERIFIED | No non-macOS graphical runtime was available in this workspace |
-
-## Injected failure cleanup
-
-Launch with `ROZSA_NATIVE_SPLIT_INJECT_FAILURE=1`. The app installs the split
-controller completely, then deliberately runs rollback. The expected log is:
-
-```text
-[native-split-validation] cleanup PASS: constraints, split items, and controllers removed; original main hierarchy restored
-[native-split-validation] FAILURE_PROBE PASS
-[native-split-validation] cleanup PASS: child WebView closed after AppKit rollback
-```
-
-| Check | Result | Evidence |
-| --- | --- | --- |
-| Child WebView closed | PASS | Tauri dispatcher emitted `child WebView closed after AppKit rollback` |
-| Constraints deactivated in reverse cleanup | PASS | Rollback completed without Auto Layout errors and emitted cleanup PASS |
-| Split items and controllers removed | PASS | Rollback emitted cleanup PASS before child WebView closure |
-| Original single-WebView hierarchy restored | PASS | Foreground screenshot and geometry log showed only main WKWebView at 1120×720 |
-
-## Decision
-
-**GO with explicit observation gaps**. The architecture, native installation,
-scene reuse, targeted routing, divider persistence, ordinary/narrow layout,
-fullscreen entry, theme backing, main Inspector separation, and normal close
-have product or automated PASS evidence. Rows marked `UNVERIFIED` are not represented as
-product-app passes; they retain only the separately recorded harness or test
-coverage where stated.
+缺失设计入口暂停；无法安全暂停的被动状态保留原实现并标为受阻。完整边界见 [UI_COVERAGE](../../prototype/docs/UI_COVERAGE.md) 和 [DESIGN_GAPS](../../prototype/docs/DESIGN_GAPS.md)。实际验证素材保存在项目 `tmp/`，不进入架构规范。

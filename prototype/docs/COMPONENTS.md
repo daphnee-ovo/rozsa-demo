@@ -1,34 +1,21 @@
 # 原型组件目录
 
-原型按“基础标准 → 基础控件 → 复合组件 → 功能模块 → 页面布局 → scene/gallery 组合”组织。稳定 DOM、CSS 和 behavior 各有唯一责任位置。
+原型与 Tauri 使用同一份 `crates/rozsa-gui/frontend/ui/`。组件的 template、CSS、renderer、flow 及特殊化关系详见 [共享组件目录](../../docs/gui/FRONTEND_COMPONENTS.md)，职责约束见 [前端界面规范](../../docs/gui/FRONTEND_INTERFACE_STANDARD.md)。
 
-## 公共结构
+## 原型装配
 
-| 组件/功能 | template | CSS owner | behavior |
-| --- | --- | --- | --- |
-| Sidebar | `templates/features/sidebar.html` | `styles/features/sidebar.css`、`styles/layouts/sidebar-shell.css` | `scripts/features/sidebar.js` |
-| Conversation | `templates/features/conversation.html` | `styles/features/conversation.css` | `scripts/features/conversation.js` |
-| Composer | `templates/composites/composer.html`（chat-input、fork、input frame、queue/steering）と `templates/primitives/input.html`（rich input、toolbar）；shell 将 input template 的 children 直接挂入 `.input-wrapper`，保持迁移前 DOM 层级 | `styles/composites/composer.css`、`styles/composites/overlays.css` | `scripts/components/composer.js` |
-| Queue / Steering | `templates/composites/composer.html` 内的 `queuedMessages`、`steeringConversation` | `styles/features/queue.css`、`styles/features/steering.css` | `scripts/flows/scenario-flow.js`、`scripts/components/composer.js` |
-| Interruption panel | `templates/composites/interruption-panel.html` | `styles/features/permissions.css`、`styles/composites/overlays.css` | `scripts/components/interruption-panel.js`、`scripts/flows/composer-interruption.js` |
-| Notification | `templates/composites/notification.html` | `styles/composites/feedback.css` | `scripts/components/notification.js` |
-| Popover | `templates/composites/popover.html` | `styles/composites/overlays.css` | `scripts/components/popover.js` |
-| Tool call | `templates/composites/tool-call.html` | `styles/features/tools.css` | `scripts/components/tool-call.js` |
-| Settings | `templates/features/settings.html`、`templates/composites/settings-field.html` | `styles/features/settings.css`、`styles/features/appearance.css`、`styles/features/permissions.css` | `scripts/features/settings.js` |
-| Dev Flow | `templates/features/dev-flow.html` | `styles/features/dev-flow.css`、`styles/features/dev-flow-detail.css`、`styles/features/dev-flow-runtime.css` | `scripts/features/dev-flow.js` |
+- `templates/` 的 `data-ui-template-src` 指向共享模板，不保存稳定结构副本。
+- `styles/` 对共同规则只做 import 转发；完整顺序见 [样式说明](../styles/README.md)。
+- `scripts/core/shell.js` 建立 mock host，装配 Sidebar、Conversation、Settings、Popover、Notification、Dev Flow、Composer 与 interruption。
+- `scripts/components/` 和 `scripts/features/` 接入共享实现及演示数据；跨组件场景时序由 `scripts/flows/` 协调。
+- `scripts/adapters/mock-adapter.js` 读取 `mock/`，不决定组件视觉。
 
-基础 actions/forms 和全局 tokens 由 `styles/primitives/` 与 `styles/foundations/` 提供。组件脚本只管理 DOM 状态、focus、键盘和明确意图，不读取产品后端。
+Composer 由 composite 与 input primitive 组成；input 只挂 children，Queue、Steering、`#msgInput` 与 toolbar 保持同一 wrapper。PermissionRequest 与 AskUserQuestion 共用替换式面板，保留各自选择、Hint/Other 和校验语义。ToolCall 外壳组合各类 evidence 与 diff；通知统一位于右上角。
 
-## 装配与数据
+## Gallery
 
-- `scripts/core/template-loader.js` 负责读取模板，`renderer.js` 负责挂载稳定 fragment。
-- `scripts/core/scene-loader.js` 根据 registry 取 scene 配置。
-- `scripts/adapters/mock-adapter.js` 将 `mock/` 数据转换为组件输入。
-- `scripts/flows/scenario-flow.js` 协调 scene-ready 与 application shell 时序。
-- `scripts/flows/composer-interruption.js` 协调替换式面板、提交/取消和 focus 恢复。
+`gallery/visual-direction.html`、CSS 与 module script 拥有展示 topbar、说明及 Empty/Active/Appearance 切换。共享 token 和共同控件引用共享 UI；展示专属布局不属于 runtime application shell。
 
-组件不创建整页 HTML；scene 不复制 shell；adapter 不决定视觉；flow 不吞掉错误。
+## 覆盖与维护
 
-## Gallery 专属内容
-
-`gallery/visual-direction.html` 拥有 Independent demo topbar、Empty/Active/Appearance 三个视图和视觉研究说明。其稳定视觉规则由 `styles/features/visual-demo.css` 唯一维护，入口只通过 `gallery/visual-direction.css` 导入。tab 切换和 theme toggle 由 `gallery/visual-direction.js` 管理。gallery 专属布局不冒充 application component，但其中与公共实现相同的 token、控件和交互不能再复制一份。
+11 个 scene 的已验证视觉与操作继续保留。产品缺失场景不因为原型中存在相邻组件就视为覆盖；以 [UI_COVERAGE](./UI_COVERAGE.md) 和 [DESIGN_GAPS](./DESIGN_GAPS.md) 为准。修改共享组件须沿全部使用方验证，不只检查当前 scene。

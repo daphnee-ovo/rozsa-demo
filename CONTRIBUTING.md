@@ -39,6 +39,15 @@ JavaScript suite and Rust library/integration tests; `--js` or `--rust` runs one
 language. DOM and logic tests do not establish visual parity or native Tauri
 behavior; verify those in the actual prototype and app.
 
+`bash devtools/test-shared-gui-acceptance.sh` runs the focused shared-UI
+acceptance checks. It does not replace full-project testing or native visual
+verification. Serve the prototype from the repository HTTP root (for example,
+`uv run python -m http.server 4173 --bind 127.0.0.1 --directory .`) and open
+`/prototype/index.html`; it imports the production UI under
+`crates/rozsa-gui/frontend/ui/`. Launch the native app with `./run.sh` and close
+validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
+for host boundaries and design gaps.
+
 ## Pull Requests
 
 - Keep changes focused and minimal

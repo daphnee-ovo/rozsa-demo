@@ -2,11 +2,11 @@
 
 本文规定 Rózsa 原型与真实 GUI 共同遵守的前端组织方式。它描述长期有效的职责、依赖、状态、数据接入和验证规则，不记录文件迁移历史。
 
-原型与真实 GUI 使用同一套概念，但各自维护实现，不能互相 import：
+原型与真实 GUI 对已覆盖组件引用同一份生产实现：
 
-- 原型用于设计、演示和重放界面状态，最终唯一真源位于项目根目录 `prototype/`。
-- 真实 GUI 位于 `crates/rozsa-gui/frontend/`，由 Tauri main/sidebar 两个 WebView 加载，并继续使用现有产品状态、handler、event 和 IPC。
-- 双方分别与自己的重构前 baseline 比较。原型不是 runtime 的视觉覆盖层，runtime 也不能反向改变原型设计。
+- 根目录 `prototype/` 保存唯一原型场景、gallery、mock 与 adapter，引用 `crates/rozsa-gui/frontend/ui/` 的模板、样式和交互。
+- 真实 GUI 的 main/sidebar 通过 `runtime/entries/` 和 `runtime/adapters/` 装配同一份 UI，继续使用现有产品状态、handler、event 和 IPC。
+- 原型修整保持原有 baseline；真实 GUI 已覆盖组件以新版原型为准。未覆盖主动入口留空并暂停，无法安全暂停的被动状态保留旧实现且标为受阻。
 
 ## 1. 术语
 
@@ -89,13 +89,13 @@ Scene 不复制 application shell、公共 HTML、CSS 或交互脚本。
 Entry 负责以确定顺序加载样式和启动脚本。它不保存组件实现或产品逻辑。
 
 - Prototype 最终由 `prototype/index.html` 装配 scene/gallery。
-- Runtime 保留 main/sidebar 两个入口，并分别使用 `scripts/entries/main.js` 与 `scripts/entries/sidebar.js`；两个入口继续共享同一产品状态、scene identity、revision 和事件来源。
+- Runtime 保留 main/sidebar 两个入口，并分别使用 `runtime/entries/main.js` 与 `runtime/entries/sidebar.js`；两个入口继续共享同一产品状态、scene identity、revision 和事件来源。
 
 CSS entry 必须保留已验证的 cascade 顺序，不能形成循环 import。
 
 ## 3. CSS 规则
 
-原型和 runtime 的 CSS 都使用 `foundations/primitives/composites/features/layouts/entries` 责任层级，但不直接共享文件。
+原型和 runtime 使用 `ui/styles/{foundations,primitives,composites,features,layouts,entries}` 的同一份规则。宿主入口只装配；prototype 路径转发不保存组件副本，runtime 的 `native-host.css` 只负责原生窗口边界。
 
 重构现有 CSS 时：
 
@@ -125,7 +125,7 @@ CSS entry 必须保留已验证的 cascade 顺序，不能形成循环 import。
 
 ### 4.1 Prototype template
 
-`prototype/templates/` 保存可跨 scene 装配的稳定 HTML。Template 可以包含：
+`ui/templates/` 保存两种宿主共用的稳定 HTML；`prototype/templates/` 通过 `data-ui-template-src` 转发到共享 owner。Template 可以包含：
 
 - 语义化标签和稳定 DOM 层级；
 - ARIA role、label、expanded/selected 等属性位置；
@@ -151,7 +151,7 @@ Script 不得保存一份与 template 重复的稳定 skeleton。由数据数量
 
 ### 4.3 Runtime renderer
 
-Runtime 不新增异步 template fetch。main/sidebar 的稳定 application shell 保留在对应 HTML；数据决定的重复结构由 `scripts/components/` 下唯一 renderer 生成。这一差异是为了保持 Tauri 启动与渲染时序，不代表 runtime 可以复制组件。
+两种宿主使用 `ui/scripts/core/template-loader.js` 和 `shell.js` 装配共享模板。Runtime main 在 `RozsaUIReady` 完成后接入产品事件；原生窗口仍遵守 main/sidebar readiness handshake。数据决定的重复结构由共享 feature renderer 生成，宿主不复制稳定 markup。
 
 ## 5. 状态归属
 
@@ -190,7 +190,7 @@ Popover open、button focus、choice highlighted、tool card expanded 等由对�
 - Adapter 转换数据并透明返回错误；不决定 DOM、CSS 或流程，不得吞错或返回空对象伪装成功。
 - Runtime adapter 只能调用现有 handler/event/IPC。发现契约不足时停止并说明事实、影响和最小方案，未经批准不能修改 Rust production。
 
-以 AskUserQuestion 提交为例：component 收集当前 choice/Other 并发出 submit intent；flow 按现有顺序禁用控件、等待、处理成功/失败并恢复 focus；prototype adapter 返回 mock 结果，runtime adapter 调用现有 question handler。两侧 component 的视觉和操作语义各自保持重构前结果。
+以 AskUserQuestion 提交为例：component 收集当前 choice/Other 并发出 submit intent；flow 按现有顺序禁用控件、等待、处理成功/失败并恢复 focus；prototype adapter 返回 mock 结果，runtime adapter 调用现有 question handler。两侧 component 使用同一份视觉和操作实现，产品响应保持现有契约。
 
 ## 7. 实际组件关系
 
@@ -230,7 +230,7 @@ Application scene 展示真实应用在一个明确时刻的完整状态，例�
 
 Gallery 集中展示视觉参考或 component variant。`visual-direction` 的 Independent demo topbar、说明和 Empty/Active/Appearance 展示布局属于 gallery；它们不是 runtime 页面。
 
-Gallery 可以有自己的展示布局，但 Button、Input、token 或与 application scene 相同的 component 必须引用同一 prototype 公共实现，不能形成第二套组件库。
+Gallery 可以有自己的展示布局，但 Button、Input、token 或与 application scene 相同的 component 必须引用同一共享 UI 实现，不能形成第二套组件库。
 
 最终入口：
 
@@ -250,11 +250,12 @@ Prototype 演示数据集中在 `prototype/mock/`，包括 session/message、too
 
 ## 9. UI_COVERAGE、DESIGN_GAPS 与 baseline
 
-[`UI_COVERAGE.json`](./UI_COVERAGE.json) 是逐项结构化真源，记录稳定 ID、runtime/prototype 入口、状态、CSS、markup、behavior、全部使用方和验证 ID。[`UI_COVERAGE.md`](./UI_COVERAGE.md) 只解释组织并按区域汇总，不复制详细事实。
+[`UI_COVERAGE.json`](../../prototype/docs/UI_COVERAGE.json) 是逐项结构化真源，记录稳定 ID、runtime/prototype 入口、状态、CSS、markup、behavior、全部使用方和验证 ID。[`UI_COVERAGE.md`](../../prototype/docs/UI_COVERAGE.md) 只解释组织并按区域汇总，不复制详细事实。
 
-[`DESIGN_GAPS.md`](./DESIGN_GAPS.md) 只收录 `partial`/`missing` 项。缺口关闭前：
+[`DESIGN_GAPS.md`](../../prototype/docs/DESIGN_GAPS.md) 只收录 `partial`/`missing` 项。缺口关闭前：
 
-- 可以整理 runtime 现有代码，但不能推导新视觉；
+- 已覆盖状态接入共享 UI；未覆盖主动入口留空并暂停，不能推导新视觉；
+- 无法安全暂停的被动错误和在途恢复保留原实现并标明受阻，不宣称已迁移；
 - 不能把隐藏 DOM、单独 CSS rule 或 no-op handler 当作覆盖；
 - 不能用相邻 component 的设计替用户补齐缺失状态。
 
@@ -273,7 +274,7 @@ Prototype 演示数据集中在 `prototype/mock/`，包括 session/message、too
 
 1. 明确语义和 light/dark 值；
 2. 确认不是单个 component 的局部值；
-3. 放入双方各自的 `foundations`；
+3. 放入唯一共享 `ui/styles/foundations/`；
 4. 登记所有使用方并检查 contrast、focus、reduced-motion 和响应式结果；
 5. 更新相关文档与 baseline。
 
@@ -282,7 +283,7 @@ Prototype 演示数据集中在 `prototype/mock/`，包括 session/message、too
 1. 检查已有结构，只有 DOM、状态语义、交互三者都一致才共享；
 2. 选择 primitive/composite/feature 层级；
 3. 定义稳定 markup、输入、意图和 UI state；
-4. Prototype 建唯一 template/renderer，runtime 建唯一 renderer；
+4. 在 `ui/` 建唯一 template/renderer，由 mock/Tauri adapter 接入；
 5. 把数据调用留给 adapter，把跨组件顺序留给 flow；
 6. 在 `UI_COVERAGE` 登记 CSS/markup/behavior/used_by/verification；
 7. 为每个使用 scene/runtime surface 建立并重放 baseline。
@@ -306,7 +307,7 @@ Prototype 演示数据集中在 `prototype/mock/`，包括 session/message、too
 
 ### 10.5 新增 gallery view
 
-Gallery view 只保存展示特有布局/说明；公共 token、control 和 behavior 必须引用 prototype 公共实现。它需要独立稳定 ID、used_by 和 baseline，不能伪装成 application scene。
+Gallery view 只保存展示特有布局/说明；公共 token、control 和 behavior 必须引用共享 UI 实现。它需要独立稳定 ID、used_by 和 baseline，不能伪装成 application scene。
 
 ### 10.6 拆分现有页面
 
@@ -327,7 +328,7 @@ Gallery view 只保存展示特有布局/说明；公共 token、control 和 beh
 4. 从新路径重开全部 scene/gallery 并运行专项测试；
 5. 验证通过后不得恢复旧原型目录、旧入口或兼容存根。
 
-最终不保留 redirect、兼容入口、说明存根或第二份可编辑原型。设计概念由 `DESIGN.md` 解释；最终 GUI 设计真源是 `DESIGN.md` 与根目录 `prototype/`，视觉等价仍以双方各自的重构前 baseline 判断。
+最终不保留 redirect、兼容入口、说明存根或第二份可编辑原型。设计概念由 `DESIGN.md` 解释；最终 GUI 设计真源是 `DESIGN.md` 与根目录 `prototype/`，原型修整以原型 baseline 判断，产品已覆盖组件以新版原型判断。
 
 ## 12. 变更完成检查
 
@@ -348,6 +349,7 @@ Gallery view 只保存展示特有布局/说明；公共 token、control 和 beh
 - [`GUI 界面对照表`](../../prototype/docs/UI_COVERAGE.md)
 - [`GUI 设计缺口表`](../../prototype/docs/DESIGN_GAPS.md)
 - [`GUI 架构`](./ARCHITECTURE.md)
+- [`共享组件目录`](./FRONTEND_COMPONENTS.md)
 - [`前端术语`](./FRONTEND_TERMINOLOGY.md)
 - [`界面使用指南`](./UI_USAGE_GUIDELINES.md)
 - [`Native split 验证`](./NATIVE_SPLIT_VALIDATION.md)
