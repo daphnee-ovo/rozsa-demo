@@ -3,7 +3,6 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     let html = include_str!("../frontend/ui/templates/features/settings.html");
     let css = include_str!("../frontend/ui/styles/features/appearance.css");
     let settings_css = include_str!("../frontend/ui/styles/features/settings.css");
-    let sidebar_css = include_str!("../frontend/styles/features/sidebar.css");
     let tauri = include_str!("../tauri.conf.json");
 
     assert!(html.contains("data-settings-pane=\"appearance\""));
@@ -115,7 +114,12 @@ fn appearance_settings_are_in_a_dedicated_tab() {
     assert!(!html.contains("id=\"darkThemeTranslucentSidebar\""));
     assert!(!html.contains("id=\"settingsAutoCompact\" aria-label=\"自动压缩\"><option"));
     assert!(!html.contains("id=\"settingsBlockImages\" aria-label=\"Block images\"><option"));
-    assert!(sidebar_css.contains(".setting-toggle.on::after { transform: translateX(16px); }"));
+    assert!(settings_css.contains(".setting-toggle.on::after,"));
+    assert!(
+        settings_css.contains(
+            ".setting-toggle[aria-checked=\"true\"]::after { transform: translateX(18px);"
+        )
+    );
     assert!(
         settings_css.contains(".setting-item.is-disabled { opacity: .44; pointer-events: none; }")
     );
