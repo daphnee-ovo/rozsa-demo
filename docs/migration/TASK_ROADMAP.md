@@ -55,6 +55,14 @@ macOS 实际窗口“隔离源编辑 → watch → reload → 可见标题/背�
 Linux/Windows native 未测，完整共享 TS 与最终真源搬迁由 T013/T060 负责。
 正式完成状态以 `dow task show TASK-T009` 为准。
 
+**TASK-T064：默认 TypeScript 工具链切换 TS7**（依赖 T009，进入日期：2026-10-13）
+锁定官方正式 `typescript@7.0.2`；默认 typecheck/build/watch 使用本地 native
+`tsc`，不回退旧版或全局 compiler，后续 TS 迁移沿用 TS7。main 改为
+NodeNext/ESM；preload 由 TS7 emit 后合并成 Electron sandbox 所需单文件 CJS，
+不增加向后兼容层。资源/source map/watch/strict 边界及列表/历史聚焦验证、
+macOS 实际重载与平台未验证边界见 [M064](evidence/M064.md)。
+正式完成状态以 `dow task show TASK-T064` 为准。
+
 分组仅便于检索，不是阶段 gate；只服从每项实际依赖。全部任务 `parallel=false`，每次仅一个执行会话写共享文件。manifest/lock、transport/bridge/入口、共享 CSS、原型与本索引随当前 task scope 串行维护；没有通用 runner 或 schema root 的事前 owner 门槛。
 
 ### 会话读取纵向切片

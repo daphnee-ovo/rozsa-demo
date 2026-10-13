@@ -14,7 +14,7 @@ export async function generateResources(resourceRoot = projectRoot, outDir = res
   // Read every required input before emitting anything; a missing source is an error.
   const inputs = await Promise.all(resourceFiles.map(async ([source, target]) =>
     [target, await readFile(resolve(resourceRoot, source))]));
-  inputs.push(["node/package.json", Buffer.from('{"type":"commonjs"}\n')]);
+  inputs.push(["node/package.json", Buffer.from('{"type":"module"}\n')]);
   for (const [target, bytes] of inputs) {
     const path = resolve(outDir, target);
     await mkdir(dirname(path), { recursive: true });

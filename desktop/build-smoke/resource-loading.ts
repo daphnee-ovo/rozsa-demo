@@ -10,7 +10,7 @@ export async function checkResourceLoading(outDir: string): Promise<{ html: stri
   assert.equal(styles.length, 2);
   assert.equal(scripts.length, 1);
   for (const path of [...styles, ...scripts]) assert.ok((await readFile(path)).length > 0, path);
-  assert.equal(JSON.parse(await readFile(resolve(outDir, "node/package.json"), "utf8")).type, "commonjs");
+  assert.equal(JSON.parse(await readFile(resolve(outDir, "node/package.json"), "utf8")).type, "module");
   const maps: string[] = [];
   async function walk(directory: string): Promise<void> {
     for (const item of await readdir(directory, { withFileTypes: true })) {

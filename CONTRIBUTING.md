@@ -50,8 +50,32 @@ for host boundaries and design gaps.
 
 ## Candidate resource build and watch (TASK-T009)
 
+The default compiler is official stable `typescript@7.0.2` (TASK-T064), pinned
+in the desktop lockfile. `typecheck`, build and watch invoke its local native
+`tsc` launcher; a missing or mismatched installation fails without using a
+global/older compiler. Subsequent TS migration work uses TS7. Install platform
+optional dependencies with `npm ci`; do not omit them. TS7 ships macOS x64/arm64,
+Linux x64/arm/arm64 and Windows x64/arm64 binaries (plus other published targets).
+The compiler package requires Node >=16.20.0; this desktop toolchain requires
+Node >=22.12.0 through Electron's install tooling. Only macOS arm64 was exercised
+here; platform package availability does not establish native acceptance.
+
+TS7 removed Node10 resolution, `module: None` and `outFile`. Main now uses
+NodeNext/ESM with `import.meta.dirname`; renderer remains ES2022/Bundler with
+DOM-only globals. Preload uses ES2022/Bundler with Node-only globals, emits via
+TS7 to `dist/preload/`, then pinned esbuild 0.25.12 bundles that emitted JS to
+`dist/preload.cjs` with the original TS source map. This is Electron's current
+sandbox loading constraint, not backward compatibility; `electron` is the only
+external runtime require. No TS5/TS6 compatibility layer or compiler API is used.
+tsx 4.20.6 remains the module runtime test runner, using its own esbuild for
+transpilation; it is not the typechecker or production compiler.
+
+Verify the installed compiler with `node desktop/node_modules/typescript/bin/tsc --version`.
+See [M064](docs/migration/evidence/M064.md) for release sources, compatibility
+adjustments and actual validation. M009 below records the earlier TS5 baseline.
+
 After `bash devtools/build-migration.sh`, the desktop's standalone build now
-emits JS, source maps with embedded TS sources, the CommonJS package marker,
+emits JS, source maps with embedded TS sources, the ESM package marker,
 the `desktop/renderer/index.html` template and the two existing shared styles:
 `crates/rozsa-gui/frontend/ui/styles/foundations/tokens.css` and
 `styles/features/sidebar.css`. HTML is copied to
@@ -80,10 +104,12 @@ main/preload changes. Stop watch with Ctrl+C. Go changes still require
 `bash devtools/build-migration.sh` and an app restart. Watch does not start,
 restart or silently reload the app. Default `./run.sh` continues to use Tauri.
 
-`bash devtools/test-migration-build.sh` is the focused T009 completion target:
+`bash devtools/test-migration-build.sh` is the focused T009/T064 completion target:
 fresh build, strict typecheck, resource/map/import loading and watcher tests,
-then prepare-only. Tests exercise environment boundaries, atomic saves, missing
-inputs and compiler failure recovery in project `tmp/`; they do not launch a GUI.
+session-list/history checks, then prepare-only. Tests exercise environment
+boundaries, ESM output, atomic saves, missing inputs/compiler, rejected older
+compiler, type-error non-emission and compiler failure recovery in project
+`tmp/`; they do not launch a GUI.
 The existing module test dependencies must be installed before direct resource
 tests (`npm ci --prefix desktop/js-tests --cache ./tmp/migration/npm-cache`).
 

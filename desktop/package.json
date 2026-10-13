@@ -1,13 +1,15 @@
 {
   "name": "rozsa-desktop", "version": "0.0.0", "private": true, "type": "module",
   "main": "dist/node/main/entry.js",
+  "engines": { "node": ">=22.12.0" },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "typecheck": "node scripts/build.mjs --typecheck",
     "build": "node scripts/build.mjs",
     "build:resources": "node scripts/resources.mjs",
     "watch": "node scripts/build.mjs --watch",
     "test:resources": "npm --prefix js-tests run test:resources",
     "start": "electron ."
   },
-  "devDependencies": { "electron": "44.7.0", "typescript": "5.9.3", "@types/node": "24.10.1" }
+  "devDependencies": { "electron": "44.7.0", "typescript": "7.0.2", "esbuild": "0.25.12", "@types/node": "24.10.1" },
+  "allowScripts": { "esbuild@0.25.12": true }
 }

@@ -47,6 +47,7 @@ The active product is implemented entirely in the five Rust crates above. Do not
 ## Commands
 
 - Run the smallest relevant Cargo test target first.
+- Migration TypeScript defaults to the exact official TS7 version in `desktop/package.json` (currently `typescript@7.0.2`). Typecheck/build/watch use its local native `tsc`; never fall back to older or global compilers. Main uses NodeNext/ESM; the sandbox preload bundles TS7-emitted JS into one CJS file because Electron's sandbox requires it. Do not add backward compatibility layers.
 - For small features, use the implementation language's test runner directly. JavaScript tests belong in the module's `js-tests/` directory; never wrap Node tests in Rust/Cargo subprocesses.
 - Prefer shell scripts under `devtools/` for whole-module integration and end-to-end tests across languages. See `CONTRIBUTING.md` for the GUI test commands and verification boundaries.
 - If a Rust test file changes, run its relevant test target before broader checks.

@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.shared.json",
-  "compilerOptions": { "module": "CommonJS", "moduleResolution": "Node", "rootDir": ".", "outDir": "dist/node", "types": ["node"] },
+  "compilerOptions": { "module": "NodeNext", "moduleResolution": "NodeNext", "rootDir": ".", "outDir": "dist/node", "types": ["node"] },
   "include": ["main/**/*.ts"]
 }

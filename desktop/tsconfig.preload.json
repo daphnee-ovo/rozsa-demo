@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.shared.json",
-  "compilerOptions": { "module": "None", "moduleResolution": "Node", "outFile": "dist/preload.cjs", "types": ["node"] },
+  "compilerOptions": { "module": "ES2022", "moduleResolution": "Bundler", "rootDir": ".", "outDir": "dist/preload", "types": ["node"] },
   "files": ["preload/bridge.ts", "preload/entry.ts"]
 }

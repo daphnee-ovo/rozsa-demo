@@ -2,10 +2,20 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { build as bundle } from "esbuild";
 import { generateResources, options, projectRoot, resourceFiles } from "./resources.mjs";
 
-const { resourceRoot, outDir, watch } = options(process.argv.slice(2), true);
+const args = process.argv.slice(2);
+const typecheck = args.includes("--typecheck");
+const { resourceRoot, outDir, watch } = options(args.filter(arg => arg !== "--typecheck"), true);
+if (typecheck && watch) throw new Error("--typecheck cannot be combined with --watch");
 const desktop = resolve(projectRoot, "desktop");
+const compilerPath = resolve(desktop, "node_modules/typescript/bin/tsc");
+const expectedVersion = JSON.parse(await readFile(resolve(desktop, "package.json"), "utf8")).devDependencies.typescript;
+const installedVersion = JSON.parse(await readFile(resolve(desktop, "node_modules/typescript/package.json"), "utf8")).version;
+if (!expectedVersion.startsWith("7.") || installedVersion !== expectedVersion) {
+  throw new Error(`TS7 ${expectedVersion} required; installed ${installedVersion}. Run npm ci in desktop.`);
+}
 let stopping = false;
 let compiler;
 let typescriptReady = false;
@@ -14,10 +24,10 @@ for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {
   compiler?.kill(signal);
 });
 
-async function compile(config, outputFlag, output) {
+async function compile(config, flags) {
   if (stopping) return;
   await new Promise((accept, reject) => {
-    const child = spawn(process.execPath, [resolve(desktop, "node_modules/typescript/bin/tsc"), "-p", config, outputFlag, output], { cwd: desktop, stdio: "inherit" });
+    const child = spawn(process.execPath, [compilerPath, "-p", config, ...flags], { cwd: desktop, stdio: "inherit" });
     compiler = child;
     child.once("error", reject);
     child.once("exit", (code, signal) => {
@@ -32,14 +42,19 @@ async function compile(config, outputFlag, output) {
 async function build(typescript = true) {
   if (typescript) {
     typescriptReady = false;
-    await compile("tsconfig.main.json", "--outDir", resolve(outDir, "node"));
-    await compile("tsconfig.preload.json", "--outFile", resolve(outDir, "preload.cjs"));
-    await compile("tsconfig.renderer.json", "--outDir", resolve(outDir, "browser"));
+    await compile("tsconfig.main.json", ["--outDir", resolve(outDir, "node")]);
+    await compile("tsconfig.preload.json", ["--outDir", resolve(outDir, "preload")]);
+    await compile("tsconfig.renderer.json", ["--outDir", resolve(outDir, "browser")]);
+    // TS7 removed outFile: combine its already checked/emitted JS, not TS sources.
+    // esbuild consumes TS7's maps to retain the original embedded preload sources.
+    await bundle({ entryPoints: [resolve(outDir, "preload/preload/entry.js")], outfile: resolve(outDir, "preload.cjs"),
+      bundle: true, platform: "node", format: "cjs", target: "es2022", external: ["electron"],
+      sourcemap: true, sourcesContent: true });
     if (!stopping) typescriptReady = true;
   }
   if (stopping) return;
   await generateResources(resourceRoot, outDir);
-  console.log(`Candidate ${typescript ? "build" : "resources"} ready: ${outDir}`);
+  console.log(`Candidate ${typescript ? "build" : "resources"} ready: ${outDir} (TS7 ${installedVersion})`);
 }
 
 async function tsFiles(directory) {
@@ -71,7 +86,10 @@ async function snapshot() {
   };
 }
 
-if (!watch) await build();
+if (typecheck) {
+  for (const name of ["main", "preload", "renderer"]) await compile(`tsconfig.${name}.json`, ["--noEmit"]);
+  console.log(`TS7 ${installedVersion} typecheck passed`);
+} else if (!watch) await build();
 else {
   // Content polling is portable and detects atomic saves, removals and new TS files.
   // One build at a time; edits made during compilation are detected on the next pass.
