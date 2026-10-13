@@ -14,11 +14,7 @@ export TMPDIR="$project_root/tmp/migration/install-tmp"
 export npm_config_cache="$project_root/tmp/migration/npm-cache"
 export ELECTRON_CACHE="$project_root/tmp/migration/electron-cache"
 export electron_config_cache="$project_root/tmp/migration/electron-cache"
-backend_name=rozsa-backend
-if [[ "$(go env GOOS)" == windows ]]; then backend_name=rozsa-backend.exe; fi
-go -C backend build -o "$project_root/dist/migration/$backend_name" ./cmd/rozsa-backend
 npm --prefix desktop ci --no-audit --no-fund
 (cd desktop && npm exec -- install-electron)
-npm --prefix desktop run build
-# npm build generates the HTML template/shared CSS and source maps as well as JS.
-printf 'Migration candidate prepared: %s\n' "$project_root/desktop"
+# Forge hooks check TS7 and build Go; Vite alone emits application code/resources.
+npm --prefix desktop run package

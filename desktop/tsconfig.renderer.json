@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.shared.json",
-  "compilerOptions": { "module": "ES2022", "moduleResolution": "Bundler", "rootDir": ".", "outDir": "dist/browser", "lib": ["ES2022", "DOM"], "types": [] },
+  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "rootDir": ".", "lib": ["ES2022", "DOM"], "types": [] },
   "include": ["renderer/**/*.ts"]
 }

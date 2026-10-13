@@ -2,11 +2,12 @@ import { app, dialog, ipcMain } from "electron";
 import { join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 import { BackendService, RPCFailure } from "./backend-service.js";
-import { createWindow, page, pageURL } from "./window.js";
+import { createWindow, pageURL } from "./window.js";
 import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, sessionTarget, type SessionHistoryReply, type SessionListReply } from "./session-contract.js";
 
 // Candidate runtime storage is isolated as well as the catalog inputs.
-const profile = resolve(app.commandLine.getSwitchValue("user-data-dir") || join(import.meta.dirname, "../../../../tmp/migration/electron-profile"));
+app.setName("Rózsa Migration");
+const profile = resolve(app.commandLine.getSwitchValue("user-data-dir") || (app.isPackaged ? app.getPath("userData") : join(app.getAppPath(), "../tmp/migration/electron-profile")));
 mkdirSync(profile, { recursive: true });
 app.setPath("userData", profile);
 app.setPath("sessionData", profile);
@@ -39,9 +40,11 @@ app.on("before-quit", event => {
   void (backend?.stop() ?? Promise.resolve()).finally(() => { quitReady = true; app.quit(); });
 });
 app.on("window-all-closed", () => app.quit());
+// Forge main hot restart sends SIGTERM. Reuse the normal owned-backend shutdown.
+process.once("SIGTERM", () => app.quit());
 void app.whenReady().then(async () => {
   app.setName("Rózsa Migration");
-  backend = new BackendService(join(import.meta.dirname, "../../../../dist/migration", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"), directories(process.argv));
+  backend = new BackendService(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "../dist/migration"), process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"), directories(process.argv));
   await backend.initialize();
   const window = createWindow();
   ipcMain.handle(SESSION_LIST_CHANNEL, async (event, ...args: unknown[]): Promise<SessionListReply> => {
@@ -60,7 +63,7 @@ void app.whenReady().then(async () => {
     }
   });
   window.on("closed", () => { ipcMain.removeHandler(SESSION_LIST_CHANNEL); ipcMain.removeHandler(SESSION_HISTORY_CHANNEL); });
-  await window.loadFile(page);
+  await window.loadURL(pageURL);
 }).catch(error => {
   dialog.showErrorBox("Rózsa could not start", error instanceof Error ? error.message : String(error));
   app.quit();

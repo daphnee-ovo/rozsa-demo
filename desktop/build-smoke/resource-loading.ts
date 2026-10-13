@@ -1,43 +1,39 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-export async function checkResourceLoading(outDir: string): Promise<{ html: string; styles: string[]; scripts: string[]; maps: string[] }> {
-  const html = resolve(outDir, "browser/renderer/index.html");
+export async function checkResourceLoading(outDir: string) {
+  const html = resolve(outDir, "renderer/sessions/index.html");
   const text = await readFile(html, "utf8");
-  const styles = [...text.matchAll(/<link\b[^>]*href="([^"]+)"/g)].map(match => resolve(dirname(html), match[1]));
-  const scripts = [...text.matchAll(/<script\b[^>]*src="([^"]+)"/g)].map(match => resolve(dirname(html), match[1]));
-  assert.equal(styles.length, 2);
-  assert.equal(scripts.length, 1);
+  const paths = (tag: string, attribute: string) => [...text.matchAll(new RegExp(`<${tag}\\b[^>]*${attribute}="([^"]+)"`, "g"))].map(m => resolve(dirname(html), m[1]));
+  const styles = paths("link", "href").filter(p => p.endsWith(".css"));
+  const scripts = paths("script", "src");
+  assert.ok(styles.length > 0); assert.equal(scripts.length, 1);
+  assert.match(text, /connect-src 'none'/); assert.doesNotMatch(text, /entry\.ts|@vite\/client/);
   for (const path of [...styles, ...scripts]) assert.ok((await readFile(path)).length > 0, path);
-  assert.equal(JSON.parse(await readFile(resolve(outDir, "node/package.json"), "utf8")).type, "module");
+  const css = (await Promise.all(styles.map(path => readFile(path, "utf8")))).join("\n");
+  assert.match(css, /--font-ui/); assert.match(css, /session-item/);
   const maps: string[] = [];
-  async function walk(directory: string): Promise<void> {
-    for (const item of await readdir(directory, { withFileTypes: true })) {
-      const path = resolve(directory, item.name);
-      if (item.isDirectory()) await walk(path);
-      else if (item.name.endsWith(".js") || item.name.endsWith(".cjs")) {
-        const code = await readFile(path, "utf8");
-        const reference = /\/\/# sourceMappingURL=(\S+)/.exec(code);
-        assert.ok(reference, `Missing source map: ${path}`);
-        const mapPath = resolve(dirname(path), reference[1]);
-        const map = JSON.parse(await readFile(mapPath, "utf8")) as { version: number; sources: string[]; sourcesContent: string[]; mappings: string };
-        assert.equal(map.version, 3); assert.ok(map.mappings.length > 0);
-        assert.equal(map.sources.length, map.sourcesContent.length);
-        for (const [i, source] of map.sources.entries()) {
-          assert.equal(map.sourcesContent[i], await readFile(resolve(dirname(mapPath), source), "utf8"), `Map source: ${source}`);
-        }
-        maps.push(mapPath);
-        // Generated renderer imports must resolve too, including shared contract types/runtime.
-        if (path.startsWith(resolve(outDir, "browser"))) {
-          for (const match of code.matchAll(/(?:from\s+|import\s*)["'](\.[^"']+)["']/g)) await readFile(resolve(dirname(path), match[1]));
-        }
+  for (const directory of ["build", "renderer/sessions/assets"]) {
+    for (const name of await readdir(resolve(outDir, directory))) {
+      if (!name.endsWith(".map")) continue;
+      const path = resolve(outDir, directory, name);
+      const map = JSON.parse(await readFile(path, "utf8"));
+      assert.equal(map.version, 3); assert.ok(map.mappings.length > 0);
+      assert.ok(map.sources.length > 0); assert.equal(map.sources.length, map.sourcesContent.length);
+      for (const [i, source] of map.sources.entries()) {
+        assert.equal(map.sourcesContent[i], await readFile(resolve(dirname(path), source), "utf8"), source);
       }
+      maps.push(path);
     }
   }
-  await walk(outDir);
-  assert.ok(maps.some(path => path.endsWith("preload.cjs.map")));
-  assert.ok(maps.includes(resolve(outDir, "node/main/entry.js.map")));
-  assert.ok(maps.includes(resolve(outDir, "browser/renderer/entry.js.map")));
+  for (const name of ["main", "preload"]) {
+    await access(resolve(outDir, `build/${name}.cjs`));
+    assert.ok(maps.includes(resolve(outDir, `build/${name}.cjs.map`)));
+  }
+  assert.ok(maps.some(path => path.includes("/assets/")));
+  const preload = await readFile(resolve(outDir, "build/preload.cjs"), "utf8");
+  assert.match(preload, /require\(["']electron["']\)/);
+  assert.doesNotMatch(preload, /require\(["']\.\//); // Sandbox has no filesystem module loader.
   return { html, styles, scripts, maps };
 }

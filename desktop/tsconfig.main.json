@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.shared.json",
-  "compilerOptions": { "module": "NodeNext", "moduleResolution": "NodeNext", "rootDir": ".", "outDir": "dist/node", "types": ["node"] },
-  "include": ["main/**/*.ts"]
+  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "rootDir": ".", "types": ["node"] },
+  "include": ["main/**/*.ts", "forge-env.d.ts"]
 }

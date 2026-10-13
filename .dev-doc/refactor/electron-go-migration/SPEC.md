@@ -107,9 +107,9 @@ Go 依赖方向：cmd/transport → app → core → model。platform 由需要�
 
 共享领域输入、command/result、事件变体用明确 interface/discriminated union；不把原有动态对象一律标成 any。TypeScript 类型不替代跨进程 payload 的运行时校验。只为当前功能建立 IPC 类型、Go struct/tag 和实际用例；以同一小输入验证字段与错误语义。后续切片增补自己的契约，不先建立全方法 schema 或通用生成器。
 
-默认工具链使用官方 TS7，当前精确锁定正式版 `typescript@7.0.2`（TASK-T064；用户于 2026-10-13 要求）。typecheck、JS emit/build、watch 均显式调用本地 native `tsc`，缺失、版本不符或失败透明报错，不回退 TS5/TS6 或全局 compiler；后续 TS 切片沿用 TS7，不增加向后兼容层。
+默认类型检查使用官方 TS7，精确锁定正式版 `typescript@7.0.2`（TASK-T064；用户于 2026-10-13 要求）。TASK-T065 根据用户 2026-10-14 要求将默认开发/package 切换为 Electron Forge + Vite；本地 native `tsc` 仅执行 strict noEmit typecheck，缺失、版本不符或失败透明报错。Forge start/package hooks 先 typecheck 并构建 Go，Vite 直接编译 TS；不回退旧版或全局 compiler，不保留 TS emit/watch 的第二套默认链路。
 
-构建采用 TS7 与显式静态资源生成步骤，不增加 Vite 或 UI 框架：共享 UI/renderer 输出浏览器 ES2022 modules；main 使用 NodeNext/ESM 与 `import.meta.dirname`。TS7 移除 Node10 resolution、`module: None` 和 `outFile`，preload 因此改为 ES2022/Bundler 严格检查并 emit，再由锁定 esbuild 0.25.12 仅合并 TS7 emitted JS 成 `preload.cjs`，关联原 TS source maps。Electron sandbox 当前不支持 ESM preload，`electron` 是唯一 external require；这是现行宿主要求，不是旧输出兼容。资源、watch reload/restart 语义保持当前切片行为，证据见 [M064](../../../docs/migration/evidence/M064.md)。
+Electron 44.7.0、Forge CLI/Vite plugin 8.0.1、Vite 8.3.4 精确锁定。Forge 管理 start/package；稳定 Vite 插件负责 main/preload/renderer bundling、资源和 source maps。main/preload 按 Forge 8 使用 CJS bundles；preload 为 sandbox 所需单文件，仅 external Electron；类型检查使用 Bundler resolution 并保留 DOM/Node 严格边界。共享 CSS/HTML 从现有真源进入 Vite 资源图，无复制的手写副本；T013 继续共享 TS/templates 与原型/Tauri 同源加载。CSS HMR、HTML/renderer TS 自动重载、preload 重载和 main hot restart 由 Forge/Vite 实现；Go 修改须重启开发入口。产物为 desktop/.vite 与 desktop/out；Go 在 development 使用 dist/migration，在 package 使用 resourcesPath。T065 验收到真实可运行 package，T014 使用 Forge makers 负责后续 installer 资源验收，发行签名/安装验收仍归对应平台任务。实测版本/命令/平台边界见 [M065](../../../docs/migration/evidence/M065.md)；旧 TS emit/watch 证据保留于 [M064](../../../docs/migration/evidence/M064.md)。
 
 分别配置共享 UI/renderer 的 DOM 类型边界与 main/preload 的 Electron/Node 类型边界，启用 strict 类型检查，禁止 renderer 获得 Node 能力。构建生成 JS、HTML/CSS/templates 与 source map 到 dist 或对应模块的忽略目录；原型 HTTP 与产品包读取同一批共享生成资源，不直接加载 TS，也不维护手写 JS 副本。静态资源加载与模板 URL 必须通过实际页面验收。
 

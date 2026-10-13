@@ -9,7 +9,7 @@
     "test:session-history": "tsx session-history.test.ts",
     "test:native-history": "tsx native-session-history.test.ts",
     "test:resources": "tsx build-resources.test.ts",
-    "test:native-resources": "tsx native-resource-watch.test.ts"
+    "test:native-resources": "tsx native-forge.test.ts"
   },
   "devDependencies": {
     "tsx": "4.20.6",

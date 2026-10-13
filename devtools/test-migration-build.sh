@@ -3,6 +3,11 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"
 bash devtools/build-migration.sh
+export GOCACHE="$project_root/tmp/migration/go-cache"
+export GOTMPDIR="$project_root/tmp/migration/go-tmp"
+export GOMODCACHE="$project_root/tmp/migration/go-mod-cache"
+export TMPDIR="$project_root/tmp/migration/install-tmp"
+go -C backend test ./internal/app/session/... ./internal/transport/...
 npm ci --prefix desktop/js-tests --cache "$project_root/tmp/migration/npm-cache" --no-audit --no-fund
 npm --prefix desktop run typecheck
 npm --prefix desktop run test:resources

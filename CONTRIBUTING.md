@@ -48,91 +48,86 @@ verification. Serve the prototype from the repository HTTP root (for example,
 validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
 for host boundaries and design gaps.
 
-## Candidate resource build and watch (TASK-T009)
+## Candidate Forge/Vite development and package (TASK-T065)
 
-The default compiler is official stable `typescript@7.0.2` (TASK-T064), pinned
-in the desktop lockfile. `typecheck`, build and watch invoke its local native
-`tsc` launcher; a missing or mismatched installation fails without using a
-global/older compiler. Subsequent TS migration work uses TS7. Install platform
-optional dependencies with `npm ci`; do not omit them. TS7 ships macOS x64/arm64,
-Linux x64/arm/arm64 and Windows x64/arm64 binaries (plus other published targets).
-The compiler package requires Node >=16.20.0; this desktop toolchain requires
-Node >=22.12.0 through Electron's install tooling. Only macOS arm64 was exercised
-here; platform package availability does not establish native acceptance.
-
-TS7 removed Node10 resolution, `module: None` and `outFile`. Main now uses
-NodeNext/ESM with `import.meta.dirname`; renderer remains ES2022/Bundler with
-DOM-only globals. Preload uses ES2022/Bundler with Node-only globals, emits via
-TS7 to `dist/preload/`, then pinned esbuild 0.25.12 bundles that emitted JS to
-`dist/preload.cjs` with the original TS source map. This is Electron's current
-sandbox loading constraint, not backward compatibility; `electron` is the only
-external runtime require. No TS5/TS6 compatibility layer or compiler API is used.
-tsx 4.20.6 remains the module runtime test runner, using its own esbuild for
-transpilation; it is not the typechecker or production compiler.
-
-Verify the installed compiler with `node desktop/node_modules/typescript/bin/tsc --version`.
-See [M064](docs/migration/evidence/M064.md) for release sources, compatibility
-adjustments and actual validation. M009 below records the earlier TS5 baseline.
-
-After `bash devtools/build-migration.sh`, the desktop's standalone build now
-emits JS, source maps with embedded TS sources, the ESM package marker,
-the `desktop/renderer/index.html` template and the two existing shared styles:
-`crates/rozsa-gui/frontend/ui/styles/foundations/tokens.css` and
-`styles/features/sidebar.css`. HTML is copied to
-`desktop/dist/browser/renderer/index.html`; CSS to `desktop/dist/browser/ui/`.
-The same generator is used for both build and watch; it copies resource bytes
-verbatim. No additional templates or UI modules are migrated by this task.
+Pinned tools: Electron 44.7.0, Forge CLI/Vite plugin 8.0.1, Vite 8.3.4 and
+official TS7 7.0.2. Node >=22.17.0 is required; validation used Node 26.10.0.
+Install exact dependencies with npm ci. Keep npm/Electron caches and TMPDIR
+under project tmp/migration/; the build/package/run scripts configure them.
 
 ```bash
-npm --prefix desktop run build
-npm --prefix desktop run build:resources
+bash devtools/build-migration.sh
 npm --prefix desktop run typecheck
+bash devtools/run-migration.sh --session-dir /absolute/synthetic/sessions
+bash devtools/package-migration-candidate.sh
 npm --prefix desktop run test:resources
 bash devtools/run-migration.sh --prepare-only
-npm --prefix desktop run watch
-# In a second terminal, after Watch ready:
-bash devtools/run-migration.sh --session-dir /absolute/synthetic/sessions
+bash devtools/test-migration-build.sh
 ```
 
-Watch performs an initial TS/resource build, then polls source content every
-300 ms, including atomic editor saves and added/removed TS files. HTML/CSS-only
-changes regenerate resources; TS/config changes rebuild all three TS targets
-serially. `Watch build failed` means the output is not ready; correct the source
-and wait for `Watch ready`. Reload the window (`Cmd+R` on macOS, `Ctrl+R` on
-Linux/Windows) for HTML/CSS/renderer changes; close and relaunch it for
-main/preload changes. Stop watch with Ctrl+C. Go changes still require
-`bash devtools/build-migration.sh` and an app restart. Watch does not start,
-restart or silently reload the app. Default `./run.sh` continues to use Tauri.
+Forge owns start/package. The trusted launcher runs electron-forge start;
+directly use `npm --prefix desktop start -- -- --session-dir /absolute/synthetic/sessions`
+with the project cache environment. Hooks first run TS7 strict noEmit and build
+the host Go binary. Vite alone transpiles/bundles main, sandbox preload and
+renderer. There is no TS emit step or separate default build/watch chain.
+Run typecheck separately during TS editing: Vite does not check types on each
+edit. tsx remains the module test runner.
 
-`bash devtools/test-migration-build.sh` is the focused T009/T064 completion target:
-fresh build, strict typecheck, resource/map/import loading and watcher tests,
-session-list/history checks, then prepare-only. Tests exercise environment
-boundaries, ESM output, atomic saves, missing inputs/compiler, rejected older
-compiler, type-error non-emission and compiler failure recovery in project
-`tmp/`; they do not launch a GUI.
-The existing module test dependencies must be installed before direct resource
-tests (`npm ci --prefix desktop/js-tests --cache ./tmp/migration/npm-cache`).
+Vite consumes the existing desktop/renderer/index.html and shared CSS under
+crates/rozsa-gui/frontend/ui/styles/ directly. CSS HMR retains renderer state;
+HTML/renderer TS changes automatically reload. Forge reloads preload changes
+and restarts Electron for main changes. Go changes require closing and
+restarting Forge start. Renderer updates reuse the Go process; close and Forge
+SIGTERM use owned backend shutdown. Full renderer reload preserves the existing
+candidate reload behavior, not additional cross-reload UI persistence.
+
+Generated bundles/maps live in desktop/.vite/; Forge packages in desktop/out/.
+Main/preload follow Forge 8's main.cjs/preload.cjs output. Preload is a single
+sandbox bundle with Electron as the only external runtime require. Strict
+Bundler-resolution TS configs keep Node globals out of renderer and DOM out of
+main/preload. Shared assets are emitted by Vite without copied hand-written
+JS/CSS sources.
+
+Forge puts app code in app.asar and the Go binary separately under Resources
+(resources on Linux/Windows). Runtime resolves Go using resourcesPath in
+package and dist/migration/ in development, independently of launch CWD.
+No user session/credential paths are discovered. Native tests pass an isolated
+user-data-dir; packaged default storage uses its distinct Rózsa Migration
+app userData directory. Foreign platform/architecture packaging is rejected
+here so a host Go binary cannot enter an incompatible package. Corresponding
+platform tasks own cross-build and native acceptance.
+
+test:resources checks Vite assets/maps/sandbox preload, TS7 noEmit, strict
+environment boundaries and compiler failure gates. The completion script also
+runs Go session/transport and existing list/history module tests; it does not
+launch a GUI or enter full TEST.
 
 ```bash
 npm --prefix desktop/js-tests run test:native-resources
+# macOS package acceptance, after package:
+ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rozsa Migration-darwin-arm64/Rozsa Migration.app/Contents/MacOS/rozsa-migration" npm --prefix desktop/js-tests run test:native
+ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rozsa Migration-darwin-arm64/Rozsa Migration.app/Contents/MacOS/rozsa-migration" npm --prefix desktop/js-tests run test:native-history
 ```
 
-This explicit native test runs the actual candidate entry/preload/Go in an
-isolated generated layout under `tmp/migration-native-resource-watch/`. It edits
-only its tmp HTML/CSS inputs, waits for watch output, reloads the shown window,
-checks the changed heading/computed background and captures before/after images.
-It closes its Electron window and verifies its Go backend and watcher exit.
-Use host GUI permissions on macOS. Build/watch support `--resource-root` and
-`--out-dir` for this isolated verification layout; normal commands use the
-repository sources and `desktop/dist/`. Source maps resolve to those TS sources.
-See [M009](docs/migration/evidence/M009.md) for measured results and platform limits.
+Native Forge validation edits only copied HTML/CSS/TS inputs under project tmp,
+then checks actual Electron automatic updates, controlled bridge, stdio history
+and owned process/server cleanup. Package checks reuse existing catalog/history
+scenarios against the actual executable from an unrelated CWD. Every validation
+instance closes after testing. Use host GUI permissions on macOS. Actual
+results and platform limits are in [M065](docs/migration/evidence/M065.md).
 
-On the migration branch, the user authorized one commit per completed task
-starting with TASK-T009: verify, immediately complete it through `dow task done`,
-then commit that task's attributable changes. Do not backfill T001–T003, push,
-iterate or automatically continue to another task. Stage explicit file paths;
-preserve other sessions' working tree and index changes. When first tracking an
-existing untracked file changed by the task, disclose the included base content.
+T013 extends this resource graph to shared TS/templates and prototype/Tauri
+loading; T014 adds Forge makers/installer acceptance after T012/T013.
+This task stops at runnable package. Signing, installer, distribution and
+Linux/Windows native acceptance remain corresponding later tasks. Historical
+emit/watch evidence remains in [M009](docs/migration/evidence/M009.md) and
+[M064](docs/migration/evidence/M064.md).
+
+On the migration branch, immediately complete each verified task through dow,
+then commit only its attributable changes once. Do not backfill T001–T003,
+push, iterate or start the next task automatically. Preserve other sessions'
+worktree/index changes; disclose included base content when first tracking an
+existing untracked file modified by this task.
 
 ## Pull Requests
 

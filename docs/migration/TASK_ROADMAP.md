@@ -56,12 +56,22 @@ Linux/Windows native 未测，完整共享 TS 与最终真源搬迁由 T013/T060
 正式完成状态以 `dow task show TASK-T009` 为准。
 
 **TASK-T064：默认 TypeScript 工具链切换 TS7**（依赖 T009，进入日期：2026-10-13）
-锁定官方正式 `typescript@7.0.2`；默认 typecheck/build/watch 使用本地 native
+当时锁定官方正式 `typescript@7.0.2`；typecheck/build/watch 使用本地 native
 `tsc`，不回退旧版或全局 compiler，后续 TS 迁移沿用 TS7。main 改为
 NodeNext/ESM；preload 由 TS7 emit 后合并成 Electron sandbox 所需单文件 CJS，
 不增加向后兼容层。资源/source map/watch/strict 边界及列表/历史聚焦验证、
 macOS 实际重载与平台未验证边界见 [M064](evidence/M064.md)。
 正式完成状态以 `dow task show TASK-T064` 为准。
+
+**TASK-T065：Forge/Vite 开发与可运行 package**（依赖 T064，进入日期：2026-10-14）
+锁定 Electron 44.7.0、Forge CLI/Vite plugin 8.0.1、Vite 8.3.4；TS7 7.0.2
+改为唯一默认 noEmit 类型检查，Vite 负责应用 emit 和热更新，Forge 负责
+start/package。退役 T009/T064 的自维护 build/watch 和 TS emit 链路；历史证据
+保留。共享 CSS/HTML 使用现有真源，Go 构建由 Forge hooks 编排，package 通过
+resourcesPath 加载独立 Go binary。实际开发编辑自动更新、package 列表/切换/
+历史/退出与平台边界见 [M065](evidence/M065.md)。本项止于可运行 package，
+T013 继续共享 TS/templates 装载，T014 使用 Forge makers 完善 installer。
+正式完成状态以 `dow task show TASK-T065` 为准。
 
 分组仅便于检索，不是阶段 gate；只服从每项实际依赖。全部任务 `parallel=false`，每次仅一个执行会话写共享文件。manifest/lock、transport/bridge/入口、共享 CSS、原型与本索引随当前 task scope 串行维护；没有通用 runner 或 schema root 的事前 owner 门槛。
 
@@ -81,8 +91,10 @@ macOS 实际重载与平台未验证边界见 [M064](evidence/M064.md)。
 | TASK-T010 | 实现当前 RPC 方法的类型化错误与取消路由 | TASK-T001 |
 | TASK-T011 | 扩展 stdio 并发调度与 snapshot 事件同步 | TASK-T010 |
 | TASK-T012 | 完善 Electron bridge 与 Go 异常退出及重载生命周期 | TASK-T011 |
-| TASK-T013 | 转换共享 core/port 与原型装载为 TS 并验证单一生成资源 | TASK-T009 |
-| TASK-T014 | 接通候选安装包资源与 Go binary 路径 | TASK-T009、TASK-T012、TASK-T013 |
+| TASK-T013 | 在 Forge/Vite 资源图中转换共享 core/port 与原型 TS 装载 | TASK-T009、TASK-T065 |
+| TASK-T014 | 完善 Forge installer 配置及发行资源验收 | TASK-T009、TASK-T012、TASK-T013、TASK-T065 |
+| TASK-T064 | 默认 TypeScript 工具链切换 TS7 | TASK-T009 |
+| TASK-T065 | Forge/Vite 开发与可运行 package | TASK-T064 |
 
 ### Go 产品模块（按实际依赖选择一项）
 

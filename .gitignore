@@ -1,5 +1,7 @@
 node_modules/
 dist/
+desktop/.vite/
+desktop/out/
 *.log
 .DS_Store
 *.tsbuildinfo
