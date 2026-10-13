@@ -1,0 +1,21 @@
+{
+  "name": "rozsa-desktop-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx run-session-tests.ts",
+    "test:native": "tsx native-session-list.test.ts",
+    "test:session-list": "tsx session-list.test.ts",
+    "test:session-history": "tsx session-history.test.ts",
+    "test:native-history": "tsx native-session-history.test.ts",
+    "test:resources": "tsx build-resources.test.ts",
+    "test:native-resources": "tsx native-resource-watch.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "4.20.6",
+    "jsdom": "27.1.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}

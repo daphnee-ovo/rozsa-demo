@@ -48,6 +48,66 @@ verification. Serve the prototype from the repository HTTP root (for example,
 validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
 for host boundaries and design gaps.
 
+## Candidate resource build and watch (TASK-T009)
+
+After `bash devtools/build-migration.sh`, the desktop's standalone build now
+emits JS, source maps with embedded TS sources, the CommonJS package marker,
+the `desktop/renderer/index.html` template and the two existing shared styles:
+`crates/rozsa-gui/frontend/ui/styles/foundations/tokens.css` and
+`styles/features/sidebar.css`. HTML is copied to
+`desktop/dist/browser/renderer/index.html`; CSS to `desktop/dist/browser/ui/`.
+The same generator is used for both build and watch; it copies resource bytes
+verbatim. No additional templates or UI modules are migrated by this task.
+
+```bash
+npm --prefix desktop run build
+npm --prefix desktop run build:resources
+npm --prefix desktop run typecheck
+npm --prefix desktop run test:resources
+bash devtools/run-migration.sh --prepare-only
+npm --prefix desktop run watch
+# In a second terminal, after Watch ready:
+bash devtools/run-migration.sh --session-dir /absolute/synthetic/sessions
+```
+
+Watch performs an initial TS/resource build, then polls source content every
+300 ms, including atomic editor saves and added/removed TS files. HTML/CSS-only
+changes regenerate resources; TS/config changes rebuild all three TS targets
+serially. `Watch build failed` means the output is not ready; correct the source
+and wait for `Watch ready`. Reload the window (`Cmd+R` on macOS, `Ctrl+R` on
+Linux/Windows) for HTML/CSS/renderer changes; close and relaunch it for
+main/preload changes. Stop watch with Ctrl+C. Go changes still require
+`bash devtools/build-migration.sh` and an app restart. Watch does not start,
+restart or silently reload the app. Default `./run.sh` continues to use Tauri.
+
+`bash devtools/test-migration-build.sh` is the focused T009 completion target:
+fresh build, strict typecheck, resource/map/import loading and watcher tests,
+then prepare-only. Tests exercise environment boundaries, atomic saves, missing
+inputs and compiler failure recovery in project `tmp/`; they do not launch a GUI.
+The existing module test dependencies must be installed before direct resource
+tests (`npm ci --prefix desktop/js-tests --cache ./tmp/migration/npm-cache`).
+
+```bash
+npm --prefix desktop/js-tests run test:native-resources
+```
+
+This explicit native test runs the actual candidate entry/preload/Go in an
+isolated generated layout under `tmp/migration-native-resource-watch/`. It edits
+only its tmp HTML/CSS inputs, waits for watch output, reloads the shown window,
+checks the changed heading/computed background and captures before/after images.
+It closes its Electron window and verifies its Go backend and watcher exit.
+Use host GUI permissions on macOS. Build/watch support `--resource-root` and
+`--out-dir` for this isolated verification layout; normal commands use the
+repository sources and `desktop/dist/`. Source maps resolve to those TS sources.
+See [M009](docs/migration/evidence/M009.md) for measured results and platform limits.
+
+On the migration branch, the user authorized one commit per completed task
+starting with TASK-T009: verify, immediately complete it through `dow task done`,
+then commit that task's attributable changes. Do not backfill T001–T003, push,
+iterate or automatically continue to another task. Stage explicit file paths;
+preserve other sessions' working tree and index changes. When first tracking an
+existing untracked file changed by the task, disclose the included base content.
+
 ## Pull Requests
 
 - Keep changes focused and minimal

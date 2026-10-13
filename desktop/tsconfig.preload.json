@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.shared.json",
+  "compilerOptions": { "module": "None", "moduleResolution": "Node", "outFile": "dist/preload.cjs", "types": ["node"] },
+  "files": ["preload/bridge.ts", "preload/entry.ts"]
+}

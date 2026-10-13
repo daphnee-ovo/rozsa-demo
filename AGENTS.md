@@ -73,6 +73,7 @@ Multiple rozsa sessions may be running in this cwd at the same time, each modify
 
 Committing:
 
+- On `refactor/electron-go-migration`, the user authorized one commit per completed task starting with TASK-T009. Verify the task, immediately run `dow task done` successfully, then commit only that task's attributable changes. Do not backfill T001–T003, push, iterate, or start the next task automatically.
 - Only commit files YOU changed in THIS session.
 - Stage explicit paths (`git add <path1> <path2>`); never `git add -A` / `git add .`.
 - Before committing, run `git status` and verify you are only staging your files.
