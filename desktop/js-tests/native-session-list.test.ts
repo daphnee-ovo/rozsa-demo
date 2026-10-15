@@ -75,7 +75,7 @@ try {
     return value.status === "2 sessions" ? value : undefined;
   }, "catalog rendering");
   assert.deepEqual(snapshot.rows, [{ id: "recent", name: "Review session catalog" }, { id: "shared", name: "Project session · 玫瑰🌹" }]);
-  assert.equal(snapshot.node, "undefined"); assert.deepEqual(snapshot.bridge, ["getSessions", "switchSession"]); assert.equal(snapshot.windows, 0);
+  assert.equal(snapshot.node, "undefined"); assert.deepEqual(snapshot.bridge, ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"]); assert.equal(snapshot.windows, 0);
   assert.equal(await evaluate(`window.rozsa.getSessions('/forbidden').then(()=>false,error=>error.message)`), "getSessions accepts no arguments");
   const screenshot = await send("Page.captureScreenshot", {}, attached.sessionId);
   await writeFile(join(output, "sessions.png"), Buffer.from(screenshot.data, "base64"));

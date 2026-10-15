@@ -76,9 +76,55 @@ Go 继续使用库原生 Conn/Stream；I/O 生命周期只观察读写错误，p
 - `TestReplacedSubscriptionCannotDeliverLateSnapshot` 修复前失败（迟到 snapshot 返回成功），修复后通过；替换订阅不能交付旧 snapshot。
 - `npm --prefix desktop run typecheck`、`npm --prefix desktop/js-tests run test:session-contract`：当前 Go/TS 错误契约与 main/preload/renderer 错误保留，原有 UI 接收取消和不重发语义。
 
-Electron 的订阅/reload/退出接线归 T012；runtime、真实审批/工具取消和长输出容量随各自
+Electron 的订阅/reload/退出接线见下节 T012；runtime、真实审批/工具取消和长输出容量随各自
 切片接入。未运行 native GUI、Linux/Windows 实机或全项目 TEST。正式状态以
 `dow task show TASK-T011` 为准。
+
+### TASK-T012：Electron session bridge 与生命周期
+
+接通当前 `subscribe_sessions` / `next_session_event` / `unsubscribe_sessions`，
+preload 只新增对应的三个限定方法。main 校验 sender、main frame、可信 URL、参数数量与
+subscription identity；导航、renderer 崩溃和关闭立即使旧接收失效，异步释放旧订阅。
+renderer 先接 snapshot，再消费连续事件；旧 epoch/重复事件不交付，缺口/溢出透明提示并
+重新订阅读取。空闲 long-poll 的 Go deadline 不视为进程故障，订阅启动失败则直接显示。
+reload 和 renderer 崩溃后的手动 reload 从同一 Go 进程恢复 active history，不发送
+`switch_session` 或启动 turn。权威 snapshot 阻止迟到成功覆盖页面，同时保留用户在途
+读取的实际失败；滚动/Thinking 展开仍按当前页面的 session 视图保存，不新增跨 reload 持久化。
+
+握手要求当前五个 session capabilities；版本不符、启动失败、协议/断管/请求超时均保留
+typed error，并自动结束自有进程。正常退出等待 `shutdown` acknowledgement 和进程 close；
+3 秒未退出则报告超时并终止、回收自有进程。启动过程中退出不会再创建窗口，不自动重启
+backend 或重发已接受操作。
+
+已逐段读取旧 `lib.rs` 窗口关闭 teardown→拒绝审批→取消问题、`commands::abort` 的
+清空 queued messages→拒绝审批→取消问题→agent abort→结束 Dev Flow session、prompt 错误
+追加→交互清理→最终状态，以及 `AgentSession` hooks/消息追加、dashboard shutdown/回收。
+当前候选只有只读 catalog/history，不模拟尚未迁移的审批、问题、hook、写盘、dashboard 或
+产品 abort；这些顺序与行为测试由对应业务 owner 接入时继续落实。AbortSignal 仍只取消
+UI 接收；session 同步停止另外释放订阅，不伪称停止产品工作，不增加自动保存/恢复。
+
+针对性验证（2026-10-16，Asia/Singapore）：
+
+- `npm --prefix desktop run typecheck`、`npm --prefix desktop run package`；
+  `npm --prefix desktop/js-tests test` 和 `npm --prefix desktop/js-tests run test:session-contract`。
+- `desktop/js-tests/node_modules/.bin/tsx desktop/js-tests/bridge.test.ts`：实际调用 sender/payload
+  guard、preload 校验、导航/替换竞态、旧 epoch/重复/缺口、resync、UI 接收取消与快照/读取失败并发。
+- `desktop/js-tests/node_modules/.bin/tsx desktop/js-tests/lifecycle.test.ts`：真实 Go 订阅、空闲、
+  reload snapshot、closing typed error、幂等关闭；库原生 synthetic peers 覆盖失败握手、请求超时、
+  断管和无响应关闭。握手不匹配未自动回收的回归修复前失败、修复后通过；快照掩盖用户读取失败的
+  回归亦先失败后通过。没有以源码/配置字符串断言代替行为。
+  两个模块测试直接使用 tsx，并接入现有 `devtools/test-migration-build.sh` 供 dow 的 Shell
+  adapter 完成检查；当前 dow 不支持直接识别 tsx，不新增 wrapper 或全局 runner 配置。
+- host 运行同一 `lifecycle.test.ts --native`：使用 Forge 实际生成的 main/preload/renderer，
+  只在测试启动器中截取错误弹框以便完成自动退出；真实 Electron 验证连续 reload、renderer 崩溃后
+  手动 reload、Go 崩溃/断管、版本不符/缺 binary/握手超时、关闭超时、启动中退出，所有自有进程回收。
+  实际运行时验证 sandbox/contextIsolation、无 Node globals、第二 renderer 的 sender 拒绝、CSP、
+  不可信 history 文本、禁止外链导航/新窗口，以及 JSONL bytes/mtime 不变。
+- 已有 `npm --prefix desktop/js-tests run test:native-history` 在 host 通过，并通过
+  `ROZSA_NATIVE_EXECUTABLE` 对最新打包应用复跑同一场景；测试实例均关闭。
+
+仅 macOS arm64 候选验收；Linux/Windows 实机、完整产品/原生视觉与未迁移业务均未验证，未进入
+全项目 TEST。未新增 M012、证据页、报告或包装脚本；正式状态以 `dow task show TASK-T012` 为准。
 
 T009 建立候选资源构建与 watch 基础；T013/T060 负责共享 TS 真源接入与最终搬迁。
 

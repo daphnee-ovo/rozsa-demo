@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 import { BackendService } from "./backend-service.js";
 import { createWindow, pageURL } from "./window.js";
-import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, sessionTarget, bridgeFault, type SessionHistoryReply, type SessionListReply } from "./session-contract.js";
+import { installSessionBridge } from "./session-bridge.js";
 
 // Candidate runtime storage is isolated as well as the catalog inputs.
 app.setName("Rózsa Migration");
@@ -46,25 +46,13 @@ void app.whenReady().then(async () => {
   app.setName("Rózsa Migration");
   backend = new BackendService(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "../dist/migration"), process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"), directories(process.argv));
   await backend.initialize();
+  if (quitting) return;
   const window = createWindow();
-  ipcMain.handle(SESSION_LIST_CHANNEL, async (event, ...args: unknown[]): Promise<SessionListReply> => {
-    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== pageURL || args.length !== 0) throw new Error("Unauthorized session list request");
-    try { return { ok: true, sessions: await backend!.getSessions() }; }
-    catch (error) {
-      return { ok: false, error: bridgeFault(error) };
-    }
-  });
-  ipcMain.handle(SESSION_HISTORY_CHANNEL, async (event, ...args: unknown[]): Promise<SessionHistoryReply> => {
-    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== pageURL || args.length !== 1) throw new Error("Unauthorized session history request");
-    const target = sessionTarget(args[0]);
-    try { return { ok: true, snapshot: await backend!.switchSession(target) }; }
-    catch (error) {
-      return { ok: false, error: bridgeFault(error) };
-    }
-  });
-  window.on("closed", () => { ipcMain.removeHandler(SESSION_LIST_CHANNEL); ipcMain.removeHandler(SESSION_HISTORY_CHANNEL); });
+  installSessionBridge(window, ipcMain, backend, pageURL);
   await window.loadURL(pageURL);
 }).catch(error => {
+  console.error("Rózsa could not start:", error);
+  if (quitting) return;
   dialog.showErrorBox("Rózsa could not start", error instanceof Error ? error.message : String(error));
   app.quit();
 });

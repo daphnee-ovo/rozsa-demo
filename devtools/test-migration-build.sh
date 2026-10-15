@@ -13,4 +13,6 @@ npm ci --prefix desktop/js-tests --no-audit --no-fund
 npm --prefix desktop/js-tests test -- session-list
 npm --prefix desktop/js-tests test -- session-history
 npm --prefix desktop/js-tests run test:session-contract
+desktop/js-tests/node_modules/.bin/tsx desktop/js-tests/bridge.test.ts
+desktop/js-tests/node_modules/.bin/tsx desktop/js-tests/lifecycle.test.ts
 bash devtools/run-migration.sh --prepare-only

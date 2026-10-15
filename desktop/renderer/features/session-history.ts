@@ -4,6 +4,7 @@ import { SceneState } from "../scene-state.js";
 export interface HistorySource { switchSession(target: SessionTarget, options?: { signal?: AbortSignal }): Promise<SessionSnapshot> }
 export class SessionHistory {
   private revision = 0;
+  private snapshotRevision = 0;
   private receiving: AbortController | undefined;
   private current: SessionSnapshot | undefined;
   private requested: SessionListEntry | undefined;
@@ -15,6 +16,7 @@ export class SessionHistory {
   }
   async switchTo(entry: SessionListEntry): Promise<void> {
     const revision = ++this.revision;
+    const snapshotRevision = this.snapshotRevision;
     this.receiving?.abort();
     const receiving = this.receiving = new AbortController();
     this.requested = entry;
@@ -24,22 +26,46 @@ export class SessionHistory {
     try {
       const target = { path: entry.path, catalogId: entry.id };
       const snapshot = sessionSnapshot(await this.source.switchSession(target, { signal: receiving.signal }), target);
-      if (revision !== this.revision) return;
-      if (this.current) this.views.capture(this.current, this.container);
-      this.current = snapshot;
-      this.title.textContent = entry.name || snapshot.sessionId;
-      this.container.dataset.sessionId = snapshot.sessionId;
-      this.container.dataset.sessionPath = snapshot.path;
-      this.render(snapshot);
-      this.views.restore(snapshot, this.container);
-      this.status.textContent = snapshot.messages.length ? `${snapshot.messages.length} history messages · ${snapshot.contextMessageCount} in effective context · Read only` : "No messages yet. · Read only";
-      this.selected(snapshot.path);
+      if (revision !== this.revision || snapshotRevision !== this.snapshotRevision) return;
+      this.show(snapshot, entry.name);
     } catch (error) {
       if (revision !== this.revision) return;
       this.status.setAttribute("role", "alert");
       this.status.textContent = `Could not load history: ${error instanceof Error ? error.message : String(error)}`;
       this.retry.hidden = false;
     }
+  }
+  restore(snapshot: SessionSnapshot | null): void {
+    const name = snapshot && this.requested?.path === snapshot.path ? this.requested.name : snapshot && this.current?.path === snapshot.path ? this.title.textContent || undefined : undefined;
+    // A canonical snapshot supersedes late success, but must not swallow an
+    // error from the user's still-pending switch. New user intent cancels that
+    // reception in switchTo; synchronization is not a product/UI abort.
+    this.snapshotRevision++;
+    this.retry.hidden = true;
+    this.status.setAttribute("role", "status");
+    if (snapshot) { this.show(snapshot, name); return; }
+    if (this.current) this.views.capture(this.current, this.container);
+    this.current = undefined;
+    this.requested = undefined;
+    delete this.container.dataset.sessionId; delete this.container.dataset.sessionPath;
+    this.container.replaceChildren(); this.title.textContent = "Session history";
+    this.status.textContent = "Select a session to view its history.";
+    this.selected("");
+  }
+  syncFailed(error: unknown, resynchronizing: boolean): void {
+    this.status.setAttribute("role", "alert");
+    this.status.textContent = `Session sync ${resynchronizing ? "interrupted; resynchronizing" : "failed"}: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  private show(snapshot: SessionSnapshot, name?: string): void {
+    if (this.current) this.views.capture(this.current, this.container);
+    this.current = snapshot;
+    this.title.textContent = name || snapshot.sessionId;
+    this.container.dataset.sessionId = snapshot.sessionId;
+    this.container.dataset.sessionPath = snapshot.path;
+    this.render(snapshot);
+    this.views.restore(snapshot, this.container);
+    this.status.textContent = snapshot.messages.length ? `${snapshot.messages.length} history messages · ${snapshot.contextMessageCount} in effective context · Read only` : "No messages yet. · Read only";
+    this.selected(snapshot.path);
   }
   private render(snapshot: SessionSnapshot): void {
     this.container.replaceChildren();

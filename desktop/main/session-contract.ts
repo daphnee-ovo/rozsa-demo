@@ -1,4 +1,5 @@
 import { validatedBridgeFault, ProductFailure, type BridgeFault } from "../../contracts/ipc/session.js";
+import type { SessionUpdate } from "../../contracts/ipc/session.js";
 export { ProductFailure, RPCFailure, bridgeFault, remoteFault, transportFailure } from "../../contracts/ipc/session.js";
 // Current slice only. Wire fields match Rust commands::SessionListEntry.
 export interface SessionListEntry {
@@ -25,9 +26,41 @@ export type SessionHistoryReply = { ok: true; snapshot: SessionSnapshot }
 export interface ProductBridge {
   getSessions(): Promise<SessionListReply>;
   switchSession(target: SessionTarget): Promise<SessionHistoryReply>;
+  subscribeSessions(): Promise<SessionSyncReply>;
+  nextSessionEvent(subscriptionId: string): Promise<SessionSyncReply>;
+  unsubscribeSessions(subscriptionId: string): Promise<SessionUnsubscribeReply>;
 }
 export const SESSION_LIST_CHANNEL = "product:get-sessions";
 export const SESSION_HISTORY_CHANNEL = "product:switch-session";
+export const SESSION_SUBSCRIBE_CHANNEL = "product:subscribe-sessions";
+export const SESSION_NEXT_CHANNEL = "product:next-session-event";
+export const SESSION_UNSUBSCRIBE_CHANNEL = "product:unsubscribe-sessions";
+export type SessionSyncReply = { ok: true; update: SessionUpdate } | { ok: false; error: BridgeFault };
+export type SessionUnsubscribeReply = { ok: true } | { ok: false; error: BridgeFault };
+
+export function subscriptionId(value: unknown): string {
+  if (typeof value !== "string" || !value) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid session subscription" });
+  return value;
+}
+export function sessionUpdate(value: unknown, id?: string): SessionUpdate {
+  if (!record(value) || typeof value.subscriptionId !== "string" || !value.subscriptionId || (id !== undefined && value.subscriptionId !== id)) throw new Error("Invalid session subscription identity");
+  const state = value.snapshot ?? value.event;
+  if ((value.snapshot === undefined) === (value.event === undefined) || !record(state) || typeof state.epoch !== "string" || !state.epoch
+    || !Number.isSafeInteger(value.snapshot ? state.watermark : state.sequence) || (value.snapshot ? state.watermark as number < 0 : state.sequence as number <= 0)) throw new Error("Invalid session synchronization state");
+  if (state.active !== null) sessionSnapshot(state.active, sessionTarget(record(state.active) ? { path: state.active.path, catalogId: state.active.catalogId } : null));
+  else if (!value.snapshot) throw new Error("Session event requires active history");
+  return value as unknown as SessionUpdate;
+}
+export function syncReply(value: unknown, id?: string): SessionSyncReply {
+  if (record(value) && value.ok === true) return { ok: true, update: sessionUpdate(value.update, id) };
+  if (record(value) && value.ok === false) return { ok: false, error: validatedBridgeFault(value.error) };
+  throw new Error("Invalid session sync reply");
+}
+export function unsubscribeReply(value: unknown): SessionUnsubscribeReply {
+  if (record(value) && value.ok === true) return { ok: true };
+  if (record(value) && value.ok === false) return { ok: false, error: validatedBridgeFault(value.error) };
+  throw new Error("Invalid session unsubscribe reply");
+}
 
 export function sessionTarget(value: unknown): SessionTarget {
   if (!record(value) || Object.keys(value).length !== 2 || typeof value.path !== "string" || !value.path

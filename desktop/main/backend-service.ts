@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter, ResponseError, type MessageConnection } from "vscode-jsonrpc/node";
-import { record, sessionEntries, sessionTarget, sessionSnapshot, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry } from "./session-contract.js";
+import { record, sessionEntries, sessionTarget, sessionSnapshot, sessionUpdate, subscriptionId, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry } from "./session-contract.js";
+import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { SessionMethods } from "../../contracts/ipc/session.js";
 export { RPCFailure } from "./session-contract.js";
 
@@ -35,19 +36,23 @@ export class BackendService {
     this.connection.listen();
   }
   private fail(error: ProductFailure): void {
-    this.failure ??= error;
+    if (this.failure) return;
+    this.failure = error;
     // The library rejects its pending requests on dispose. There is no retry,
     // restart, or request replay, even after a timeout with an unknown outcome.
     this.connection.dispose();
+    // A broken protocol/pipe cannot become usable again. Reap only our process;
+    // keep the failure visible to the window and never restart/replay work.
+    void this.stop().catch(error => console.error("Backend cleanup:", error));
   }
-  private async request<M extends keyof SessionMethods>(method: M, params: SessionMethods[M]["params"]): Promise<unknown> {
+  private async request<M extends keyof SessionMethods>(method: M, params: SessionMethods[M]["params"], timeoutMs = this.timeoutMs): Promise<unknown> {
     if (this.failure) throw this.failure;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         this.fail(transportFailure("timeout", `Backend request timed out: ${method}`));
         reject(this.failure);
-      }, this.timeoutMs);
+      }, timeoutMs);
     });
     try {
       // vscode-jsonrpc owns IDs, pending correlation, encoding and framing.
@@ -57,7 +62,7 @@ export class BackendService {
       if (error instanceof ResponseError) {
         try {
           const fault = remoteFault(error.code, error.message, error.data);
-          if ((fault.kind === "catalog" && method !== "get_sessions") || (fault.kind === "session" && method !== "switch_session")) throw new Error("Backend error owner mismatch");
+          if ((fault.kind === "catalog" && method !== "get_sessions") || (fault.kind === "session" && !["switch_session", "subscribe_sessions", "next_session_event"].includes(method))) throw new Error("Backend error owner mismatch");
           throw new RPCFailure(fault);
         } catch (fault) {
           if (fault instanceof RPCFailure) throw fault;
@@ -69,26 +74,56 @@ export class BackendService {
       this.fail(failure); throw failure;
     } finally { clearTimeout(timer); }
   }
+  private requireRunning(): void {
+    if (this.failure) throw this.failure;
+    if (this.stopping) throw transportFailure("closed", "Backend is closing");
+  }
   async initialize(): Promise<void> {
-    const value = await this.request("initialize", { protocolVersion: 1 });
-    if (!record(value) || value.protocolVersion !== 1 || !Array.isArray(value.capabilities)
-      || !value.capabilities.every(item => typeof item === "string")
-      || !value.capabilities.includes("get_sessions") || !value.capabilities.includes("switch_session")) {
-      const error = transportFailure("protocol", "Incompatible backend handshake"); this.fail(error); throw error;
-    }
+    try {
+      this.requireRunning();
+      const value = await this.request("initialize", { protocolVersion: 1 });
+      const capabilities = record(value) ? value.capabilities : undefined;
+      if (!record(value) || value.protocolVersion !== 1 || !Array.isArray(capabilities)
+        || !capabilities.every(item => typeof item === "string")
+        || !["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions"].every(method => capabilities.includes(method))) {
+        throw transportFailure("protocol", "Incompatible backend handshake");
+      }
+    } catch (error) { this.fail(error instanceof ProductFailure ? error : transportFailure("io", asError(error).message, error)); throw error; }
   }
   async getSessions(): Promise<SessionListEntry[]> {
-    if (this.stopping) throw transportFailure("closed", "Backend is closing");
+    this.requireRunning();
     const value = await this.request("get_sessions", {});
     try { return sessionEntries(value); }
     catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
   }
   async switchSession(input: SessionTarget): Promise<SessionSnapshot> {
-    if (this.stopping) throw transportFailure("closed", "Backend is closing");
+    this.requireRunning();
     const target = sessionTarget(input);
     const value = await this.request("switch_session", target);
     try { return sessionSnapshot(value, target); }
     catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  private update(value: unknown, id?: string): SessionUpdate {
+    try { return sessionUpdate(value, id); }
+    catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  async subscribeSessions(): Promise<SessionUpdate> {
+    this.requireRunning();
+    const update = this.update(await this.request("subscribe_sessions", {}));
+    if (!update.snapshot) { const failure = transportFailure("protocol", "Subscription requires an initial snapshot"); this.fail(failure); throw failure; }
+    return update;
+  }
+  async nextSessionEvent(input: string): Promise<SessionUpdate> {
+    this.requireRunning();
+    const id = subscriptionId(input);
+    // Go's long-poll has a 30s request deadline. Idle is not a pipe failure.
+    return this.update(await this.request("next_session_event", { subscriptionId: id }, Math.max(this.timeoutMs, 35000)), id);
+  }
+  async unsubscribeSessions(input: string): Promise<void> {
+    this.requireRunning();
+    if (await this.request("unsubscribe_sessions", { subscriptionId: subscriptionId(input) }) !== true) {
+      const failure = transportFailure("protocol", "Invalid unsubscribe response"); this.fail(failure); throw failure;
+    }
   }
   stop(): Promise<void> { this.stopPromise ??= this.close(); return this.stopPromise; }
   private async close(): Promise<void> {

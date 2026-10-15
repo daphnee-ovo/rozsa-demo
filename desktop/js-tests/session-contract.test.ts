@@ -148,7 +148,7 @@ test("timeout, pipe exit and malformed typed error never resend an uncertain req
     `const {createMessageConnection,ResponseError}=require(${JSON.stringify(join(root,"desktop/node_modules/vscode-jsonrpc/lib/node/main.js"))});`,
     "const {appendFileSync}=require('node:fs');",
     "const conn=createMessageConnection(process.stdin,process.stdout);",
-    "conn.onRequest('initialize',()=>({protocolVersion:1,capabilities:['get_sessions','switch_session']}));",
+    "conn.onRequest('initialize',()=>({protocolVersion:1,capabilities:['get_sessions','switch_session','subscribe_sessions','next_session_event','unsubscribe_sessions']}));",
     "conn.onRequest('shutdown',()=>true);",
     `conn.onRequest('get_sessions',()=>{appendFileSync(${JSON.stringify(marker)},'one\\n');${mode === "exit" ? "process.exit(0);" : mode === "invalid-error" ? "throw new ResponseError(-32001,'Missing product error kind');" : "return new Promise(()=>{});"}});`,
     "conn.listen(); console.error('synthetic ready');", "",

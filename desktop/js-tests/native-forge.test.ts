@@ -61,7 +61,7 @@ try {
   };
   await poll(async () => await evaluate("document.querySelector('#status')?.textContent==='1 sessions'") ? true : undefined, "stdio catalog");
   assert.ok(await evaluate("getComputedStyle(document.body).getPropertyValue('--font-ui').trim().length > 0"), "shared tokens must load in development");
-  assert.deepEqual(await evaluate("({node:typeof window.require,bridge:Object.keys(window.rozsa)})"), { node: "undefined", bridge: ["getSessions", "switchSession"] });
+  assert.deepEqual(await evaluate("({node:typeof window.require,bridge:Object.keys(window.rozsa)})"), { node: "undefined", bridge: ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"] });
   await evaluate("document.querySelector('#sessions button').click()");
   await poll(async () => await evaluate("document.querySelector('#history')?.textContent.includes('Forge stdio history')") ? true : undefined, "history");
   const backendPID = Number(/Backend started: (\d+)/.exec(logs)?.[1]); assert.ok(backendPID > 0);

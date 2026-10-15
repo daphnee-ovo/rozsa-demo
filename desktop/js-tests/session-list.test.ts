@@ -23,7 +23,7 @@ test("session-list controlled preload retains the no-argument list method", asyn
     assert.equal(name, "electron");
     return { contextBridge: { exposeInMainWorld: (key: string, value: ProductBridge) => { assert.equal(key, "rozsa"); bridge = value; } }, ipcRenderer: { invoke: async (channel: string) => { calls.push(channel); return { ok: true, sessions: [] }; } } };
   } });
-  assert.deepEqual(Object.keys(bridge!), ["getSessions", "switchSession"]);
+  assert.deepEqual(Object.keys(bridge!), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"]);
   assert.equal(Object.isFrozen(bridge), true);
   assert.deepEqual(await new ProductClient(bridge!).getSessions(), []);
   await assert.rejects(() => (bridge!.getSessions as (arg: string) => Promise<unknown>)("/private"), /no arguments/);

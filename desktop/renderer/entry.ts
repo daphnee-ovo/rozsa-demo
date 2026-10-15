@@ -18,4 +18,7 @@ if (!container || !title || !historyStatus || !retry) throw new Error("Session h
 const client = new ProductClient(window.rozsa);
 const history = new SessionHistory(client, container, title, historyStatus, retry, path => feature.setActive(path));
 const feature = new SessionList(client, list, status, refresh, entry => { void history.switchTo(entry); });
+const reception = new AbortController();
+window.addEventListener("pagehide", () => reception.abort("Session page closed"), { once: true });
+void client.syncSessions(active => history.restore(active), (error, resynchronizing) => history.syncFailed(error, resynchronizing), { signal: reception.signal });
 void feature.load();

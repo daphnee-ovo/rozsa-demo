@@ -56,7 +56,7 @@ try {
   };
   await poll(async()=> await evaluate(`document.querySelector('#sessions')?.children.length===3`) ? true:undefined,"list");
   const boundary=await evaluate(`({node:typeof window.require,bridge:Object.keys(window.rozsa),frames:window.frames.length})`);
-  assert.deepEqual(boundary,{node:"undefined",bridge:["getSessions","switchSession"],frames:0});
+  assert.deepEqual(boundary,{node:"undefined",bridge:["getSessions","switchSession","subscribeSessions","nextSessionEvent","unsubscribeSessions"],frames:0});
   const click=async(catalogID:string)=>evaluate(`document.querySelector('#sessions li[data-session-id='+${JSON.stringify(catalogID)}+'] button').click()`);
   const waitSession=async(sessionID:string)=>poll(async()=> await evaluate(`document.querySelector('#history').dataset.sessionId===${JSON.stringify(sessionID)} && document.querySelector('#history-status').getAttribute('role')==='status' && !document.querySelector('#history-status').textContent.startsWith('Loading')`) ? true:undefined,`session ${sessionID}`);
   await click("header-id"); await waitSession("filename");

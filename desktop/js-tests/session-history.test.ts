@@ -103,7 +103,7 @@ test("session-history runtime response and restricted preload validate payload/i
   vm.runInNewContext(await readFile(join(root,"desktop/.vite/build/preload.cjs"),"utf8"), { require: (name: string) => {
     assert.equal(name,"electron"); return { contextBridge:{exposeInMainWorld: (_:string,value:ProductBridge) => bridge=value}, ipcRenderer:{invoke:async (...args:unknown[]) => {calls.push(args);return {ok:true,snapshot:good};}} };
   } });
-  assert.deepEqual(Object.keys(bridge),["getSessions","switchSession"]); assert.equal(Object.isFrozen(bridge),true);
+  assert.deepEqual(Object.keys(bridge),["getSessions","switchSession","subscribeSessions","nextSessionEvent","unsubscribeSessions"]); assert.equal(Object.isFrozen(bridge),true);
   assert.deepEqual(await new ProductClient(bridge).switchSession(target),good);
   for (const invalid of [null,{}, {path:a.path,catalogId:1}, {...target,method:"write"}]) await assert.rejects(() => (bridge.switchSession as (value:unknown)=>Promise<unknown>)(invalid),/Invalid session target/);
   assert.equal(calls.length,1); assert.equal(calls[0][0],"product:switch-session");
