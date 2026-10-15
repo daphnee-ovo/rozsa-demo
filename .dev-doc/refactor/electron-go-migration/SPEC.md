@@ -132,13 +132,17 @@ Go CLI → 同一个 app/core/model（不依赖 Electron 运行 headless prompt�
 
 默认每个桌面应用实例启动一个 Go backend，所有项目/session 由它统一管理；CLI headless 直接复用 Go app。跨实例访问同一数据目录的既有规则在会话写入任务中对照并测试；不允许 Rust/Go 对照程序同时写同一用户会话。
 
-JSON-RPC 2.0 定义请求、结果、错误和 notification；`Content-Length` 是本项目选择的 framing，并非 JSON-RPC 标准自带。stdout 仅协议，stderr 为日志；按 UTF-8 字节长度读取，处理半包、连包、并发请求和写入背压。不得把磁盘 JSONL 与传输 framing 混为一谈。
+采用 [`go.lsp.dev/jsonrpc2`](https://pkg.go.dev/go.lsp.dev/jsonrpc2@v1.0.1) 的原生 `Content-Length` framing 与 JSON-RPC 2.0 消息处理，不手写协议 envelope、framing 或额外解析器。该版本实现的 body 上限为 1 GiB；header parser 接受 LF，并在重复 `Content-Length` 时以后读到的值为准；本项目接受这些库行为，不另设 8 KiB header 上限。stdout 仅协议，stderr 为日志；磁盘 JSONL 与传输 framing 不混用。
 
-每次只为已实现方法建立显式 request/result/error 类型及 method enum/map；Go 明确 struct/tag，不用宽泛 `map[string]any` 代替领域模型。后续方法逐切片映射；transport ID 与原产品 request ID 分开。事件接入时建立所属 session、turn/request identity、epoch/序号；scene/theme revision 与产品 revision 分属不同 owner。
+职责边界：库负责标准 JSON-RPC envelope、Content-Length framing、request/notification 区分及标准错误消息编码；项目负责产品业务类型与 JSON tags、已实现方法的显式路由、领域错误到协议错误 data/TypeScript discriminated union 的映射、transport ID 与产品 identity 分离，以及经证据确认且只能用库公开配置表达的必要适配。v1.0.1 的公开配置包括 `WithCodec` 与 `WithPreempter`；文档中没有依据的 framing/parser 配置不视为存在，不得以自定义 Stream 补齐。若后续需求超出库能力，先回主会话裁决，不将该需求写成已实现或已验收。
 
-启动握手检查协议版本和能力后再 ready；事件订阅任务实现先订阅再取带水位 snapshot、重放缓冲及拒绝旧 epoch/重复事件。不承诺持久化事件日志；溢出透明报错并重新同步，审批/终态不静默丢弃。容量/节流/最大 frame 在涉及长输出的功能接入时测定并测试，不为只读列表预先测量全产品。
+按该库语义，missing 与 `null` params 都作为无参数处理；具体方法仍须校验必填业务字段。missing 与 `null` ID 都识别为 notification，不产生响应；所有需要结果的产品调用发送带 ID 的 request，notification 只路由给显式声明接受通知的方法。标准 notification 语义与业务字段/方法契约分别归库和项目维护。
 
-AbortSignal 取消 UI 接收不等于停止产品操作，沿用现有 [port](../../../crates/rozsa-gui/frontend/ui/scripts/core/ports.js) 语义。产品 abort 必须显式传到 Go cancellation，再清理工具进程树。超时、断管或 backend 异常退出只报告失败/中断，不自动重发 Write/Edit/Bash/审批响应。恢复读取已持久化状态；不能伪称在途任务已恢复。
+每次只为已实现方法建立显式 request/result/error 类型及 method enum/map；Go 明确 struct/tag，不用宽泛 `map[string]any` 代替领域模型。后续方法逐切片映射。事件接入时建立所属 session、turn/request identity、epoch/序号；scene/theme revision 与产品 revision 分属不同 owner。
+
+启动握手检查协议版本和能力后再 ready；事件订阅任务实现先订阅再取带水位 snapshot、重放缓冲及拒绝旧 epoch/重复事件。不承诺持久化事件日志；溢出透明报错并重新同步，审批/终态不静默丢弃。所选库的单 body 上限为 1 GiB；涉及长输出时仍须测定并测试应用层容量、背压与所需的更小业务 payload 限制，不为只读列表预先测量全产品。
+
+库提供 request context 与 `Preempter` 钩子（可用于按序处理取消 notification）；项目负责把明确的产品 abort 路由到 Go 工作、取消对应工具/进程树并保留业务取消语义。AbortSignal 取消 UI 接收不等于停止产品操作，沿用现有 [port](../../../crates/rozsa-gui/frontend/ui/scripts/core/ports.js) 语义。协议库不拥有产品状态恢复：超时、断管或 backend 异常退出只报告失败/中断，不自动重发 Write/Edit/Bash/审批响应。恢复读取已持久化状态；不能伪称在途任务已恢复。
 
 renderer reload 只重订阅和恢复快照，不重新启动同一会话。生命周期及相关业务切片分别读取旧关闭/退出/异常中断逻辑：当前窗口关闭拒绝待审批、取消问题；工作取消、dashboard 关闭和写入/退出顺序随接入核对。Go 保留业务语义，Electron 关闭握手承接进程边界；不能增加自动保存或恢复。超时透明报告并按 OS adapter 清理。CLI stdout 不混入服务 framing。
 
@@ -190,7 +194,7 @@ TASK_ROADMAP 的功能覆盖随每项实现维护，具体来源/差异/针对�
 - SPEC-AC-004: JSONL/config/credentials 契约对照通过；既有文件 fixture 可读取、追加、重开和续接；真实数据不用于双写对照。
 - SPEC-AC-005: 所有 provider/OAuth/stream/error/usage 行为及模型配置覆盖通过；真实授权验证缺失时明确未完成。
 - SPEC-AC-006: 工具、并行/取消、hooks、权限、问题、subagent、queue/steer/fork/compaction 与 Dev Flow 整链路通过，含真实进程退出和 watcher。
-- SPEC-AC-007: IPC schema、握手、分片、背压、身份路由、订阅/快照竞态、reload、断管、关闭均有测试；副作用请求不自动重试。
+- SPEC-AC-007: IPC schema、握手、所选库的 framing/message semantics、背压、request/notification 与身份路由、领域错误映射、订阅/快照竞态、reload、断管、关闭均有测试；副作用请求不自动重试。该验收要求不表示实现已通过。
 - SPEC-AC-008: 全部设计缺口恢复且用户已批准相关原型；完整状态矩阵通过；原型和产品保持一份 UI，生产包不含 mock/gallery。
 - SPEC-AC-009: 单 WebView 原生视觉与交互成对检查通过；separator ARIA/键盘、最小化、极限宽度等实验遗留项全部验收。
 - SPEC-AC-010: macOS/Linux/Windows 在各自系统验证 CLI、文件/进程/凭据/输入/窗口；交叉编译不能替代真实 GUI 验收。
@@ -239,4 +243,4 @@ TASK_ROADMAP 的功能覆盖随每项实现维护，具体来源/差异/针对�
 - [正式任务与切片索引](../../../docs/migration/TASK_ROADMAP.md)：依赖、功能 owner 与验收覆盖；状态以 dow 为准。不使用 html-plan；旧 HTML 页仅保留停用提示。
 - [GUI 架构](../../../docs/gui/ARCHITECTURE.md)、[设计规范](../../../DESIGN.md)、[设计缺口](../../../prototype/docs/DESIGN_GAPS.md)
 - [贡献与测试约定](../../../CONTRIBUTING.md)、[Electron 实验报告](../../../tmp/electron-native-validation/verification.md)
-- 官方依据：[Electron IPC](https://www.electronjs.org/docs/latest/tutorial/ipc)、[Electron security](https://www.electronjs.org/docs/latest/tutorial/security)、[JSON-RPC 2.0](https://www.jsonrpc.org/specification)、[Go encoding/json](https://pkg.go.dev/encoding/json)。Content-Length、epoch/watermark 等为本项目提案，不是上述标准默认提供的能力。
+- 官方依据：[go.lsp.dev/jsonrpc2 v1.0.1 API](https://pkg.go.dev/go.lsp.dev/jsonrpc2@v1.0.1)、[该版本源码](https://github.com/go-language-server/jsonrpc2/tree/v1.0.1)、[JSON-RPC 2.0](https://www.jsonrpc.org/specification)、[Electron IPC](https://www.electronjs.org/docs/latest/tutorial/ipc)、[Electron security](https://www.electronjs.org/docs/latest/tutorial/security)、[Go encoding/json](https://pkg.go.dev/encoding/json)。库 framing 与 JSON-RPC envelope 由所选库提供；产品方法、业务类型/错误、事件 epoch/watermark 和恢复仍由本项目定义与验收。
