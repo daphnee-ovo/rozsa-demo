@@ -134,6 +134,15 @@ Go CLI → 同一个 app/core/model（不依赖 Electron 运行 headless prompt�
 
 采用 [`go.lsp.dev/jsonrpc2`](https://pkg.go.dev/go.lsp.dev/jsonrpc2@v1.0.1) 的原生 `Content-Length` framing 与 JSON-RPC 2.0 消息处理，不手写协议 envelope、framing 或额外解析器。该版本实现的 body 上限为 1 GiB；header parser 接受 LF，并在重复 `Content-Length` 时以后读到的值为准；本项目接受这些库行为，不另设 8 KiB header 上限。stdout 仅协议，stderr 为日志；磁盘 JSONL 与传输 framing 不混用。
 
+双端实现选型为 Go `go.lsp.dev/jsonrpc2@v1.0.1` 与 Electron main 的
+[`vscode-jsonrpc@9.0.3`](https://www.npmjs.com/package/vscode-jsonrpc/v/9.0.3)。
+Node 侧直接使用其 `StreamMessageReader`、`StreamMessageWriter` 与
+`createMessageConnection`，不保留手写客户端 framing 或 transport ID 调度。
+2026-10-15 用户补充批准：畸形 JSON、非法 envelope（包括 boolean ID）沿用 Go
+库原生的透明报错并终止连接策略；在途请求失败且不自动重试，不额外补发错误
+response。测试中的库诊断错误码不表示实际 wire response；合法请求中的业务参数
+错误仍返回类型化 RPC 错误。实现与针对性验收记录见 [M010](../../../docs/migration/evidence/M010.md)。
+
 职责边界：库负责标准 JSON-RPC envelope、Content-Length framing、request/notification 区分及标准错误消息编码；项目负责产品业务类型与 JSON tags、已实现方法的显式路由、领域错误到协议错误 data/TypeScript discriminated union 的映射、transport ID 与产品 identity 分离，以及经证据确认且只能用库公开配置表达的必要适配。v1.0.1 的公开配置包括 `WithCodec` 与 `WithPreempter`；文档中没有依据的 framing/parser 配置不视为存在，不得以自定义 Stream 补齐。若后续需求超出库能力，先回主会话裁决，不将该需求写成已实现或已验收。
 
 按该库语义，missing 与 `null` params 都作为无参数处理；具体方法仍须校验必填业务字段。missing 与 `null` ID 都识别为 notification，不产生响应；所有需要结果的产品调用发送带 ID 的 request，notification 只路由给显式声明接受通知的方法。标准 notification 语义与业务字段/方法契约分别归库和项目维护。

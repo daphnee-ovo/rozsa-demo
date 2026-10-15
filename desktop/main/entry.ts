@@ -1,9 +1,9 @@
 import { app, dialog, ipcMain } from "electron";
 import { join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
-import { BackendService, RPCFailure } from "./backend-service.js";
+import { BackendService } from "./backend-service.js";
 import { createWindow, pageURL } from "./window.js";
-import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, sessionTarget, type SessionHistoryReply, type SessionListReply } from "./session-contract.js";
+import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, sessionTarget, bridgeFault, type SessionHistoryReply, type SessionListReply } from "./session-contract.js";
 
 // Candidate runtime storage is isolated as well as the catalog inputs.
 app.setName("Rózsa Migration");
@@ -51,7 +51,7 @@ void app.whenReady().then(async () => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== pageURL || args.length !== 0) throw new Error("Unauthorized session list request");
     try { return { ok: true, sessions: await backend!.getSessions() }; }
     catch (error) {
-      return { ok: false, error: { kind: error instanceof RPCFailure ? "catalog" : "transport", message: error instanceof Error ? error.message : String(error), ...(error instanceof RPCFailure ? { code: error.code } : {}) } };
+      return { ok: false, error: bridgeFault(error) };
     }
   });
   ipcMain.handle(SESSION_HISTORY_CHANNEL, async (event, ...args: unknown[]): Promise<SessionHistoryReply> => {
@@ -59,7 +59,7 @@ void app.whenReady().then(async () => {
     const target = sessionTarget(args[0]);
     try { return { ok: true, snapshot: await backend!.switchSession(target) }; }
     catch (error) {
-      return { ok: false, error: { kind: error instanceof RPCFailure ? "session" : "transport", message: error instanceof Error ? error.message : String(error), ...(error instanceof RPCFailure ? { code: error.code } : {}) } };
+      return { ok: false, error: bridgeFault(error) };
     }
   });
   window.on("closed", () => { ipcMain.removeHandler(SESSION_LIST_CHANNEL); ipcMain.removeHandler(SESSION_HISTORY_CHANNEL); });

@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.shared.json",
-  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "rootDir": ".", "types": ["node"] },
+  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "rootDir": "..", "types": ["node"] },
   "files": ["preload/bridge.ts", "preload/entry.ts"]
 }

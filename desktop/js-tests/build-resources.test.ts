@@ -29,6 +29,7 @@ for (const name of ["main", "preload", "renderer"]) {
 }
 // Isolated bad input verifies the TS7 gate without editing shared source files.
 const invalid = join(output, "invalid/desktop"); await mkdir(invalid, { recursive: true });
+await cp(join(root, "contracts"), join(invalid, "../contracts"), { recursive: true });
 for (const path of ["package.json", "forge-env.d.ts", "tsconfig.shared.json", "tsconfig.main.json", "tsconfig.preload.json", "tsconfig.renderer.json", "scripts", "main", "preload", "renderer"]) await cp(join(desktop, path), join(invalid, path), { recursive: true });
 await symlink(join(desktop, "node_modules"), join(invalid, "node_modules"), process.platform === "win32" ? "junction" : "dir");
 await writeFile(join(invalid, "main/error.ts"), "export const invalid: string = 123;");

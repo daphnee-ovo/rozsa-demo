@@ -1,14 +1,17 @@
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import { backendPath, prepareCandidate, projectRoot } from "./scripts/backend.mjs";
 
 export default {
   packagerConfig: {
     name: "Rozsa Migration", executableName: "rozsa-migration",
     asar: true, extraResource: [backendPath],
-    // Packager scratch files, as well as tool caches, stay inside the project.
+    // Packager scratch files stay in the project; tool caches use defaults.
     tmpdir: resolve(projectRoot, "tmp/migration/packager"),
-    download: { cacheRoot: resolve(projectRoot, "tmp/migration/electron-cache") },
+    // The pinned npm Electron package supplies official release hashes. Keep
+    // verification enabled without fetching mutable checksum metadata each run.
+    download: { checksums: JSON.parse(readFileSync(new URL("./node_modules/electron/checksums.json", import.meta.url), "utf8")) },
   },
   hooks: {
     preStart: () => prepareCandidate(),

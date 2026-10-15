@@ -48,6 +48,35 @@ verification. Serve the prototype from the repository HTTP root (for example,
 validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
 for host boundaries and design gaps.
 
+## Current session RPC contract (TASK-T010)
+
+T010 supersedes the initial standard-library-only bootstrap note: Go now pins
+`go.lsp.dev/jsonrpc2@v1.0.1` with dependencies in `backend/go.sum`, and Electron
+main uses `vscode-jsonrpc@9.0.3`. Use their native connection/framing/ID handling;
+do not implement an extra protocol parser or custom Stream. Unsupported library
+configuration requirements return to the main chat for a decision.
+
+Business contracts live in `contracts/ipc/session.ts` and Go
+`internal/transport/types`. Missing/null empty params are equivalent; required
+business fields are validated. Notifications receive no reply and cannot invoke
+this slice's product methods. Malformed JSON/envelopes terminate the Go connection
+with a diagnostic, without an extra wire response; bad business params in a valid
+call return a typed RPC error. UI cancellation does not send product abort or
+discard Go transport correlation. Timeouts/exits fail pending calls without
+replay. After the shutdown reply, main ends stdin and waits for its owned Go process.
+
+Candidate test temporary files and generated outputs still live under `tmp/`. Run focused checks with:
+
+```bash
+npm --prefix desktop/js-tests run test:session-contract
+bash devtools/test-migration-session-contract.sh
+```
+
+The shell target coordinates Go session/transport tests, strict TS7 typecheck,
+fresh Forge package/resources checks, contract/list/history JS tests and the
+prepare check. It does not launch a GUI or enter full TEST. See
+[M010](docs/migration/evidence/M010.md) for results and remaining slice boundaries.
+
 ## Candidate Forge/Vite development and package (TASK-T065)
 
 Pinned tools: Electron 44.7.0, Forge CLI/Vite plugin 8.0.1, Vite 8.3.4 and

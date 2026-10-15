@@ -9,6 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const base = join(root, "tmp/migration-native-forge"); await mkdir(base, { recursive: true });
 const output = await mkdtemp(join(base, "run-")), fixture = join(output, "project");
 await mkdir(fixture);
+await cp(join(root, "contracts"), join(fixture, "contracts"), { recursive: true });
 await cp(join(root, "desktop"), join(fixture, "desktop"), { recursive: true, filter: path => !["node_modules", ".vite", "out", "dist"].includes(basename(path)) });
 await symlink(join(root, "desktop/node_modules"), join(fixture, "desktop/node_modules"), process.platform === "win32" ? "junction" : "dir");
 await symlink(join(root, "backend"), join(fixture, "backend"), process.platform === "win32" ? "junction" : "dir");
@@ -23,7 +24,7 @@ const cli = join(root, "desktop/node_modules/@electron-forge/cli/dist/electron-f
 let logs = "", normal = false, socket: WebSocket | undefined;
 const child = spawn(process.execPath, [cli, "start", "--", "--remote-debugging-port=0", `--user-data-dir=${join(output, "profile")}`, "--session-dir", sessions], {
   cwd: join(fixture, "desktop"), stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env, TMPDIR: join(root, "tmp/migration/install-tmp"), npm_config_cache: join(root, "tmp/migration/npm-cache"), electron_config_cache: join(root, "tmp/migration/electron-cache") },
+  env: { ...process.env, TMPDIR: join(root, "tmp/migration/install-tmp") },
 });
 const exited = new Promise<number | null>((accept, reject) => { child.once("error", reject); child.once("exit", accept); });
 child.stdout.on("data", b => logs += b.toString()); child.stderr.on("data", b => logs += b.toString());

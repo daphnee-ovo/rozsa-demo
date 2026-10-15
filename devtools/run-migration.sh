@@ -18,7 +18,5 @@ while [[ $# -gt 0 ]]; do
 done
 mkdir -p tmp/migration/electron-profile tmp/migration/install-tmp
 export TMPDIR="$project_root/tmp/migration/install-tmp"
-export npm_config_cache="$project_root/tmp/migration/npm-cache"
-export electron_config_cache="$project_root/tmp/migration/electron-cache"
 # This isolated candidate does not discover ~/.rozsa or any user sessions.
 exec npm --prefix desktop start -- -- --user-data-dir="$project_root/tmp/migration/electron-profile" "${args[@]}"

@@ -46,6 +46,15 @@ T029/T045 的完整消息、Markdown/image/tool 呈现和 T037/T049 的运行会
 
 ## 任务与实际依赖
 
+**TASK-T010：当前 RPC 方法的类型化错误与取消路由** 已接入 Go
+`go.lsp.dev/jsonrpc2@v1.0.1` 与 Node `vscode-jsonrpc@9.0.3` 原生连接，
+删除候选手写 framing/ID 调度。只为 initialize/get_sessions/switch_session/shutdown
+定义业务类型及错误 union；类型贯穿 main、受控 preload 与 renderer。
+采用 T066 及主会话批准的 framing/params/notification/解析失败契约；24 个共享输入
+区分 RPC response 与连接终止诊断。UI 接收取消不发送产品 abort，不丢弃 Go
+transport correlation；超时/断管/退出不重试。验证与边界见 [M010](evidence/M010.md)，
+正式状态以 dow 为准。并发与事件、实际 agent/tool/approval 取消仍留所属切片。
+
 **TASK-T009：候选开发构建与资源 watch** 已增量实现同一 Node 资源生成器、
 共享 strict tsconfig/Node 与 DOM 类型边界、main/preload/renderer source map、
 TS/config/HTML/共享 CSS 内容 watch。HTML 模板与两份 CSS 保持原来源和引用；
@@ -184,7 +193,7 @@ T013 继续共享 TS/templates 装载，T014 使用 Forge makers 完善 installe
 | F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | 待实现 |
 | F03 | credentials、PKCE/callback/device、刷新/注销 | TASK-T024、TASK-T032、TASK-T033、TASK-T034、TASK-T054 | 待实现 |
 | F04 | Agent loop、hooks、并行/终止/取消 | TASK-T019、TASK-T020、TASK-T026、TASK-T037、TASK-T038 | 待实现 |
-| F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；写入与运行会话等操作待实现 |
+| F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T010、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；T010 为现有方法增补类型化错误、库通信与接收取消，见 [M010](evidence/M010.md)；写入与运行会话等操作待实现 |
 | F06 | compaction、有效上下文与会话配置 overlay | TASK-T002、TASK-T028 | T002 已恢复持久化有效上下文，见 M002；实际压缩与配置 overlay 待 T028 |
 | F07 | Read/Write/Edit/Bash、锁、diff/evidence与进程树 | TASK-T025、TASK-T026、TASK-T045 | 待实现 |
 | F08 | permission模式/规则/approval/trust/Hint | TASK-T035、TASK-T039、TASK-T050 | 待实现 |

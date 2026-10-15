@@ -1,3 +1,5 @@
+> JSON-RPC 禁止手动实现：Go 一律使用 `go.lsp.dev/jsonrpc2` 的原生 Conn/Stream；Electron main 使用 `vscode-jsonrpc`。配置需求只使用库公开支持的配置；仍不支持时送回主会话重新考量，不用自定义 Stream、framing 或额外协议解析器补齐。当前批准的 wire 语义见迁移 SPEC 与 M010。
+
 # Development Rules
 
 ## Overview

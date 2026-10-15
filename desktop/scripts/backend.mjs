@@ -13,7 +13,7 @@ export function prepareCandidate(platform = process.platform, arch = process.arc
   if (check.error) throw check.error;
   if (check.status !== 0) throw new Error("Candidate typecheck failed; no build/package started");
   const env = { ...process.env };
-  for (const [name, directory] of Object.entries({ GOCACHE: "go-cache", GOTMPDIR: "go-tmp", GOMODCACHE: "go-mod-cache", TMPDIR: "install-tmp" })) {
+  for (const [name, directory] of Object.entries({ GOTMPDIR: "go-tmp", TMPDIR: "install-tmp" })) {
     const path = resolve(projectRoot, "tmp/migration", directory);
     mkdirSync(path, { recursive: true }); env[name] = path;
   }

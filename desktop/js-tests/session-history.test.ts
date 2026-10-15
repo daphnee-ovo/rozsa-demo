@@ -73,9 +73,11 @@ test("session-history follows the existing GUI's user content projection", async
 });
 test("session-history late success/error and A→B→A races cannot overwrite the latest request", async () => {
   const requests: ReturnType<typeof deferred<SessionSnapshot>>[] = [];
-  const ui = setup({ switchSession: () => { const item = deferred<SessionSnapshot>(); requests.push(item); return item.promise; } });
+  const signals: AbortSignal[] = [];
+  const ui = setup({ switchSession: (_, options) => { signals.push(options!.signal!); const item = deferred<SessionSnapshot>(); requests.push(item); return item.promise; } });
   try {
     const first = ui.feature.switchTo(a), second = ui.feature.switchTo(b), third = ui.feature.switchTo(a);
+    assert.deepEqual(signals.map(signal => signal.aborted), [true, true, false]);
     assert.match(ui.status.textContent!, /Loading/);
     const fresh = snapshot({ path:a.path,catalogId:a.id }); fresh.messages[0].content = [{type:"text",text:"latest"}];
     requests[2].resolve(fresh); await third;
