@@ -1,6 +1,6 @@
 module rozsa/backend
 
-go 1.26.0
+go 1.27.2
 
 require go.lsp.dev/jsonrpc2 v1.0.1
 

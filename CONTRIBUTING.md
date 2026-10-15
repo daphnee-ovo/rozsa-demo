@@ -48,6 +48,41 @@ verification. Serve the prototype from the repository HTTP root (for example,
 validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
 for host boundaries and design gaps.
 
+## Candidate Go toolchain (TASK-T067)
+
+The backend requires Go **1.27.2** or newer through the `go` directive in
+`backend/go.mod`; the validated baseline is official Go 1.27.2 (2026-10-08).
+Use `go -C backend ...` or run Go inside `backend/` so native module toolchain
+selection applies. The directive also provides an implicit minimum toolchain;
+there is no separate version manager or global `go env -w` configuration.
+With `GOTOOLCHAIN=auto`, Go may select/download a required toolchain when the
+installed version is older; `GOTOOLCHAIN=local` instead fails on older tools.
+Installation/upgrades of the local Go tool are user-managed.
+
+Forge's shared start/package hook reports the selected Go version and builds
+the host binary with the same module/environment. Tool caches use their default
+locations; only temporary build files and test evidence use project `tmp/`.
+The focused acceptance target runs all backend packages, dependency integrity,
+Go/TS RPC and session tests, Forge package and prepare-only. Its TS module test
+checks both development and packaged binary build metadata against the selected
+toolchain:
+
+```bash
+go version
+go -C backend version
+bash devtools/test-migration-go-toolchain.sh
+# After a fresh package, run only the metadata check:
+npm --prefix desktop/js-tests run test:go-toolchain
+```
+
+Go 1.27 uses the v2 implementation behind `encoding/json`, preserving the v1
+API's behavior; exact error text can change. Keep the JSONL validation and RPC
+contracts covered by their existing fixtures. The pinned RPC JSON dependency
+uses standard-library aliases with this default engine. Do not add
+`GOEXPERIMENT=nojsonv2` as a compatibility workaround. See
+[M067](docs/migration/evidence/M067.md) for official sources, selected files,
+dependency compatibility and verification results.
+
 ## Current session RPC contract (TASK-T010)
 
 T010 supersedes the initial standard-library-only bootstrap note: Go now pins

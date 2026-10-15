@@ -46,6 +46,13 @@ T029/T045 的完整消息、Markdown/image/tool 呈现和 T037/T049 的运行会
 
 ## 任务与实际依赖
 
+**TASK-T067：Go 1.27 工具链与模块要求**（依赖 T010，进入日期：2026-10-15）
+选定官方 Go 1.27.2，最低要求由 `backend/go.mod` 管理；直接开发/测试与 Forge
+start/package 沿用 Go 原生工具链选择，构建日志及两处 binary 元数据核对实际版本。
+用户负责本机 Go 安装升级。默认 JSON 引擎下验证完整 backend、JSONL、Go/TS RPC
+契约、Forge package 和 prepare-only；依赖兼容性、默认缓存约定及实测证据见
+[M067](evidence/M067.md)。正式完成状态以 `dow task show TASK-T067` 为准。
+
 **TASK-T010：当前 RPC 方法的类型化错误与取消路由** 已接入 Go
 `go.lsp.dev/jsonrpc2@v1.0.1` 与 Node `vscode-jsonrpc@9.0.3` 原生连接，
 删除候选手写 framing/ID 调度。只为 initialize/get_sessions/switch_session/shutdown

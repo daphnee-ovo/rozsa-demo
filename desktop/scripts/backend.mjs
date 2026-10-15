@@ -20,6 +20,10 @@ export function prepareCandidate(platform = process.platform, arch = process.arc
   // Explicit target prevents ambient GOOS/GOARCH from producing an unusable binary.
   env.GOOS = platform === "win32" ? "windows" : platform;
   env.GOARCH = arch === "x64" ? "amd64" : arch;
+  // -C applies the module's native Go toolchain selection to start and package.
+  const version = spawnSync("go", ["-C", resolve(projectRoot, "backend"), "version"], { env, stdio: "inherit" });
+  if (version.error) throw version.error;
+  if (version.status !== 0) throw new Error("Go toolchain check failed; no backend build started");
   mkdirSync(resolve(projectRoot, "dist/migration"), { recursive: true });
   const build = spawnSync("go", ["-C", resolve(projectRoot, "backend"), "build", "-o", backendPath, "./cmd/rozsa-backend"], { env, stdio: "inherit" });
   if (build.error) throw build.error;
