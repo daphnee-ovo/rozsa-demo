@@ -41,7 +41,44 @@ T029/T045 的完整消息、Markdown/image/tool 呈现和 T037/T049 的运行会
 
 ## 任务与实际依赖
 
-T010 为当前 RPC 方法定义 typed errors 和接收取消契约；并发、事件与业务取消由所属后续任务负责。批准的协议行为见 [M010](evidence/M010.md) 和 SPEC，操作入口见 CONTRIBUTING。
+T010 为当前 RPC 方法定义 typed errors 和接收取消契约；T011 增补当前 session 切片的并发与事件同步基础，产品工作 abort 随业务切片接入。批准的库协议行为见 [M010](evidence/M010.md) 和 SPEC，操作入口见 CONTRIBUTING。
+
+### TASK-T011：当前 session 并发与 snapshot 同步
+
+Go app 的 `session.Service` 持有 Loaded session 状态、进程实例 epoch、单调水位及
+32 项有界订阅缓冲；transport 只调度和同步，不从事件重建产品状态。读取与快照可并发，
+已接受的 switch 按 wire 顺序进入 app；最多 8 个 app worker，取消接收后仍运行的工作
+继续占用容量，超额请求透明返回 `busy`。这不是对库内部响应 writer/goroutine 数的容量承诺。
+
+| 当前方法 | 行为 |
+| --- | --- |
+| `subscribe_sessions` | 替换本连接的旧订阅；先注册 app 订阅，再读取 `{epoch,watermark,active}` snapshot，返回新的 `subscriptionId`。`active` 是现有 Loaded history 投影或 null。 |
+| `next_session_event` | 以 subscriptionId 等待一个事件；同一订阅只允许一个在途读取。缓冲重放跳过 snapshot 已覆盖的序号、旧 epoch 与重复事件，只交付连续的新事件。 |
+| `unsubscribe_sessions` | 关闭订阅、唤醒在途读取；旧 ID 不能访问替换后的订阅。 |
+
+本切片采用请求驱动的事件读取，先交付 snapshot 再读取后续事件；没有独立 notification
+推送 writer。序号缺口、source 关闭或缓冲溢出会返回 `resync_required`，下一次读取先重新
+订阅再返回新 snapshot；不会把丢失事件伪装成成功，也不持久化或重发事件日志。
+当前事件只有 session active 状态，不预建 agent/tool/approval 全域协议。后续业务接入必须
+让 snapshot 覆盖待审批与终态等权威状态，不能选择性静默丢弃；本项不宣称已验证这些业务。
+
+`$/cancelRequest` notification 按数字/字符串 transport ID 取消请求接收；默认请求超时
+30 秒。取消、超时、断管、关闭分别返回 typed error，不重发已接受的工作。关闭 stdin
+结束在途接收，正常客户端先等待响应再关闭；shutdown 先拒绝新工作并取消在途接收。
+app worker 使用独立拥有的 context，不保留库的 pooled request；接收取消不等于实现了
+工具、进程树或审批的产品 abort，现有 renderer AbortSignal 仍只在 UI 侧取消接收。
+Go 继续使用库原生 Conn/Stream；I/O 生命周期只观察读写错误，parser 终止通过公开
+`Conn.Err` 观察并取消等待，不增加协议解析器或自定义 Stream。
+
+针对性证据（2026-10-16，Asia/Singapore）：
+
+- `go -C backend test -race ./internal/app/session/... ./internal/transport/... ./cmd/rozsa-backend/...`：app 水位/溢出/并发、fake app 可观察顺序、取消注册竞态与容量、序号缺口/重同步、半包连包及 UTF-8、实际 server frame 上限拒绝、慢 stdout、断管/非法 payload 和真实 main stdout/stderr/退出状态。
+- `TestReplacedSubscriptionCannotDeliverLateSnapshot` 修复前失败（迟到 snapshot 返回成功），修复后通过；替换订阅不能交付旧 snapshot。
+- `npm --prefix desktop run typecheck`、`npm --prefix desktop/js-tests run test:session-contract`：当前 Go/TS 错误契约与 main/preload/renderer 错误保留，原有 UI 接收取消和不重发语义。
+
+Electron 的订阅/reload/退出接线归 T012；runtime、真实审批/工具取消和长输出容量随各自
+切片接入。未运行 native GUI、Linux/Windows 实机或全项目 TEST。正式状态以
+`dow task show TASK-T011` 为准。
 
 T009 建立候选资源构建与 watch 基础；T013/T060 负责共享 TS 真源接入与最终搬迁。
 

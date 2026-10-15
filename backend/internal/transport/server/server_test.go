@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"go.lsp.dev/jsonrpc2"
-	"io"
+	"net"
 	"rozsa/backend/internal/app/session"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Uses the library's raw frame methods to inject malformed JSON test inputs.
@@ -28,27 +29,35 @@ func call(t *testing.T, catalog session.Catalog, requests ...string) []json.RawM
 }
 func exchange(t *testing.T, catalog session.Catalog, requests ...string) ([]json.RawMessage, error) {
 	t.Helper()
-	var in, out bytes.Buffer
-	writer := jsonrpc2.NewStream(stdio{strings.NewReader(""), &in}).(rawFrames)
+	client, backend := net.Pipe()
+	defer client.Close()
+	defer backend.Close()
+	client.SetDeadline(time.Now().Add(5 * time.Second))
+	ended := make(chan error, 1)
+	go func() { ended <- Serve(backend, backend, catalog); backend.Close() }()
+	frames := jsonrpc2.NewStream(client).(rawFrames)
+	responses := []json.RawMessage{}
 	for _, req := range requests {
-		if _, err := writer.WriteFrame(t.Context(), []byte(req)); err != nil {
+		if _, err := frames.WriteFrame(t.Context(), []byte(req)); err != nil {
 			t.Fatal(err)
 		}
-	}
-	serveErr := Serve(&in, &out, catalog)
-	reader := jsonrpc2.NewStream(stdio{&out, io.Discard}).(rawFrames)
-	responses := []json.RawMessage{}
-	for {
-		body, _, err := reader.ReadFrame(t.Context())
-		if err == io.EOF {
+		message, err := jsonrpc2.DecodeMessage([]byte(req))
+		// The shared fixture includes an empty batch, which the connection
+		// answers even though DecodeMessage's single-message API rejects it.
+		emptyBatch := bytes.Equal(bytes.TrimSpace([]byte(req)), []byte("[]"))
+		if err != nil && !emptyBatch {
 			break
 		}
-		if err != nil {
-			t.Fatal(err)
+		if _, ok := message.(*jsonrpc2.Call); ok || emptyBatch {
+			body, _, err := frames.ReadFrame(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			responses = append(responses, append(json.RawMessage(nil), body...))
 		}
-		responses = append(responses, append(json.RawMessage(nil), body...))
 	}
-	return responses, serveErr
+	client.Close()
+	return responses, <-ended
 }
 
 func TestParserFailureIsTerminationNotResponse(t *testing.T) {
@@ -68,7 +77,7 @@ func TestHandshakeListShutdown(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"get_sessions","params":{}}`,
 		`{"jsonrpc":"2.0","id":"close","method":"shutdown","params":null}`,
 		`{"jsonrpc":"2.0","id":"late","method":"get_sessions"}`)
-	for i, want := range []string{`"capabilities":["get_sessions","switch_session"]`, `"result":[]`, `"result":true`, `"kind":"closing"`} {
+	for i, want := range []string{`"capabilities":["get_sessions","switch_session","subscribe_sessions","next_session_event","unsubscribe_sessions"]`, `"result":[]`, `"result":true`, `"kind":"closing"`} {
 		if !bytes.Contains(responses[i], []byte(want)) {
 			t.Fatalf("%s", responses[i])
 		}

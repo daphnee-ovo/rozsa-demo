@@ -22,13 +22,23 @@ test("shared Go/JS inputs use library transport and preserve transport/product i
     const child = spawn(binary, [], { stdio: "pipe" });
     const reader = new StreamMessageReader(child.stdout), writer = new StreamMessageWriter(child.stdin);
     const responses: any[] = [];
+    const received = Promise.withResolvers<void>();
     let diagnostic = ""; child.stderr.on("data", chunk => diagnostic += chunk.toString());
-    reader.listen(value => responses.push(value));
+    reader.listen(value => {
+      responses.push(value);
+      if (responses.length === (item.notification || item.terminationCode ? 1 : 2)) received.resolve();
+    });
     const closed = new Promise<number | null>((yes, no) => { child.once("error", no); child.once("close", yes); });
     try {
       await writer.write({ jsonrpc: "2.0", id: "init", method: "initialize", params: { protocolVersion: 1 } } as Message);
       if (item.packet) child.stdin.write(item.packet); // Literal malformed fixture, not an encoder.
       else await writer.write(item.request as Message);
+      // Closing stdin now cancels in-flight delivery. Complete ordinary RPC
+      // contract exchanges first; malformed input still exercises termination.
+      if (!item.terminationCode) {
+        const timer = setTimeout(() => received.reject(new Error(`Missing response: ${item.name}`)), 3000);
+        try { await received.promise; } finally { clearTimeout(timer); }
+      }
       writer.end(); const exit = await closed; await new Promise(resolve => setImmediate(resolve));
       if (item.terminationCode) {
         assert.equal(exit,1,item.name); assert.equal(responses.length,1,item.name);
@@ -59,6 +69,11 @@ test("typed errors survive main, preload, and renderer without recategorizing", 
     remoteFault(-32602, "Invalid params", { kind: "invalid_params" }),
     remoteFault(-32002, "Not initialized", { kind: "not_initialized" }),
     remoteFault(-32001, "Catalog failed", { kind: "catalog" }),
+    remoteFault(-32800, "Delivery canceled", { kind: "canceled" }),
+    remoteFault(-32004, "Request timed out", { kind: "timeout" }),
+    remoteFault(-32005, "Disconnected", { kind: "disconnected" }),
+    remoteFault(-32006, "Busy", { kind: "busy" }),
+    remoteFault(-32007, "Snapshot required", { kind: "resync_required" }),
     { kind: "transport", reason: "timeout", message: "Timed out, outcome unknown" } as const,
   ]) {
     const reply = { ok: false, error: fault };

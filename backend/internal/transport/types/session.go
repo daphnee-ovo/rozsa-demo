@@ -10,10 +10,13 @@ import (
 type Method string
 
 const (
-	Initialize    Method = "initialize"
-	GetSessions   Method = "get_sessions"
-	SwitchSession Method = "switch_session"
-	Shutdown      Method = "shutdown"
+	Initialize          Method = "initialize"
+	GetSessions         Method = "get_sessions"
+	SwitchSession       Method = "switch_session"
+	Shutdown            Method = "shutdown"
+	SubscribeSessions   Method = "subscribe_sessions"
+	NextSessionEvent    Method = "next_session_event"
+	UnsubscribeSessions Method = "unsubscribe_sessions"
 )
 
 type InitializeParams struct {
@@ -37,6 +40,11 @@ const (
 	Catalog        ErrorKind = "catalog"
 	Session        ErrorKind = "session"
 	Closing        ErrorKind = "closing"
+	Canceled       ErrorKind = "canceled"
+	Timeout        ErrorKind = "timeout"
+	Disconnected   ErrorKind = "disconnected"
+	Busy           ErrorKind = "busy"
+	ResyncRequired ErrorKind = "resync_required"
 )
 
 type ErrorData struct {
@@ -56,6 +64,16 @@ func Error(kind ErrorKind, message string) *jsonrpc2.Error {
 		code = -32001
 	case Closing:
 		code = -32003
+	case Canceled:
+		code = -32800
+	case Timeout:
+		code = -32004
+	case Disconnected:
+		code = -32005
+	case Busy:
+		code = -32006
+	case ResyncRequired:
+		code = -32007
 	default:
 		panic("unmapped RPC error kind")
 	}
