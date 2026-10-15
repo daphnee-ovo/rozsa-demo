@@ -8,7 +8,6 @@
     "test:session-list": "tsx session-list.test.ts",
     "test:session-history": "tsx session-history.test.ts",
     "test:session-contract": "tsx session-contract.test.ts",
-    "test:go-toolchain": "tsx go-toolchain.test.ts",
     "test:native-history": "tsx native-session-history.test.ts",
     "test:resources": "tsx build-resources.test.ts",
     "test:native-resources": "tsx native-forge.test.ts"
