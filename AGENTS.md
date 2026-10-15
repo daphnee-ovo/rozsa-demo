@@ -53,7 +53,7 @@ The active product is implemented entirely in the five Rust crates above. Do not
 - Migration TypeScript defaults to the exact official TS7 version in `desktop/package.json` (currently `typescript@7.0.2`). Its local native `tsc` performs strict noEmit typecheck; never fall back to older/global compilers. Forge 8.0.1 owns start/package and Vite 8.3.4 owns bundling/HMR. Main/preload follow Forge's `.cjs` convention with a single sandbox preload; do not add TS emit/watch or a second default build chain. Hooks check TS7 and build Go. Node >=22.17.0 is required.
 - For small features, use the implementation language's test runner directly. JavaScript tests belong in the module's `js-tests/` directory; never wrap Node tests in Rust/Cargo subprocesses.
 - Go candidate tests live in dedicated `*_test.go` files beside their module;
-  Electron main/preload/bridge/native host tests live in `desktop/js-tests/`.
+  Electron main/preload/bridge/renderer/native host tests all live in `desktop/tests/`.
 - Prefer shell scripts under `devtools/` for whole-module integration and end-to-end tests across languages. See `CONTRIBUTING.md` for the GUI test commands and verification boundaries.
 - If a Rust test file changes, run its relevant test target before broader checks.
 - Full project verification is `cargo build`, `cargo clippy`, and `cargo test` from the repository root.

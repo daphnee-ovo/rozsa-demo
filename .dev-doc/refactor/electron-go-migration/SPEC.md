@@ -82,8 +82,7 @@ desktop/
   main/                     窗口、系统能力、Go lifecycle、受控 IPC
   preload/                  限定的 host/product bridge
   renderer/                 唯一前端真源：HTML/CSS、templates、UI/runtime TypeScript、scene/session state 与 adapter
-  tests/                    前端 JS/TS 行为测试
-  js-tests/                 Electron main/preload/bridge/native host 测试
+  tests/                    全部 Electron JS/TS 测试：main、preload、bridge、renderer 与 native host
 backend/                    一个 Go module
   cmd/rozsa/                CLI；GUI 启动或直接调用 app
   cmd/rozsa-backend/        stdio 产品服务入口
@@ -114,7 +113,7 @@ TASK-T064 将本地 TypeScript compiler 设为默认工具链；TASK-T065 将默
 
 分别配置共享 UI/renderer 的 DOM 类型边界与 main/preload 的 Electron/Node 类型边界，启用 strict 类型检查，禁止 renderer 获得 Node 能力。原型与产品包读取同一批共享生成资源，不直接加载 TS，也不维护手写 JS 副本。静态资源加载与模板 URL 必须通过实际页面验收。
 
-每个模块按原有 JS 行为测试完成转换，再进行新宿主接线。前端行为测试归 `desktop/tests/`；Electron main/preload/bridge/native host 测试归 `desktop/js-tests/`。类型检查单独运行，运行时测试使用锁定的 TS runner 或受测编译产物。禁止把类型检查通过等同于产品逻辑通过。原型 mock/scene/gallery 脚本随之迁移，但演示数据与代码不得进入生产包。
+每个模块按原有 JS 行为测试完成转换，再进行新宿主接线。Electron main/preload/bridge/renderer/native host 的所有 JS/TS 测试统一归 `desktop/tests/`，不另设 `desktop/js-tests/`。类型检查单独运行，运行时测试使用锁定的 TS runner 或受测编译产物。禁止把类型检查通过等同于产品逻辑通过。原型 mock/scene/gallery 脚本随之迁移，但演示数据与代码不得进入生产包。
 
 TASK-T060 在 UI 切片前把当前共享 UI 源码和前端测试迁入最终目录；不要求它们暂留旧目录，也不在完整验收后安排第二次搬迁。随后各 UI 切片直接在 `desktop/renderer/` 实现并通过 `desktop/tests/` 验证。Electron 构建/运行只从 `desktop/` 读取前端资源，不依赖 `crates/rozsa-gui`；prototype、Electron 与仍保留的 Tauri 开发入口使用同一份资源。现有 Rust/Tauri 源码和 Git 历史继续作为行为参照，Tauri 作为旧宿主在默认入口切换前退役。
 
@@ -232,7 +231,7 @@ TASK_ROADMAP 的功能覆盖随实现维护；未做功能保持待实现。最�
 ## Test Plan
 
 1. 先读现有测试与 fixture，不运行全面生产测试来装饰规划结论。按模块建立差异测试；例如 `agent_session_restore_test.rs`、`permissions_test.rs`、`bash_abort_test.rs`、`settings_test.rs`、`dev_flow_real_dow_contract_test.rs`、provider 和 GUI tests。
-2. Go 特性用所属 package 的 `_test.go`，JS 用模块 `js-tests/`；只有跨语言/跨进程验证确有需要时才增加 shell 编排。fixture 和预期结果就近放置；跨语言确需共享时放 `tests/fixtures/migration/`。长期保留独有决策和确需追溯的真实验收结果；不读真实凭据，不归档无关内容。
+2. Go 特性用所属 package 的 `_test.go`；Electron 的 JS/TS 测试集中于 `desktop/tests/`，其他模块测试仍归各自模块。只有跨语言/跨进程验证确有需要时才增加 shell 编排。fixture 和预期结果就近放置；跨语言确需共享时放 `tests/fixtures/migration/`。长期保留独有决策和确需追溯的真实验收结果；不读真实凭据，不归档无关内容。
 3. 核对持久化 bytes/结构、模型请求、流式分片、事件因果、文件变化、权限结果、进程退出。固定 clock/ID/provider；并行事件只比较合同要求的先后，不把 scheduler 偶然顺序写成业务规则。
 4. 真实 GUI 对照在相同主题/尺寸/状态下看截图与动态操作；DOM/截图不替代 IME、drag、native blur、全屏和崩溃清理。测试实例结束立即关闭。
 5. macOS watcher/FSEvents 必须 host 验证；其他系统分别执行平台 fixture/集成及 GUI。失败先归因现存问题或本次改动，不 reset/stash 共享工作区。

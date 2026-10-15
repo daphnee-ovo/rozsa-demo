@@ -74,7 +74,7 @@ Go 继续使用库原生 Conn/Stream；I/O 生命周期只观察读写错误，p
 
 - `go -C backend test -race ./internal/app/session/... ./internal/transport/... ./cmd/rozsa-backend/...`：app 水位/溢出/并发、fake app 可观察顺序、取消注册竞态与容量、序号缺口/重同步、半包连包及 UTF-8、实际 server frame 上限拒绝、慢 stdout、断管/非法 payload 和真实 main stdout/stderr/退出状态。
 - `TestReplacedSubscriptionCannotDeliverLateSnapshot` 修复前失败（迟到 snapshot 返回成功），修复后通过；替换订阅不能交付旧 snapshot。
-- `npm --prefix desktop run typecheck`、`npm --prefix desktop/js-tests run test:session-contract`：当前 Go/TS 错误契约与 main/preload/renderer 错误保留，原有 UI 接收取消和不重发语义。
+- `npm --prefix desktop run typecheck`、`npm --prefix desktop/tests run test:session-contract`：当前 Go/TS 错误契约与 main/preload/renderer 错误保留，原有 UI 接收取消和不重发语义。
 
 Electron 的订阅/reload/退出接线见下节 T012；runtime、真实审批/工具取消和长输出容量随各自
 切片接入。未运行 native GUI、Linux/Windows 实机或全项目 TEST。正式状态以
@@ -106,10 +106,10 @@ UI 接收；session 同步停止另外释放订阅，不伪称停止产品工作
 针对性验证（2026-10-16，Asia/Singapore）：
 
 - `npm --prefix desktop run typecheck`、`npm --prefix desktop run package`；
-  `npm --prefix desktop/js-tests test` 和 `npm --prefix desktop/js-tests run test:session-contract`。
-- `desktop/js-tests/node_modules/.bin/tsx desktop/js-tests/bridge.test.ts`：实际调用 sender/payload
+  `npm --prefix desktop/tests test` 和 `npm --prefix desktop/tests run test:session-contract`。
+- `desktop/tests/node_modules/.bin/tsx desktop/tests/bridge.test.ts`：实际调用 sender/payload
   guard、preload 校验、导航/替换竞态、旧 epoch/重复/缺口、resync、UI 接收取消与快照/读取失败并发。
-- `desktop/js-tests/node_modules/.bin/tsx desktop/js-tests/lifecycle.test.ts`：真实 Go 订阅、空闲、
+- `desktop/tests/node_modules/.bin/tsx desktop/tests/lifecycle.test.ts`：真实 Go 订阅、空闲、
   reload snapshot、closing typed error、幂等关闭；库原生 synthetic peers 覆盖失败握手、请求超时、
   断管和无响应关闭。握手不匹配未自动回收的回归修复前失败、修复后通过；快照掩盖用户读取失败的
   回归亦先失败后通过。没有以源码/配置字符串断言代替行为。
@@ -120,7 +120,7 @@ UI 接收；session 同步停止另外释放订阅，不伪称停止产品工作
   手动 reload、Go 崩溃/断管、版本不符/缺 binary/握手超时、关闭超时、启动中退出，所有自有进程回收。
   实际运行时验证 sandbox/contextIsolation、无 Node globals、第二 renderer 的 sender 拒绝、CSP、
   不可信 history 文本、禁止外链导航/新窗口，以及 JSONL bytes/mtime 不变。
-- 已有 `npm --prefix desktop/js-tests run test:native-history` 在 host 通过，并通过
+- 已有 `npm --prefix desktop/tests run test:native-history` 在 host 通过，并通过
   `ROZSA_NATIVE_EXECUTABLE` 对最新打包应用复跑同一场景；测试实例均关闭。
 
 仅 macOS arm64 候选验收；Linux/Windows 实机、完整产品/原生视觉与未迁移业务均未验证，未进入

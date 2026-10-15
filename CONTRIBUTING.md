@@ -25,11 +25,12 @@ The tool uses `git ls-remote` and does not require a local Codex checkout. Use `
 
 Use the implementation language directly for tests of a small feature. Keep
 JavaScript tests in the corresponding module's `js-tests/` directory; do not
-wrap Node tests in Rust or Cargo subprocesses. The migration frontend's JS/TS
-behavior tests live in `desktop/tests/`; Electron main/preload/bridge/native
-host tests live in `desktop/js-tests/`. The existing Rust/Tauri GUI suite is
-still run from its current module until TASK-T060 moves the shared frontend
-tests and updates their invocation:
+wrap Node tests in Rust or Cargo subprocesses. All Electron JS/TS tests—main,
+preload, bridge, renderer and native host—live in `desktop/tests/`. TASK-T060
+moves the entire existing `desktop/js-tests/` module there, including its
+manifest, lockfile, test runner and host tests, and updates commands/configuration
+references. The existing Rust/Tauri GUI suite is still run from its current
+module until TASK-T060 moves the shared frontend tests and updates their invocation:
 
 ```bash
 npm ci --prefix crates/rozsa-gui/js-tests
@@ -171,10 +172,10 @@ check once through `--prepare-only`, alongside Go session/transport and the
 list/history/contract module tests; it does not launch a GUI or enter full TEST.
 
 ```bash
-npm --prefix desktop/js-tests run test:native-resources
+npm --prefix desktop/tests run test:native-resources
 # macOS package acceptance, after package:
-ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rozsa Migration-darwin-arm64/Rozsa Migration.app/Contents/MacOS/rozsa-migration" npm --prefix desktop/js-tests run test:native
-ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rozsa Migration-darwin-arm64/Rozsa Migration.app/Contents/MacOS/rozsa-migration" npm --prefix desktop/js-tests run test:native-history
+ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rozsa Migration-darwin-arm64/Rozsa Migration.app/Contents/MacOS/rozsa-migration" npm --prefix desktop/tests run test:native
+ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rozsa Migration-darwin-arm64/Rozsa Migration.app/Contents/MacOS/rozsa-migration" npm --prefix desktop/tests run test:native-history
 ```
 
 Native Forge validation edits only copied HTML/CSS/TS inputs under project tmp,
