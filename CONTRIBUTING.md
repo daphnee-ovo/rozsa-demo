@@ -104,12 +104,11 @@ Candidate test temporary files and generated outputs still live under `tmp/`. Ru
 
 ```bash
 npm --prefix desktop/js-tests run test:session-contract
-bash devtools/test-migration-session-contract.sh
 ```
 
-The shell target coordinates Go session/transport tests, strict TS7 typecheck,
-fresh Forge package/resources checks, contract/list/history JS tests and the
-prepare check. It does not launch a GUI or enter full TEST. See
+The combined `bash devtools/test-migration-build.sh` target includes this module
+test alongside Go session/transport, list/history and resource checks. It does
+not launch a GUI or enter full TEST. See
 [M010](docs/migration/evidence/M010.md) for results and remaining slice boundaries.
 
 ## Candidate Forge/Vite development and package (TASK-T065)
@@ -121,11 +120,8 @@ under project tmp/migration/; the build/package/run scripts configure them.
 
 ```bash
 bash devtools/build-migration.sh
-npm --prefix desktop run typecheck
 bash devtools/run-migration.sh --session-dir /absolute/synthetic/sessions
 bash devtools/package-migration-candidate.sh
-npm --prefix desktop run test:resources
-bash devtools/run-migration.sh --prepare-only
 bash devtools/test-migration-build.sh
 ```
 
@@ -161,10 +157,10 @@ app userData directory. Foreign platform/architecture packaging is rejected
 here so a host Go binary cannot enter an incompatible package. Corresponding
 platform tasks own cross-build and native acceptance.
 
-test:resources checks Vite assets/maps/sandbox preload, TS7 noEmit, strict
-environment boundaries and compiler failure gates. The completion script also
-runs Go session/transport and existing list/history module tests; it does not
-launch a GUI or enter full TEST.
+test:resources checks Vite assets/maps/sandbox preload, strict environment
+boundaries and compiler failure gates. The completion script runs this resource
+check once through `--prepare-only`, alongside Go session/transport and the
+list/history/contract module tests; it does not launch a GUI or enter full TEST.
 
 ```bash
 npm --prefix desktop/js-tests run test:native-resources

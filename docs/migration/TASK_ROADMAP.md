@@ -20,7 +20,7 @@ Go catalog、stdio framing/dispatch、受控 Electron/preload/renderer 与候选
 
 - 范围：最小 Go module/backend、当前会话列表逻辑、Content-Length stdio JSON-RPC、限定 preload/main bridge、TypeScript 单 renderer 列表、能运行本切片的构建/启动及基本关闭。
 - 旧代码：`crates/rozsa-app/src/session/manager.rs` 的 `list_dir/list_dirs/build_session_meta`；`crates/rozsa-gui/src/commands.rs` 的 `get_sessions`。测试：`tests/integration/app_session.rs` 和 `crates/rozsa-app/tests/session_config_overlay_test.rs`。
-- 最小验证：`go -C backend test ./internal/app/session/... ./internal/transport/...`、`npm --prefix desktop run typecheck`、列表 js-tests、`bash devtools/build-migration.sh` 与候选 prepare-only，再用隔离输入实际打开列表、关闭且无 backend 残留。
+- 合并验收入口：`bash devtools/test-migration-build.sh`（Forge package/typecheck/Go build 一次，运行 Go session/transport、列表/历史/RPC 合同模块检查与一次资源 prepare check）；slice 开发时仍可直接运行对应 Go/JS 模块测试。另用隔离输入实际打开列表、关闭且无 backend 残留。
 - 保留目录覆盖、排序、metadata及旧错误/跳过规则；不写用户 JSONL，不读真实凭据。只读恢复、写入、完整消息状态分别由 T002/T003、T017、T029/T045承担。首项不是完整交付。
 
 TASK-T063 管理路线与任务调整，不作为功能任务依赖。T001 实现完成后停止；

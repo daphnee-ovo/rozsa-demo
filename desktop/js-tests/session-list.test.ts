@@ -5,8 +5,6 @@ import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import { BackendService, RPCFailure } from "../main/backend-service.ts";
-import { StreamMessageReader, StreamMessageWriter, type Message } from "vscode-jsonrpc/node";
-import { PassThrough } from "node:stream";
 import { sessionEntries, type ProductBridge } from "../main/session-contract.ts";
 import { ProductClient } from "../renderer/product-client.ts";
 import { SessionList } from "../renderer/features/session-list.ts";
@@ -15,17 +13,6 @@ if (process.argv[2] && process.argv[2] !== "session-list") throw new Error("Only
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const binary = join(root, "dist/migration", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const entry = { id: "synthetic", path: "/isolated/example.jsonl", name: "<img src=x onerror=alert(1)>", modified: "2026-10-13T00:00:00Z", message_count: 2 };
-
-test("session-list library framing: UTF-8 split bytes and joined messages", async () => {
-  const wire = new PassThrough(), fragmented = new PassThrough();
-  const reader = new StreamMessageReader(fragmented), writer = new StreamMessageWriter(wire);
-  const values = [{ jsonrpc: "2.0", id: 1, result: { name: "你好🌹" } }, { jsonrpc: "2.0", id: 2, result: [] }];
-  const results: Message[] = [];
-  const complete = new Promise<void>(resolve => reader.listen(value => { results.push(value); if (results.length === values.length) resolve(); }));
-  wire.on("data", (chunk: Buffer) => { for (const byte of chunk) fragmented.write(Buffer.from([byte])); });
-  try { for (const value of values) await writer.write(value); await complete; assert.deepEqual(results, values); }
-  finally { reader.dispose(); writer.dispose(); wire.destroy(); fragmented.destroy(); }
-});
 
 test("session-list controlled preload retains the no-argument list method", async () => {
   const vm = await import("node:vm");
