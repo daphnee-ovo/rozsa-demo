@@ -34,7 +34,7 @@
 ### 参照与证据边界
 
 - 实施时使用当前模块源码、已有测试与必要 Git 历史作参照；不建立全库快照或源码副本。
-- UI 统一化后的入口见 [GUI 架构](../../../docs/gui/ARCHITECTURE.md)。共享资源位于 `crates/rozsa-gui/frontend/ui/`，业务仍有部分位于 GUI crate。
+- 当前 Tauri UI 只作为旧行为参照；迁移后的前端唯一真源为 `desktop/renderer/`，Electron 构建/运行不依赖 `crates/rozsa-gui`。GUI 现状与边界见 [GUI 架构](../../../docs/gui/ARCHITECTURE.md)。
 - [单 WebView 实验报告](../../../docs/migration/evidence/electron-single-webview.md)记录了合成 shell 和用户人工观察。其 separator 可访问性 FAIL、未覆盖的最小化/极限尺寸、Linux/Windows 与完整产品等价仍保持原状态；实验不是生产或跨平台验收。
 
 ### 已确认的持久化与退出边界
@@ -61,7 +61,7 @@ Session manager 在内存/index 更新前追加序列化 entry；append 没有�
 | F10 | subagent 的范围、上下文、运行/恢复/取消、queue/steering/fork | `rozsa-app/src/subagent/`、GUI commands | Go app；保留生命周期及访问范围，不能只保留静态卡片 |
 | F11 | 设置分层、继承/reset、主题、快捷键、capability、skills/resources、扩展 hooks | `settings/`、`themes.rs`、`skills/`、`resources/`、`extensions/`、GUI key_bindings | Go app 与 renderer/native 各归其职；设置和 hooks 错误策略逐项对照 |
 | F12 | Dev Flow 发现、配置、dashboard 启停、REST/SSE、重连、回收、状态与详情 | `rozsa-app/src/dev_flow/`、GUI `dev_flow.rs` | Go app；真实 dow contract、watcher/重连/清理验收 |
-| F13 | 消息/Markdown/code/diff、工具生命周期、通知与 unresolved error tray | GUI `app.js`、`ui/scripts/`、`notifications.rs` | UI + Go view model；正常/空/长/错误/取消完整状态矩阵 |
+| F13 | 消息/Markdown/code/diff、工具生命周期、通知与 unresolved error tray | 旧 GUI `app.js`/共享 UI 脚本（行为参照）、`notifications.rs` | `desktop/renderer/` + Go view model；正常/空/长/错误/取消完整状态矩阵 |
 | F14 | autocomplete、文件/目录引用与拖放、模型选择、运行中输入、IME | GUI `file_refs.rs`、`app.js`、`runtime/` | UI + Electron system adapter + Go app；输入与异步返回对照 |
 | F15 | 原生窗口、主题材质、sidebar、全屏、ready、scene、焦点与草稿/selection/scroll | GUI native host、scene_router、gui_shared | Electron main + 单 renderer；实验基线与生产成对验收 |
 | F16 | CLI 目录参数、`-p`、text/json、continue/resume、provider/model/system-prompt/thinking | `rozsa-cli/src/{args,run}.rs` | Go `cmd/rozsa`；参数、stdout/stderr、退出和 GUI 启动语义 |
@@ -78,12 +78,12 @@ Session manager 在内存/index 更新前追加序列化 entry；append 没有�
 ### 1. 职责与目录（提案）
 
 ```text
-ui/                         最终共享 templates/styles/TypeScript scripts
 desktop/
   main/                     窗口、系统能力、Go lifecycle、受控 IPC
   preload/                  限定的 host/product bridge
-  renderer/                 单入口、scene/session UI state、UI 装配与 adapter
-  js-tests/                 JS/TS 的 Electron bridge/renderer 测试
+  renderer/                 唯一前端真源：HTML/CSS、templates、UI/runtime TypeScript、scene/session state 与 adapter
+  tests/                    前端 JS/TS 行为测试
+  js-tests/                 Electron main/preload/bridge/native host 测试
 backend/                    一个 Go module
   cmd/rozsa/                CLI；GUI 启动或直接调用 app
   cmd/rozsa-backend/        stdio 产品服务入口
@@ -95,7 +95,7 @@ backend/                    一个 Go module
 contracts/                  按当前切片需要增补的 IPC/TS 类型与小契约用例
 tests/fixtures/migration/   实际跨语言用例需要时才加入的小输入与来源
 devtools/                  Go/JS/跨进程构建和验收编排
-prototype/                 保留 scene/gallery/mock，引用唯一 ui/
+prototype/                 保留 scene/gallery/mock，复用 desktop/renderer/ 的同一份前端资源
 ```
 
 Go 依赖方向：cmd/transport → app → core → model。platform 由需要系统能力的模块通过明确接口使用。不要为了模拟 crate 组织创建多个 Go 服务或多个 module。
@@ -110,13 +110,13 @@ Go 依赖方向：cmd/transport → app → core → model。platform 由需要�
 
 共享领域输入、command/result、事件变体用明确 interface/discriminated union；不把原有动态对象一律标成 any。TypeScript 类型不替代跨进程 payload 的运行时校验。只为当前功能建立 IPC 类型、Go struct/tag 和实际用例；以同一小输入验证字段与错误语义。后续切片增补自己的契约，不先建立全方法 schema 或通用生成器。
 
-TASK-T064 将本地 TypeScript compiler 设为默认工具链；TASK-T065 将默认开发/package 流程切换为 Electron Forge + Vite。严格类型检查与 bundling 分开；Forge 管理 start/package，Vite 构建 main/preload/renderer 资源。单 sandbox preload、Node/DOM 类型边界、共享 CSS/HTML 同源与无第二套 emit/watch 链属于已批准的设计约束。TASK-T013 接入共享 TS/templates 与原型/Tauri 同源资源；T014 负责 installer，平台任务负责发行验收。具体命令、依赖版本与产物路径见 CONTRIBUTING；真实验收及边界见 [M065](../../../docs/migration/evidence/M065.md)。
+TASK-T064 将本地 TypeScript compiler 设为默认工具链；TASK-T065 将默认开发/package 流程切换为 Electron Forge + Vite。严格类型检查与 bundling 分开；Forge 管理 start/package，Vite 构建 main/preload/renderer 资源。单 sandbox preload、Node/DOM 类型边界、共享 CSS/HTML 同源与无第二套 emit/watch 链属于已批准的设计约束。TASK-T060 先将共享前端源码与前端测试迁入 `desktop/renderer/` 和 `desktop/tests/`；TASK-T013 随后在最终目录转换 core/port 与原型 TS 装载。原型、Electron 与仍保留的 Tauri 开发入口共用 `desktop/renderer/` 资源；Electron 构建/运行不得依赖 `crates/rozsa-gui`，Tauri 可作为旧宿主使用该资源直至退役。T014 负责 installer，平台任务负责发行验收。具体命令、依赖版本与产物路径见 CONTRIBUTING；真实验收及边界见 [M065](../../../docs/migration/evidence/M065.md)。
 
 分别配置共享 UI/renderer 的 DOM 类型边界与 main/preload 的 Electron/Node 类型边界，启用 strict 类型检查，禁止 renderer 获得 Node 能力。原型与产品包读取同一批共享生成资源，不直接加载 TS，也不维护手写 JS 副本。静态资源加载与模板 URL 必须通过实际页面验收。
 
-每个模块按原有 JS 行为测试完成转换，再进行新宿主接线。JS/TS 测试仍归模块 js-tests；类型检查单独运行，运行时测试使用锁定的 TS runner 或受测编译产物。禁止把类型检查通过等同于产品逻辑通过。原型 mock/scene/gallery 脚本随之迁移，但演示数据与代码不得进入生产包。
+每个模块按原有 JS 行为测试完成转换，再进行新宿主接线。前端行为测试归 `desktop/tests/`；Electron main/preload/bridge/native host 测试归 `desktop/js-tests/`。类型检查单独运行，运行时测试使用锁定的 TS runner 或受测编译产物。禁止把类型检查通过等同于产品逻辑通过。原型 mock/scene/gallery 脚本随之迁移，但演示数据与代码不得进入生产包。
 
-双实现验证期间，共享 UI 的 owner 暂保留当前路径，逐模块转换为 TS；产品与原型接线指向唯一生成产物。参照相关当前源码或已有 Git 历史，不另冻结旧宿主。若 Tauri 开发入口使用共享新产物，同步其 frontendDist/构建接线并复验，不能用手写 JS 副本维持旧入口。完整验收后将唯一真源移到 `ui/`，更新所有引用，再移除旧生产入口。
+TASK-T060 在 UI 切片前把当前共享 UI 源码和前端测试迁入最终目录；不要求它们暂留旧目录，也不在完整验收后安排第二次搬迁。随后各 UI 切片直接在 `desktop/renderer/` 实现并通过 `desktop/tests/` 验证。Electron 构建/运行只从 `desktop/` 读取前端资源，不依赖 `crates/rozsa-gui`；prototype、Electron 与仍保留的 Tauri 开发入口使用同一份资源。现有 Rust/Tauri 源码和 Git 历史继续作为行为参照，Tauri 作为旧宿主在默认入口切换前退役。
 
 缺口设计在迁移到对应界面时提出具体方案，复用已批准视觉并补齐交互/错误状态。需改变原型时先展示方案并获得用户批准，再由对应 UI 任务实现。设计批准只阻断受影响界面，独立后端模块不等待全套设计；“尚未设计”不是最终交付豁免。
 
@@ -185,10 +185,11 @@ macOS 的验收参照原生效果；Linux/Windows 按各自既有产品行为验
 | 工作单元 | 具体产出 | 验证与推进规则 |
 | --- | --- | --- |
 | 会话读取切片 T001–T003 | 列表→JSONL只读恢复→会话切换历史链路 | 逐项读取相关旧源码/测试，随即实现并针对性验证；未实现消息细节仍由 T029/T045 负责 |
-| 构建/通信增量 T009–T014 | 当前候选 watch、类型化错误/取消、事件同步、生命周期、共享TS装载、安装包资源 | 已有切片能运行后按需要完善；完整 schema、通用 feature-host、综合依赖 spike 都不是开工条件 |
+| 构建/通信增量 T009–T014 | 当前候选 watch、类型化错误/取消、事件同步、生命周期、T013 共享 TS 装载、安装包资源 | 已有切片能运行后按需要完善；完整 schema、通用 feature-host、综合依赖 spike 都不是开工条件 |
+| 共享 UI 前置迁入 T060 | 把共享源码和前端测试放入 `desktop/renderer/` 与 `desktop/tests/`，使 prototype 与 Electron 共用前端资源 | 在 T013 和后续 UI 切片之前完成；不等待最终完整验收 |
 | 产品模块与界面切片 | settings/registry/JSONL写入/providers/OAuth/tools/权限/问题/运行会话/subagent/Dev Flow/CLI，以及对应 TS UI | 只等待真实代码依赖；缺口设计 T004–T008 在对应界面迁移时审阅并批准。当前 UI 切片立即接 Go，不推迟到最后统一接线 |
 | 最终完整验收 T053–T059 | 汇接复核、整链路故障/重启、真实授权、三平台安装与 GUI、完整功能核对和收益报告 | 汇总切片证据，按全部旧源码入口和设计缺口找遗漏；真实未验证项保持未完成；性能测量在候选就绪后做 |
-| 完整验收后 T060–T062 | UI唯一真源搬迁、默认入口切换、Rust/Tauri生产依赖退役与最终文档 | 所有原功能/逻辑与必需平台验收通过后才清理旧生产依赖；复验搬迁/打包受影响行为 |
+| 完整验收后的入口切换 T061–T062 | 默认入口切换、Rust/Tauri生产依赖退役与最终文档 | T061 同时依赖 T059 完整功能验收和 T060 共享 UI 前置迁入；旧生产链仍保留到完整验收通过 |
 
 分组是索引，不是额外阶段 gate。每次只执行一个已声明范围的任务，完成后再接下一项；全部任务 `parallel=false`。共享 manifest/lock、transport/bridge/入口、CSS、原型接线与 TASK_ROADMAP 只由当前任务写入；涉及新增文件先用 dow 更新 scope，不把无关依赖串成全局前置链。
 

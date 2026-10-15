@@ -126,12 +126,12 @@ UI 接收；session 同步停止另外释放订阅，不伪称停止产品工作
 仅 macOS arm64 候选验收；Linux/Windows 实机、完整产品/原生视觉与未迁移业务均未验证，未进入
 全项目 TEST。未新增 M012、证据页、报告或包装脚本；正式状态以 `dow task show TASK-T012` 为准。
 
-T009 建立候选资源构建与 watch 基础；T013/T060 负责共享 TS 真源接入与最终搬迁。
+T009 建立候选资源构建与 watch 基础；T060 在 UI 切片前把共享前端源码和测试迁到最终目录，T013 随后负责 core/port TS 转换与原型同源装载。
 
 T064 将本地 TypeScript compiler 设为默认工具链；T065 迁移为 Forge/Vite 开发与可运行 package；T014 负责后续 installer/发行资源验收。
 
 T065：Forge/Vite 开发与可运行 package（依赖 T064）。
-工具版本、构建分工、运行方式与产物路径见 CONTRIBUTING；真实验收与未验证项见 [M065](evidence/M065.md)。T013 继续共享 TS/templates 装载，T014 负责 installer。
+工具版本、构建分工、运行方式与产物路径见 CONTRIBUTING；真实验收与未验证项见 [M065](evidence/M065.md)。T060 先迁入 `desktop/renderer/` 与 `desktop/tests/`，T013 在该目录继续共享 TS/templates 装载，T014 负责 installer。
 
 分组仅便于检索，不是阶段 gate；任务顺序服从依赖关系。
 
@@ -151,7 +151,8 @@ T065：Forge/Vite 开发与可运行 package（依赖 T064）。
 | TASK-T010 | 实现当前 RPC 方法的类型化错误与取消路由 | TASK-T001 |
 | TASK-T011 | 扩展 stdio 并发调度与 snapshot 事件同步 | TASK-T010 |
 | TASK-T012 | 完善 Electron bridge 与 Go 异常退出及重载生命周期 | TASK-T011 |
-| TASK-T013 | 在 Forge/Vite 资源图中转换共享 core/port 与原型 TS 装载 | TASK-T009、TASK-T065 |
+| TASK-T060 | 将共享 UI 源码与前端测试迁入 desktop 最终目录 | TASK-T009、TASK-T065 |
+| TASK-T013 | 在 Forge/Vite 资源图中转换共享 core/port 与原型 TS 装载 | TASK-T060 |
 | TASK-T014 | 完善 Forge installer 配置及发行资源验收 | TASK-T009、TASK-T012、TASK-T013、TASK-T065 |
 | TASK-T064 | 默认 TypeScript 工具链切换 TS7 | TASK-T009 |
 | TASK-T065 | Forge/Vite 开发与可运行 package | TASK-T064 |
@@ -226,12 +227,11 @@ T065：Forge/Vite 开发与可运行 package（依赖 T064）。
 | TASK-T058 | windows 实际安装包、CLI、原生 GUI 与系统能力验收 | TASK-T014、TASK-T054、TASK-T055 |
 | TASK-T059 | 完整功能验收与维护收益最终判定 | TASK-T054、TASK-T055、TASK-T056、TASK-T057、TASK-T058 |
 
-### 完整验收后的切换与退役
+### 完整验收后的默认入口切换与退役
 
 | 任务 | 具体产出 | 前置任务 |
 | --- | --- | --- |
-| TASK-T060 | 将唯一共享 TS/HTML/CSS 真源迁到 ui 并更新全部引用 | TASK-T059 |
-| TASK-T061 | 切换默认 Electron+Go 开发/发行并退役 Rust/Tauri 生产链 | TASK-T060 |
+| TASK-T061 | 切换默认 Electron+Go 开发/发行并退役 Rust/Tauri 生产链 | TASK-T059、TASK-T060 |
 | TASK-T062 | 最终证据/文档/数据与全部 AC 交付闭环 | TASK-T061 |
 
 ## 功能覆盖与差异（随实现更新）

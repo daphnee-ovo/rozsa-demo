@@ -25,8 +25,11 @@ The tool uses `git ls-remote` and does not require a local Codex checkout. Use `
 
 Use the implementation language directly for tests of a small feature. Keep
 JavaScript tests in the corresponding module's `js-tests/` directory; do not
-wrap Node tests in Rust or Cargo subprocesses. GUI JavaScript tests live in
-`crates/rozsa-gui/js-tests/`:
+wrap Node tests in Rust or Cargo subprocesses. The migration frontend's JS/TS
+behavior tests live in `desktop/tests/`; Electron main/preload/bridge/native
+host tests live in `desktop/js-tests/`. The existing Rust/Tauri GUI suite is
+still run from its current module until TASK-T060 moves the shared frontend
+tests and updates their invocation:
 
 ```bash
 npm ci --prefix crates/rozsa-gui/js-tests
@@ -43,9 +46,10 @@ behavior; verify those in the actual prototype and app.
 acceptance checks. It does not replace full-project testing or native visual
 verification. Serve the prototype from the repository HTTP root (for example,
 `uv run python -m http.server 4173 --bind 127.0.0.1 --directory .`) and open
-`/prototype/index.html`; it imports the production UI under
-`crates/rozsa-gui/frontend/ui/`. Launch the native app with `./run.sh` and close
-validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
+`/prototype/index.html`; after TASK-T060 it reuses the production UI under
+`desktop/renderer/`. TASK-T060 also updates the retained Tauri frontend entry to
+consume that same source until T061 retires it. Launch the native app with
+`./run.sh` and close validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
 for host boundaries and design gaps.
 
 ## Candidate Go toolchain (TASK-T067)
@@ -132,8 +136,13 @@ renderer. There is no TS emit step or separate default build/watch chain.
 Run typecheck separately during TS editing: Vite does not check types on each
 edit. tsx remains the module test runner.
 
-Vite consumes the existing desktop/renderer/index.html and shared CSS under
-crates/rozsa-gui/frontend/ui/styles/ directly. CSS HMR retains renderer state;
+TASK-T060 moves the shared HTML/CSS/JS source and its frontend tests into
+`desktop/renderer/` and `desktop/tests/`, and updates prototype, Vite, TypeScript,
+Tauri frontend, and test references. After that move, Vite, the prototype, and
+the retained Tauri entry consume the same assets from `desktop/renderer/`;
+Electron build and run do not depend on `crates/rozsa-gui`. TASK-T013 then
+converts core/port and prototype/Tauri loading at the final path. CSS HMR
+retains renderer state;
 HTML/renderer TS changes automatically reload. Forge reloads preload changes
 and restarts Electron for main changes. Go changes require closing and
 restarting Forge start. Renderer updates reuse the Go process; close and Forge
@@ -175,8 +184,9 @@ scenarios against the actual executable from an unrelated CWD. Every validation
 instance closes after testing. Use host GUI permissions on macOS. Actual
 results and platform limits are in [M065](docs/migration/evidence/M065.md).
 
-T013 extends this resource graph to shared TS/templates and prototype/Tauri
-loading; T014 adds Forge makers/installer acceptance after T012/T013.
+T060 establishes the final frontend source and test paths before T013 converts
+shared core/port and prototype TS loading; T014 adds Forge makers/installer
+acceptance after T012/T013.
 This task stops at runnable package. Signing, installer, distribution and
 Linux/Windows native acceptance remain corresponding later tasks. Current
 package behavior and its limits are summarized in
