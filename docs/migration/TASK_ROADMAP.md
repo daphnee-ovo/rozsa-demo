@@ -2,30 +2,25 @@
 
 进入日期：2026-10-13，Asia/Singapore。
 
-用户已决定“边对照，边实现”。本页依据 `dow task show` 整理；正式状态、范围与依赖以 dow 为准，结构化文件只通过 dow 管理。当前为 quick / DEV / step。不使用 html-plan，旧 HTML 页停用。
+用户已决定“边对照，边实现”。正式任务状态、范围与依赖以 dow 为准；本页只维护任务顺序、功能 owner 和覆盖责任。
 
 ## 执行方式与边界
 
-每次选一个实际模块或纵向功能：读取相关旧源码和已有测试 → 随即实现 Go/TypeScript 对应逻辑 → 运行本项针对性验证 → 通过后立即 `dow task done` → 提交本项一次 commit → 停止，由用户安排下一项。逐项 commit 是用户新增规则，从 TASK-T009 起适用；不追补 T001–T003、不 push、不 iterate。开工前用 `dow task show` 阅读上下文并 claim；涉及新文件先更新 scope。提交只含本项可归属的明确路径，保留共享工作区和已有 index；首次追踪本项修改过的既有 untracked 文件时如实列明基础内容。
+本路线保留迁移决策、任务依赖顺序与功能覆盖 owner。实现操作、构建/测试命令、工具版本和输出位置见 [CONTRIBUTING](../../CONTRIBUTING.md)；迁移决策及验收原则见 [SPEC](../../.dev-doc/refactor/electron-go-migration/SPEC.md)。
 
-当前仓库源码和已有 Git 历史就是参照。取消全库冻结、源码复制、hash清单、旧产物归档、事前全功能盘点、统一差异 runner/测量框架和完整全方法 schema 前置链。协议、类型、小fixture及辅助随当前切片建立。已产生的冻结文件/副本/构建产物本次保留原样，不续做、不清理，也不作为路线前置输入。
+逐项覆盖根据实际实现更新；未完成能力保持可见，完整功能、逻辑等价、设计批准及跨平台验收均是最终交付要求。真实平台、原生或授权尚未验证时保持未验证；Rust/Tauri 生产链只有完整验收后才可退役。
 
-保留 Electron 单 WebView + TypeScript + Go、stdio JSON-RPC、全部原有功能与处理逻辑等价、原 JSONL 写入/恢复规则。覆盖与差异随实现维护，未做功能保持可见，最终完整核对全部旧能力。真实平台/原生/授权只在对应实现就绪后验证，未测不宣称通过；Rust/Tauri 生产依赖退役前必须完整验收。
+## 功能与验收约束
 
-## 首个可执行任务
+保留 Electron 单 WebView + TypeScript + Go、stdio JSON-RPC、全部原有功能与处理逻辑等价、原 JSONL 写入/恢复规则。最终完整核对全部旧能力，真实平台/原生/授权未验证时不得宣称通过。
+
+## 已完成的会话读取切片
 
 **TASK-T001：打通 Electron→Go 会话列表读取纵向切片**，无前置依赖。已实现
 Go catalog、stdio framing/dispatch、受控 Electron/preload/renderer 与候选构建；
 验收结果见 [M001](evidence/M001.md)，正式任务状态以 `dow task show TASK-T001` 为准。
 
-- 范围：最小 Go module/backend、当前会话列表逻辑、Content-Length stdio JSON-RPC、限定 preload/main bridge、TypeScript 单 renderer 列表、能运行本切片的构建/启动及基本关闭。
-- 旧代码：`crates/rozsa-app/src/session/manager.rs` 的 `list_dir/list_dirs/build_session_meta`；`crates/rozsa-gui/src/commands.rs` 的 `get_sessions`。测试：`tests/integration/app_session.rs` 和 `crates/rozsa-app/tests/session_config_overlay_test.rs`。
-- 合并验收入口：`bash devtools/test-migration-build.sh`（Forge package/typecheck/Go build 一次，运行 Go session/transport、列表/历史/RPC 合同模块检查与一次资源 prepare check）；slice 开发时仍可直接运行对应 Go/JS 模块测试。另用隔离输入实际打开列表、关闭且无 backend 残留。
-- 保留目录覆盖、排序、metadata及旧错误/跳过规则；不写用户 JSONL，不读真实凭据。只读恢复、写入、完整消息状态分别由 T002/T003、T017、T029/T045承担。首项不是完整交付。
-
-TASK-T063 管理路线与任务调整，不作为功能任务依赖。T001 实现完成后停止；
-当时不 commit，新的逐项提交规则从 T009 起适用，不追补 T001–T003。
-不自动启动下一项、不进入 TEST、不 push/iterate。
+覆盖责任：T001 会话列表；T002 JSONL 只读树与有效上下文；T003 Electron 切换与只读历史。完整写入由 T017、完整消息状态由 T029/T045、运行会话由 T037/T049 负责。各切片的真实结果与未验证项见对应保留的 M001–M003。
 
 **TASK-T002：JSONL 只读打开与有效上下文恢复** 已实现 Go `Open`、
 `Entries`、`ContextMessages`，复用 catalog 的 header/entry 校验。按最后有效
@@ -46,43 +41,16 @@ T029/T045 的完整消息、Markdown/image/tool 呈现和 T037/T049 的运行会
 
 ## 任务与实际依赖
 
-**TASK-T010：当前 RPC 方法的类型化错误与取消路由** 已接入 Go
-`go.lsp.dev/jsonrpc2@v1.0.1` 与 Node `vscode-jsonrpc@9.0.3` 原生连接，
-删除候选手写 framing/ID 调度。只为 initialize/get_sessions/switch_session/shutdown
-定义业务类型及错误 union；类型贯穿 main、受控 preload 与 renderer。
-采用 T066 及主会话批准的 framing/params/notification/解析失败契约；24 个共享输入
-区分 RPC response 与连接终止诊断。UI 接收取消不发送产品 abort，不丢弃 Go
-transport correlation；超时/断管/退出不重试。验证与边界见 [M010](evidence/M010.md)，
-正式状态以 dow 为准。并发与事件、实际 agent/tool/approval 取消仍留所属切片。
+T010 为当前 RPC 方法定义 typed errors 和接收取消契约；并发、事件与业务取消由所属后续任务负责。批准的协议行为见 [M010](evidence/M010.md) 和 SPEC，操作入口见 CONTRIBUTING。
 
-**TASK-T009：候选开发构建与资源 watch** 已增量实现同一 Node 资源生成器、
-共享 strict tsconfig/Node 与 DOM 类型边界、main/preload/renderer source map、
-TS/config/HTML/共享 CSS 内容 watch。HTML 模板与两份 CSS 保持原来源和引用；
-不转换未迁移 UI，不改变默认 Tauri 入口。构建、资源/类型边界/恢复测试及
-macOS 实际窗口“隔离源编辑 → watch → reload → 可见标题/背景变化”证据见
-[M009](evidence/M009.md)。main/preload 变更须重启，Go 仍需显式构建；
-Linux/Windows native 未测，完整共享 TS 与最终真源搬迁由 T013/T060 负责。
-正式完成状态以 `dow task show TASK-T009` 为准。
+T009 建立候选资源构建与 watch 基础；T013/T060 负责共享 TS 真源接入与最终搬迁。
 
-**TASK-T064：默认 TypeScript 工具链切换 TS7**（依赖 T009，进入日期：2026-10-13）
-当时锁定官方正式 `typescript@7.0.2`；typecheck/build/watch 使用本地 native
-`tsc`，不回退旧版或全局 compiler，后续 TS 迁移沿用 TS7。main 改为
-NodeNext/ESM；preload 由 TS7 emit 后合并成 Electron sandbox 所需单文件 CJS，
-不增加向后兼容层。资源/source map/watch/strict 边界及列表/历史聚焦验证、
-macOS 实际重载与平台未验证边界见 [M064](evidence/M064.md)。
-正式完成状态以 `dow task show TASK-T064` 为准。
+T064 将本地 TypeScript compiler 设为默认工具链；T065 迁移为 Forge/Vite 开发与可运行 package；T014 负责后续 installer/发行资源验收。
 
-**TASK-T065：Forge/Vite 开发与可运行 package**（依赖 T064，进入日期：2026-10-14）
-锁定 Electron 44.7.0、Forge CLI/Vite plugin 8.0.1、Vite 8.3.4；TS7 7.0.2
-改为唯一默认 noEmit 类型检查，Vite 负责应用 emit 和热更新，Forge 负责
-start/package。退役 T009/T064 的自维护 build/watch 和 TS emit 链路；历史证据
-保留。共享 CSS/HTML 使用现有真源，Go 构建由 Forge hooks 编排，package 通过
-resourcesPath 加载独立 Go binary。实际开发编辑自动更新、package 列表/切换/
-历史/退出与平台边界见 [M065](evidence/M065.md)。本项止于可运行 package，
-T013 继续共享 TS/templates 装载，T014 使用 Forge makers 完善 installer。
-正式完成状态以 `dow task show TASK-T065` 为准。
+T065：Forge/Vite 开发与可运行 package（依赖 T064）。
+工具版本、构建分工、运行方式与产物路径见 CONTRIBUTING；真实验收与未验证项见 [M065](evidence/M065.md)。T013 继续共享 TS/templates 装载，T014 负责 installer。
 
-分组仅便于检索，不是阶段 gate；只服从每项实际依赖。全部任务 `parallel=false`，每次仅一个执行会话写共享文件。manifest/lock、transport/bridge/入口、共享 CSS、原型与本索引随当前 task scope 串行维护；没有通用 runner 或 schema root 的事前 owner 门槛。
+分组仅便于检索，不是阶段 gate；任务顺序服从依赖关系。
 
 ### 会话读取纵向切片
 
@@ -185,7 +153,7 @@ T013 继续共享 TS/templates 装载，T014 使用 Forge makers 完善 installe
 
 ## 功能覆盖与差异（随实现更新）
 
-下表是 owner 声明，不是全部通过证据。原有能力包括因 GUI 设计缺口暂停的能力。每项完成时在本项证据中记录具体来源、入口、处理规则、命令、结果与差异，在本节更新状态。T001 已实现只读列表，T002 已实现 Go 只读树与有效上下文恢复，T003 已接通 Electron 只读切换/历史，其余功能保持待实现。具体失败输入只加小fixture/回归用例，不复制全库。
+下表是 owner 声明，不是全部通过证据。原有能力包括因 GUI 设计缺口暂停的能力。实现时更新本表状态；只在有独有决策或确需长期保留的真实验收结果时更新相应文档。具体失败输入只加小 fixture/回归用例，不复制全库。
 
 | 功能族 | 覆盖范围 | 实现 owner | 当前状态 |
 | --- | --- | --- | --- |
@@ -207,7 +175,7 @@ T013 继续共享 TS/templates 装载，T014 使用 Forge makers 完善 installe
 | F16 | 全部CLI参数/text/json/continue/resume/slash/session | TASK-T020、TASK-T044 | 待实现 |
 | F17 | PATH/config/版本/开发构建/安装包/发行 | TASK-T001、TASK-T009、TASK-T014、TASK-T015、TASK-T033、TASK-T044、TASK-T056、TASK-T057、TASK-T058、TASK-T060、TASK-T061、TASK-T062 | 待实现 |
 
-差异记录：本次未执行功能对照或得出新的等价结果。旧行为与需求冲突由当前切片记录并确认，只阻断受影响逻辑；不趁迁移默改。最终 T055 从五 crate active exports、GUI commands/events、CLI参数与slash、settings/config/credentials、JSONL及暂停入口核对遗漏，汇总完整 feature/gap/contract 清单；T059/T062收口所有 Must。完整覆盖是最终交付要求，不是开工前置任务。
+差异记录：当前切片发现的旧行为与需求冲突，由对应 owner 明确差异并确认；未覆盖能力持续可见。T055 核对五 crate active exports、GUI commands/events、CLI 参数与 slash、settings/config/credentials、JSONL 和暂停入口；T059/T062 收口全部 Must。完整覆盖是最终交付要求，不是开工前置任务。
 
 ## 设计缺口 owner
 
@@ -252,9 +220,7 @@ T013 继续共享 TS/templates 装载，T014 使用 Forge makers 完善 installe
 
 ## 审查与验证边界
 
-正式任务通过 dow 更新和读取，取消工作没有标 done；原 T001–T003重写成实际代码/链路切片，T009–T014保留有产出的构建/通信/资源工作。各 provider/OAuth/regex/process依赖随所属模块验证，取消综合 spike 前置。当前 UI 切片直接接通真实 Go；T053做汇接复核，不延迟所有接线到最后。
-
-真实 provider、平台、原生行为未测保持待完成；focused checks不等于全项目 TEST。性能/维护收益在候选就绪的 T059处理，使用可用旧产品或已有 Git 历史作具体参照，不重新引入冻结。路线调整时未跑产品测试；T001 单独记录针对性测试与真实窗口证据，T002 在 M002 记录 Go/Rust 只读恢复对照，T003 在 M003 记录 TS/Go 切换与实际 Electron 历史验收。不续做冻结检查，不清理其他会话产物。
+取消、修改或完成任务的工作流操作见 CONTRIBUTING；正式状态由 dow 管理。平台、原生与真实授权尚未验证时保持待完成；focused checks 不等于全项目 TEST。性能/维护收益在候选就绪后按 T059 验收。
 
 ## Related Docs
 

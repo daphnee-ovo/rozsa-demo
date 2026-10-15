@@ -33,11 +33,15 @@
 
 ### 参照与证据边界
 
-- Git HEAD：`08869aa7937778f4d31c39db065e7248ad8ce4a9`。调查时工作区还有既有 VERSION、main dev-flow 文件等未提交变化；本草案不把整个工作区声称为干净快照。
-- 上述 HEAD 是既有调查记录，不是实施前置条件。实施时读取当前模块源码、已有测试与必要 Git 历史，记录所用来源；不 reset、stash 或提交其他会话的改动。不再另建全库快照或源码副本。
-- UI 统一化后的入口见 [GUI 架构](../../../docs/gui/ARCHITECTURE.md)。共享资源仍位于 `crates/rozsa-gui/frontend/ui/`，并不意味着业务已与 GUI crate 完全解耦。
-- [单 WebView 实验](../../../tmp/electron-native-validation/verification.md)：Electron 44.7.0 / macOS 27.0 的合成 shell 和用户人工检查支持可行性。保留 separator 可访问性 FAIL、最小化/极限尺寸等未覆盖项；不是全产品或跨平台验收。
-- 不重启实验或续做冻结检查。本次不清理已产生的冻结文档、脚本、副本和构建产物；这些文件不再是路线输入或交付前置要求。真实原生行为在相关生产实现就绪后补测，未测不宣称通过。
+- 实施时使用当前模块源码、已有测试与必要 Git 历史作参照；不建立全库快照或源码副本。
+- UI 统一化后的入口见 [GUI 架构](../../../docs/gui/ARCHITECTURE.md)。共享资源位于 `crates/rozsa-gui/frontend/ui/`，业务仍有部分位于 GUI crate。
+- [单 WebView 实验报告](../../../docs/migration/evidence/electron-single-webview.md)记录了合成 shell 和用户人工观察。其 separator 可访问性 FAIL、未覆盖的最小化/极限尺寸、Linux/Windows 与完整产品等价仍保持原状态；实验不是生产或跨平台验收。
+
+### 已确认的持久化与退出边界
+
+旧实现核对表明：窗口关闭先执行原生 teardown，再拒绝 pending approvals、取消 pending questions；stop 操作清空当前 queued messages 后依次拒绝 approvals、取消 questions、通知 agent abort，最后结束 Dev Flow session。正常 prompt 结束的错误消息先追加，再清理 pending 交互并发布最终状态。迁移需在对应功能切片验证这些顺序；这段源码记录不等于应用崩溃或退出路径已验收。
+
+Session manager 在内存/index 更新前追加序列化 entry；append 没有显式 fsync，不能推断断电耐久。现有 manager 的互斥仅在实例内；未发现 OS 文件锁或跨进程 owner 协议。多个实例并发 append、header 重写与崩溃耐久的结果未动态验证，不应假定有跨实例协调或安全保证。
 
 ### 必须覆盖的功能族
 
@@ -89,7 +93,6 @@ backend/                    一个 Go module
   internal/transport/       协议、dispatch、事件输出；不实现业务
   internal/platform/        OS 路径、进程控制等适配
 contracts/                  按当前切片需要增补的 IPC/TS 类型与小契约用例
-dist/                       生成的 JS 与资源；忽略提交，不作为可编辑真源
 tests/fixtures/migration/   实际跨语言用例需要时才加入的小输入与来源
 devtools/                  Go/JS/跨进程构建和验收编排
 prototype/                 保留 scene/gallery/mock，引用唯一 ui/
@@ -107,11 +110,9 @@ Go 依赖方向：cmd/transport → app → core → model。platform 由需要�
 
 共享领域输入、command/result、事件变体用明确 interface/discriminated union；不把原有动态对象一律标成 any。TypeScript 类型不替代跨进程 payload 的运行时校验。只为当前功能建立 IPC 类型、Go struct/tag 和实际用例；以同一小输入验证字段与错误语义。后续切片增补自己的契约，不先建立全方法 schema 或通用生成器。
 
-默认类型检查使用官方 TS7，精确锁定正式版 `typescript@7.0.2`（TASK-T064；用户于 2026-10-13 要求）。TASK-T065 根据用户 2026-10-14 要求将默认开发/package 切换为 Electron Forge + Vite；本地 native `tsc` 仅执行 strict noEmit typecheck，缺失、版本不符或失败透明报错。Forge start/package hooks 先 typecheck 并构建 Go，Vite 直接编译 TS；不回退旧版或全局 compiler，不保留 TS emit/watch 的第二套默认链路。
+TASK-T064 将本地 TypeScript compiler 设为默认工具链；TASK-T065 将默认开发/package 流程切换为 Electron Forge + Vite。严格类型检查与 bundling 分开；Forge 管理 start/package，Vite 构建 main/preload/renderer 资源。单 sandbox preload、Node/DOM 类型边界、共享 CSS/HTML 同源与无第二套 emit/watch 链属于已批准的设计约束。TASK-T013 接入共享 TS/templates 与原型/Tauri 同源资源；T014 负责 installer，平台任务负责发行验收。具体命令、依赖版本与产物路径见 CONTRIBUTING；真实验收及边界见 [M065](../../../docs/migration/evidence/M065.md)。
 
-Electron 44.7.0、Forge CLI/Vite plugin 8.0.1、Vite 8.3.4 精确锁定。Forge 管理 start/package；稳定 Vite 插件负责 main/preload/renderer bundling、资源和 source maps。main/preload 按 Forge 8 使用 CJS bundles；preload 为 sandbox 所需单文件，仅 external Electron；类型检查使用 Bundler resolution 并保留 DOM/Node 严格边界。共享 CSS/HTML 从现有真源进入 Vite 资源图，无复制的手写副本；T013 继续共享 TS/templates 与原型/Tauri 同源加载。CSS HMR、HTML/renderer TS 自动重载、preload 重载和 main hot restart 由 Forge/Vite 实现；Go 修改须重启开发入口。产物为 desktop/.vite 与 desktop/out；Go 在 development 使用 dist/migration，在 package 使用 resourcesPath。T065 验收到真实可运行 package，T014 使用 Forge makers 负责后续 installer 资源验收，发行签名/安装验收仍归对应平台任务。实测版本/命令/平台边界见 [M065](../../../docs/migration/evidence/M065.md)；旧 TS emit/watch 证据保留于 [M064](../../../docs/migration/evidence/M064.md)。
-
-分别配置共享 UI/renderer 的 DOM 类型边界与 main/preload 的 Electron/Node 类型边界，启用 strict 类型检查，禁止 renderer 获得 Node 能力。构建生成 JS、HTML/CSS/templates 与 source map 到 dist 或对应模块的忽略目录；原型 HTTP 与产品包读取同一批共享生成资源，不直接加载 TS，也不维护手写 JS 副本。静态资源加载与模板 URL 必须通过实际页面验收。
+分别配置共享 UI/renderer 的 DOM 类型边界与 main/preload 的 Electron/Node 类型边界，启用 strict 类型检查，禁止 renderer 获得 Node 能力。原型与产品包读取同一批共享生成资源，不直接加载 TS，也不维护手写 JS 副本。静态资源加载与模板 URL 必须通过实际页面验收。
 
 每个模块按原有 JS 行为测试完成转换，再进行新宿主接线。JS/TS 测试仍归模块 js-tests；类型检查单独运行，运行时测试使用锁定的 TS runner 或受测编译产物。禁止把类型检查通过等同于产品逻辑通过。原型 mock/scene/gallery 脚本随之迁移，但演示数据与代码不得进入生产包。
 
@@ -132,10 +133,10 @@ Go CLI → 同一个 app/core/model（不依赖 Electron 运行 headless prompt�
 
 默认每个桌面应用实例启动一个 Go backend，所有项目/session 由它统一管理；CLI headless 直接复用 Go app。跨实例访问同一数据目录的既有规则在会话写入任务中对照并测试；不允许 Rust/Go 对照程序同时写同一用户会话。
 
-采用 [`go.lsp.dev/jsonrpc2`](https://pkg.go.dev/go.lsp.dev/jsonrpc2@v1.0.1) 的原生 `Content-Length` framing 与 JSON-RPC 2.0 消息处理，不手写协议 envelope、framing 或额外解析器。该版本实现的 body 上限为 1 GiB；header parser 接受 LF，并在重复 `Content-Length` 时以后读到的值为准；本项目接受这些库行为，不另设 8 KiB header 上限。stdout 仅协议，stderr 为日志；磁盘 JSONL 与传输 framing 不混用。
+Go 采用 [`go.lsp.dev/jsonrpc2`](https://pkg.go.dev/go.lsp.dev/jsonrpc2) 的原生连接、`Content-Length` framing 与 JSON-RPC 2.0 消息处理；Electron main 使用 `vscode-jsonrpc`。不手写协议 envelope、framing、额外解析器或非公开库配置。stdout 仅协议，stderr 为日志；磁盘 JSONL 与传输 framing 不混用。
 
-双端实现选型为 Go `go.lsp.dev/jsonrpc2@v1.0.1` 与 Electron main 的
-[`vscode-jsonrpc@9.0.3`](https://www.npmjs.com/package/vscode-jsonrpc/v/9.0.3)。
+双端实现选型为 Go `go.lsp.dev/jsonrpc2` 与 Electron main 的
+[`vscode-jsonrpc`](https://www.npmjs.com/package/vscode-jsonrpc).
 Node 侧直接使用其 `StreamMessageReader`、`StreamMessageWriter` 与
 `createMessageConnection`，不保留手写客户端 framing 或 transport ID 调度。
 2026-10-15 用户补充批准：畸形 JSON、非法 envelope（包括 boolean ID）沿用 Go
@@ -179,7 +180,7 @@ macOS 的验收参照原生效果；Linux/Windows 按各自既有产品行为验
 
 ### 6. 按切片对照实现与最终收口
 
-首个执行任务是 **TASK-T001：打通 Electron→Go 会话列表读取纵向切片**。无功能前置依赖，状态留 pending。读取 `SessionManager::list_dir/list_dirs/build_session_meta`、GUI `get_sessions` 及列表/分层目录测试后，直接实现最小 Go 服务、受控 stdio 通信与 TypeScript 单 renderer 列表；产出可运行链路。最小验证为 Go session/transport 测试、TS typecheck、列表 js-tests、候选构建与隔离输入下真实窗口读取/关闭。不是又一份基线文档。
+迁移按下方依赖表从会话读取纵向切片开始，再并行推进真实代码依赖满足的产品模块和对应 UI。每项先核对其旧源码与测试，再实现并做本项针对性验证；不把统一 runner、完整 schema 或事前全功能盘点设为开工门槛。
 
 | 工作单元 | 具体产出 | 验证与推进规则 |
 | --- | --- | --- |
@@ -191,7 +192,7 @@ macOS 的验收参照原生效果；Linux/Windows 按各自既有产品行为验
 
 分组是索引，不是额外阶段 gate。每次只执行一个已声明范围的任务，完成后再接下一项；全部任务 `parallel=false`。共享 manifest/lock、transport/bridge/入口、CSS、原型接线与 TASK_ROADMAP 只由当前任务写入；涉及新增文件先用 dow 更新 scope，不把无关依赖串成全局前置链。
 
-TASK_ROADMAP 的功能覆盖随每项实现维护，具体来源/差异/针对性结果写入该项证据。未做功能保持待实现；最终 T055 汇总完整 feature/gap/contract 清单，T059 确认全部 Must 和真实验收完成。发现遗漏或需求冲突时明确 owner 与受影响任务，独立项继续；不能把全覆盖要求当事前全盘点门槛。
+TASK_ROADMAP 的功能覆盖随实现维护；未做功能保持待实现。最终 T055 核对全部 feature/gap/contract 与 owner，T059 确认 Must 和真实验收完成。发现遗漏或需求冲突时明确责任任务；全覆盖是最终交付要求，不是开工门槛。
 
 保留当前 Rust/Tauri 源码和已有 Git 历史作参照，不新增长期 Electron→Rust 桥。候选使用隔离输入，禁止双写用户数据。切片失败回到该项，默认入口保留至完整验收。切换时先验证 staged 包与配置副本；失败恢复入口与匹配副本，不能用旧快照覆盖后续用户新写入。
 
@@ -230,11 +231,11 @@ TASK_ROADMAP 的功能覆盖随每项实现维护，具体来源/差异/针对�
 ## Test Plan
 
 1. 先读现有测试与 fixture，不运行全面生产测试来装饰规划结论。按模块建立差异测试；例如 `agent_session_restore_test.rs`、`permissions_test.rs`、`bash_abort_test.rs`、`settings_test.rs`、`dev_flow_real_dow_contract_test.rs`、provider 和 GUI tests。
-2. Go 特性用所属 package 的 `_test.go`，JS 用模块 `js-tests/`；只有实际跨语言/跨进程验证需要时才在 `devtools/` 加 shell 编排，不先建统一 runner。小 fixture/预期结果就近放在模块，跨语言确需共享的输入放 `tests/fixtures/migration/` 并注明来源；可变副本、临时服务、日志/截图只放项目 `tmp/`。本项必要长期证据放 `docs/migration/evidence/`；不读真实凭据，不归档无关内容。
+2. Go 特性用所属 package 的 `_test.go`，JS 用模块 `js-tests/`；只有跨语言/跨进程验证确有需要时才增加 shell 编排。fixture 和预期结果就近放置；跨语言确需共享时放 `tests/fixtures/migration/`。长期保留独有决策和确需追溯的真实验收结果；不读真实凭据，不归档无关内容。
 3. 核对持久化 bytes/结构、模型请求、流式分片、事件因果、文件变化、权限结果、进程退出。固定 clock/ID/provider；并行事件只比较合同要求的先后，不把 scheduler 偶然顺序写成业务规则。
 4. 真实 GUI 对照在相同主题/尺寸/状态下看截图与动态操作；DOM/截图不替代 IME、drag、native blur、全屏和崩溃清理。测试实例结束立即关闭。
 5. macOS watcher/FSEvents 必须 host 验证；其他系统分别执行平台 fixture/集成及 GUI。失败先归因现存问题或本次改动，不 reset/stash 共享工作区。
-6. build、format、lint、race、package smoke 的实际命令随对应切片实现写入 CONTRIBUTING/脚本。进入全项目 TEST 仍需用户显式请求；本次不运行全项目 TEST、旧冻结检查、Electron 实验或迁移前性能项目。
+6. build、format、lint、race、package smoke 的操作入口集中维护在 CONTRIBUTING/脚本。进入全项目 TEST 仍需用户显式请求。
 
 ## Self Check
 
@@ -249,7 +250,7 @@ TASK_ROADMAP 的功能覆盖随每项实现维护，具体来源/差异/针对�
 
 ## Related Docs
 
-- [正式任务与切片索引](../../../docs/migration/TASK_ROADMAP.md)：依赖、功能 owner 与验收覆盖；状态以 dow 为准。不使用 html-plan；旧 HTML 页仅保留停用提示。
+- [正式任务与切片索引](../../../docs/migration/TASK_ROADMAP.md)：任务顺序、依赖和功能 owner；正式状态以 dow 为准。
 - [GUI 架构](../../../docs/gui/ARCHITECTURE.md)、[设计规范](../../../DESIGN.md)、[设计缺口](../../../prototype/docs/DESIGN_GAPS.md)
 - [贡献与测试约定](../../../CONTRIBUTING.md)、[Electron 实验报告](../../../tmp/electron-native-validation/verification.md)
-- 官方依据：[go.lsp.dev/jsonrpc2 v1.0.1 API](https://pkg.go.dev/go.lsp.dev/jsonrpc2@v1.0.1)、[该版本源码](https://github.com/go-language-server/jsonrpc2/tree/v1.0.1)、[JSON-RPC 2.0](https://www.jsonrpc.org/specification)、[Electron IPC](https://www.electronjs.org/docs/latest/tutorial/ipc)、[Electron security](https://www.electronjs.org/docs/latest/tutorial/security)、[Go encoding/json](https://pkg.go.dev/encoding/json)。库 framing 与 JSON-RPC envelope 由所选库提供；产品方法、业务类型/错误、事件 epoch/watermark 和恢复仍由本项目定义与验收。
+- 官方依据：[JSON-RPC 2.0](https://www.jsonrpc.org/specification)、[Electron IPC](https://www.electronjs.org/docs/latest/tutorial/ipc)、[Electron security](https://www.electronjs.org/docs/latest/tutorial/security)、[Go encoding/json](https://pkg.go.dev/encoding/json)。当前依赖版本以 manifest/lock 为准。库提供 framing 与 JSON-RPC envelope；产品方法、业务类型/错误、事件 epoch/watermark 和恢复仍由本项目定义与验收。

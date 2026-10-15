@@ -52,6 +52,8 @@ The active product is implemented entirely in the five Rust crates above. Do not
 - Migration Go requires `backend/go.mod`'s minimum Go 1.27.2. Use native module toolchain selection (`go -C backend ...`); Forge start/package report the selected Go version before building. Keep default JSON engine semantics and tool cache locations; verify with `bash devtools/test-migration-go-toolchain.sh` (see M067).
 - Migration TypeScript defaults to the exact official TS7 version in `desktop/package.json` (currently `typescript@7.0.2`). Its local native `tsc` performs strict noEmit typecheck; never fall back to older/global compilers. Forge 8.0.1 owns start/package and Vite 8.3.4 owns bundling/HMR. Main/preload follow Forge's `.cjs` convention with a single sandbox preload; do not add TS emit/watch or a second default build chain. Hooks check TS7 and build Go. Node >=22.17.0 is required.
 - For small features, use the implementation language's test runner directly. JavaScript tests belong in the module's `js-tests/` directory; never wrap Node tests in Rust/Cargo subprocesses.
+- Go candidate tests live in dedicated `*_test.go` files beside their module;
+  Electron/renderer tests live in `desktop/js-tests/`.
 - Prefer shell scripts under `devtools/` for whole-module integration and end-to-end tests across languages. See `CONTRIBUTING.md` for the GUI test commands and verification boundaries.
 - If a Rust test file changes, run its relevant test target before broader checks.
 - Full project verification is `cargo build`, `cargo clippy`, and `cargo test` from the repository root.
@@ -77,7 +79,7 @@ Multiple rozsa sessions may be running in this cwd at the same time, each modify
 
 Committing:
 
-- On `refactor/electron-go-migration`, the user authorized one commit per completed task starting with TASK-T009. Verify the task, immediately run `dow task done` successfully, then commit only that task's attributable changes. Do not backfill T001–T003, push, iterate, or start the next task automatically.
+- Migration task completion and commit sequence are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 - Only commit files YOU changed in THIS session.
 - Stage explicit paths (`git add <path1> <path2>`); never `git add -A` / `git add .`.
 - Before committing, run `git status` and verify you are only staging your files.

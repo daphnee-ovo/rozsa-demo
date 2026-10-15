@@ -113,10 +113,9 @@ not launch a GUI or enter full TEST. See
 
 ## Candidate Forge/Vite development and package (TASK-T065)
 
-Pinned tools: Electron 44.7.0, Forge CLI/Vite plugin 8.0.1, Vite 8.3.4 and
-official TS7 7.0.2. Node >=22.17.0 is required; validation used Node 26.10.0.
-Install exact dependencies with npm ci. Keep npm/Electron caches and TMPDIR
-under project tmp/migration/; the build/package/run scripts configure them.
+Tool versions and the supported Node range are defined by `desktop/package.json`
+and its lockfile. Install the declared dependencies with `npm ci`; build/package/run
+scripts place temporary working files under project `tmp/migration/`.
 
 ```bash
 bash devtools/build-migration.sh
@@ -127,8 +126,8 @@ bash devtools/test-migration-build.sh
 
 Forge owns start/package. The trusted launcher runs electron-forge start;
 directly use `npm --prefix desktop start -- -- --session-dir /absolute/synthetic/sessions`
-with the project cache environment. Hooks first run TS7 strict noEmit and build
-the host Go binary. Vite alone transpiles/bundles main, sandbox preload and
+Hooks first run the local strict noEmit typecheck and build
+the host Go binary. Vite transpiles/bundles main, sandbox preload and
 renderer. There is no TS emit step or separate default build/watch chain.
 Run typecheck separately during TS editing: Vite does not check types on each
 edit. tsx remains the module test runner.
@@ -142,7 +141,7 @@ SIGTERM use owned backend shutdown. Full renderer reload preserves the existing
 candidate reload behavior, not additional cross-reload UI persistence.
 
 Generated bundles/maps live in desktop/.vite/; Forge packages in desktop/out/.
-Main/preload follow Forge 8's main.cjs/preload.cjs output. Preload is a single
+Main/preload follow Forge's main.cjs/preload.cjs convention. Preload is a single
 sandbox bundle with Electron as the only external runtime require. Strict
 Bundler-resolution TS configs keep Node globals out of renderer and DOM out of
 main/preload. Shared assets are emitted by Vite without copied hand-written
@@ -179,12 +178,12 @@ results and platform limits are in [M065](docs/migration/evidence/M065.md).
 T013 extends this resource graph to shared TS/templates and prototype/Tauri
 loading; T014 adds Forge makers/installer acceptance after T012/T013.
 This task stops at runnable package. Signing, installer, distribution and
-Linux/Windows native acceptance remain corresponding later tasks. Historical
-emit/watch evidence remains in [M009](docs/migration/evidence/M009.md) and
-[M064](docs/migration/evidence/M064.md).
+Linux/Windows native acceptance remain corresponding later tasks. Current
+package behavior and its limits are summarized in
+[M065](docs/migration/evidence/M065.md).
 
-On the migration branch, immediately complete each verified task through dow,
-then commit only its attributable changes once. Do not backfill T001–T003,
+On the migration branch, after focused verification run `dow task done` before
+committing only that task's attributable changes once. Do not backfill T001–T003,
 push, iterate or start the next task automatically. Preserve other sessions'
 worktree/index changes; disclose included base content when first tracking an
 existing untracked file modified by this task.
