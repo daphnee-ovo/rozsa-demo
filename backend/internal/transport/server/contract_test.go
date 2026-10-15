@@ -28,24 +28,24 @@ func TestSharedSessionContract(t *testing.T) {
 	if err := json.Unmarshal(data, &cases); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.Name, func(t *testing.T) {
-			request := string(tc.Request)
-			if tc.Raw != "" {
-				request = tc.Raw
+	for _, testCase := range cases {
+		t.Run(testCase.Name, func(t *testing.T) {
+			request := string(testCase.Request)
+			if testCase.Raw != "" {
+				request = testCase.Raw
 			}
 			responses, serveErr := exchange(t, session.Catalog{}, initRequest, request)
-			if tc.TerminationCode != 0 {
+			if testCase.TerminationCode != 0 {
 				var diagnostic *jsonrpc2.Error
-				if !errors.As(serveErr, &diagnostic) || int(diagnostic.Code) != tc.TerminationCode || len(responses) != 1 {
-					t.Fatalf("want termination diagnostic %d without wire response: err=%v replies=%s", tc.TerminationCode, serveErr, responses)
+				if !errors.As(serveErr, &diagnostic) || int(diagnostic.Code) != testCase.TerminationCode || len(responses) != 1 {
+					t.Fatalf("want termination diagnostic %d without wire response: err=%v replies=%s", testCase.TerminationCode, serveErr, responses)
 				}
 				return
 			}
 			if serveErr != nil {
 				t.Fatal(serveErr)
 			}
-			if tc.Notification {
+			if testCase.Notification {
 				if len(responses) != 1 {
 					t.Fatalf("notification replied: %s", responses)
 				}
@@ -67,8 +67,8 @@ func TestSharedSessionContract(t *testing.T) {
 			if err := json.Unmarshal(responses[1], &result); err != nil {
 				t.Fatal(err)
 			}
-			if tc.Result != nil {
-				if result.Result == nil || *result.Result != *tc.Result {
+			if testCase.Result != nil {
+				if result.Result == nil || *result.Result != *testCase.Result {
 					t.Fatal(string(responses[1]))
 				}
 				return
@@ -83,8 +83,8 @@ func TestSharedSessionContract(t *testing.T) {
 					kind = "invalid_request"
 				}
 			}
-			if result.Error.Code != tc.Code || kind != tc.Kind || string(result.ID) != string(tc.ID) {
-				t.Fatalf("want %d/%s/id=%s: %s", tc.Code, tc.Kind, tc.ID, responses[1])
+			if result.Error.Code != testCase.Code || kind != testCase.Kind || string(result.ID) != string(testCase.ID) {
+				t.Fatalf("want %d/%s/id=%s: %s", testCase.Code, testCase.Kind, testCase.ID, responses[1])
 			}
 		})
 	}

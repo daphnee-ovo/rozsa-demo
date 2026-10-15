@@ -28,29 +28,29 @@ type fakeApp struct {
 	subscribe     func() session.EventSubscription
 }
 
-func (f *fakeApp) GetSessions(ctx context.Context) ([]session.ListEntry, error) {
-	if f.get != nil {
-		return f.get(ctx)
+func (fakeApp *fakeApp) GetSessions(ctx context.Context) ([]session.ListEntry, error) {
+	if fakeApp.get != nil {
+		return fakeApp.get(ctx)
 	}
-	return f.Service.GetSessions(ctx)
+	return fakeApp.Service.GetSessions(ctx)
 }
-func (f *fakeApp) Switch(ctx context.Context, path, id string) (session.LoadedSnapshot, error) {
-	if f.switchSession != nil {
-		return f.switchSession(ctx, path, id)
+func (fakeApp *fakeApp) Switch(ctx context.Context, path, id string) (session.LoadedSnapshot, error) {
+	if fakeApp.switchSession != nil {
+		return fakeApp.switchSession(ctx, path, id)
 	}
-	return f.Service.Switch(ctx, path, id)
+	return fakeApp.Service.Switch(ctx, path, id)
 }
-func (f *fakeApp) Snapshot(ctx context.Context) (session.StateSnapshot, error) {
-	if f.snapshot != nil {
-		return f.snapshot(ctx)
+func (fakeApp *fakeApp) Snapshot(ctx context.Context) (session.StateSnapshot, error) {
+	if fakeApp.snapshot != nil {
+		return fakeApp.snapshot(ctx)
 	}
-	return f.Service.Snapshot(ctx)
+	return fakeApp.Service.Snapshot(ctx)
 }
-func (f *fakeApp) Subscribe() session.EventSubscription {
-	if f.subscribe != nil {
-		return f.subscribe()
+func (fakeApp *fakeApp) Subscribe() session.EventSubscription {
+	if fakeApp.subscribe != nil {
+		return fakeApp.subscribe()
 	}
-	return f.Service.Subscribe()
+	return fakeApp.Service.Subscribe()
 }
 
 type testPeer struct {
@@ -64,20 +64,20 @@ func startPeer(t *testing.T, app sessionApp, timeout time.Duration) *testPeer {
 	t.Helper()
 	client, backend := net.Pipe()
 	client.SetDeadline(time.Now().Add(8 * time.Second))
-	p := &testPeer{t: t, client: client, stream: jsonrpc2.NewStream(client), ended: make(chan error, 1)}
-	go func() { p.ended <- serve(backend, backend, app, timeout); backend.Close() }()
+	peer := &testPeer{t: t, client: client, stream: jsonrpc2.NewStream(client), ended: make(chan error, 1)}
+	go func() { peer.ended <- serve(backend, backend, app, timeout); backend.Close() }()
 	t.Cleanup(func() {
 		client.Close()
 		select {
-		case <-p.ended:
+		case <-peer.ended:
 		case <-time.After(3 * time.Second):
 			backend.Close()
 			t.Error("server did not drain")
 		}
 	})
-	p.send(1, "initialize", types.InitializeParams{ProtocolVersion: 1})
-	p.readOK()
-	return p
+	peer.send(1, "initialize", types.InitializeParams{ProtocolVersion: 1})
+	peer.readOK()
+	return peer
 }
 func transportID(id any) jsonrpc2.ID {
 	switch id := id.(type) {
@@ -89,53 +89,53 @@ func transportID(id any) jsonrpc2.ID {
 		panic("test ID must be integer or string")
 	}
 }
-func (p *testPeer) send(id any, method string, params any) {
-	p.t.Helper()
+func (peer *testPeer) send(id any, method string, params any) {
+	peer.t.Helper()
 	data, err := json.Marshal(params)
 	if err != nil {
-		p.t.Fatal(err)
+		peer.t.Fatal(err)
 	}
-	if _, err := p.stream.Write(p.t.Context(), jsonrpc2.NewCall(transportID(id), method, jsonrpc2.RawMessage(data))); err != nil {
-		p.t.Fatal(err)
+	if _, err := peer.stream.Write(peer.t.Context(), jsonrpc2.NewCall(transportID(id), method, jsonrpc2.RawMessage(data))); err != nil {
+		peer.t.Fatal(err)
 	}
 }
-func (p *testPeer) cancel(id any) {
-	p.t.Helper()
+func (peer *testPeer) cancel(id any) {
+	peer.t.Helper()
 	data, _ := json.Marshal(struct {
 		ID any `json:"id"`
 	}{id})
-	if _, err := p.stream.Write(p.t.Context(), jsonrpc2.NewNotification("$/cancelRequest", jsonrpc2.RawMessage(data))); err != nil {
-		p.t.Fatal(err)
+	if _, err := peer.stream.Write(peer.t.Context(), jsonrpc2.NewNotification("$/cancelRequest", jsonrpc2.RawMessage(data))); err != nil {
+		peer.t.Fatal(err)
 	}
 }
-func (p *testPeer) read() *jsonrpc2.Response {
-	p.t.Helper()
-	message, _, err := p.stream.Read(p.t.Context())
+func (peer *testPeer) read() *jsonrpc2.Response {
+	peer.t.Helper()
+	message, _, err := peer.stream.Read(peer.t.Context())
 	if err != nil {
-		p.t.Fatal(err)
+		peer.t.Fatal(err)
 	}
 	response, ok := message.(*jsonrpc2.Response)
 	if !ok {
-		p.t.Fatalf("unexpected message %T", message)
+		peer.t.Fatalf("unexpected message %T", message)
 	}
 	return response
 }
-func (p *testPeer) readOK() *jsonrpc2.Response {
-	p.t.Helper()
-	response := p.read()
+func (peer *testPeer) readOK() *jsonrpc2.Response {
+	peer.t.Helper()
+	response := peer.read()
 	if response.Err() != nil {
-		p.t.Fatal(response.Err())
+		peer.t.Fatal(response.Err())
 	}
 	return response
 }
-func (p *testPeer) update() sessionUpdate {
-	p.t.Helper()
+func (peer *testPeer) update() sessionUpdate {
+	peer.t.Helper()
 	var update sessionUpdate
-	if err := json.Unmarshal(p.readOK().Result(), &update); err != nil {
-		p.t.Fatal(err)
+	if err := json.Unmarshal(peer.readOK().Result(), &update); err != nil {
+		peer.t.Fatal(err)
 	}
 	if (update.Event == nil) == (update.Snapshot == nil) {
-		p.t.Fatalf("not a snapshot/event union: %+v", update)
+		peer.t.Fatalf("not a snapshot/event union: %+v", update)
 	}
 	return update
 }
@@ -171,28 +171,28 @@ func TestConcurrentCapacityCancellationAndShutdown(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}}
-	p := startPeer(t, app, 5*time.Second)
+	peer := startPeer(t, app, 5*time.Second)
 	for i := 0; i < maxConcurrentRequests; i++ {
-		p.send(i+2, "get_sessions", nil)
+		peer.send(i+2, "get_sessions", nil)
 		waitFor(t, started)
 	}
-	p.send("excess", "get_sessions", nil)
-	errorKind(t, p.read().Err(), types.Busy)
-	p.cancel(2)
-	response := p.read()
+	peer.send("excess", "get_sessions", nil)
+	errorKind(t, peer.read().Err(), types.Busy)
+	peer.cancel(2)
+	response := peer.read()
 	if response.ID() != transportID(2) {
 		t.Fatal(response.ID())
 	}
 	errorKind(t, response.Err(), types.Canceled)
-	p.send("shutdown", "shutdown", nil)
+	peer.send("shutdown", "shutdown", nil)
 	for i := 0; i < maxConcurrentRequests; i++ {
-		response := p.read()
+		response := peer.read()
 		if response.ID() != transportID("shutdown") {
 			errorKind(t, response.Err(), types.Closing)
 		}
 	}
-	p.send("late", "get_sessions", nil)
-	errorKind(t, p.read().Err(), types.Closing)
+	peer.send("late", "get_sessions", nil)
+	errorKind(t, peer.read().Err(), types.Closing)
 	if calls.Load() != maxConcurrentRequests {
 		t.Fatalf("work retried or excess work accepted: %d", calls.Load())
 	}
@@ -205,13 +205,13 @@ func TestCancellationRegistrationAndStringIdentity(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}}
-	p := startPeer(t, app, 5*time.Second)
-	p.send("界面", "get_sessions", nil)
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send("界面", "get_sessions", nil)
 	// No synchronization with app start: the immediately following cancel must
 	// not overtake registration. Numeric IDs cannot cancel the string request.
-	p.cancel(2)
-	p.cancel("界面")
-	response := p.read()
+	peer.cancel(2)
+	peer.cancel("界面")
+	response := peer.read()
 	if response.ID() != transportID("界面") {
 		t.Fatal(response.ID())
 	}
@@ -225,9 +225,9 @@ func TestTimeoutDoesNotRetryAppWork(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}}
-	p := startPeer(t, app, 40*time.Millisecond)
-	p.send(2, "get_sessions", nil)
-	errorKind(t, p.read().Err(), types.Timeout)
+	peer := startPeer(t, app, 40*time.Millisecond)
+	peer.send(2, "get_sessions", nil)
+	errorKind(t, peer.read().Err(), types.Timeout)
 	if calls.Load() != 1 {
 		t.Fatal(calls.Load())
 	}
@@ -244,15 +244,15 @@ func TestCanceledDeliveryKeepsCapacityUntilAppFinishes(t *testing.T) {
 		<-release
 		return []session.ListEntry{}, nil
 	}}
-	p := startPeer(t, app, 5*time.Second)
+	peer := startPeer(t, app, 5*time.Second)
 	for i := 0; i < maxConcurrentRequests; i++ {
-		p.send(i+2, "get_sessions", nil)
+		peer.send(i+2, "get_sessions", nil)
 		waitFor(t, started)
-		p.cancel(i + 2)
-		errorKind(t, p.read().Err(), types.Canceled)
+		peer.cancel(i + 2)
+		errorKind(t, peer.read().Err(), types.Canceled)
 	}
-	p.send("capacity", "get_sessions", nil)
-	errorKind(t, p.read().Err(), types.Busy)
+	peer.send("capacity", "get_sessions", nil)
+	errorKind(t, peer.read().Err(), types.Busy)
 	if calls.Load() != maxConcurrentRequests {
 		t.Fatal(calls.Load())
 	}
@@ -261,7 +261,7 @@ func TestCanceledDeliveryKeepsCapacityUntilAppFinishes(t *testing.T) {
 func TestAcceptedSwitchesRemainInWireOrder(t *testing.T) {
 	first := make(chan struct{})
 	release := make(chan struct{})
-	var mu sync.Mutex
+	var switchOrderMutex sync.Mutex
 	order := []string{}
 	app := &fakeApp{switchSession: func(ctx context.Context, path, id string) (session.LoadedSnapshot, error) {
 		if path == "first" {
@@ -272,25 +272,25 @@ func TestAcceptedSwitchesRemainInWireOrder(t *testing.T) {
 				return session.LoadedSnapshot{}, ctx.Err()
 			}
 		}
-		mu.Lock()
+		switchOrderMutex.Lock()
 		order = append(order, path)
-		mu.Unlock()
+		switchOrderMutex.Unlock()
 		return session.LoadedSnapshot{SessionID: path}, nil
 	}}
-	p := startPeer(t, app, 5*time.Second)
-	p.send(2, "switch_session", types.SwitchParams{Path: "first", CatalogID: "id"})
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send(2, "switch_session", types.SwitchParams{Path: "first", CatalogID: "id"})
 	waitFor(t, first)
 	for i := 0; i < 5; i++ {
-		p.send(i+3, "switch_session", types.SwitchParams{Path: fmt.Sprint(i), CatalogID: "id"})
+		peer.send(i+3, "switch_session", types.SwitchParams{Path: fmt.Sprint(i), CatalogID: "id"})
 	}
-	p.cancel(4) // skip a queued switch, without releasing the next one early
-	errorKind(t, p.read().Err(), types.Canceled)
+	peer.cancel(4) // skip a queued switch, without releasing the next one early
+	errorKind(t, peer.read().Err(), types.Canceled)
 	close(release)
 	for i := 0; i < 5; i++ {
-		p.readOK()
+		peer.readOK()
 	}
-	mu.Lock()
-	defer mu.Unlock()
+	switchOrderMutex.Lock()
+	defer switchOrderMutex.Unlock()
 	if fmt.Sprint(order) != "[first 0 2 3 4]" {
 		t.Fatal(order)
 	}
@@ -302,17 +302,19 @@ type fakeSubscription struct {
 	once   sync.Once
 }
 
-func (s *fakeSubscription) Next(ctx context.Context) (session.Event, error) {
+func (subscription *fakeSubscription) Next(ctx context.Context) (session.Event, error) {
 	select {
-	case event := <-s.events:
+	case event := <-subscription.events:
 		return event, nil
-	case <-s.done:
+	case <-subscription.done:
 		return session.Event{}, session.ErrSubscriptionClosed
 	case <-ctx.Done():
 		return session.Event{}, ctx.Err()
 	}
 }
-func (s *fakeSubscription) Close() { s.once.Do(func() { close(s.done) }) }
+func (subscription *fakeSubscription) Close() {
+	subscription.once.Do(func() { close(subscription.done) })
+}
 
 func TestSnapshotRaceReplayRejectsOldEpochAndDuplicates(t *testing.T) {
 	source := &fakeSubscription{events: make(chan session.Event, 16), done: make(chan struct{})}
@@ -335,24 +337,24 @@ func TestSnapshotRaceReplayRejectsOldEpochAndDuplicates(t *testing.T) {
 		},
 		get: func(context.Context) ([]session.ListEntry, error) { return []session.ListEntry{}, nil },
 	}
-	p := startPeer(t, app, 5*time.Second)
-	p.send(2, "subscribe_sessions", nil)
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send(2, "subscribe_sessions", nil)
 	waitFor(t, snapshotStarted)
-	p.send(3, "get_sessions", nil)
-	if p.readOK().ID() != transportID(3) {
+	peer.send(3, "get_sessions", nil)
+	if peer.readOK().ID() != transportID(3) {
 		t.Fatal("snapshot blocked concurrent read")
 	}
 	for _, event := range []session.Event{{Epoch: "current", Sequence: 2}, {Epoch: "old", Sequence: 100}, {Epoch: "current", Sequence: 3}, {Epoch: "current", Sequence: 4}, {Epoch: "current", Sequence: 4}, {Epoch: "current", Sequence: 5}} {
 		source.events <- event
 	}
 	close(release)
-	initial := p.update()
+	initial := peer.update()
 	if initial.Snapshot == nil || initial.Snapshot.Watermark != 3 {
 		t.Fatal(initial)
 	}
 	for _, want := range []uint64{4, 5} {
-		p.send(int(want)+10, "next_session_event", subscriptionParams{initial.SubscriptionID})
-		update := p.update()
+		peer.send(int(want)+10, "next_session_event", subscriptionParams{initial.SubscriptionID})
+		update := peer.update()
 		if update.Event == nil || update.Event.Sequence != want || update.Event.Epoch != "current" {
 			t.Fatal(update)
 		}
@@ -371,24 +373,24 @@ func syntheticService(t *testing.T) (*session.Service, string) {
 
 func TestOverflowIsVisibleAndNextReadResynchronizes(t *testing.T) {
 	app, path := syntheticService(t)
-	p := startPeer(t, app, 5*time.Second)
-	p.send(2, "subscribe_sessions", nil)
-	initial := p.update()
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send(2, "subscribe_sessions", nil)
+	initial := peer.update()
 	for i := 0; i < session.EventBufferSize+1; i++ {
-		p.send(i+3, "switch_session", types.SwitchParams{Path: path, CatalogID: "catalog"})
-		p.readOK()
+		peer.send(i+3, "switch_session", types.SwitchParams{Path: path, CatalogID: "catalog"})
+		peer.readOK()
 	}
-	p.send(100, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	errorKind(t, p.read().Err(), types.ResyncRequired)
-	p.send(101, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	synced := p.update()
+	peer.send(100, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	errorKind(t, peer.read().Err(), types.ResyncRequired)
+	peer.send(101, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	synced := peer.update()
 	if synced.Snapshot == nil || synced.Snapshot.Watermark != session.EventBufferSize+1 || synced.Snapshot.Active.CatalogID != "catalog" || synced.Snapshot.Active.SessionID != "filename" {
 		t.Fatal(synced)
 	}
-	p.send(102, "switch_session", types.SwitchParams{Path: path, CatalogID: "catalog"})
-	p.readOK()
-	p.send(103, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	if update := p.update(); update.Event == nil || update.Event.Sequence != session.EventBufferSize+2 {
+	peer.send(102, "switch_session", types.SwitchParams{Path: path, CatalogID: "catalog"})
+	peer.readOK()
+	peer.send(103, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	if update := peer.update(); update.Event == nil || update.Event.Sequence != session.EventBufferSize+2 {
 		t.Fatal(update)
 	}
 }
@@ -406,15 +408,15 @@ func TestConnectionLossCancelsAppWithoutRetry(t *testing.T) {
 				ended <- context.Cause(ctx)
 				return nil, ctx.Err()
 			}}
-			p := startPeer(t, app, 5*time.Second)
-			p.send(2, "get_sessions", nil)
+			peer := startPeer(t, app, 5*time.Second)
+			peer.send(2, "get_sessions", nil)
 			waitFor(t, started)
 			if malformed {
-				if _, err := p.stream.(rawFrames).WriteFrame(t.Context(), []byte(`{"jsonrpc":"2.0","id":true,"method":"get_sessions"}`)); err != nil {
+				if _, err := peer.stream.(rawFrames).WriteFrame(t.Context(), []byte(`{"jsonrpc":"2.0","id":true,"method":"get_sessions"}`)); err != nil {
 					t.Fatal(err)
 				}
 			} else {
-				p.client.Close()
+				peer.client.Close()
 			}
 			errorKind(t, waitFor(t, ended), types.Disconnected)
 			if calls.Load() != 1 {
@@ -428,7 +430,7 @@ func TestFragmentedAndCoalescedUTF8ThroughServer(t *testing.T) {
 	app := &fakeApp{get: func(context.Context) ([]session.ListEntry, error) {
 		return []session.ListEntry{{Name: "玫瑰 🌹"}}, nil
 	}}
-	p := startPeer(t, app, 5*time.Second)
+	peer := startPeer(t, app, 5*time.Second)
 	var batch bytes.Buffer
 	stream := jsonrpc2.NewStream(stdio{Reader: bytes.NewReader(nil), Writer: &batch})
 	for i := 2; i < 5; i++ {
@@ -440,18 +442,18 @@ func TestFragmentedAndCoalescedUTF8ThroughServer(t *testing.T) {
 	go func() {
 		data := batch.Bytes()
 		for _, size := range []int{1, 7, 18} {
-			if _, err := p.client.Write(data[:size]); err != nil {
+			if _, err := peer.client.Write(data[:size]); err != nil {
 				writeDone <- err
 				return
 			}
 			data = data[size:]
 		}
-		_, err := p.client.Write(data)
+		_, err := peer.client.Write(data)
 		writeDone <- err
 	}()
 	seen := map[jsonrpc2.ID]bool{}
 	for i := 0; i < 3; i++ {
-		response := p.readOK()
+		response := peer.readOK()
 		var entries []session.ListEntry
 		if err := json.Unmarshal(response.Result(), &entries); err != nil || len(entries) != 1 || entries[0].Name != "玫瑰 🌹" {
 			t.Fatalf("%s %v", response.Result(), err)
@@ -469,11 +471,11 @@ func TestFragmentedAndCoalescedUTF8ThroughServer(t *testing.T) {
 func TestServerRejectsOversizedFrameWithoutAppCall(t *testing.T) {
 	var calls atomic.Int32
 	app := &fakeApp{get: func(context.Context) ([]session.ListEntry, error) { calls.Add(1); return nil, nil }}
-	p := startPeer(t, app, 5*time.Second)
-	if _, err := io.WriteString(p.client, "Content-Length: 1073741825\r\n\r\n"); err != nil {
+	peer := startPeer(t, app, 5*time.Second)
+	if _, err := io.WriteString(peer.client, "Content-Length: 1073741825\r\n\r\n"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := p.stream.Read(t.Context()); err == nil {
+	if _, _, err := peer.stream.Read(t.Context()); err == nil {
 		t.Fatal("oversized frame accepted")
 	}
 	if calls.Load() != 0 {
@@ -500,15 +502,15 @@ func TestReplacedSubscriptionCannotDeliverLateSnapshot(t *testing.T) {
 			return session.StateSnapshot{Epoch: "app"}, nil
 		},
 	}
-	p := startPeer(t, app, 5*time.Second)
-	p.send(2, "subscribe_sessions", nil)
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send(2, "subscribe_sessions", nil)
 	waitFor(t, started)
-	p.send(3, "subscribe_sessions", nil)
-	if p.update().SubscriptionID != "2" {
+	peer.send(3, "subscribe_sessions", nil)
+	if peer.update().SubscriptionID != "2" {
 		t.Fatal("replacement not installed")
 	}
 	close(release)
-	response := p.read()
+	response := peer.read()
 	if response.ID() != transportID(2) {
 		t.Fatal(response.ID())
 	}
@@ -531,14 +533,14 @@ func TestSequenceGapResubscribesBeforeFreshSnapshot(t *testing.T) {
 			return session.StateSnapshot{Epoch: fmt.Sprint(count), Watermark: uint64(count)}, nil
 		},
 	}
-	p := startPeer(t, app, 5*time.Second)
-	p.send(2, "subscribe_sessions", nil)
-	initial := p.update()
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send(2, "subscribe_sessions", nil)
+	initial := peer.update()
 	sources[0].events <- session.Event{Epoch: "1", Sequence: 3}
-	p.send(3, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	errorKind(t, p.read().Err(), types.ResyncRequired)
-	p.send(4, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	fresh := p.update()
+	peer.send(3, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	errorKind(t, peer.read().Err(), types.ResyncRequired)
+	peer.send(4, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	fresh := peer.update()
 	if fresh.Snapshot == nil || fresh.Snapshot.Epoch != "2" || fresh.Snapshot.Watermark != 2 {
 		t.Fatal(fresh)
 	}
@@ -548,31 +550,31 @@ func TestSequenceGapResubscribesBeforeFreshSnapshot(t *testing.T) {
 		t.Fatal("invalidated source was retained")
 	}
 	sources[1].events <- session.Event{Epoch: "2", Sequence: 3}
-	p.send(5, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	if update := p.update(); update.Event == nil || update.Event.Epoch != "2" || update.Event.Sequence != 3 {
+	peer.send(5, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	if update := peer.update(); update.Event == nil || update.Event.Epoch != "2" || update.Event.Sequence != 3 {
 		t.Fatal(update)
 	}
 }
 
 func TestUnsubscribeUnblocksDeliveryAndRejectsStaleIdentity(t *testing.T) {
 	app, _ := syntheticService(t)
-	p := startPeer(t, app, 5*time.Second)
-	p.send(2, "subscribe_sessions", nil)
-	initial := p.update()
-	p.send(3, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	p.send(4, "unsubscribe_sessions", subscriptionParams{initial.SubscriptionID})
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send(2, "subscribe_sessions", nil)
+	initial := peer.update()
+	peer.send(3, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	peer.send(4, "unsubscribe_sessions", subscriptionParams{initial.SubscriptionID})
 	for i := 0; i < 2; i++ {
-		response := p.read()
+		response := peer.read()
 		if response.ID() == transportID(3) {
 			errorKind(t, response.Err(), types.ResyncRequired)
 		} else if response.ID() != transportID(4) || response.Err() != nil {
 			t.Fatal(response)
 		}
 	}
-	p.send(5, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	errorKind(t, p.read().Err(), types.ResyncRequired)
-	p.send(6, "subscribe_sessions", nil)
-	if p.update().SubscriptionID == initial.SubscriptionID {
+	peer.send(5, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	errorKind(t, peer.read().Err(), types.ResyncRequired)
+	peer.send(6, "subscribe_sessions", nil)
+	if peer.update().SubscriptionID == initial.SubscriptionID {
 		t.Fatal("subscription identity reused")
 	}
 }
@@ -582,10 +584,10 @@ type observedSubscription struct {
 	consumed chan struct{}
 }
 
-func (s observedSubscription) Next(ctx context.Context) (session.Event, error) {
-	event, err := s.EventSubscription.Next(ctx)
+func (subscription observedSubscription) Next(ctx context.Context) (session.Event, error) {
+	event, err := subscription.EventSubscription.Next(ctx)
 	if err == nil {
-		s.consumed <- struct{}{}
+		subscription.consumed <- struct{}{}
 	}
 	return event, err
 }
@@ -594,10 +596,10 @@ func TestSlowStdoutReaderProducesVisibleOverflowAndRecovery(t *testing.T) {
 	service, path := syntheticService(t)
 	consumed := make(chan struct{}, 1)
 	app := &fakeApp{Service: service, subscribe: func() session.EventSubscription { return observedSubscription{service.Subscribe(), consumed} }}
-	p := startPeer(t, app, 5*time.Second)
-	p.send(2, "subscribe_sessions", nil)
-	initial := p.update()
-	p.send(3, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send(2, "subscribe_sessions", nil)
+	initial := peer.update()
+	peer.send(3, "next_session_event", subscriptionParams{initial.SubscriptionID})
 	if _, err := service.Switch(t.Context(), path, "catalog"); err != nil {
 		t.Fatal(err)
 	}
@@ -609,13 +611,13 @@ func TestSlowStdoutReaderProducesVisibleOverflowAndRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if update := p.update(); update.Event == nil || update.Event.Sequence != 1 {
+	if update := peer.update(); update.Event == nil || update.Event.Sequence != 1 {
 		t.Fatal(update)
 	}
-	p.send(4, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	errorKind(t, p.read().Err(), types.ResyncRequired)
-	p.send(5, "next_session_event", subscriptionParams{initial.SubscriptionID})
-	if update := p.update(); update.Snapshot == nil || update.Snapshot.Watermark != session.EventBufferSize+2 {
+	peer.send(4, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	errorKind(t, peer.read().Err(), types.ResyncRequired)
+	peer.send(5, "next_session_event", subscriptionParams{initial.SubscriptionID})
+	if update := peer.update(); update.Snapshot == nil || update.Snapshot.Watermark != session.EventBufferSize+2 {
 		t.Fatal(update)
 	}
 }
@@ -625,9 +627,9 @@ type waitingSubscription struct {
 	started chan struct{}
 }
 
-func (s waitingSubscription) Next(ctx context.Context) (session.Event, error) {
-	close(s.started)
-	return s.EventSubscription.Next(ctx)
+func (subscription waitingSubscription) Next(ctx context.Context) (session.Event, error) {
+	close(subscription.started)
+	return subscription.EventSubscription.Next(ctx)
 }
 
 func TestCanceledEventWaitResynchronizesAndHasOneConsumer(t *testing.T) {

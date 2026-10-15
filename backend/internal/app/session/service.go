@@ -50,48 +50,48 @@ func NewService(catalog Catalog) *Service {
 		state: StateSnapshot{Epoch: rand.Text()}, subscribers: make(map[*subscription]struct{})}
 }
 
-func (s *Service) GetSessions(ctx context.Context) ([]ListEntry, error) {
+func (service *Service) GetSessions(ctx context.Context) ([]ListEntry, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return s.catalog.GetSessions()
+	return service.catalog.GetSessions()
 }
 
-func (s *Service) Switch(ctx context.Context, path, catalogID string) (LoadedSnapshot, error) {
-	s.loadedMu.Lock()
-	defer s.loadedMu.Unlock()
+func (service *Service) Switch(ctx context.Context, path, catalogID string) (LoadedSnapshot, error) {
+	service.loadedMu.Lock()
+	defer service.loadedMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return LoadedSnapshot{}, err
 	}
-	active, err := s.loaded.Switch(path, catalogID)
+	active, err := service.loaded.Switch(path, catalogID)
 	if err != nil {
 		return LoadedSnapshot{}, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.state.Active = &active
-	s.state.Watermark++
-	event := Event{Epoch: s.state.Epoch, Sequence: s.state.Watermark, Active: active}
-	for subscriber := range s.subscribers {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	service.state.Active = &active
+	service.state.Watermark++
+	event := Event{Epoch: service.state.Epoch, Sequence: service.state.Watermark, Active: active}
+	for subscriber := range service.subscribers {
 		subscriber.push(event)
 	}
 	return active, nil
 }
 
-func (s *Service) Snapshot(ctx context.Context) (StateSnapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (service *Service) Snapshot(ctx context.Context) (StateSnapshot, error) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return StateSnapshot{}, err
 	}
-	return s.state, nil
+	return service.state, nil
 }
 
-func (s *Service) Subscribe() EventSubscription {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	subscriber := &subscription{owner: s, events: make(chan Event, EventBufferSize), done: make(chan struct{})}
-	s.subscribers[subscriber] = struct{}{}
+func (service *Service) Subscribe() EventSubscription {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	subscriber := &subscription{owner: service, events: make(chan Event, EventBufferSize), done: make(chan struct{})}
+	service.subscribers[subscriber] = struct{}{}
 	return subscriber
 }
 
@@ -104,47 +104,47 @@ type subscription struct {
 }
 
 // Called under Service.mu. Close follows the same lock order.
-func (s *subscription) push(event Event) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.err != nil {
+func (subscription *subscription) push(event Event) {
+	subscription.mu.Lock()
+	defer subscription.mu.Unlock()
+	if subscription.err != nil {
 		return
 	}
 	select {
-	case s.events <- event:
+	case subscription.events <- event:
 	default:
-		s.err = ErrOverflow
-		close(s.done)
+		subscription.err = ErrOverflow
+		close(subscription.done)
 	}
 }
 
-func (s *subscription) Next(ctx context.Context) (Event, error) {
+func (subscription *subscription) Next(ctx context.Context) (Event, error) {
 	select {
 	case <-ctx.Done():
 		return Event{}, ctx.Err()
-	case <-s.done:
-	case event := <-s.events:
-		s.mu.Lock()
-		err := s.err
-		s.mu.Unlock()
+	case <-subscription.done:
+	case event := <-subscription.events:
+		subscription.mu.Lock()
+		err := subscription.err
+		subscription.mu.Unlock()
 		if err == nil {
 			return event, nil
 		}
 		return Event{}, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return Event{}, s.err
+	subscription.mu.Lock()
+	defer subscription.mu.Unlock()
+	return Event{}, subscription.err
 }
 
-func (s *subscription) Close() {
-	s.owner.mu.Lock()
-	defer s.owner.mu.Unlock()
-	delete(s.owner.subscribers, s)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.err == nil {
-		s.err = ErrSubscriptionClosed
-		close(s.done)
+func (subscription *subscription) Close() {
+	subscription.owner.mu.Lock()
+	defer subscription.owner.mu.Unlock()
+	delete(subscription.owner.subscribers, subscription)
+	subscription.mu.Lock()
+	defer subscription.mu.Unlock()
+	if subscription.err == nil {
+		subscription.err = ErrSubscriptionClosed
+		close(subscription.done)
 	}
 }

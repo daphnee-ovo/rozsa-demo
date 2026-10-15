@@ -21,8 +21,8 @@ type stdio struct {
 	io.Writer
 }
 
-func (s stdio) Close() error {
-	if closer, ok := s.Reader.(io.Closer); ok {
+func (stdio stdio) Close() error {
+	if closer, ok := stdio.Reader.(io.Closer); ok {
 		return closer.Close()
 	}
 	return nil
@@ -34,20 +34,20 @@ type ownedIO struct {
 	stop context.CancelCauseFunc
 }
 
-func (s ownedIO) Read(data []byte) (int, error) {
-	n, err := s.Reader.Read(data)
+func (ownedIO ownedIO) Read(data []byte) (int, error) {
+	bytesRead, err := ownedIO.Reader.Read(data)
 	if err != nil {
-		s.stop(types.Error(types.Disconnected, err.Error()))
+		ownedIO.stop(types.Error(types.Disconnected, err.Error()))
 	}
-	return n, err
+	return bytesRead, err
 }
 
-func (s ownedIO) Write(data []byte) (int, error) {
-	n, err := s.Writer.Write(data)
+func (ownedIO ownedIO) Write(data []byte) (int, error) {
+	bytesWritten, err := ownedIO.Writer.Write(data)
 	if err != nil {
-		s.stop(types.Error(types.Disconnected, err.Error()))
+		ownedIO.stop(types.Error(types.Disconnected, err.Error()))
 	}
-	return n, err
+	return bytesWritten, err
 }
 
 // Only the current read-only session slice. App owns state, event identity and
@@ -116,7 +116,7 @@ func newServer(app sessionApp, lifetime context.Context, timeout time.Duration) 
 
 // Cancellation is the only accepted incoming notification. This ID is a
 // cancellation parameter, not an independently decoded JSON-RPC envelope.
-func (s *rpcServer) Preempt(_ context.Context, req *jsonrpc2.Request) (any, error) {
+func (server *rpcServer) Preempt(_ context.Context, req *jsonrpc2.Request) (any, error) {
 	if req.Method() != "$/cancelRequest" || req.IsCall() {
 		return nil, jsonrpc2.ErrNotHandled
 	}
@@ -139,19 +139,19 @@ func (s *rpcServer) Preempt(_ context.Context, req *jsonrpc2.Request) (any, erro
 	} else {
 		return nil, nil
 	}
-	s.mu.Lock()
-	if cancel := s.pending[id]; cancel != nil {
+	server.mu.Lock()
+	if cancel := server.pending[id]; cancel != nil {
 		cancel(types.Error(types.Canceled, "Request delivery canceled"))
 	}
-	s.mu.Unlock()
+	server.mu.Unlock()
 	return true, nil
 }
 
-func (s *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	if !req.IsCall() {
 		return nil, nil
 	}
-	if s.closing {
+	if server.closing {
 		return nil, types.Error(types.Closing, "Backend is closing")
 	}
 	method := types.Method(strings.Clone(req.Method()))
@@ -163,19 +163,19 @@ func (s *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any, err
 		if !types.Params(req.Params(), &params) || params.ProtocolVersion != 1 {
 			return nil, types.Error(types.InvalidParams, "Unsupported protocol version or invalid params")
 		}
-		s.ready = true
+		server.ready = true
 		return types.InitializeResult{ProtocolVersion: 1, Capabilities: []string{string(types.GetSessions), string(types.SwitchSession), string(types.SubscribeSessions), string(types.NextSessionEvent), string(types.UnsubscribeSessions)}}, nil
 	case types.Shutdown:
 		if !types.Params(req.Params(), &types.EmptyParams{}) {
 			return nil, types.Error(types.InvalidParams, "Invalid params")
 		}
-		s.closing = true
-		s.mu.Lock()
-		for _, cancel := range s.pending {
+		server.closing = true
+		server.mu.Lock()
+		for _, cancel := range server.pending {
 			cancel(types.Error(types.Closing, "Backend is closing"))
 		}
-		s.mu.Unlock()
-		s.sync.close()
+		server.mu.Unlock()
+		server.sync.close()
 		return true, nil
 	case types.GetSessions, types.SubscribeSessions:
 		if !types.Params(req.Params(), &types.EmptyParams{}) {
@@ -192,52 +192,52 @@ func (s *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any, err
 	default:
 		return nil, types.Error(types.MethodNotFound, "Method not found")
 	}
-	if !s.ready {
+	if !server.ready {
 		return nil, types.Error(types.NotInitialized, "Backend is not initialized")
 	}
 	if method == types.UnsubscribeSessions {
-		return s.sync.unsubscribe(subscriptionParams.SubscriptionID)
+		return server.sync.unsubscribe(subscriptionParams.SubscriptionID)
 	}
 	select {
-	case s.slots <- struct{}{}:
+	case server.slots <- struct{}{}:
 	default:
 		return nil, types.Error(types.Busy, "Concurrent request capacity reached")
 	}
 	// Register in wire order before releasing, so cancellation cannot overtake
 	// registration. The work context is owned, never a pooled request context.
-	deadline, endDeadline := context.WithTimeout(s.lifetime, s.timeout)
+	deadline, endDeadline := context.WithTimeout(server.lifetime, server.timeout)
 	defer endDeadline()
 	work, cancel := context.WithCancelCause(deadline)
 	defer cancel(context.Canceled)
 	stopRequest := context.AfterFunc(ctx, func() { cancel(types.Error(types.Disconnected, "Request connection interrupted")) })
 	defer stopRequest()
 	id := req.ID()
-	s.mu.Lock()
-	s.pending[id] = cancel
-	s.mu.Unlock()
-	defer func() { s.mu.Lock(); delete(s.pending, id); s.mu.Unlock() }()
+	server.mu.Lock()
+	server.pending[id] = cancel
+	server.mu.Unlock()
+	defer func() { server.mu.Lock(); delete(server.pending, id); server.mu.Unlock() }()
 	var cursor *sessionCursor
 	if method == types.SubscribeSessions {
-		cursor = s.sync.subscribe()
+		cursor = server.sync.subscribe()
 	}
 	// Preserve accepted switch order while reads and event waits overlap. Slots
 	// belong to workers, so canceled delivery cannot create unbounded app work.
 	var previous <-chan struct{}
 	var completed chan struct{}
 	if method == types.SwitchSession {
-		previous = s.switchTail
+		previous = server.switchTail
 		completed = make(chan struct{})
-		s.switchTail = completed
+		server.switchTail = completed
 	}
 	type outcome struct {
 		result any
 		err    error
 	}
 	finished := make(chan outcome, 1)
-	s.jobs.Add(1)
+	server.jobs.Add(1)
 	go func() {
-		defer s.jobs.Done()
-		defer func() { <-s.slots }()
+		defer server.jobs.Done()
+		defer func() { <-server.slots }()
 		if completed != nil {
 			defer close(completed)
 			if previous != nil {
@@ -252,19 +252,19 @@ func (s *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any, err
 		var err error
 		switch method {
 		case types.GetSessions:
-			result, err = s.app.GetSessions(work)
+			result, err = server.app.GetSessions(work)
 			if err != nil {
 				err = types.Error(types.Catalog, err.Error())
 			}
 		case types.SwitchSession:
-			result, err = s.app.Switch(work, switchParams.Path, switchParams.CatalogID)
+			result, err = server.app.Switch(work, switchParams.Path, switchParams.CatalogID)
 			if err != nil {
 				err = types.Error(types.Session, err.Error())
 			}
 		case types.SubscribeSessions:
 			result, err = cursor.snapshot(work)
 		case types.NextSessionEvent:
-			result, err = s.sync.next(work, subscriptionParams.SubscriptionID)
+			result, err = server.sync.next(work, subscriptionParams.SubscriptionID)
 		}
 		finished <- outcome{result, err}
 	}()

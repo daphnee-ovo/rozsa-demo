@@ -29,47 +29,47 @@ type sessionSync struct {
 	current *sessionCursor
 }
 
-func (s *sessionSync) subscribe() *sessionCursor {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.current != nil {
-		s.current.close()
+func (syncer *sessionSync) subscribe() *sessionCursor {
+	syncer.mu.Lock()
+	defer syncer.mu.Unlock()
+	if syncer.current != nil {
+		syncer.current.close()
 	}
-	s.serial++
-	cursor := &sessionCursor{app: s.app, id: fmt.Sprint(s.serial), gate: make(chan struct{}, 1)}
+	syncer.serial++
+	cursor := &sessionCursor{app: syncer.app, id: fmt.Sprint(syncer.serial), gate: make(chan struct{}, 1)}
 	// Subscribe before snapshot, in wire order. Racing events remain buffered.
-	cursor.source = s.app.Subscribe()
-	s.current = cursor
+	cursor.source = syncer.app.Subscribe()
+	syncer.current = cursor
 	return cursor
 }
 
-func (s *sessionSync) next(ctx context.Context, id string) (sessionUpdate, error) {
-	s.mu.Lock()
-	cursor := s.current
-	s.mu.Unlock()
+func (syncer *sessionSync) next(ctx context.Context, id string) (sessionUpdate, error) {
+	syncer.mu.Lock()
+	cursor := syncer.current
+	syncer.mu.Unlock()
 	if cursor == nil || cursor.id != id {
 		return sessionUpdate{}, types.Error(types.ResyncRequired, "Unknown or replaced subscription")
 	}
 	return cursor.next(ctx)
 }
 
-func (s *sessionSync) unsubscribe(id string) (any, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.current == nil || s.current.id != id {
+func (syncer *sessionSync) unsubscribe(id string) (any, error) {
+	syncer.mu.Lock()
+	defer syncer.mu.Unlock()
+	if syncer.current == nil || syncer.current.id != id {
 		return nil, types.Error(types.ResyncRequired, "Unknown or replaced subscription")
 	}
-	s.current.close()
-	s.current = nil
+	syncer.current.close()
+	syncer.current = nil
 	return true, nil
 }
 
-func (s *sessionSync) close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.current != nil {
-		s.current.close()
-		s.current = nil
+func (syncer *sessionSync) close() {
+	syncer.mu.Lock()
+	defer syncer.mu.Unlock()
+	if syncer.current != nil {
+		syncer.current.close()
+		syncer.current = nil
 	}
 }
 
@@ -87,96 +87,96 @@ type sessionCursor struct {
 	needsSnapshot bool
 }
 
-func (s *sessionCursor) close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.closed = true
-	if s.source != nil {
-		s.source.Close()
+func (cursor *sessionCursor) close() {
+	cursor.mu.Lock()
+	defer cursor.mu.Unlock()
+	cursor.closed = true
+	if cursor.source != nil {
+		cursor.source.Close()
 	}
 }
 
-func (s *sessionCursor) snapshot(ctx context.Context) (sessionUpdate, error) {
+func (cursor *sessionCursor) snapshot(ctx context.Context) (sessionUpdate, error) {
 	select {
-	case s.gate <- struct{}{}:
-		defer func() { <-s.gate }()
+	case cursor.gate <- struct{}{}:
+		defer func() { <-cursor.gate }()
 	default:
 		return sessionUpdate{}, types.Error(types.Busy, "Subscription has an outstanding delivery")
 	}
-	return s.takeSnapshot(ctx, false)
+	return cursor.takeSnapshot(ctx, false)
 }
 
-func (s *sessionCursor) takeSnapshot(ctx context.Context, resubscribe bool) (sessionUpdate, error) {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
+func (cursor *sessionCursor) takeSnapshot(ctx context.Context, resubscribe bool) (sessionUpdate, error) {
+	cursor.mu.Lock()
+	if cursor.closed {
+		cursor.mu.Unlock()
 		return sessionUpdate{}, types.Error(types.ResyncRequired, "Subscription closed")
 	}
 	if resubscribe {
-		s.source.Close()
-		s.source = s.app.Subscribe()
+		cursor.source.Close()
+		cursor.source = cursor.app.Subscribe()
 	}
-	s.mu.Unlock()
-	snapshot, err := s.app.Snapshot(ctx)
+	cursor.mu.Unlock()
+	snapshot, err := cursor.app.Snapshot(ctx)
 	if err != nil {
-		s.needsSnapshot = true
+		cursor.needsSnapshot = true
 		return sessionUpdate{}, requestError(ctx, types.Error(types.Session, err.Error()))
 	}
-	s.mu.Lock()
-	closed := s.closed
-	s.mu.Unlock()
+	cursor.mu.Lock()
+	closed := cursor.closed
+	cursor.mu.Unlock()
 	if closed {
 		return sessionUpdate{}, types.Error(types.ResyncRequired, "Subscription replaced during snapshot")
 	}
 	if ctx.Err() != nil {
-		s.needsSnapshot = true
+		cursor.needsSnapshot = true
 		return sessionUpdate{}, requestError(ctx, ctx.Err())
 	}
 	if snapshot.Epoch == "" {
-		s.needsSnapshot = true
+		cursor.needsSnapshot = true
 		return sessionUpdate{}, types.Error(types.ResyncRequired, "Snapshot has no epoch")
 	}
-	s.epoch, s.watermark, s.needsSnapshot = snapshot.Epoch, snapshot.Watermark, false
-	return sessionUpdate{SubscriptionID: s.id, Snapshot: &snapshot}, nil
+	cursor.epoch, cursor.watermark, cursor.needsSnapshot = snapshot.Epoch, snapshot.Watermark, false
+	return sessionUpdate{SubscriptionID: cursor.id, Snapshot: &snapshot}, nil
 }
 
-func (s *sessionCursor) next(ctx context.Context) (sessionUpdate, error) {
+func (cursor *sessionCursor) next(ctx context.Context) (sessionUpdate, error) {
 	select {
-	case s.gate <- struct{}{}:
-		defer func() { <-s.gate }()
+	case cursor.gate <- struct{}{}:
+		defer func() { <-cursor.gate }()
 	default:
 		return sessionUpdate{}, types.Error(types.Busy, "Subscription has an outstanding delivery")
 	}
-	if s.needsSnapshot {
-		return s.takeSnapshot(ctx, true)
+	if cursor.needsSnapshot {
+		return cursor.takeSnapshot(ctx, true)
 	}
-	if s.epoch == "" {
+	if cursor.epoch == "" {
 		return sessionUpdate{}, types.Error(types.Busy, "Initial snapshot is not ready")
 	}
 	for {
-		s.mu.Lock()
-		source, closed := s.source, s.closed
-		s.mu.Unlock()
+		cursor.mu.Lock()
+		source, closed := cursor.source, cursor.closed
+		cursor.mu.Unlock()
 		if closed {
 			return sessionUpdate{}, types.Error(types.ResyncRequired, "Subscription closed")
 		}
 		event, err := source.Next(ctx)
 		if err != nil {
-			s.needsSnapshot = true
+			cursor.needsSnapshot = true
 			return sessionUpdate{}, requestError(ctx, types.Error(types.ResyncRequired, err.Error()))
 		}
 		if ctx.Err() != nil {
-			s.needsSnapshot = true
+			cursor.needsSnapshot = true
 			return sessionUpdate{}, requestError(ctx, ctx.Err())
 		}
-		if event.Epoch != s.epoch || event.Sequence <= s.watermark {
+		if event.Epoch != cursor.epoch || event.Sequence <= cursor.watermark {
 			continue
 		}
-		if event.Sequence != s.watermark+1 {
-			s.needsSnapshot = true
+		if event.Sequence != cursor.watermark+1 {
+			cursor.needsSnapshot = true
 			return sessionUpdate{}, types.Error(types.ResyncRequired, "Session event sequence gap")
 		}
-		s.watermark = event.Sequence
-		return sessionUpdate{SubscriptionID: s.id, Event: &event}, nil
+		cursor.watermark = event.Sequence
+		return sessionUpdate{SubscriptionID: cursor.id, Event: &event}, nil
 	}
 }
