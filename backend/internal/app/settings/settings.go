@@ -38,13 +38,13 @@ type Error struct {
 	Err  error
 }
 
-func (e *Error) Error() string {
-	if e.Path == "" {
-		return fmt.Sprintf("settings %s error: %v", e.Kind, e.Err)
+func (settingsError *Error) Error() string {
+	if settingsError.Path == "" {
+		return fmt.Sprintf("settings %s error: %v", settingsError.Kind, settingsError.Err)
 	}
-	return fmt.Sprintf("settings %s error at %s: %v", e.Kind, e.Path, e.Err)
+	return fmt.Sprintf("settings %s error at %s: %v", settingsError.Kind, settingsError.Path, settingsError.Err)
 }
-func (e *Error) Unwrap() error { return e.Err }
+func (settingsError *Error) Unwrap() error { return settingsError.Err }
 
 // Manager owns the merged view and the paths for its independent layers.
 type Manager struct {
@@ -70,29 +70,32 @@ func Load(globalPath string, projectPath, localPath *string) (*Manager, error) {
 }
 
 // Resolved returns a deep copy so callers cannot bypass validation by mutation.
-func (m *Manager) Resolved() map[string]any { return cloneObject(m.resolved) }
+func (manager *Manager) Resolved() map[string]any { return cloneObject(manager.resolved) }
 
-func (m *Manager) Path(scope Scope) (string, bool) { p, ok := m.paths[scope]; return p, ok }
+func (manager *Manager) Path(scope Scope) (string, bool) {
+	settingsPath, exists := manager.paths[scope]
+	return settingsPath, exists
+}
 
 // Overrides returns only values explicitly written at the requested scope.
-func (m *Manager) Overrides(scope Scope) (map[string]any, error) {
-	path, ok := m.paths[scope]
-	if !ok {
+func (manager *Manager) Overrides(scope Scope) (map[string]any, error) {
+	settingsPath, exists := manager.paths[scope]
+	if !exists {
 		return nil, fmt.Errorf("settings path for %s scope is unavailable", scope)
 	}
-	value, err := readLayer(path)
+	layer, err := readLayer(settingsPath)
 	if err != nil {
 		return nil, err
 	}
-	return normalizeAliases(value), nil
+	return normalizeAliases(layer), nil
 }
 
 // Set writes an override (a dot-separated path may address a nested field),
 // while preserving unrelated and unknown keys.
 // A nil value removes the override so the prior layer becomes effective.
-func (m *Manager) Set(scope Scope, key string, value any) error {
-	path, ok := m.paths[scope]
-	if !ok {
+func (manager *Manager) Set(scope Scope, key string, value any) error {
+	settingsPath, exists := manager.paths[scope]
+	if !exists {
 		return fmt.Errorf("settings path for %s scope is unavailable", scope)
 	}
 	keys := strings.Split(key, ".")
@@ -104,32 +107,34 @@ func (m *Manager) Set(scope Scope, key string, value any) error {
 			return errors.New("settings key path must not contain empty fields")
 		}
 	}
-	root, err := readLayer(path)
+	root, err := readLayer(settingsPath)
 	if err != nil {
 		return err
 	}
 	if err := setPath(root, keys, value); err != nil {
 		return err
 	}
-	candidate, err := resolve(m.paths, &scope, root)
+	resolvedCandidate, err := resolve(manager.paths, &scope, root)
 	if err != nil {
 		return err
 	}
-	if err := writeObject(path, root); err != nil {
+	if err := writeObject(settingsPath, root); err != nil {
 		return err
 	}
-	m.resolved = candidate
+	manager.resolved = resolvedCandidate
 	return nil
 }
 
-func (m *Manager) Reset(scope Scope, key string) error { return m.Set(scope, key, nil) }
+func (manager *Manager) Reset(scope Scope, key string) error { return manager.Set(scope, key, nil) }
 
 // SaveGlobal writes the fully resolved settings at the global path.
-func (m *Manager) SaveGlobal() error { return writePretty(m.paths[Global], m.resolved, false) }
+func (manager *Manager) SaveGlobal() error {
+	return writePretty(manager.paths[Global], manager.resolved, false)
+}
 
 func optionalPath(paths map[Scope]string, scope Scope) *string {
-	if path, ok := paths[scope]; ok {
-		return &path
+	if settingsPath, exists := paths[scope]; exists {
+		return &settingsPath
 	}
 	return nil
 }
@@ -138,7 +143,7 @@ func resolve(paths map[Scope]string, replaceScope *Scope, replacement map[string
 	resolved := defaults()
 	globalDevFlow := cloneObject(resolved["devFlow"].(map[string]any))
 	for _, scope := range []Scope{Global, Project, Local} {
-		file, exists := paths[scope]
+		settingsPath, exists := paths[scope]
 		if !exists {
 			continue
 		}
@@ -147,7 +152,7 @@ func resolve(paths map[Scope]string, replaceScope *Scope, replacement map[string
 		if replaceScope != nil && *replaceScope == scope {
 			layer = replacement
 		} else {
-			layer, err = readLayer(file)
+			layer, err = readLayer(settingsPath)
 		}
 		if err != nil {
 			return nil, err
@@ -165,29 +170,29 @@ func resolve(paths map[Scope]string, replaceScope *Scope, replacement map[string
 }
 
 func setPath(root map[string]any, keys []string, value any) error {
-	current := root
+	currentObject := root
 	for index, key := range keys[:len(keys)-1] {
-		next, exists := current[key]
-		if !exists || next == nil {
+		nextValue, exists := currentObject[key]
+		if !exists || nextValue == nil {
 			if value == nil {
 				return nil
 			}
 			nested := map[string]any{}
-			current[key] = nested
-			current = nested
+			currentObject[key] = nested
+			currentObject = nested
 			continue
 		}
-		nested, ok := next.(map[string]any)
-		if !ok {
+		nestedObject, isObject := nextValue.(map[string]any)
+		if !isObject {
 			return fmt.Errorf("settings.%s must be an object", strings.Join(keys[:index+1], "."))
 		}
-		current = nested
+		currentObject = nestedObject
 	}
 	last := keys[len(keys)-1]
 	if value == nil {
-		delete(current, last)
+		delete(currentObject, last)
 	} else {
-		current[last] = value
+		currentObject[last] = value
 	}
 	return nil
 }
@@ -259,8 +264,8 @@ func defaults() map[string]any {
 
 func defaultAllowRules() []any {
 	rules := []any{"subagent(*)", "askUserQuestion(*)"}
-	for _, command := range []string{"head", "tail", "cat", "grep", "sort", "pwd", "ls", "basename", "dirname", "realpath", "readlink", "stat", "file", "wc", "diff", "cmp", "comm", "cut", "tr", "uniq", "strings", "od", "xxd"} {
-		rules = append(rules, "Bash("+command+"*)")
+	for _, commandName := range []string{"head", "tail", "cat", "grep", "sort", "pwd", "ls", "basename", "dirname", "realpath", "readlink", "stat", "file", "wc", "diff", "cmp", "comm", "cut", "tr", "uniq", "strings", "od", "xxd"} {
+		rules = append(rules, "Bash("+commandName+"*)")
 	}
 	return rules
 }
@@ -320,17 +325,17 @@ func cloneObject(input map[string]any) map[string]any {
 }
 
 func clone(value any) any {
-	switch v := value.(type) {
+	switch typedValue := value.(type) {
 	case map[string]any:
-		return cloneObject(v)
+		return cloneObject(typedValue)
 	case []any:
-		out := make([]any, len(v))
-		for i := range v {
-			out[i] = clone(v[i])
+		copiedValues := make([]any, len(typedValue))
+		for i := range typedValue {
+			copiedValues[i] = clone(typedValue[i])
 		}
-		return out
+		return copiedValues
 	default:
-		return v
+		return typedValue
 	}
 }
 
@@ -367,8 +372,8 @@ func Validate(value map[string]any) error {
 		if id == "" {
 			return invalid("invalid " + field + " id: " + id)
 		}
-		for _, char := range id {
-			if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-' || char == '_') {
+		for _, character := range id {
+			if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-' || character == '_') {
 				return invalid("invalid " + field + " id: " + id)
 			}
 		}
@@ -439,8 +444,8 @@ func validateLayer(value map[string]any, path string) error {
 				}
 			}
 		case "contextWindowPreferences":
-			for name, v := range object(raw) {
-				if !matchesKind(v, "uint") {
+			for name, preference := range object(raw) {
+				if !matchesKind(preference, "uint") {
 					return validationAt(path, fmt.Sprintf("settings.contextWindowPreferences.%s must be an unsigned integer", name))
 				}
 			}
@@ -464,14 +469,14 @@ func checkFields(fields map[string]any, schema map[string]string, path, parent s
 func matchesKind(value any, kind string) bool {
 	switch kind {
 	case "string":
-		_, ok := value.(string)
-		return ok
+		_, isString := value.(string)
+		return isString
 	case "bool":
-		_, ok := value.(bool)
-		return ok
+		_, isBoolean := value.(bool)
+		return isBoolean
 	case "object", "map":
-		_, ok := value.(map[string]any)
-		return ok
+		_, isObject := value.(map[string]any)
+		return isObject
 	case "number":
 		switch value.(type) {
 		case json.Number, float64, int:
@@ -479,12 +484,12 @@ func matchesKind(value any, kind string) bool {
 		}
 		return false
 	case "uint", "uint64", "uint32":
-		n, ok := unsigned(value)
-		if !ok {
+		unsignedValue, isUnsigned := unsigned(value)
+		if !isUnsigned {
 			return false
 		}
 		if kind == "uint32" {
-			return n <= uint64(^uint32(0))
+			return unsignedValue <= uint64(^uint32(0))
 		}
 		return true
 	case "strings":
@@ -503,57 +508,66 @@ func matchesKind(value any, kind string) bool {
 	}
 }
 func unsigned(value any) (uint64, bool) {
-	switch v := value.(type) {
+	switch numericValue := value.(type) {
 	case json.Number:
-		n, err := strconv.ParseUint(v.String(), 10, 64)
-		return n, err == nil
+		parsedValue, err := strconv.ParseUint(numericValue.String(), 10, 64)
+		return parsedValue, err == nil
 	case uint64:
-		return v, true
+		return numericValue, true
 	case uint32:
-		return uint64(v), true
+		return uint64(numericValue), true
 	case int:
-		return uint64(v), v >= 0
+		return uint64(numericValue), numericValue >= 0
 	case int64:
-		return uint64(v), v >= 0
+		return uint64(numericValue), numericValue >= 0
 	case float64:
-		if v < 0 || v != float64(uint64(v)) {
+		if numericValue < 0 || numericValue != float64(uint64(numericValue)) {
 			return 0, false
 		}
-		return uint64(v), true
+		return uint64(numericValue), true
 	default:
 		return 0, false
 	}
 }
 func numberAsInt(value any) (int64, error) {
-	switch v := value.(type) {
+	switch numericValue := value.(type) {
 	case json.Number:
-		return v.Int64()
+		return numericValue.Int64()
 	case int:
-		return int64(v), nil
+		return int64(numericValue), nil
 	case float64:
-		if v != float64(int64(v)) {
+		if numericValue != float64(int64(numericValue)) {
 			return 0, errors.New("not an integer")
 		}
-		return int64(v), nil
+		return int64(numericValue), nil
 	}
 	return 0, errors.New("not an integer")
 }
 func number(value any) float64 {
-	switch v := value.(type) {
+	switch numericValue := value.(type) {
 	case json.Number:
-		f, _ := v.Float64()
-		return f
+		floatValue, _ := numericValue.Float64()
+		return floatValue
 	case float64:
-		return v
+		return numericValue
 	case int:
-		return float64(v)
+		return float64(numericValue)
 	}
 	return 0
 }
-func integer(value any) int           { n, _ := numberAsInt(value); return int(n) }
-func stringValue(value any) string    { s, _ := value.(string); return s }
-func object(value any) map[string]any { v, _ := value.(map[string]any); return v }
-func invalid(message string) error    { return &Error{Kind: ValidationError, Err: errors.New(message)} }
+func integer(value any) int {
+	parsedInteger, _ := numberAsInt(value)
+	return int(parsedInteger)
+}
+func stringValue(value any) string {
+	stringResult, _ := value.(string)
+	return stringResult
+}
+func object(value any) map[string]any {
+	objectValue, _ := value.(map[string]any)
+	return objectValue
+}
+func invalid(message string) error { return &Error{Kind: ValidationError, Err: errors.New(message)} }
 func validationAt(path, message string) error {
 	return &Error{Kind: ValidationError, Path: path, Err: errors.New(message)}
 }

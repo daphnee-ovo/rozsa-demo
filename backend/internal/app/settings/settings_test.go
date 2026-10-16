@@ -8,167 +8,171 @@ import (
 	"testing"
 )
 
-func writeFixture(t *testing.T, path, contents string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
+func writeFixture(testContext *testing.T, filePath, contents string) {
+	testContext.Helper()
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+		testContext.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestLoadLayersPrecedenceAndNestedOverlay(t *testing.T) {
-	dir := t.TempDir()
-	global, project, local := filepath.Join(dir, "global.json"), filepath.Join(dir, "project.json"), filepath.Join(dir, "local.json")
-	writeFixture(t, global, `{"defaultModel":"global","transport":"sse","appearance":{"themeMode":"dark","fontSize":16},"tools":{"read":false,"write":false},"devFlow":{"enabled":false}}`)
-	writeFixture(t, project, `{"defaultModel":"project","appearance":{"fontSize":18},"tools":{"read":true},"devFlow":{"enabled":true}}`)
-	writeFixture(t, local, `{"defaultModel":"local","tools":{"read":false}}`)
-	m, err := Load(global, &project, &local)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := m.Resolved()
-	if got["defaultModel"] != "local" || got["transport"] != "sse" {
-		t.Fatalf("precedence: %#v", got)
-	}
-	appearance := got["appearance"].(map[string]any)
-	if appearance["themeMode"] != "dark" || appearance["fontSize"] != json.Number("18") {
-		t.Fatalf("nested overlay: %#v", appearance)
-	}
-	tools := got["tools"].(map[string]any)
-	if tools["read"] != false || tools["write"] != false {
-		t.Fatalf("capability overlay: %#v", tools)
-	}
-	if got["devFlow"].(map[string]any)["enabled"] != false {
-		t.Fatal("devFlow must remain global-only")
+	if err := os.WriteFile(filePath, []byte(contents), 0o600); err != nil {
+		testContext.Fatal(err)
 	}
 }
 
-func TestResetRestoresInheritedValueAndPreservesUnknownKeys(t *testing.T) {
-	dir := t.TempDir()
-	global, project := filepath.Join(dir, "global.json"), filepath.Join(dir, "nested", "project.json")
-	writeFixture(t, global, `{"defaultModel":"global","transport":"sse"}`)
-	writeFixture(t, project, `{"defaultModel":"project","future":{"preserve":true}}`)
-	m, err := Load(global, &project, nil)
+func TestLoadLayersPrecedenceAndNestedOverlay(testContext *testing.T) {
+	tempDir := testContext.TempDir()
+	globalPath := filepath.Join(tempDir, "global.json")
+	projectPath := filepath.Join(tempDir, "project.json")
+	localPath := filepath.Join(tempDir, "local.json")
+	writeFixture(testContext, globalPath, `{"defaultModel":"global","transport":"sse","appearance":{"themeMode":"dark","fontSize":16},"tools":{"read":false,"write":false},"devFlow":{"enabled":false}}`)
+	writeFixture(testContext, projectPath, `{"defaultModel":"project","appearance":{"fontSize":18},"tools":{"read":true},"devFlow":{"enabled":true}}`)
+	writeFixture(testContext, localPath, `{"defaultModel":"local","tools":{"read":false}}`)
+	manager, err := Load(globalPath, &projectPath, &localPath)
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
-	if err := m.Reset(Project, "defaultModel"); err != nil {
-		t.Fatal(err)
+	resolvedSettings := manager.Resolved()
+	if resolvedSettings["defaultModel"] != "local" || resolvedSettings["transport"] != "sse" {
+		testContext.Fatalf("precedence: %#v", resolvedSettings)
 	}
-	if m.Resolved()["defaultModel"] != "global" {
-		t.Fatalf("reset did not inherit global value: %#v", m.Resolved())
+	appearanceSettings := resolvedSettings["appearance"].(map[string]any)
+	if appearanceSettings["themeMode"] != "dark" || appearanceSettings["fontSize"] != json.Number("18") {
+		testContext.Fatalf("nested overlay: %#v", appearanceSettings)
 	}
-	persisted, err := os.ReadFile(project)
-	if err != nil {
-		t.Fatal(err)
+	toolSettings := resolvedSettings["tools"].(map[string]any)
+	if toolSettings["read"] != false || toolSettings["write"] != false {
+		testContext.Fatalf("capability overlay: %#v", toolSettings)
 	}
-	var layer map[string]any
-	if err := json.Unmarshal(persisted, &layer); err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := layer["defaultModel"]; exists || layer["future"].(map[string]any)["preserve"] != true {
-		t.Fatalf("reset persistence: %#v", layer)
+	if resolvedSettings["devFlow"].(map[string]any)["enabled"] != false {
+		testContext.Fatal("devFlow must remain global-only")
 	}
 }
 
-func TestNestedResetRestoresInheritedCapabilityAndInvalidUpdateIsNotPersisted(t *testing.T) {
-	dir := t.TempDir()
-	global, project := filepath.Join(dir, "global.json"), filepath.Join(dir, "project.json")
-	writeFixture(t, global, `{"tools":{"read":false},"appearance":{"fontSize":16}}`)
-	writeFixture(t, project, `{"tools":{"read":true}}`)
-	m, err := Load(global, &project, nil)
+func TestResetRestoresInheritedValueAndPreservesUnknownKeys(testContext *testing.T) {
+	tempDir := testContext.TempDir()
+	globalPath := filepath.Join(tempDir, "global.json")
+	projectPath := filepath.Join(tempDir, "nested", "project.json")
+	writeFixture(testContext, globalPath, `{"defaultModel":"global","transport":"sse"}`)
+	writeFixture(testContext, projectPath, `{"defaultModel":"project","future":{"preserve":true}}`)
+	manager, err := Load(globalPath, &projectPath, nil)
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
-	if err := m.Reset(Project, "tools.read"); err != nil {
-		t.Fatal(err)
+	if err := manager.Reset(Project, "defaultModel"); err != nil {
+		testContext.Fatal(err)
 	}
-	if m.Resolved()["tools"].(map[string]any)["read"] != false {
-		t.Fatalf("nested reset did not inherit: %#v", m.Resolved())
+	if manager.Resolved()["defaultModel"] != "global" {
+		testContext.Fatalf("reset did not inherit global value: %#v", manager.Resolved())
 	}
-	before, err := os.ReadFile(project)
+	persistedContents, err := os.ReadFile(projectPath)
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
-	if err := m.Set(Project, "appearance.fontSize", json.Number("31")); err == nil {
-		t.Fatal("expected invalid settings update")
+	var projectSettings map[string]any
+	if err := json.Unmarshal(persistedContents, &projectSettings); err != nil {
+		testContext.Fatal(err)
 	}
-	after, err := os.ReadFile(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(before) != string(after) {
-		t.Fatal("invalid settings update changed the persisted file")
+	if _, exists := projectSettings["defaultModel"]; exists || projectSettings["future"].(map[string]any)["preserve"] != true {
+		testContext.Fatalf("reset persistence: %#v", projectSettings)
 	}
 }
 
-func TestMissingSettingsUseDefaultsButParseAndSchemaFailuresAreVisible(t *testing.T) {
-	dir := t.TempDir()
-	m, err := Load(filepath.Join(dir, "missing.json"), nil, nil)
+func TestNestedResetRestoresInheritedCapabilityAndInvalidUpdateIsNotPersisted(testContext *testing.T) {
+	tempDir := testContext.TempDir()
+	globalPath := filepath.Join(tempDir, "global.json")
+	projectPath := filepath.Join(tempDir, "project.json")
+	writeFixture(testContext, globalPath, `{"tools":{"read":false},"appearance":{"fontSize":16}}`)
+	writeFixture(testContext, projectPath, `{"tools":{"read":true}}`)
+	manager, err := Load(globalPath, &projectPath, nil)
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
-	if m.Resolved()["transport"] != "auto" {
-		t.Fatalf("unexpected defaults: %#v", m.Resolved())
+	if err := manager.Reset(Project, "tools.read"); err != nil {
+		testContext.Fatal(err)
 	}
-	malformed := filepath.Join(dir, "malformed.json")
-	writeFixture(t, malformed, `{"transport":`)
-	if _, err := Load(malformed, nil, nil); err == nil {
-		t.Fatal("expected parse error")
+	if manager.Resolved()["tools"].(map[string]any)["read"] != false {
+		testContext.Fatalf("nested reset did not inherit: %#v", manager.Resolved())
+	}
+	beforeContents, err := os.ReadFile(projectPath)
+	if err != nil {
+		testContext.Fatal(err)
+	}
+	if err := manager.Set(Project, "appearance.fontSize", json.Number("31")); err == nil {
+		testContext.Fatal("expected invalid settings update")
+	}
+	afterContents, err := os.ReadFile(projectPath)
+	if err != nil {
+		testContext.Fatal(err)
+	}
+	if string(beforeContents) != string(afterContents) {
+		testContext.Fatal("invalid settings update changed the persisted file")
+	}
+}
+
+func TestMissingSettingsUseDefaultsButParseAndSchemaFailuresAreVisible(testContext *testing.T) {
+	tempDir := testContext.TempDir()
+	manager, err := Load(filepath.Join(tempDir, "missing.json"), nil, nil)
+	if err != nil {
+		testContext.Fatal(err)
+	}
+	if manager.Resolved()["transport"] != "auto" {
+		testContext.Fatalf("unexpected defaults: %#v", manager.Resolved())
+	}
+	malformedPath := filepath.Join(tempDir, "malformed.json")
+	writeFixture(testContext, malformedPath, `{"transport":`)
+	if _, err := Load(malformedPath, nil, nil); err == nil {
+		testContext.Fatal("expected parse error")
 	} else {
-		var typed *Error
-		if !errors.As(err, &typed) || typed.Kind != ParseError {
-			t.Fatalf("wrong error: %v", err)
+		var settingsError *Error
+		if !errors.As(err, &settingsError) || settingsError.Kind != ParseError {
+			testContext.Fatalf("wrong error: %v", err)
 		}
 	}
-	invalid := filepath.Join(dir, "invalid.json")
-	writeFixture(t, invalid, `{"appearance":{"themeMode":"sepia"}}`)
-	if _, err := Load(invalid, nil, nil); err == nil {
-		t.Fatal("expected schema validation error")
+	invalidPath := filepath.Join(tempDir, "invalid.json")
+	writeFixture(testContext, invalidPath, `{"appearance":{"themeMode":"sepia"}}`)
+	if _, err := Load(invalidPath, nil, nil); err == nil {
+		testContext.Fatal("expected schema validation error")
 	}
 }
 
-func TestReadAndWriteFailuresRetainTheirKinds(t *testing.T) {
-	dir := t.TempDir()
-	readPath := filepath.Join(dir, "directory")
+func TestReadAndWriteFailuresRetainTheirKinds(testContext *testing.T) {
+	tempDir := testContext.TempDir()
+	readPath := filepath.Join(tempDir, "directory")
 	if err := os.Mkdir(readPath, 0o700); err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
 	if _, err := Load(readPath, nil, nil); err == nil {
-		t.Fatal("expected read error for directory")
+		testContext.Fatal("expected read error for directory")
 	} else {
-		var typed *Error
-		if !errors.As(err, &typed) || typed.Kind != ReadError {
-			t.Fatalf("wrong error: %v", err)
+		var settingsError *Error
+		if !errors.As(err, &settingsError) || settingsError.Kind != ReadError {
+			testContext.Fatalf("wrong error: %v", err)
 		}
 	}
-	global := filepath.Join(dir, "write-target")
-	m, err := Load(global, nil, nil)
+	globalPath := filepath.Join(tempDir, "write-target")
+	manager, err := Load(globalPath, nil, nil)
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
-	if err := os.Mkdir(global, 0o700); err != nil {
-		t.Fatal(err)
+	if err := os.Mkdir(globalPath, 0o700); err != nil {
+		testContext.Fatal(err)
 	}
-	if err := m.SaveGlobal(); err == nil {
-		t.Fatal("expected write error")
+	if err := manager.SaveGlobal(); err == nil {
+		testContext.Fatal("expected write error")
 	} else {
-		var typed *Error
-		if !errors.As(err, &typed) || typed.Kind != WriteError {
-			t.Fatalf("wrong error: %v", err)
+		var settingsError *Error
+		if !errors.As(err, &settingsError) || settingsError.Kind != WriteError {
+			testContext.Fatalf("wrong error: %v", err)
 		}
 	}
 }
 
-func TestValidationRejectsInvalidCompactionAndAppearance(t *testing.T) {
-	dir := t.TempDir()
-	for _, body := range []string{`{"compaction":{"triggerRatio":0.3,"targetRatio":0.7}}`, `{"appearance":{"fontSize":31}}`} {
-		path := filepath.Join(dir, "settings.json")
-		writeFixture(t, path, body)
-		if _, err := Load(path, nil, nil); err == nil {
-			t.Fatalf("expected rejection for %s", body)
+func TestValidationRejectsInvalidCompactionAndAppearance(testContext *testing.T) {
+	tempDir := testContext.TempDir()
+	for _, fixtureBody := range []string{`{"compaction":{"triggerRatio":0.3,"targetRatio":0.7}}`, `{"appearance":{"fontSize":31}}`} {
+		settingsPath := filepath.Join(tempDir, "settings.json")
+		writeFixture(testContext, settingsPath, fixtureBody)
+		if _, err := Load(settingsPath, nil, nil); err == nil {
+			testContext.Fatalf("expected rejection for %s", fixtureBody)
 		}
 	}
 }

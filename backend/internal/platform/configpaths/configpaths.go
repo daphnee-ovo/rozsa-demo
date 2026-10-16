@@ -18,10 +18,10 @@ const (
 var ErrHomeDirectoryUnavailable = errors.New("cannot determine the global Rózsa config directory: set ROZSA_CONFIG_DIR or make the home directory available")
 
 type Roots struct {
-	global       string
-	project      string
-	agentsSkills string
-	goos         string
+	global          string
+	project         string
+	agentsSkills    string
+	operatingSystem string
 }
 
 func Discover(projectDir string) (Roots, error) {
@@ -29,22 +29,22 @@ func Discover(projectDir string) (Roots, error) {
 	if err != nil {
 		home = ""
 	}
-	global, globalSet := os.LookupEnv(GlobalConfigDirEnv)
-	project, projectSet := os.LookupEnv(ProjectConfigDirEnv)
-	return Resolve(projectDir, optional(global, globalSet), optional(project, projectSet), optional(home, home != ""), runtime.GOOS)
+	globalOverride, globalOverrideSet := os.LookupEnv(GlobalConfigDirEnv)
+	projectOverride, projectOverrideSet := os.LookupEnv(ProjectConfigDirEnv)
+	return Resolve(projectDir, optional(globalOverride, globalOverrideSet), optional(projectOverride, projectOverrideSet), optional(home, home != ""), runtime.GOOS)
 }
 
-func optional(value string, set bool) *string {
-	if !set {
+func optional(providedValue string, isSet bool) *string {
+	if !isSet {
 		return nil
 	}
-	return &value
+	return &providedValue
 }
 
 // Resolve accepts the host family explicitly to make path environment behavior
 // testable without reading the process environment or real home directory.
-func Resolve(projectDir string, globalOverride, projectOverride, home *string, goos string) (Roots, error) {
-	join := pathJoin(goos)
+func Resolve(projectDir string, globalOverride, projectOverride, home *string, operatingSystem string) (Roots, error) {
+	joinPath := pathJoin(operatingSystem)
 	if globalOverride != nil && *globalOverride == "" {
 		return Roots{}, fmt.Errorf("%s must not be empty", GlobalConfigDirEnv)
 	}
@@ -58,25 +58,25 @@ func Resolve(projectDir string, globalOverride, projectOverride, home *string, g
 		if home == nil || *home == "" {
 			return Roots{}, ErrHomeDirectoryUnavailable
 		}
-		global = join(*home, ".rozsa")
+		global = joinPath(*home, ".rozsa")
 	}
 	project := ""
 	if projectOverride != nil {
 		project = *projectOverride
 	} else {
-		project = join(projectDir, ".rozsa")
+		project = joinPath(projectDir, ".rozsa")
 	}
 	agentsSkills := ""
 	if home != nil && *home != "" {
-		agentsSkills = join(*home, ".agents", "skills")
+		agentsSkills = joinPath(*home, ".agents", "skills")
 	}
-	return Roots{global: global, project: project, agentsSkills: agentsSkills, goos: goos}, nil
+	return Roots{global: global, project: project, agentsSkills: agentsSkills, operatingSystem: operatingSystem}, nil
 }
 
-func (r Roots) join(parts ...string) string { return pathJoin(r.goos)(parts...) }
+func (roots Roots) join(parts ...string) string { return pathJoin(roots.operatingSystem)(parts...) }
 
-func pathJoin(goos string) func(...string) string {
-	if goos != "windows" {
+func pathJoin(operatingSystem string) func(...string) string {
+	if operatingSystem != "windows" {
 		return filepath.Join
 	}
 	return windowsJoin
@@ -96,36 +96,36 @@ func windowsJoin(parts ...string) string {
 	return joined
 }
 
-func (r Roots) Global() string               { return r.global }
-func (r Roots) Project() string              { return r.project }
-func (r Roots) AgentsSkills() (string, bool) { return r.agentsSkills, r.agentsSkills != "" }
+func (roots Roots) Global() string               { return roots.global }
+func (roots Roots) Project() string              { return roots.project }
+func (roots Roots) AgentsSkills() (string, bool) { return roots.agentsSkills, roots.agentsSkills != "" }
 
-func (r Roots) SettingsPaths() [2]string {
-	return [2]string{r.join(r.global, "settings.json"), r.join(r.project, "settings.json")}
+func (roots Roots) SettingsPaths() [2]string {
+	return [2]string{roots.join(roots.global, "settings.json"), roots.join(roots.project, "settings.json")}
 }
-func (r Roots) ModelDirs() [2]string {
-	return [2]string{r.join(r.global, "models"), r.join(r.project, "models")}
+func (roots Roots) ModelDirs() [2]string {
+	return [2]string{roots.join(roots.global, "models"), roots.join(roots.project, "models")}
 }
-func (r Roots) ThemeDirs() [2]string {
-	return [2]string{r.join(r.global, "themes"), r.join(r.project, "themes")}
+func (roots Roots) ThemeDirs() [2]string {
+	return [2]string{roots.join(roots.global, "themes"), roots.join(roots.project, "themes")}
 }
-func (r Roots) SkillDirs() [2]string {
-	return [2]string{r.join(r.global, "skills"), r.join(r.project, "skills")}
+func (roots Roots) SkillDirs() [2]string {
+	return [2]string{roots.join(roots.global, "skills"), roots.join(roots.project, "skills")}
 }
-func (r Roots) ResourceDirs() [2]string { return [2]string{r.global, r.project} }
-func (r Roots) SessionDirs(projectDir string) [2]string {
+func (roots Roots) ResourceDirs() [2]string { return [2]string{roots.global, roots.project} }
+func (roots Roots) SessionDirs(projectDir string) [2]string {
 	key := ProjectKey(projectDir)
-	return [2]string{r.join(r.global, "sessions", key), r.join(r.project, "sessions", key)}
+	return [2]string{roots.join(roots.global, "sessions", key), roots.join(roots.project, "sessions", key)}
 }
-func (r Roots) WritableSessionDir(projectDir string) string {
-	return r.join(r.global, "sessions", ProjectKey(projectDir))
+func (roots Roots) WritableSessionDir(projectDir string) string {
+	return roots.join(roots.global, "sessions", ProjectKey(projectDir))
 }
 
 func GlobalModelsDir() (string, error) {
-	global, set := os.LookupEnv(GlobalConfigDirEnv)
+	globalOverride, isSet := os.LookupEnv(GlobalConfigDirEnv)
 	var override *string
-	if set {
-		override = &global
+	if isSet {
+		override = &globalOverride
 	}
 	roots, err := Resolve("", override, nil, userHome(), runtime.GOOS)
 	if err != nil {

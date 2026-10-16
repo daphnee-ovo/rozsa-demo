@@ -5,102 +5,102 @@ import (
 	"testing"
 )
 
-func ptr(value string) *string { return &value }
+func stringPointer(value string) *string { return &value }
 
-func TestResolveUsesExplicitRootsAndHomeDefaults(t *testing.T) {
-	roots, err := Resolve("/workspace", nil, nil, ptr("/home/user"), "darwin")
+func TestResolveUsesExplicitRootsAndHomeDefaults(testContext *testing.T) {
+	roots, err := Resolve("/workspace", nil, nil, stringPointer("/home/user"), "darwin")
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
 	if roots.Global() != "/home/user/.rozsa" || roots.Project() != "/workspace/.rozsa" {
-		t.Fatalf("unexpected roots: %#v", roots)
+		testContext.Fatalf("unexpected roots: %#v", roots)
 	}
-	if agents, ok := roots.AgentsSkills(); !ok || agents != "/home/user/.agents/skills" {
-		t.Fatalf("agents skills path: %q %v", agents, ok)
+	if agentsPath, exists := roots.AgentsSkills(); !exists || agentsPath != "/home/user/.agents/skills" {
+		testContext.Fatalf("agents skills path: %q %v", agentsPath, exists)
 	}
-	explicit, err := Resolve("/workspace", ptr("/private/config"), ptr("/private/project"), ptr("/ignored"), "linux")
+	explicit, err := Resolve("/workspace", stringPointer("/private/config"), stringPointer("/private/project"), stringPointer("/ignored"), "linux")
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
 	if explicit.Global() != "/private/config" || explicit.Project() != "/private/project" {
-		t.Fatalf("overrides: %#v", explicit)
+		testContext.Fatalf("overrides: %#v", explicit)
 	}
 }
 
-func TestResolveRejectsEmptyOverridesAndMissingHome(t *testing.T) {
+func TestResolveRejectsEmptyOverridesAndMissingHome(testContext *testing.T) {
 	if _, err := Resolve("/workspace", nil, nil, nil, "darwin"); err == nil {
-		t.Fatal("expected missing-home error")
+		testContext.Fatal("expected missing-home error")
 	}
-	for _, test := range []struct {
+	for _, testCase := range []struct {
 		global, project *string
 		expected        string
 	}{
-		{ptr(""), nil, GlobalConfigDirEnv}, {nil, ptr(""), ProjectConfigDirEnv},
+		{stringPointer(""), nil, GlobalConfigDirEnv}, {nil, stringPointer(""), ProjectConfigDirEnv},
 	} {
-		if _, err := Resolve("/workspace", test.global, test.project, ptr("/home/user"), "linux"); err == nil || err.Error() != test.expected+" must not be empty" {
-			t.Fatalf("error = %v", err)
+		if _, err := Resolve("/workspace", testCase.global, testCase.project, stringPointer("/home/user"), "linux"); err == nil || err.Error() != testCase.expected+" must not be empty" {
+			testContext.Fatalf("error = %v", err)
 		}
 	}
 }
 
-func TestPathLayoutIsSharedAcrossSupportedPathFamilies(t *testing.T) {
-	cases := []struct{ goos, home, project, wantGlobal, wantProject, wantKey string }{
+func TestPathLayoutIsSharedAcrossSupportedPathFamilies(testContext *testing.T) {
+	cases := []struct{ operatingSystem, home, project, expectedGlobal, expectedProject, expectedKey string }{
 		{"darwin", "/Users/test", "/workspace/project", "/Users/test/.rozsa", "/workspace/project/.rozsa", "-workspace-project-"},
 		{"linux", "/home/test", "/srv/work/project", "/home/test/.rozsa", "/srv/work/project/.rozsa", "-srv-work-project-"},
 		{"windows", `C:\Users\test`, `D:\work\project`, `C:\Users\test\.rozsa`, `D:\work\project\.rozsa`, `-D:-work-project-`},
 	}
-	for _, test := range cases {
-		t.Run(test.goos, func(t *testing.T) {
-			roots, err := Resolve(test.project, nil, nil, ptr(test.home), test.goos)
+	for _, testCase := range cases {
+		testContext.Run(testCase.operatingSystem, func(testContext *testing.T) {
+			roots, err := Resolve(testCase.project, nil, nil, stringPointer(testCase.home), testCase.operatingSystem)
 			if err != nil {
-				t.Fatal(err)
+				testContext.Fatal(err)
 			}
-			if roots.Global() != test.wantGlobal || roots.Project() != test.wantProject {
-				t.Fatalf("roots %q %q", roots.Global(), roots.Project())
+			if roots.Global() != testCase.expectedGlobal || roots.Project() != testCase.expectedProject {
+				testContext.Fatalf("roots %q %q", roots.Global(), roots.Project())
 			}
-			paths := roots.SettingsPaths()
-			sep := "/"
-			if test.goos == "windows" {
-				sep = `\`
+			settingsPaths := roots.SettingsPaths()
+			pathSeparator := "/"
+			if testCase.operatingSystem == "windows" {
+				pathSeparator = `\`
 			}
-			want := [2]string{test.wantGlobal + sep + "settings.json", test.wantProject + sep + "settings.json"}
-			if !reflect.DeepEqual(paths, want) {
-				t.Fatalf("settings paths %q, want %q", paths, want)
+			expectedSettingsPaths := [2]string{testCase.expectedGlobal + pathSeparator + "settings.json", testCase.expectedProject + pathSeparator + "settings.json"}
+			if !reflect.DeepEqual(settingsPaths, expectedSettingsPaths) {
+				testContext.Fatalf("settings paths %q, want %q", settingsPaths, expectedSettingsPaths)
 			}
-			if got := ProjectKey(test.project); got != test.wantKey {
-				t.Fatalf("project key %q, want %q", got, test.wantKey)
+			if actualKey := ProjectKey(testCase.project); actualKey != testCase.expectedKey {
+				testContext.Fatalf("project key %q, want %q", actualKey, testCase.expectedKey)
 			}
-			if agents, ok := roots.AgentsSkills(); !ok {
-				t.Fatal("missing user-private agents skills directory")
-			} else if test.goos == "windows" && agents != `C:\Users\test\.agents\skills` {
-				t.Fatalf("agents path %q", agents)
+			if agentsPath, exists := roots.AgentsSkills(); !exists {
+				testContext.Fatal("missing user-private agents skills directory")
+			} else if testCase.operatingSystem == "windows" && agentsPath != `C:\Users\test\.agents\skills` {
+				testContext.Fatalf("agents path %q", agentsPath)
 			}
 		})
 	}
 }
 
-func TestEnvironmentOverridesPreservePrivatePathAndGlobalFirstOrder(t *testing.T) {
-	roots, err := Resolve("/workspace", ptr("/private/user-config"), ptr("/private/project-config"), ptr("/home/user"), "darwin")
+func TestEnvironmentOverridesPreservePrivatePathAndGlobalFirstOrder(testContext *testing.T) {
+	roots, err := Resolve("/workspace", stringPointer("/private/user-config"), stringPointer("/private/project-config"), stringPointer("/home/user"), "darwin")
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
 	if roots.Global() != "/private/user-config" || roots.Project() != "/private/project-config" {
-		t.Fatalf("private overrides lost: %#v", roots)
+		testContext.Fatalf("private overrides lost: %#v", roots)
 	}
-	paths := roots.SettingsPaths()
-	if paths[0] != "/private/user-config/settings.json" || paths[1] != "/private/project-config/settings.json" {
-		t.Fatalf("layer order: %#v", paths)
+	settingsPaths := roots.SettingsPaths()
+	if settingsPaths[0] != "/private/user-config/settings.json" || settingsPaths[1] != "/private/project-config/settings.json" {
+		testContext.Fatalf("layer order: %#v", settingsPaths)
 	}
 }
 
-func TestDiscoverReadsEnvironmentOverrides(t *testing.T) {
-	t.Setenv(GlobalConfigDirEnv, "/private/global")
-	t.Setenv(ProjectConfigDirEnv, "/private/project")
+func TestDiscoverReadsEnvironmentOverrides(testContext *testing.T) {
+	testContext.Setenv(GlobalConfigDirEnv, "/private/global")
+	testContext.Setenv(ProjectConfigDirEnv, "/private/project")
 	roots, err := Discover("/workspace")
 	if err != nil {
-		t.Fatal(err)
+		testContext.Fatal(err)
 	}
 	if roots.Global() != "/private/global" || roots.Project() != "/private/project" {
-		t.Fatalf("environment overrides: %#v", roots)
+		testContext.Fatalf("environment overrides: %#v", roots)
 	}
 }
