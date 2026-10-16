@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="rozsa-template-root" content="../desktop/renderer/templates/">
 <title>Rózsa — Coding Agent</title>
-<link rel="stylesheet" href="styles/main.css">
 </head>
 <body data-rozsa-entry="application-shell" data-rozsa-flow-entry="scenario-flow">
 <div data-application-shell>
@@ -21,7 +21,9 @@
   <div data-template-mount="dev-flow"></div>
 </div>
 <script type="module">
-import { resolveGalleryId, resolveSceneId } from "./scenarios/registry.js";
+import "/@vite/client";
+import "../desktop/renderer/styles/legacy/main.css";
+import { resolveGalleryId, resolveSceneId } from "./scenarios/registry.ts";
 
 function showEntryError(error) {
   document.body.replaceChildren();
@@ -51,7 +53,7 @@ try {
     await mountGallery(resolveGalleryId(params.get("gallery")));
   } else {
     resolveSceneId(params.get("scene"));
-    await import("./scripts/core/shell.js");
+    await import("./scripts/core/shell.ts");
   }
 } catch (error) {
   showEntryError(error);

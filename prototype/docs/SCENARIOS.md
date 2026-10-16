@@ -2,7 +2,7 @@
 
 ## 统一入口
 
-从仓库根目录启动静态服务器后访问 `prototype/index.html`。无参数打开 `empty-session`；使用 `?scene=<id>` 打开 application scene；使用 `?gallery=visual-direction` 打开视觉 gallery。ID 只在 `scenarios/registry.js` 登记，未知 ID 必须显示错误。
+从仓库根目录运行 `npm --prefix desktop exec -- vite --config vite.renderer.config.mjs --host 127.0.0.1`，然后通过 Vite 的 `/@fs/<absolute-repository-path>/prototype/index.html` 访问原型。这样 TypeScript 由同一 Vite renderer 转换，模板和 CSS 仍来自 `desktop/renderer/`。无参数打开 `empty-session`；使用 `?scene=<id>` 打开 application scene；使用 `?gallery=visual-direction` 打开视觉 gallery。ID 只在 `scenarios/registry.ts` 登记，未知 ID 必须显示错误。
 
 ## Application scenes
 

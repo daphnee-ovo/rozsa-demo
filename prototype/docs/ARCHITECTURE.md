@@ -6,7 +6,7 @@
 
 ## 入口与加载
 
-统一入口 `prototype/index.html`：
+统一入口 `prototype/index.html` 通过 desktop 的 Vite renderer server 使用；Vite 将入口模块转成浏览器 JavaScript，模板和样式引用 `desktop/renderer/`：
 
 - `?scene=<id>`：registry 校验 ID，shell 装配共享模板，mock adapter 提供初始数据。
 - `?gallery=visual-direction`：加载独立 gallery 的 HTML、CSS 和 module script。
@@ -15,11 +15,11 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| `scenarios/registry.js`、`scenes/` | 11 个 application scene 的 ID、初始状态、mock 与操作配置 |
+| `scenarios/registry.ts`、`scenes/` | 11 个 application scene 的 ID、初始状态、mock 与操作配置 |
 | `scripts/core/` | 原型启动、scene 选择与共享 shell/template loader 接入 |
 | `scripts/components/`、`scripts/features/` | 接入共享组件与原型演示能力，不保存第二套组件 |
 | `scripts/flows/` | 场景时序和 mock 操作协调 |
-| `scripts/adapters/mock-adapter.js`、`mock/` | 演示数据与可重复结果 |
+| `scripts/adapters/mock-adapter.ts`、`mock/` | 演示数据与可重复结果 |
 | `templates/` | `data-ui-template-src` 转发到共享 template |
 | `styles/` | 有序 import 与共享 CSS 转发；gallery 专属规则保留在原型 |
 | `gallery/` | 视觉参考的 topbar、说明、布局与视图切换 |

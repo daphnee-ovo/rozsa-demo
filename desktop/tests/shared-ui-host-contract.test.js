@@ -1,34 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createUIHost } from '../renderer/scripts/core/renderer.js';
-import { createTauriAdapter } from '../renderer/runtime/adapters/tauri.js';
+import { createUIHost } from '../renderer/scripts/core/renderer.ts';
+import { resolveTemplateRoot } from '../renderer/scripts/core/shell.ts';
+import { clearTemplateCache, loadTemplate } from '../renderer/scripts/core/template-loader.ts';
 import { init as bindPopover } from '../renderer/scripts/components/popover.js';
-import { createDOM, loadApp, loadClassic, readFrontend, readPrototype, withDOM } from './helpers/browser.js';
+import { createDOM, readFrontend, readPrototype, withDOM } from './helpers/browser.js';
 
 test('ports preserve errors, cancellation, revisions and subscription disposal', async () => {
   let receive;
   let removed = 0;
   const calls = [];
   const failure = new Error('product rejected');
-  const host = createUIHost(createTauriAdapter(() => ({
-    core: { invoke: async (command, data) => {
+  const host = createUIHost({
+    request: async (command, data) => {
       calls.push([command, data]);
       if (command === 'fail') throw failure;
       if (command === 'pending') return new Promise(() => {});
       return data;
-    } },
-    event: { listen: async (_event, callback) => {
+    },
+    subscribe: async (_event, callback) => {
       receive = callback;
       return () => { removed++; };
-    } },
-  })));
+    },
+  });
   assert.deepEqual(await host.port.request('get_state', { value: 7 }), { value: 7 });
   await assert.rejects(host.port.request('fail'), error => error === failure);
   const delivered = [];
   const unsubscribe = await host.port.subscribe('ui-state', payload => delivered.push(payload));
-  receive({ payload: { revision: 1 } });
+  receive({ revision: 1 });
   unsubscribe(); unsubscribe();
-  receive({ payload: { revision: 2 } });
+  receive({ revision: 2 });
   assert.deepEqual(delivered, [{ revision: 1 }]);
   assert.equal(removed, 1);
   const cancel = new AbortController();
@@ -68,24 +69,25 @@ test('ports preserve errors, cancellation, revisions and subscription disposal',
   assert.equal(lateRemoved, 1);
 });
 
-test('both hosts reference shared UI and production stays isolated from mock adapters', () => {
-  for (const webview of ['main', 'sidebar']) {
-    const entry = readFrontend(`runtime/entries/${webview}.js`);
-    assert(entry.includes('../../scripts/core/renderer.js'));
-    assert(entry.includes('createTauriAdapter'));
-    assert(readFrontend(`${webview === 'main' ? 'tauri' : 'sidebar'}.html`).includes(`type="module" src="runtime/entries/${webview}.js"`));
-  }
-  const shell = readPrototype('scripts/core/shell.js');
-  assert(shell.includes('desktop/renderer/scripts/core/renderer.js'));
+test('the actual Electron entry and HTTP prototype use the TypeScript source boundary', () => {
+  const electronHtml = readFrontend('index.html');
+  assert(electronHtml.includes('type="module" src="./entry.ts"'));
+  const electronEntry = readFrontend('entry.ts');
+  assert(electronEntry.includes('./product-client.js'));
+  assert(!electronEntry.includes('__TAURI__'));
+  const prototypeHtml = readPrototype('index.html');
+  assert(prototypeHtml.includes('./scenarios/registry.ts'));
+  assert(prototypeHtml.includes('./scripts/core/shell.ts'));
+  assert(prototypeHtml.includes('../desktop/renderer/styles/legacy/main.css'));
+  const shell = readPrototype('scripts/core/shell.ts');
+  assert(shell.includes('../../../desktop/renderer/scripts/core/renderer.ts'));
   assert(shell.includes('createMockAdapter'));
   for (const path of ['ports', 'renderer']) {
-    const source = readFrontend(`scripts/core/${path}.js`);
+    const source = readFrontend(`scripts/core/${path}.ts`);
     assert(!source.includes('__TAURI__'));
     assert(!source.includes('prototype/mock'));
   }
-  const adapter = readFrontend('runtime/adapters/tauri.js');
-  assert(!adapter.includes('document.'));
-  assert(!adapter.includes('mock'));
+  assert(!electronEntry.includes('prototype/mock'));
 });
 
 test('popover positioning accounts for host zoom in CSS coordinates', async () => {
@@ -105,80 +107,18 @@ test('popover positioning accounts for host zoom in CSS coordinates', async () =
   } finally { dom.window.close(); }
 });
 
-// Classic scripts and module entries share browser globals. Preserve that contract
-// while importing the complete production entry and its real template dependencies.
-async function withCallbacks(harness, names, action) {
-  const previous = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
-  for (const name of names) globalThis[name] = harness.evaluate(name);
-  try { await withDOM(harness.dom, action); }
-  finally {
-    for (const [name, descriptor] of previous) {
-      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-      else delete globalThis[name];
-    }
-    harness.close();
+test('page-scoped HTTP template fixture resolves to the shared renderer source', async () => {
+  clearTemplateCache();
+  const dom = createDOM('<!doctype html><html><head><meta name="rozsa-template-root" content="./templates/"></head><body></body></html>');
+  try {
+    await withDOM(dom, async () => {
+      const root = resolveTemplateRoot();
+      assert.equal(root.href, 'http://127.0.0.1/templates/');
+      const fragment = await loadTemplate(new URL('features/sidebar.html', root));
+      assert.ok(fragment.querySelector('#sessionList'));
+    });
+  } finally {
+    clearTemplateCache();
+    dom.window.close();
   }
-}
-
-async function checkDelayedEntry(entry, mounted) {
-  window.__TAURI__ = { window: { getCurrentWindow: () => ({
-    outerSize: async () => ({ width: 1280 }), scaleFactor: async () => 1,
-  }) } };
-  const localFetch = globalThis.fetch;
-  let release;
-  let started;
-  const pending = new Promise(resolve => { release = resolve; });
-  const loadingStarted = new Promise(resolve => { started = resolve; });
-  let first = true;
-  globalThis.fetch = async input => {
-    if (first) { first = false; started(); await pending; }
-    return localFetch(input);
-  };
-  const loading = import(entry);
-  await Promise.race([loadingStarted, loading.then(() => { throw new Error('entry did not load its template'); })]);
-  assert.equal(typeof window.RozsaUIReady?.then, 'function');
-  assert.equal(mounted(), false);
-  release();
-  await loading;
-  await window.RozsaUIReady;
-  assert.equal(mounted(), true);
-  window.RozsaUIHost.port.dispose();
-}
-
-test('main entry publishes readiness before loading actual shared templates', async () => {
-  const harness = loadApp({ html: readFrontend('tauri.html') });
-  harness.evaluate(readFrontend('gui_shared.js'));
-  harness.window.testStops = 0;
-  harness.evaluate('isStreaming=true;abortAgent=async()=>{testStops++;};');
-  await withCallbacks(harness, [
-    'previewThinkingEffort', 'selectThinkingEffort', 'toggleToolCall', 'toggleTurnDiff', 'closeDevFlowDetail',
-    'switchSettingsTab', 'closeSettings', 'selectThemeModeCard', 'previewFontSize', 'commitFontSize',
-    'configureInterruptionSuspensions', 'respondPermission', 'enterPermissionTrust', 'enterPermissionHint',
-    'togglePermissionCommand', 'showPermissionMainPage', 'submitPermissionHint', 'submitUserQuestion',
-    'normalizePermissionHint', 'handlePermissionHintKeydown', 'configureConversationSuspensions',
-    'attachFileReference', 'attachDirectoryReference', 'insertSlashCommandPrefix', 'showModelPicker',
-    'updateAbortButton', 'handleInput', 'handleCompositionStart', 'handleCompositionUpdate',
-    'handleCompositionEnd', 'toggleThinking', 'isStreaming', 'abortAgent', 'sendMessage',
-  ], async () => {
-    await checkDelayedEntry('../renderer/runtime/entries/main.js', () => Boolean(window.RozsaPopover));
-    assert(document.getElementById('thinkingEffortPopover'));
-    assert(document.getElementById('fallbackSidebarTemplate').content.querySelector('#sessionList'));
-    const input = document.getElementById('msgInput');
-    input.textContent = '未发送 draft';
-    document.querySelector('[data-action="send"]').click();
-    await Promise.resolve();
-    assert.equal(harness.window.testStops, 1, 'actual runtime composer dispatches Stop while streaming');
-    assert.equal(input.textContent, '未发送 draft');
-  });
-});
-
-test('sidebar entry publishes readiness before mounting actual settings navigation', async () => {
-  const harness = loadClassic('sidebar.js', { html: readFrontend('sidebar.html'),
-    globals: { ResizeObserver: class { observe() {} disconnect() {} } } });
-  harness.evaluate(readFrontend('gui_shared.js'));
-  await withCallbacks(harness, ['selectSidebarSettingsPane', 'closeSidebarSettings', 'newSidebarSession',
-    'openSidebarSettings', 'openDevFlowDashboard', 'switchSidebarSession'], async () => {
-    await checkDelayedEntry('../renderer/runtime/entries/sidebar.js', () => Boolean(document.querySelector('#settingsSidebarScene [data-settings-pane]')));
-    assert(window.RozsaSidebar);
-  });
 });

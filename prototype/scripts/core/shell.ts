@@ -1,16 +1,15 @@
-import { loadTemplate } from "./template-loader.js";
-import { mountTemplateChildren } from "./renderer.js";
-import { mountShell } from "../../../desktop/renderer/scripts/core/shell.js";
-import { resolveSceneId } from "../../scenarios/registry.js";
-import { createUIHost } from "../../../desktop/renderer/scripts/core/renderer.js";
-import { createMockAdapter } from "../adapters/mock-adapter.js";
-import { bindViewport } from '../../../desktop/renderer/scripts/core/viewport.js';
+import { loadTemplate } from "./template-loader.ts";
+import { mountTemplateChildren } from "./renderer.ts";
+import { mountShell, resolveTemplateRoot } from "../../../desktop/renderer/scripts/core/shell.ts";
+import { resolveSceneId } from "../../scenarios/registry.ts";
+import { createUIHost } from "../../../desktop/renderer/scripts/core/renderer.ts";
+import { createMockAdapter } from "../adapters/mock-adapter.ts";
+import { bindViewport } from '../../../desktop/renderer/scripts/core/viewport.ts';
 
 window.RozsaUIHost = createUIHost(createMockAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
 
-const templateRoot = new URL("../../", import.meta.url);
-const mounts = [
+const mounts: [string, string][] = [
   ["templates/features/sidebar.html", "[data-template-mount=\"sidebar\"]"],
   ["templates/features/conversation.html", "[data-template-mount=\"conversation\"]"],
   ["templates/features/settings.html", "[data-template-mount=\"settings\"]"],
@@ -23,6 +22,7 @@ const mounts = [
 async function bootstrapPrototypeShell() {
   await bindViewport(window);
   const sceneId = resolveSceneId(new URLSearchParams(window.location.search).get("scene"));
+  const templateRoot = resolveTemplateRoot();
   await mountShell(mounts.map(([relativePath, selector]) => ({ url: new URL(relativePath, templateRoot), selector })));
   const interruptionPanelFragment = await loadTemplate(
     new URL("templates/composites/interruption-panel.html", templateRoot),
@@ -47,14 +47,15 @@ async function bootstrapPrototypeShell() {
   document.body.appendChild(script);
 }
 
-bootstrapPrototypeShell().catch(error => {
+window.RozsaUIReady = bootstrapPrototypeShell();
+window.RozsaUIReady.catch(error => {
   console.error("Prototype application shell failed to load.", error);
   const root = document.querySelector("[data-application-shell]");
   if (root) {
-    root.dataset.shellError = "template-load-failed";
+    (root as HTMLElement).dataset.shellError = "template-load-failed";
     const message = document.createElement("p");
     message.setAttribute("role", "alert");
-    message.textContent = error.message;
+    message.textContent = error instanceof Error ? error.message : String(error);
     root.appendChild(message);
   }
 });

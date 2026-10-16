@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer } from 'vite';
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const resourceRoot = resolve(desktopRoot, '.vite/renderer/sessions');
@@ -37,5 +38,57 @@ test('Vite emits relative Electron resources with source maps', () => {
     const source = readFileSync(path, 'utf8');
     assert.doesNotMatch(source, /\.tsx?(?:["'?#\s])/i, `${path} must not reference TypeScript at runtime`);
     assert.doesNotMatch(source, /mock-adapter|prototype\/mock|\/mock\//, `${path} must not package prototype mocks`);
+  }
+});
+
+test('Vite HTTP prototype loads transformed TypeScript and shared templates and styles', async () => {
+  const server = await createServer({
+    configFile: resolve(desktopRoot, 'vite.renderer.config.mjs'),
+    logLevel: 'silent',
+    server: { host: '127.0.0.1', port: 0 },
+  });
+  await server.listen();
+  try {
+    const address = server.httpServer.address();
+    assert.ok(address && typeof address !== 'string');
+    const origin = `http://127.0.0.1:${address.port}`;
+    const prototypeRoot = resolve(desktopRoot, '../prototype');
+    const atFile = path => `${origin}/@fs${path}`;
+
+    const page = await fetch(`${atFile(resolve(prototypeRoot, 'index.html'))}?scene=empty-session`);
+    assert.equal(page.status, 200);
+    const html = await page.text();
+    assert.match(html, /@vite\/client/);
+    assert.match(html, /rozsa-template-root/);
+    assert.match(html, /scenarios\/registry\.ts/);
+
+    const viteClient = await fetch(`${origin}/@vite/client`);
+    assert.equal(viteClient.status, 200);
+    assert.match(viteClient.headers.get('content-type') || '', /javascript/);
+
+    const registry = await fetch(atFile(resolve(prototypeRoot, 'scenarios/registry.ts')));
+    assert.equal(registry.status, 200);
+    assert.match(registry.headers.get('content-type') || '', /javascript/);
+    const javascript = await registry.text();
+    assert.match(javascript, /sourceMappingURL=/);
+    assert.doesNotMatch(javascript, /:\s*(?:string|number|boolean)\b/);
+
+    const shell = await fetch(atFile(resolve(prototypeRoot, 'scripts/core/shell.ts')));
+    assert.equal(shell.status, 200);
+    assert.match(shell.headers.get('content-type') || '', /javascript/);
+    assert.match(await shell.text(), /resolveTemplateRoot/);
+
+    const templatePath = resolve(desktopRoot, 'renderer/templates/features/sidebar.html');
+    const template = await fetch(atFile(templatePath));
+    assert.equal(template.status, 200);
+    assert.match(await template.text(), /id="sessionList"/);
+
+    const stylesheetPath = resolve(desktopRoot, 'renderer/styles/legacy/main.css');
+    const stylesheet = await fetch(atFile(stylesheetPath));
+    assert.equal(stylesheet.status, 200);
+    assert.match(stylesheet.headers.get('content-type') || '', /javascript/);
+    assert.match(await stylesheet.text(), /@vite\/client/);
+  } finally {
+    await server.close();
   }
 });

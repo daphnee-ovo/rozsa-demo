@@ -4,6 +4,8 @@
     "lib": ["ES2022"],
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
     "sourceMap": true,
     "inlineSources": true,
     "noEmitOnError": true,

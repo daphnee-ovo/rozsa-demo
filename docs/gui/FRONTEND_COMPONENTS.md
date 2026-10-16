@@ -21,7 +21,7 @@
 
 ## 数据与状态
 
-共享组件不读取 mock 或 Tauri API。新原型 `prototype/scripts/adapters/mock-adapter.js` 读取演示数据并引用 desktop 组件；旧 Tauri `runtime/adapters/` 转换真实 payload、调用现有 handler/IPC。adapter 不生成稳定 DOM，也不吞错。
+共享组件不读取 mock 或 Tauri API。新原型 `prototype/scripts/adapters/mock-adapter.ts` 读取演示数据并引用 desktop 组件；旧 Tauri `runtime/adapters/` 转换真实 payload、调用现有 handler/IPC。adapter 不生成稳定 DOM，也不吞错。
 
 Component 管理局部 focus、展开与选择；flow 协调等待、成功、失败、取消与恢复。产品数据仍归 app；session draft、caret、scroll 与 request identity 由产品宿主管理。新组件先定义输入、意图、template/renderer 和 owner，再登记所有使用方并验证。
 

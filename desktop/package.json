@@ -9,6 +9,7 @@
   },
   "scripts": {
     "typecheck": "node scripts/typecheck.mjs",
+    "build:renderer": "vite build --config vite.renderer.config.mjs",
     "package": "electron-forge package",
     "test:resources": "npm --prefix tests run test:resources",
     "start": "electron-forge start"

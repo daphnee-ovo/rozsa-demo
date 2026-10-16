@@ -8,8 +8,8 @@ export const frontendRoot = new URL('desktop/renderer/', repositoryRoot);
 export const readFrontend = path => readFileSync(new URL(path, frontendRoot), 'utf8');
 export const readPrototype = path => readFileSync(new URL('prototype/' + path, repositoryRoot), 'utf8');
 
-export function createDOM(html = '<!doctype html><html><body></body></html>') {
-  return new JSDOM(html, { url: 'http://127.0.0.1/', runScripts: 'outside-only', pretendToBeVisual: true });
+export function createDOM(html = '<!doctype html><html><body></body></html>', url = 'http://127.0.0.1/') {
+  return new JSDOM(html, { url, runScripts: 'outside-only', pretendToBeVisual: true });
 }
 
 // Run the complete classic entry, preserving browser global lexical bindings.
@@ -41,8 +41,14 @@ export async function withDOM(dom, action) {
   for (const name of names.slice(0, -1)) globalThis[name] = dom.window[name];
   globalThis.fetch = async input => {
     const url = new URL(input);
-    if (url.protocol !== 'file:') throw new Error('Unexpected external fetch in UI unit test: ' + url);
-    return new Response(readFileSync(fileURLToPath(url), 'utf8'));
+    if (url.protocol === 'file:') return new Response(readFileSync(fileURLToPath(url), 'utf8'));
+    if (url.origin === 'http://127.0.0.1') {
+      const match = /(?:^|\/)templates\/(.+)$/.exec(decodeURIComponent(url.pathname));
+      if (match && !match[1].split('/').includes('..')) {
+        return new Response(readFileSync(new URL(`templates/${match[1]}`, frontendRoot), 'utf8'));
+      }
+    }
+    throw new Error('Unexpected external fetch in UI unit test: ' + url);
   };
   try { return await action(); }
   finally {

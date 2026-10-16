@@ -1,4 +1,4 @@
-import { bindViewport } from '../../scripts/core/viewport.js';
+import { bindViewport } from '../../scripts/core/viewport.ts';
 
 export async function readWindowWidth(api) {
   const nativeWindow = api.window.getCurrentWindow();

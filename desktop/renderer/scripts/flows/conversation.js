@@ -1,7 +1,8 @@
-import { loadTemplate } from "../core/template-loader.js";
-import { mountShell, templateRoot } from "../core/shell.js";
+import { loadTemplate } from "../core/template-loader.ts";
+import { mountShell, resolveTemplateRoot } from "../core/shell.ts";
 
 export async function mountConversation(root) {
+  const templateRoot = resolveTemplateRoot();
   const template = await loadTemplate(new URL("features/conversation.html", templateRoot));
   root.replaceChildren(...template.firstElementChild.childNodes);
   await mountShell([

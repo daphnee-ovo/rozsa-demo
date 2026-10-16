@@ -51,7 +51,7 @@
     const api = window.RozsaPrototype;
     if (!api) throw new Error("Prototype behavior API is unavailable");
     const { createConversationFlow } = await import(new URL("../desktop/renderer/scripts/flows/conversation.js", legacyScriptUrl));
-    const { createMockConversationAdapter } = await import(new URL("./scripts/adapters/mock-adapter.js", legacyScriptUrl));
+    const { createMockConversationAdapter } = await import(new URL("./scripts/adapters/mock-adapter.ts", legacyScriptUrl));
     Object.assign(api, createConversationFlow(createMockConversationAdapter(api)));
     const flowEntry = document.body?.dataset.rozsaFlowEntry;
     const paths = behaviorModulePaths.filter(path => !path.startsWith("flows/") || flowEntry);
@@ -834,7 +834,7 @@
       mountTemplates();
       const popoverModule = await import(new URL("./scripts/components/popover.js", legacyScriptUrl));
       popoverModule.init(window.RozsaPrototype);
-      const sceneLoader = await import(new URL("./scripts/core/scene-loader.js", legacyScriptUrl));
+      const sceneLoader = await import(new URL("./scripts/core/scene-loader.ts", legacyScriptUrl));
       const scene = await sceneLoader.loadPrototypeScene();
       document.documentElement.dataset.rozsaScene = scene.id;
       sceneLoader.applyPrototypeScene(window.RozsaPrototype, scene);

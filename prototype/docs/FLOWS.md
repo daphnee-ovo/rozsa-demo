@@ -3,9 +3,9 @@
 ## Scene 启动
 
 1. `index.html` 解析 query 并由 registry 校验 ID。
-2. `shell.js` 按固定列表加载 templates。
-3. `renderer.js` 将 fragment 挂载到 application shell slots。
-4. `scene-loader.js` 读取 scene 配置，adapter 加载对应 mock。
+2. `shell.ts` 按固定列表加载 templates。
+3. `renderer.ts` 将 fragment 挂载到 application shell slots。
+4. `scene-loader.ts` 读取 scene 配置，adapter 加载对应 mock。
 5. feature/component 依据初始 state 渲染，`scenario-flow.js` 发布 scene-ready。
 
 未知 ID 在第 1 步失败，不加载 shell，也不返回默认页面。

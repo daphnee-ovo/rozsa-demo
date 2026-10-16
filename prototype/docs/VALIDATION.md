@@ -23,7 +23,7 @@ uv run python -m http.server 4173 --bind 127.0.0.1 --directory .
 
 ## 全部入口
 
-逐一打开 `scenarios/registry.js` 中的 11 个 scene 与 `?gallery=visual-direction`。检查没有 alert、`shellError`、未知 fallback、横向溢出或资源 404，并核对完整页面中 sidebar、main content、running panels、Composer 和 settings 的位置。application scene 还必须确认 `data-template-mount="sidebar|conversation"` 不改变原始 grid sizing，Composer 必须确认 `forkPicker → input-wrapper(queuedMessages, steeringConversation, #msgInput, input-toolbar)` 的 DOM 顺序，并确认 input template 挂载不会增加中间视觉容器、迁移前的 scene selector 仍能命中 `#msgInput`。同时确认 registry 没有 application scene stylesheet，shell 没有动态 scene CSS 加载，状态规则由公共 owner 提供；窄视口至少检查 780、760 和 640；native split 用全窗口宽度与相同 viewport 条件比较。Linux/Windows 没有真实图形环境时保持 `pending platform visual verification`。对 gallery 的 Empty、Active、Appearance 分别保存整体截图、稳定 DOM、computed style、focus 和 tab 操作结果。
+逐一打开 `scenarios/registry.ts` 中的 11 个 scene 与 `?gallery=visual-direction`。检查没有 alert、`shellError`、未知 fallback、横向溢出或资源 404，并核对完整页面中 sidebar、main content、running panels、Composer 和 settings 的位置。application scene 还必须确认 `data-template-mount="sidebar|conversation"` 不改变原始 grid sizing，Composer 必须确认 `forkPicker → input-wrapper(queuedMessages, steeringConversation, #msgInput, input-toolbar)` 的 DOM 顺序，并确认 input template 挂载不会增加中间视觉容器、迁移前的 scene selector 仍能命中 `#msgInput`。同时确认 registry 没有 application scene stylesheet，shell 没有动态 scene CSS 加载，状态规则由公共 owner 提供；窄视口至少检查 780、760 和 640；native split 用全窗口宽度与相同 viewport 条件比较。Linux/Windows 没有真实图形环境时保持 `pending platform visual verification`。对 gallery 的 Empty、Active、Appearance 分别保存整体截图、稳定 DOM、computed style、focus 和 tab 操作结果。
 
 ## 交互重放
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sessionsMarkup, init, suspendQuotaTooltip } from '../renderer/scripts/features/sidebar.js';
-import { loadTemplate } from '../renderer/scripts/core/template-loader.js';
+import { loadTemplate } from '../renderer/scripts/core/template-loader.ts';
 import { createDOM, withDOM, readFrontend } from './helpers/browser.js';
 
 test('the actual prototype shim resolves the shared sidebar through its loader', async () => {

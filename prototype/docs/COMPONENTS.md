@@ -8,9 +8,9 @@
 
 - `templates/` 的 `data-ui-template-src` 指向共享模板，不保存稳定结构副本。
 - `styles/` 对共同规则只做 import 转发；完整顺序见 [样式说明](../styles/README.md)。
-- `scripts/core/shell.js` 建立 mock host，装配 Sidebar、Conversation、Settings、Popover、Notification、Dev Flow、Composer 与 interruption。
+- `scripts/core/shell.ts` 建立 mock host，装配 Sidebar、Conversation、Settings、Popover、Notification、Dev Flow、Composer 与 interruption。
 - `scripts/components/` 和 `scripts/features/` 接入共享实现及演示数据；跨组件场景时序由 `scripts/flows/` 协调。
-- `scripts/adapters/mock-adapter.js` 读取 `mock/`，不决定组件视觉。
+- `scripts/adapters/mock-adapter.ts` 读取 `mock/`，不决定组件视觉。
 
 Composer 由 composite 与 input primitive 组成；input 只挂 children，Queue、Steering、`#msgInput` 与 toolbar 保持同一 wrapper。PermissionRequest 与 AskUserQuestion 共用替换式面板，保留各自选择、Hint/Other 和校验语义。ToolCall 外壳组合各类 evidence 与 diff；通知统一位于右上角。
 

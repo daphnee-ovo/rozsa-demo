@@ -145,14 +145,16 @@ renderer. There is no TS emit step or separate default build/watch chain.
 Run typecheck separately during TS editing: Vite does not check types on each
 edit. tsx remains the module test runner.
 
-The shared HTML/CSS/JS source lives in `desktop/renderer/`; all frontend and
+The shared HTML/CSS and migrated TypeScript source lives in `desktop/renderer/`; all frontend and
 Electron behavior/native tests live in `desktop/tests/`, with one test manifest,
 lockfile and runner. Only the new prototype and Electron consume these assets.
 The old GUI owns its frontend, JS tests, Rust tests and static resource graph;
 neither project builds, runs or tests against the other project's assets.
-Vite packages only the candidate entry; retained draft Tauri adapters under
-desktop are migration references, not old-product entry points. T013 remains paused. CSS HMR
-retains renderer state;
+Vite packages only the candidate entry. T013 resumes in the final
+`desktop/renderer/` tree: it converts shared core/port and prototype loading to
+TypeScript. The HTTP prototype and Electron share Vite-generated renderer
+assets; Rust/Tauri uses its independent frontend under `crates/rozsa-gui/`.
+CSS HMR retains renderer state;
 HTML/renderer TS changes automatically reload. Forge reloads preload changes
 and restarts Electron for main changes. Go changes require closing and
 restarting Forge start. Renderer updates reuse the Go process; close and Forge
@@ -160,6 +162,9 @@ SIGTERM use owned backend shutdown. Full renderer reload preserves the existing
 candidate reload behavior, not additional cross-reload UI persistence.
 
 Generated bundles/maps live in desktop/.vite/; Forge packages in desktop/out/.
+`npm --prefix desktop run build:renderer` builds the production renderer for
+resource inspection; `npm --prefix desktop/tests run test:ui` includes the
+shared host-contract and HTTP prototype resource checks.
 Main/preload follow Forge's main.cjs/preload.cjs convention. Preload is a single
 sandbox bundle with Electron as the only external runtime require. Strict
 Bundler-resolution TS configs keep Node globals out of renderer and DOM out of

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { bindViewport } from '../renderer/scripts/core/viewport.js';
+import { bindViewport } from '../renderer/scripts/core/viewport.ts';
 import { readWindowWidth } from '../renderer/runtime/adapters/viewport.js';
 
 test('split panes use the complete logical window for dimensions and breakpoints', async () => {

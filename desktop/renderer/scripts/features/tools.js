@@ -1,9 +1,9 @@
-import { loadTemplate } from '../core/template-loader.js';
-import { templateRoot } from '../core/shell.js';
+import { loadTemplate } from '../core/template-loader.ts';
+import { resolveTemplateRoot } from '../core/shell.ts';
 
 let toolTemplate;
 export async function loadToolTemplate() {
-  const template = await loadTemplate(new URL('composites/tool-call.html', templateRoot));
+  const template = await loadTemplate(new URL('composites/tool-call.html', resolveTemplateRoot()));
   toolTemplate = template.firstElementChild.outerHTML;
 }
 

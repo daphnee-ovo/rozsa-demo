@@ -76,11 +76,11 @@ test('prototype coverage inventory stays bidirectional with scenes, events and d
 });
 
 test('prototype scenes retain shared layout, fixture and component ownership', () => {
-  const shell = read('prototype/scripts/core/shell.js');
+  const shell = read('prototype/scripts/core/shell.ts');
   assert.doesNotMatch(shell, /loadSceneStylesheet|prototypeSceneStylesheet|getSceneDefinition/);
   contains(shell, ['mountTemplateChildren(inputFragment']);
-  contains(ui('scripts/core/renderer.js'), ['export function mountTemplateChildren']);
-  const registry = read('prototype/scenarios/registry.js');
+  contains(ui('scripts/core/renderer.ts'), ['export function mountTemplateChildren']);
+  const registry = read('prototype/scenarios/registry.ts');
   const states = json('prototype/mock/tools/call-states.json');
   for (const scene of ['complete-session', 'ask-user-question', 'dev-flow-runtime']) {
     const start = registry.indexOf(`id: "${scene}"`); assert.ok(start >= 0, scene);
@@ -92,7 +92,7 @@ test('prototype scenes retain shared layout, fixture and component ownership', (
     ['dev-flow-runtime', ['queuedMessages', 'steeringConversation']]]) {
     panels.forEach(panel => assert.equal(typeof states.running[scene][panel], 'object'));
   }
-  contains(read('prototype/scripts/adapters/mock-adapter.js'), ['const sessions = runtime?.sessions || session?.sessions;']);
+  contains(read('prototype/scripts/adapters/mock-adapter.ts'), ['const sessions = runtime?.sessions || session?.sessions;']);
   contains(ui('templates/features/sidebar.html'), ['<aside id="sidebar" data-od-id="sidebar"']);
   contains(read('prototype/rozsa-gui.js'), ['document.body?.dataset.rozsaEntry === "application-shell"']);
   contains(read('prototype/scripts/components/interruption-panel.js'), ['desktop/renderer/scripts/components/interruption-panel.js']);
@@ -155,10 +155,20 @@ test('prototype stylesheet graph has explicit owners, order and external entry r
 
 test('root prototype remains complete with no retired entries', () => {
   for (const path of ['index.html', 'gallery/visual-direction.html', 'gallery/visual-direction.css', 'gallery/visual-direction.js',
-    'scenarios/registry.js', 'scripts/core/shell.js', 'scripts/adapters/mock-adapter.js', 'templates/features/sidebar.html',
+    'scenarios/registry.ts', 'scripts/core/renderer.ts', 'scripts/core/shell.ts', 'scripts/core/template-loader.ts',
+    'scripts/core/scene-loader.ts', 'scripts/adapters/mock-adapter.ts', 'templates/features/sidebar.html',
     'styles/main.css', 'styles/entries/main.css', 'mock/sessions/empty.json',
     ...['ARCHITECTURE', 'COMPONENTS', 'SCENARIOS', 'FLOWS', 'VALIDATION', 'MOCK_DATA', 'UI_COVERAGE', 'DESIGN_GAPS'].map(name => `docs/${name}.md`), 'docs/UI_COVERAGE.json']) {
     assert.ok(existsSync(resolve(root, 'prototype', path)), path);
+  }
+  for (const duplicate of ['scenarios/registry.js', 'scripts/core/renderer.js', 'scripts/core/shell.js',
+    'scripts/core/template-loader.js', 'scripts/core/scene-loader.js', 'scripts/adapters/mock-adapter.js']) {
+    assert.ok(!existsSync(resolve(root, 'prototype', duplicate)), `retired duplicate JavaScript source: ${duplicate}`);
+  }
+  for (const duplicate of ['scripts/core/ports.js', 'scripts/core/renderer.js', 'scripts/core/shell.js',
+    'scripts/core/template-loader.js', 'scripts/core/viewport.js', 'runtime/entries/main.js',
+    'runtime/entries/sidebar.js', 'runtime/adapters/tauri.js']) {
+    assert.ok(!existsSync(resolve(root, 'desktop/renderer', duplicate)), `retired duplicate JavaScript source: ${duplicate}`);
   }
   for (const retired of ['docs/gui/prototype', 'docs/gui/new-version', 'docs/gui/UI_COVERAGE.md', 'docs/gui/UI_COVERAGE.json',
     'docs/gui/DESIGN_GAPS.md', 'prototype/rozsa-gui.html', 'prototype/rozsa-visual-demo.html']) assert.ok(!existsSync(resolve(root, retired)), retired);

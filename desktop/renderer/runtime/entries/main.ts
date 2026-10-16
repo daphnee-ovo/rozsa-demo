@@ -1,7 +1,7 @@
-import { createUIHost } from "../../scripts/core/renderer.js";
-import { createTauriAdapter } from "../adapters/tauri.js";
+import { createUIHost } from "../../scripts/core/renderer.ts";
+import { createTauriAdapter } from "../adapters/tauri.ts";
 import { bindNativeViewport } from '../adapters/viewport.js';
-import { mountShell, templateRoot } from "../../scripts/core/shell.js";
+import { mountShell, resolveTemplateRoot } from "../../scripts/core/shell.ts";
 import { init as bindPopover } from "../../scripts/components/popover.js";
 import { init as bindComposer, renderSendState } from "../../scripts/components/composer.js";
 import { init as bindConversation, emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup } from "../../scripts/features/conversation.js";
@@ -20,45 +20,45 @@ import * as notifications from '../../scripts/features/notifications.js';
 import { bindToast, bindErrorTray } from '../../scripts/components/notification.js';
 import { subscribeNotifications, showRuntimeError } from '../adapters/notifications.js';
 import * as sidebar from '../../scripts/features/sidebar.js';
-import { loadTemplate } from '../../scripts/core/template-loader.js';
+import { loadTemplate } from '../../scripts/core/template-loader.ts';
 import * as devFlow from '../../scripts/features/dev-flow.js';
 import { devFlowSettingsView, devFlowDetailView } from '../adapters/sidebar-dev-flow.js';
 
 window.RozsaUIHost = createUIHost(createTauriAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
 window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(document.getElementById("mainContentScene"))]).then(() => mountShell([
-  { url: new URL("composites/popover.html", templateRoot), selector: "[data-template-mount=popover]", children: true },
-  { url: new URL("composites/interruption-panel.html", templateRoot), selector: "[data-template-mount=interruption-panel]", children: true },
-  { url: new URL("features/settings.html", templateRoot), selector: "[data-template-mount=settings]", children: true },
-  { url: new URL("composites/notification.html", templateRoot), selector: "[data-template-mount=notification]", children: true },
-  { url: new URL("features/dev-flow.html", templateRoot), selector: "[data-template-mount=dev-flow]", children: true },
+  { url: new URL("composites/popover.html", resolveTemplateRoot()), selector: "[data-template-mount=popover]", children: true },
+  { url: new URL("composites/interruption-panel.html", resolveTemplateRoot()), selector: "[data-template-mount=interruption-panel]", children: true },
+  { url: new URL("features/settings.html", resolveTemplateRoot()), selector: "[data-template-mount=settings]", children: true },
+  { url: new URL("composites/notification.html", resolveTemplateRoot()), selector: "[data-template-mount=notification]", children: true },
+  { url: new URL("features/dev-flow.html", resolveTemplateRoot()), selector: "[data-template-mount=dev-flow]", children: true },
 ])).then(async () => {
-  const sidebarTemplate = await loadTemplate(new URL('features/sidebar.html', templateRoot));
-  document.getElementById('fallbackSidebarTemplate').content.replaceChildren(sidebarTemplate);
+  const sidebarTemplate = await loadTemplate(new URL('features/sidebar.html', resolveTemplateRoot()));
+  document.querySelector<HTMLTemplateElement>('#fallbackSidebarTemplate')!.content.replaceChildren(sidebarTemplate);
   window.RozsaSidebar = Object.freeze({ ...sidebar });
   window.RozsaNotifications = Object.freeze({ ...notifications, bindToast, bindErrorTray, subscribeNotifications, showRuntimeError });
   window.RozsaSettings = Object.freeze({ ...settings, bindSettingSwitch });
   window.RozsaDevFlow = Object.freeze({ ...devFlow, devFlowSettingsView, devFlowDetailView });
-  devFlow.init({ boundModules: new Set(), byId: id => document.getElementById(id), closeDevFlowDetail });
+  devFlow.init({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), closeDevFlowDetail });
   settings.init({ ...createSettingsAdapter({ switchSettingsTab, closeSettings, selectThemeModeCard,
-    previewFontSize, commitFontSize }), boundModules: new Set(), byId: id => document.getElementById(id) });
+    previewFontSize, commitFontSize }), boundModules: new Set(), byId: (id: string) => document.getElementById(id) });
   await tools.loadToolTemplate();
   window.RozsaTools = Object.freeze({ ...tools, toolView, activityView });
-  bindTools({ boundModules: new Set(), byId: id => document.getElementById(id), toggleToolCall, toggleTurnDiff });
+  bindTools({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), toggleToolCall, toggleTurnDiff });
   window.RozsaPermissions = permissions;
   const interruption = {
     ...createInterruptionAdapter({ respondPermission, enterPermissionTrust, enterPermissionHint,
       togglePermissionCommand, showPermissionMainPage, submitPermissionHint, submitUserQuestion,
       normalizePermissionHint, handlePermissionHintKeydown }),
-    boundModules: new Set(), byId: id => document.getElementById(id),
+    boundModules: new Set(), byId: (id: string) => document.getElementById(id),
   };
   configureInterruptionSuspensions();
   bindInterruption(interruption);
   bindInterruptionFlow(interruption);
-  document.querySelector('[data-od-id="chat-input"]').prepend(document.getElementById("runtimeSubagentTemplate").content.cloneNode(true));
+  document.querySelector('[data-od-id="chat-input"]')!.prepend(document.querySelector<HTMLTemplateElement>('#runtimeSubagentTemplate')!.content.cloneNode(true));
   configureConversationSuspensions();
   window.RozsaConversation = Object.freeze({ emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup });
-  bindConversation({ boundModules: new Set(), byId: id => document.getElementById(id), toggleThinking, renderMessages: () => {} });
+  bindConversation({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), toggleThinking, renderMessages: () => {} });
   window.RozsaComposer = Object.freeze({ renderSendState });
   const flow = createConversationFlow(createConversationAdapter({
     attachFileReference, attachDirectoryReference, insertSlashCommandPrefix, showModelPicker,
@@ -66,12 +66,12 @@ window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(docum
     submit: () => isStreaming ? abortAgent() : sendMessage(),
   }));
   bindComposer({
-    ...flow, boundModules: new Set(), byId: id => document.getElementById(id),
+    ...flow, boundModules: new Set(), byId: (id: string) => document.getElementById(id),
     handleInput, handleCompositionStart, handleCompositionUpdate, handleCompositionEnd,
   });
   window.RozsaPopover = bindPopover({
     boundModules: new Set(),
-    byId: id => document.getElementById(id),
+    byId: (id: string) => document.getElementById(id),
     beforeOpen: () => { dismissTransientPopups(); renderThinkingEffortPicker(); },
     previewThinkingEffort,
     selectThinkingEffort,

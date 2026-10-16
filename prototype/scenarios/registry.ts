@@ -1,4 +1,10 @@
-const sceneDefinitions = {
+export interface SceneDefinition {
+  id: string; layout: string; components: string[];
+  initialState: { settings: string; interruption: string; thinkingEffort?: number };
+  mocks: Record<string, string>; actions: string[];
+}
+export interface GalleryDefinition { id: string; entry: string; stylesheet: string; behavior: string; verification: string[] }
+const sceneDefinitions: Record<string, SceneDefinition> = {
   "empty-session": {
     id: "empty-session",
     layout: "application-shell",
@@ -89,7 +95,7 @@ const sceneDefinitions = {
   }
 };
 
-const galleryDefinitions = {
+const galleryDefinitions: Record<string, GalleryDefinition> = {
   "visual-direction": {
     id: "visual-direction",
     entry: "gallery/visual-direction.html",
@@ -107,7 +113,7 @@ export const galleryRegistry = Object.freeze(
   Object.fromEntries(Object.entries(galleryDefinitions).map(([id, definition]) => [id, Object.freeze(definition)]))
 );
 
-export function resolveSceneId(value) {
+export function resolveSceneId(value: unknown) {
   const id = String(value || "empty-session");
   if (!Object.hasOwn(sceneRegistry, id)) {
     throw new Error(`Unknown prototype scene: ${id}`);
@@ -115,11 +121,11 @@ export function resolveSceneId(value) {
   return id;
 }
 
-export function getSceneDefinition(value) {
+export function getSceneDefinition(value: unknown) {
   return sceneRegistry[resolveSceneId(value)];
 }
 
-export function resolveGalleryId(value) {
+export function resolveGalleryId(value: unknown) {
   const id = String(value || "");
   if (!Object.hasOwn(galleryRegistry, id)) {
     throw new Error(`Unknown prototype gallery: ${id || "(empty)"}`);
@@ -127,6 +133,6 @@ export function resolveGalleryId(value) {
   return id;
 }
 
-export function getGalleryDefinition(value) {
+export function getGalleryDefinition(value: unknown) {
   return galleryRegistry[resolveGalleryId(value)];
 }

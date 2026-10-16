@@ -1,6 +1,6 @@
 # Mock 数据
 
-原型 mock 位于 `prototype/mock/`，只供 `scripts/adapters/mock-adapter.js` 读取。runtime、Rust、Tauri 配置和应用包不得 import、fetch 或 fallback 到这些文件。
+原型 mock 位于 `prototype/mock/`，只供 `scripts/adapters/mock-adapter.ts` 读取。runtime、Rust、Tauri 配置和应用包不得 import、fetch 或 fallback 到这些文件。
 
 | 目录/文件 | 含义 | 使用场景 |
 | --- | --- | --- |
