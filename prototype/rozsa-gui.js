@@ -50,7 +50,7 @@
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
     if (!api) throw new Error("Prototype behavior API is unavailable");
-    const { createConversationFlow } = await import(new URL("../desktop/renderer/scripts/flows/conversation.js", legacyScriptUrl));
+    const { createConversationFlow } = await import(new URL("../desktop/renderer/scripts/flows/conversation.ts", legacyScriptUrl));
     const { createMockConversationAdapter } = await import(new URL("./scripts/adapters/mock-adapter.ts", legacyScriptUrl));
     Object.assign(api, createConversationFlow(createMockConversationAdapter(api)));
     const flowEntry = document.body?.dataset.rozsaFlowEntry;
@@ -823,7 +823,7 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     const bootstrap = async () => {
-      sharedConversation = await import(new URL("../desktop/renderer/scripts/features/conversation.js", legacyScriptUrl));
+      sharedConversation = await import(new URL("../desktop/renderer/scripts/features/conversation.ts", legacyScriptUrl));
       sharedTools = await import(new URL("../desktop/renderer/scripts/features/tools.js", legacyScriptUrl));
       sharedPermissions = await import(new URL("../desktop/renderer/scripts/features/permissions.js", legacyScriptUrl));
       sharedNotifications = await import(new URL("../desktop/renderer/scripts/features/notifications.js", legacyScriptUrl));

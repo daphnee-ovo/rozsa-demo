@@ -1,1 +1,1 @@
-export { init } from "../../../desktop/renderer/scripts/features/conversation.js";
+export { init } from "../../../desktop/renderer/scripts/features/conversation.ts";

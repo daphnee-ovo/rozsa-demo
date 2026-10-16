@@ -186,11 +186,13 @@ macOS 的验收参照原生效果；Linux/Windows 按各自既有产品行为验
 | 会话读取切片 T001–T003 | 列表→JSONL只读恢复→会话切换历史链路 | 逐项读取相关旧源码/测试，随即实现并针对性验证；未实现消息细节仍由 T029/T045 负责 |
 | 构建/通信增量 T009–T014 | 当前候选 watch、类型化错误/取消、事件同步、生命周期、T013 共享 TS 装载、安装包资源 | 已有切片能运行后按需要完善；完整 schema、通用 feature-host、综合依赖 spike 都不是开工条件 |
 | 共享 UI 前置迁入 T060 | 把共享源码和前端测试放入 `desktop/renderer/` 与 `desktop/tests/`，使 prototype 与 Electron 共用前端资源 | 在 T013 和后续 UI 切片之前完成；不等待最终完整验收 |
-| 产品模块与界面切片 | settings/registry/JSONL写入/providers/OAuth/tools/权限/问题/运行会话/subagent/Dev Flow/CLI，以及对应 TS UI | 只等待真实代码依赖；缺口设计 T004–T008 在对应界面迁移时审阅并批准。当前 UI 切片立即接 Go，不推迟到最后统一接线 |
+| 产品模块与界面切片 | settings/registry/JSONL写入/providers/OAuth/tools/权限/问题/运行会话/subagent/Dev Flow/CLI，以及对应 TS UI | 只等待真实代码依赖；缺口设计 T004–T008 在对应界面迁移时审阅并批准。前后端仅在文件与接口无冲突时并行；共享入口、协议、CSS、原型接线与路线图指定单一 owner，并串行交接 |
 | 最终完整验收 T053–T059 | 汇接复核、整链路故障/重启、真实授权、三平台安装与 GUI、完整功能核对和收益报告 | 汇总切片证据，按全部旧源码入口和设计缺口找遗漏；真实未验证项保持未完成；性能测量在候选就绪后做 |
 | 完整验收后的入口切换 T061–T062 | 默认入口切换、Rust/Tauri生产依赖退役与最终文档 | T061 同时依赖 T059 完整功能验收和 T060 共享 UI 前置迁入；旧生产链保持独立可用到完整验收与批准切换 |
 
-分组是索引，不是额外阶段 gate。每次只执行一个已声明范围的任务，完成后再接下一项；全部任务 `parallel=false`。共享 manifest/lock、transport/bridge/入口、CSS、原型接线与 TASK_ROADMAP 只由当前任务写入；涉及新增文件先用 dow 更新 scope，不把无关依赖串成全局前置链。
+分组是索引，不是额外阶段 gate。无文件冲突且不争用共享接口的前后端任务可以并行；同一任务仍按其声明范围执行。共享 manifest/lock、transport/bridge/入口、CSS、原型接线与 TASK_ROADMAP 每次只由一个明确 owner 写入，完成后串行交接；涉及新增文件先用 dow 更新 scope，不把无关依赖串成全局前置链。
+
+TASK-T079 从 TASK-T029 拆出既有消息/Markdown 组件与 conversation flow 的 TypeScript 转换及入口装载验证，只保持现有布局、交互与行为，不补设计缺口，也不验证完整消息状态或真实 Electron→Go 产品接线。TASK-T029 继续负责完整内容状态、失败/取消/恢复及真实 Electron→Go 接线，并依赖 T079；T079 完成不代表 T029 完成。Go 会话管理 T017 与 UI T079/T029 可在无文件冲突时并行，TASK_ROADMAP 由已声明 owner 串行更新。
 
 TASK_ROADMAP 的功能覆盖随实现维护；未做功能保持待实现。最终 T055 核对全部 feature/gap/contract 与 owner，T059 确认 Must 和真实验收完成。发现遗漏或需求冲突时明确责任任务；全覆盖是最终交付要求，不是开工门槛。
 

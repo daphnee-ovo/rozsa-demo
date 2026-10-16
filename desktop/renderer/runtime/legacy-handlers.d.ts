@@ -15,7 +15,7 @@ declare global {
     RozsaDevFlow: typeof import('../scripts/features/dev-flow.js') & typeof import('./adapters/sidebar-dev-flow.js');
     RozsaTools: typeof import('../scripts/features/tools.js') & typeof import('./adapters/tools.js');
     RozsaPermissions: typeof import('../scripts/features/permissions.js');
-    RozsaConversation: Pick<typeof import('../scripts/features/conversation.js'), 'emptyConversationMarkup' | 'messageFrame' | 'createMessageFrame' | 'runningPanelMarkup' | 'thinkingMarkup'>;
+    RozsaConversation: Pick<typeof import('../scripts/features/conversation.ts'), 'emptyConversationMarkup' | 'messageFrame' | 'createMessageFrame' | 'runningPanelMarkup' | 'thinkingMarkup'>;
     RozsaComposer: Pick<typeof import('../scripts/components/composer.js'), 'renderSendState'>;
     RozsaPopover: ReturnType<typeof import('../scripts/components/popover.js')['init']>;
     RozsaSidebarFeedback: ReturnType<typeof import('./adapters/notifications.js')['createSidebarFeedback']>;

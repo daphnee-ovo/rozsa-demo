@@ -6,7 +6,7 @@ test('consecutive assistant messages omit repeated identity', async () => {
   const app = loadApp({ html: '<div id="chatMessages"></div>' });
   try {
     await withDOM(app.dom, async () => {
-      const conversation = await import(new URL('scripts/features/conversation.js', frontendRoot));
+      const conversation = await import(new URL('scripts/features/conversation.ts', frontendRoot));
       app.window.RozsaConversation = conversation;
       app.window.RozsaTools = { messageTextMarkup: text => String(text) };
       app.window.__messages = [

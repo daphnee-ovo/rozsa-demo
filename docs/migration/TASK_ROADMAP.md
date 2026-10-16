@@ -252,7 +252,8 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 
 | 任务 | 具体产出 | 前置任务 |
 | --- | --- | --- |
-| TASK-T029 | 转换消息/Markdown TS 真源并恢复全部内容状态 | TASK-T004、TASK-T013、TASK-T003、TASK-T020 |
+| TASK-T029 | 转换消息/Markdown TS 真源并恢复全部内容状态 | TASK-T004、TASK-T013、TASK-T003、TASK-T020、TASK-T079 |
+| TASK-T079 | 转换现有会话消息组件与 flow 为 TypeScript | TASK-T013 |
 | TASK-T036 | 转换 settings/appearance TS 与恢复 General | TASK-T007、TASK-T013、TASK-T015、TASK-T016、TASK-T024、TASK-T030 |
 | TASK-T039 | 恢复权限/Hint/trust 与多问题多选 TS 交互 | TASK-T006、TASK-T013、TASK-T012、TASK-T035、TASK-T027 |
 | TASK-T042 | 转换 Composer/autocomplete/model picker TS 与输入行为 | TASK-T005、TASK-T013、TASK-T012、TASK-T016、TASK-T038 |
@@ -303,7 +304,7 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 | F10 | 后台会话、queue/steering/fork/subagent | TASK-T037、TASK-T040、TASK-T049 | 待实现 |
 | F11 | 分层设置、主题、快捷键、capability/skills/resources/extensions | TASK-T015、TASK-T030、TASK-T031、TASK-T036、TASK-T038、TASK-T043、TASK-T047、TASK-T050 | 待实现 |
 | F12 | Dev Flow discovery/dashboard/REST/SSE/重连/回收 | TASK-T041、TASK-T048 | 待实现 |
-| F13 | 消息/Markdown/tools/notification与异常 | TASK-T003、TASK-T029、TASK-T045、TASK-T051 | T003 仅文本历史与读取错误/重试，见 M003；完整内容/运行状态仍待实现 |
+| F13 | 消息/Markdown/tools/notification与异常 | TASK-T003、TASK-T029、TASK-T045、TASK-T051、TASK-T079 | T003 仅文本历史与读取错误/重试，见 M003；T079 仅转换既有消息/Markdown组件与 flow 并验证装载；完整内容状态与真实产品接线仍由 T029/T045 实现和验收 |
 | F14 | Composer/autocomplete/model/file refs/picker/drop/IME | TASK-T042、TASK-T046、TASK-T049 | 待实现 |
 | F15 | 单窗口材质/split/scene/root与焦点草稿滚动 | TASK-T003、TASK-T012、TASK-T052、TASK-T056、TASK-T057、TASK-T058 | T003 只读历史滚动/Thinking 展开按 session 保存，见 M003；其余 shell/Composer 状态待实现 |
 | F16 | 全部CLI参数/text/json/continue/resume/slash/session | TASK-T020、TASK-T044 | 待实现 |
@@ -350,7 +351,7 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 | SPEC-AC-012 | TASK-T053、TASK-T054、TASK-T055、TASK-T056、TASK-T057、TASK-T058、TASK-T059、TASK-T062 |
 | SPEC-AC-013 | TASK-T009、TASK-T014、TASK-T044、TASK-T056、TASK-T057、TASK-T058、TASK-T060、TASK-T061、TASK-T062 |
 | SPEC-AC-014 | TASK-T059、TASK-T062 |
-| SPEC-AC-015 | TASK-T001、TASK-T009、TASK-T010、TASK-T012、TASK-T013、TASK-T029、TASK-T036、TASK-T039、TASK-T042、TASK-T043、TASK-T045、TASK-T046、TASK-T047、TASK-T048、TASK-T049、TASK-T050、TASK-T051、TASK-T052、TASK-T053、TASK-T060、TASK-T061、TASK-T062 |
+| SPEC-AC-015 | TASK-T001、TASK-T009、TASK-T010、TASK-T012、TASK-T013、TASK-T029、TASK-T036、TASK-T039、TASK-T042、TASK-T043、TASK-T045、TASK-T046、TASK-T047、TASK-T048、TASK-T049、TASK-T050、TASK-T051、TASK-T052、TASK-T053、TASK-T060、TASK-T061、TASK-T062、TASK-T079 |
 
 ## 审查与验证边界
 
