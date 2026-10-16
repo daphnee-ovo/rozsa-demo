@@ -70,16 +70,16 @@ type RateLimitWindow struct {
 	ResetAt            int64   `json:"resetAt"`
 }
 
-func (m Model) SupportsThinking(e ThinkingEffort) bool {
-	if e == ThinkingOff {
+func (model Model) SupportsThinking(effort ThinkingEffort) bool {
+	if effort == ThinkingOff {
 		return true
 	}
-	if !m.Reasoning {
+	if !model.Reasoning {
 		return false
 	}
-	if m.ThinkingEffortMap == nil {
+	if model.ThinkingEffortMap == nil {
 		return true
 	}
-	value, exists := m.ThinkingEffortMap[e]
+	value, exists := model.ThinkingEffortMap[effort]
 	return exists && value != nil
 }

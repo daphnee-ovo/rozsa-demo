@@ -32,13 +32,13 @@ type ConfigError struct {
 	Err  error
 }
 
-func (e *ConfigError) Error() string {
-	if e.Path == "" {
-		return "model registry: " + e.Err.Error()
+func (configError *ConfigError) Error() string {
+	if configError.Path == "" {
+		return "model registry: " + configError.Err.Error()
 	}
-	return fmt.Sprintf("model registry at %s: %v", e.Path, e.Err)
+	return fmt.Sprintf("model registry at %s: %v", configError.Path, configError.Err)
 }
-func (e *ConfigError) Unwrap() error { return e.Err }
+func (configError *ConfigError) Unwrap() error { return configError.Err }
 
 type Registry struct {
 	models     []modeltypes.Model
@@ -54,54 +54,56 @@ func FromGeneratedJSON(data []byte) (*Registry, error) {
 	if err := json.Unmarshal(data, &providers); err != nil {
 		return nil, &ConfigError{Err: fmt.Errorf("parse generated models: %w", err)}
 	}
-	r := Empty()
+	registry := Empty()
 	for provider, models := range providers {
-		for id, m := range models {
-			if m.ID == "" {
-				m.ID = id
+		for id, model := range models {
+			if model.ID == "" {
+				model.ID = id
 			}
-			if m.Provider == "" {
-				m.Provider = provider
+			if model.Provider == "" {
+				model.Provider = provider
 			}
-			r.models = append(r.models, m)
+			registry.models = append(registry.models, model)
 		}
 	}
-	return r, nil
+	return registry, nil
 }
-func (r *Registry) All() []modeltypes.Model {
-	out := make([]modeltypes.Model, len(r.models))
-	copy(out, r.models)
-	return out
+func (registry *Registry) All() []modeltypes.Model {
+	models := make([]modeltypes.Model, len(registry.models))
+	copy(models, registry.models)
+	return models
 }
-func (r *Registry) Find(provider, id string) (modeltypes.Model, bool) {
-	for _, m := range r.models {
-		if m.Provider == provider && m.ID == id {
-			return m, true
+func (registry *Registry) Find(provider, id string) (modeltypes.Model, bool) {
+	for _, model := range registry.models {
+		if model.Provider == provider && model.ID == id {
+			return model, true
 		}
 	}
 	return modeltypes.Model{}, false
 }
-func (r *Registry) IsConfigured(provider, id string) bool { return r.configured[key(provider, id)] }
-func (r *Registry) Source(provider, id string) (string, bool) {
-	v, ok := r.sources[key(provider, id)]
-	return v, ok
+func (registry *Registry) IsConfigured(provider, id string) bool {
+	return registry.configured[key(provider, id)]
+}
+func (registry *Registry) Source(provider, id string) (string, bool) {
+	source, exists := registry.sources[key(provider, id)]
+	return source, exists
 }
 func key(provider, id string) string { return provider + "\x00" + id }
 
 // Load reads user scope first and project scope second; project entries win.
 func Load(generated []byte, dirs ...string) (*Registry, []Diagnostic, error) {
-	r, err := FromGeneratedJSON(generated)
+	registry, err := FromGeneratedJSON(generated)
 	if err != nil {
 		return nil, nil, err
 	}
-	ds := []Diagnostic{}
+	diagnostics := []Diagnostic{}
 	for _, dir := range dirs {
-		entries, e := os.ReadDir(dir)
-		if errors.Is(e, fs.ErrNotExist) {
+		entries, err := os.ReadDir(dir)
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		if e != nil {
-			ds = append(ds, Diagnostic{Path: dir, Severity: "error", Message: e.Error(), Hint: "Check that the model configuration directory can be read."})
+		if err != nil {
+			diagnostics = append(diagnostics, Diagnostic{Path: dir, Severity: "error", Message: err.Error(), Hint: "Check that the model configuration directory can be read."})
 			continue
 		}
 		for _, entry := range entries {
@@ -109,29 +111,29 @@ func Load(generated []byte, dirs ...string) (*Registry, []Diagnostic, error) {
 				continue
 			}
 			path := filepath.Join(dir, entry.Name())
-			data, e := os.ReadFile(path)
-			if e == nil {
-				e = r.apply(path, data)
+			data, err := os.ReadFile(path)
+			if err == nil {
+				err = registry.apply(path, data)
 			}
-			if e != nil {
-				ds = append(ds, Diagnostic{Path: path, Severity: "error", Message: e.Error(), Hint: "Fix the JSON/schema error. Other valid model configurations remain available."})
+			if err != nil {
+				diagnostics = append(diagnostics, Diagnostic{Path: path, Severity: "error", Message: err.Error(), Hint: "Fix the JSON/schema error. Other valid model configurations remain available."})
 			}
 		}
 	}
-	sort.SliceStable(r.models, func(i, j int) bool {
-		return r.models[i].Provider+"/"+r.models[i].ID < r.models[j].Provider+"/"+r.models[j].ID
+	sort.SliceStable(registry.models, func(i, j int) bool {
+		return registry.models[i].Provider+"/"+registry.models[i].ID < registry.models[j].Provider+"/"+registry.models[j].ID
 	})
-	return r, ds, nil
+	return registry, diagnostics, nil
 }
 
 // Refresh is transactional: a failed load leaves this registry unchanged.
-func (r *Registry) Refresh(generated []byte, dirs ...string) ([]Diagnostic, error) {
-	next, ds, err := Load(generated, dirs...)
+func (registry *Registry) Refresh(generated []byte, dirs ...string) ([]Diagnostic, error) {
+	next, diagnostics, err := Load(generated, dirs...)
 	if err != nil {
 		return nil, err
 	}
-	*r = *next
-	return ds, nil
+	*registry = *next
+	return diagnostics, nil
 }
 
 type config struct {
@@ -176,200 +178,200 @@ type modelOverride struct {
 	Compat        json.RawMessage    `json:"compat"`
 }
 
-func (r *Registry) apply(path string, data []byte) error {
-	var c config
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
+func (registry *Registry) apply(path string, data []byte) error {
+	var parsedConfig config
+	jsonDecoder := json.NewDecoder(bytes.NewReader(data))
+	jsonDecoder.DisallowUnknownFields()
+	if err := jsonDecoder.Decode(&parsedConfig); err != nil {
 		return &ConfigError{Path: path, Err: fmt.Errorf("parse models.json: %w", err)}
 	}
-	for provider, p := range c.Providers {
-		for i := range r.models {
-			m := &r.models[i]
-			if m.Provider != provider {
+	for provider, providerConfig := range parsedConfig.Providers {
+		for i := range registry.models {
+			model := &registry.models[i]
+			if model.Provider != provider {
 				continue
 			}
-			if p.BaseURL != nil {
-				m.BaseURL = *p.BaseURL
+			if providerConfig.BaseURL != nil {
+				model.BaseURL = *providerConfig.BaseURL
 			}
-			if len(p.Headers) > 0 {
-				if m.Headers == nil {
-					m.Headers = map[string]string{}
+			if len(providerConfig.Headers) > 0 {
+				if model.Headers == nil {
+					model.Headers = map[string]string{}
 				}
-				for k, v := range p.Headers {
-					m.Headers[k] = v
+				for headerName, headerValue := range providerConfig.Headers {
+					model.Headers[headerName] = headerValue
 				}
 			}
-			if len(p.Compat) > 0 && string(p.Compat) != "null" {
-				m.Compat = mergeJSON(m.Compat, p.Compat)
+			if len(providerConfig.Compat) > 0 && string(providerConfig.Compat) != "null" {
+				model.Compat = mergeJSON(model.Compat, providerConfig.Compat)
 			}
 		}
-		for _, d := range p.Models {
-			if d.ID == "" {
+		for _, definition := range providerConfig.Models {
+			if definition.ID == "" {
 				return &ConfigError{Path: path, Err: errors.New("model id is required")}
 			}
-			old, ok := r.Find(provider, d.ID)
-			api, base := "", ""
-			if ok {
-				api, base = string(old.API), old.BaseURL
+			oldModel, found := registry.Find(provider, definition.ID)
+			apiName, baseURL := "", ""
+			if found {
+				apiName, baseURL = string(oldModel.API), oldModel.BaseURL
 			}
-			if p.API != nil {
-				api = *p.API
+			if providerConfig.API != nil {
+				apiName = *providerConfig.API
 			}
-			if d.API != nil {
-				api = *d.API
+			if definition.API != nil {
+				apiName = *definition.API
 			}
-			if p.BaseURL != nil {
-				base = *p.BaseURL
+			if providerConfig.BaseURL != nil {
+				baseURL = *providerConfig.BaseURL
 			}
-			if d.BaseURL != nil {
-				base = *d.BaseURL
+			if definition.BaseURL != nil {
+				baseURL = *definition.BaseURL
 			}
-			if api == "" || base == "" {
-				return &ConfigError{Path: path, Err: fmt.Errorf("provider %s model %s requires api and baseUrl", provider, d.ID)}
+			if apiName == "" || baseURL == "" {
+				return &ConfigError{Path: path, Err: fmt.Errorf("provider %s model %s requires api and baseUrl", provider, definition.ID)}
 			}
-			m := modeltypes.Model{ID: d.ID, Name: d.ID, API: modeltypes.API(api), Provider: provider, BaseURL: base, Input: []string{"text"}, ContextWindow: defaultContextWindow, MaxTokens: defaultMaxTokens}
-			if d.Name != nil {
-				m.Name = *d.Name
+			model := modeltypes.Model{ID: definition.ID, Name: definition.ID, API: modeltypes.API(apiName), Provider: provider, BaseURL: baseURL, Input: []string{"text"}, ContextWindow: defaultContextWindow, MaxTokens: defaultMaxTokens}
+			if definition.Name != nil {
+				model.Name = *definition.Name
 			}
-			if d.Reasoning != nil {
-				m.Reasoning = *d.Reasoning
+			if definition.Reasoning != nil {
+				model.Reasoning = *definition.Reasoning
 			}
-			if d.Input != nil {
-				m.Input = d.Input
+			if definition.Input != nil {
+				model.Input = definition.Input
 			}
-			if d.Cost != nil {
-				m.Cost = *d.Cost
+			if definition.Cost != nil {
+				model.Cost = *definition.Cost
 			}
-			if d.ContextWindow != nil {
-				m.ContextWindow = *d.ContextWindow
+			if definition.ContextWindow != nil {
+				model.ContextWindow = *definition.ContextWindow
 			}
-			if d.ContextModes != nil {
-				m.ContextModes = d.ContextModes
+			if definition.ContextModes != nil {
+				model.ContextModes = definition.ContextModes
 			}
-			if d.MaxTokens != nil {
-				m.MaxTokens = *d.MaxTokens
+			if definition.MaxTokens != nil {
+				model.MaxTokens = *definition.MaxTokens
 			}
-			m.Headers = cloneMap(d.Headers)
-			if m.Headers == nil {
-				m.Headers = cloneMap(p.Headers)
+			model.Headers = cloneMap(definition.Headers)
+			if model.Headers == nil {
+				model.Headers = cloneMap(providerConfig.Headers)
 			}
-			m.Compat = rawOr(d.Compat, p.Compat)
-			if err := setThinking(&m, d.Thinking, d.LegacyThinking); err != nil {
+			model.Compat = rawOr(definition.Compat, providerConfig.Compat)
+			if err := setThinking(&model, definition.Thinking, definition.LegacyThinking); err != nil {
 				return &ConfigError{Path: path, Err: err}
 			}
-			r.put(m)
-			r.configured[key(provider, d.ID)] = true
-			r.sources[key(provider, d.ID)] = path
+			registry.put(model)
+			registry.configured[key(provider, definition.ID)] = true
+			registry.sources[key(provider, definition.ID)] = path
 		}
-		for id, o := range p.Overrides {
-			m, ok := r.Find(provider, id)
-			if !ok {
+		for id, override := range providerConfig.Overrides {
+			model, found := registry.Find(provider, id)
+			if !found {
 				continue
 			}
-			if o.Name != nil {
-				m.Name = *o.Name
+			if override.Name != nil {
+				model.Name = *override.Name
 			}
-			if o.Reasoning != nil {
-				m.Reasoning = *o.Reasoning
+			if override.Reasoning != nil {
+				model.Reasoning = *override.Reasoning
 			}
-			if o.Input != nil {
-				m.Input = o.Input
+			if override.Input != nil {
+				model.Input = override.Input
 			}
-			if o.ContextWindow != nil {
-				m.ContextWindow = *o.ContextWindow
+			if override.ContextWindow != nil {
+				model.ContextWindow = *override.ContextWindow
 			}
-			if o.ContextModes != nil {
-				m.ContextModes = o.ContextModes
+			if override.ContextModes != nil {
+				model.ContextModes = override.ContextModes
 			}
-			if o.MaxTokens != nil {
-				m.MaxTokens = *o.MaxTokens
+			if override.MaxTokens != nil {
+				model.MaxTokens = *override.MaxTokens
 			}
-			if o.Headers != nil {
-				m.Headers = cloneMap(o.Headers)
+			if override.Headers != nil {
+				model.Headers = cloneMap(override.Headers)
 			}
-			for k, v := range o.Cost {
-				switch k {
+			for costField, costValue := range override.Cost {
+				switch costField {
 				case "input":
-					m.Cost.Input = v
+					model.Cost.Input = costValue
 				case "output":
-					m.Cost.Output = v
+					model.Cost.Output = costValue
 				case "cacheRead":
-					m.Cost.CacheRead = v
+					model.Cost.CacheRead = costValue
 				case "cacheWrite":
-					m.Cost.CacheWrite = v
+					model.Cost.CacheWrite = costValue
 				default:
-					return &ConfigError{Path: path, Err: fmt.Errorf("unknown cost field %q", k)}
+					return &ConfigError{Path: path, Err: fmt.Errorf("unknown cost field %q", costField)}
 				}
 			}
-			if err := setThinking(&m, o.Thinking, nil); err != nil {
+			if err := setThinking(&model, override.Thinking, nil); err != nil {
 				return &ConfigError{Path: path, Err: err}
 			}
-			if len(o.Compat) > 0 {
-				m.Compat = mergeJSON(m.Compat, o.Compat)
+			if len(override.Compat) > 0 {
+				model.Compat = mergeJSON(model.Compat, override.Compat)
 			}
-			r.put(m)
-			r.configured[key(provider, id)] = true
-			r.sources[key(provider, id)] = path
+			registry.put(model)
+			registry.configured[key(provider, id)] = true
+			registry.sources[key(provider, id)] = path
 		}
 	}
 	return nil
 }
-func (r *Registry) put(m modeltypes.Model) {
-	for i := range r.models {
-		if r.models[i].Provider == m.Provider && r.models[i].ID == m.ID {
-			r.models[i] = m
+func (registry *Registry) put(model modeltypes.Model) {
+	for i := range registry.models {
+		if registry.models[i].Provider == model.Provider && registry.models[i].ID == model.ID {
+			registry.models[i] = model
 			return
 		}
 	}
-	r.models = append(r.models, m)
+	registry.models = append(registry.models, model)
 }
-func setThinking(m *modeltypes.Model, current, legacy json.RawMessage) error {
-	v := current
-	if len(v) == 0 {
-		v = legacy
+func setThinking(model *modeltypes.Model, current, legacy json.RawMessage) error {
+	thinkingMap := current
+	if len(thinkingMap) == 0 {
+		thinkingMap = legacy
 	}
-	if len(v) == 0 {
+	if len(thinkingMap) == 0 {
 		return nil
 	}
-	if string(v) == "null" {
-		m.ThinkingEffortMap = nil
+	if string(thinkingMap) == "null" {
+		model.ThinkingEffortMap = nil
 		return nil
 	}
 	var values map[modeltypes.ThinkingEffort]*string
-	if err := json.Unmarshal(v, &values); err != nil {
+	if err := json.Unmarshal(thinkingMap, &values); err != nil {
 		return fmt.Errorf("invalid thinkingEffortMap: %w", err)
 	}
-	m.ThinkingEffortMap = values
+	model.ThinkingEffortMap = values
 	return nil
 }
-func rawOr(a, b json.RawMessage) json.RawMessage {
-	if len(a) > 0 {
-		return a
+func rawOr(modelValue, providerValue json.RawMessage) json.RawMessage {
+	if len(modelValue) > 0 {
+		return modelValue
 	}
-	return b
+	return providerValue
 }
-func mergeJSON(a, b json.RawMessage) json.RawMessage {
-	if len(a) == 0 || string(a) == "null" {
-		return append(json.RawMessage(nil), b...)
+func mergeJSON(baseJSON, overrideJSON json.RawMessage) json.RawMessage {
+	if len(baseJSON) == 0 || string(baseJSON) == "null" {
+		return append(json.RawMessage(nil), overrideJSON...)
 	}
-	var x, y map[string]json.RawMessage
-	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
-		return append(json.RawMessage(nil), b...)
+	var baseProperties, overrideProperties map[string]json.RawMessage
+	if json.Unmarshal(baseJSON, &baseProperties) != nil || json.Unmarshal(overrideJSON, &overrideProperties) != nil {
+		return append(json.RawMessage(nil), overrideJSON...)
 	}
-	for k, v := range y {
-		x[k] = v
+	for propertyName, propertyValue := range overrideProperties {
+		baseProperties[propertyName] = propertyValue
 	}
-	out, _ := json.Marshal(x)
-	return out
+	mergedJSON, _ := json.Marshal(baseProperties)
+	return mergedJSON
 }
-func cloneMap(in map[string]string) map[string]string {
-	if in == nil {
+func cloneMap(sourceHeaders map[string]string) map[string]string {
+	if sourceHeaders == nil {
 		return nil
 	}
-	out := map[string]string{}
-	for k, v := range in {
-		out[k] = v
+	clonedHeaders := map[string]string{}
+	for headerName, headerValue := range sourceHeaders {
+		clonedHeaders[headerName] = headerValue
 	}
-	return out
+	return clonedHeaders
 }

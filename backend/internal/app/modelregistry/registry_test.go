@@ -18,69 +18,70 @@ func TestLoadProjectOverridesAndModelConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "project.json"), []byte(`{"providers":{"openai":{"baseUrl":"https://project.example/v1","headers":{"X-Project":"yes"},"modelOverrides":{"gpt":{"thinkingEffortMap":{"low":"light","high":null},"maxTokens":2048}}}}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	r, ds, err := Load([]byte(generated), global, project)
+	registry, diagnostics, err := Load([]byte(generated), global, project)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 0 {
-		t.Fatalf("unexpected diagnostics: %#v", ds)
+	if len(diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %#v", diagnostics)
 	}
-	m, ok := r.Find("openai", "gpt")
-	if !ok {
+	model, found := registry.Find("openai", "gpt")
+	if !found {
 		t.Fatal("model missing")
 	}
-	if m.BaseURL != "https://project.example/v1" || m.ContextWindow != 64000 || m.MaxTokens != 2048 || m.Cost.Input != 3 {
-		t.Fatalf("unexpected merged model: %#v", m)
+	if model.BaseURL != "https://project.example/v1" || model.ContextWindow != 64000 || model.MaxTokens != 2048 || model.Cost.Input != 3 {
+		t.Fatalf("unexpected merged model: %#v", model)
 	}
-	if m.Headers["X-Global"] != "yes" || m.Headers["X-Project"] != "yes" {
-		t.Fatalf("headers were not merged: %#v", m.Headers)
+	if model.Headers["X-Global"] != "yes" || model.Headers["X-Project"] != "yes" {
+		t.Fatalf("headers were not merged: %#v", model.Headers)
 	}
-	if m.SupportsThinking(modeltypes.ThinkingHigh) || !m.SupportsThinking(modeltypes.ThinkingLow) {
+	if model.SupportsThinking(modeltypes.ThinkingHigh) || !model.SupportsThinking(modeltypes.ThinkingLow) {
 		t.Fatal("thinking null and configured values were not preserved")
 	}
 }
 
 func TestEmptyAndRefreshFailure(t *testing.T) {
-	r := Empty()
-	if len(r.All()) != 0 {
+	registry := Empty()
+	if len(registry.All()) != 0 {
 		t.Fatal("empty registry contains models")
 	}
-	r, _, err := Load([]byte(generated))
+	loadedRegistry, _, err := Load([]byte(generated))
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := r.All()
-	_, err = r.Refresh([]byte("{"))
+	registry = loadedRegistry
+	beforeRefresh := registry.All()
+	_, err = registry.Refresh([]byte("{"))
 	if err == nil {
 		t.Fatal("expected refresh parse error")
 	}
-	after := r.All()
-	if len(after) != len(before) || after[0].ID != before[0].ID {
-		t.Fatalf("failed refresh changed registry: %#v", after)
+	afterRefresh := registry.All()
+	if len(afterRefresh) != len(beforeRefresh) || afterRefresh[0].ID != beforeRefresh[0].ID {
+		t.Fatalf("failed refresh changed registry: %#v", afterRefresh)
 	}
 }
 
 func TestCustomProviderURLHeadersAndDiagnostics(t *testing.T) {
 	dir := t.TempDir()
-	data := `{"providers":{"custom":{"api":"openai-completions","baseUrl":"https://custom.example/v1","headers":{"X-Test":"1"},"models":[{"id":"m","contextWindow":32000,"maxTokens":1000}]}}}`
-	if err := os.WriteFile(filepath.Join(dir, "custom.json"), []byte(data), 0600); err != nil {
+	configJSON := `{"providers":{"custom":{"api":"openai-completions","baseUrl":"https://custom.example/v1","headers":{"X-Test":"1"},"models":[{"id":"m","contextWindow":32000,"maxTokens":1000}]}}}`
+	if err := os.WriteFile(filepath.Join(dir, "custom.json"), []byte(configJSON), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte(`{"providers":`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	r, ds, err := Load([]byte(`{}`), dir)
+	registry, diagnostics, err := Load([]byte(`{}`), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 1 {
-		t.Fatalf("expected one diagnostic, got %#v", ds)
+	if len(diagnostics) != 1 {
+		t.Fatalf("expected one diagnostic, got %#v", diagnostics)
 	}
-	m, ok := r.Find("custom", "m")
-	if !ok {
+	model, found := registry.Find("custom", "m")
+	if !found {
 		t.Fatal("valid custom model was discarded")
 	}
-	if m.BaseURL != "https://custom.example/v1" || m.Headers["X-Test"] != "1" || m.ContextWindow != 32000 {
-		t.Fatalf("custom config lost: %#v", m)
+	if model.BaseURL != "https://custom.example/v1" || model.Headers["X-Test"] != "1" || model.ContextWindow != 32000 {
+		t.Fatalf("custom config lost: %#v", model)
 	}
 }
