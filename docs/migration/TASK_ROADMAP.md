@@ -67,6 +67,55 @@ T029/T045 的完整消息、Markdown/image/tool 呈现和 T037/T049 的运行会
 
 ## 任务与实际依赖
 
+### TASK-T018 Anthropic provider
+
+Go `model/anthropic` 已实现 `Stream` / `StreamSimple`、Messages endpoint 与
+payload、API-key/OAuth/Copilot/Cloudflare auth、headers/compat/session affinity、
+图像/非 vision 占位、signed/redacted thinking、tool schema/name/result 转换、
+cache/metadata/temperature/max tokens 与 adaptive/budget thinking。model 层新增
+消息、选项和 sealed event variants；不依赖 app/session。SSE 处理 UTF-8 字节
+分片、CRLF、多行 data、EOF flush、sparse block index、thinking/signature/tool
+delta、usage 的缺省保留与显式零覆盖、cost 和 stop reason。同步 emitter 提供
+背压，由调用者保持响应；context 取消/超时关闭 HTTP 读取，不自动重试。
+
+对照来源为当前 Rust `providers/anthropic/{mod,payload,stream}.rs`、
+`providers/common.rs`、`http_client.rs`、`types.rs` 与既有
+`tests/{types_serde,oauth_anthropic}.rs`。Rust 尚无 Anthropic payload/stream 专用
+测试；Go `testdata/request.json` 是按源码推导的 payload 期望值，`tool.sse` 是
+人工合成的协议 fixture，均非真实远端录制，也不声称跨语言双执行逐事件对比。
+
+2026-10-17（Asia/Singapore）针对性验证：
+
+- `go -C backend test ./internal/model/anthropic/...`、Go 全模块
+  `go -C backend test -race -timeout 60s ./...` 与
+  `go -C backend vet ./internal/model/...` 通过。
+- `cargo test -p rozsa-model --test types_serde --test oauth_anthropic`
+  通过（14 tests）。Go fake HTTP provider/单字节 body 覆盖 payload、四种 auth、
+  thinking off/unset/adaptive/null/budget fallback、cache/compat、图片和连续 tool
+  results、完整事件顺序与快照隔离、UTF-8、空流/畸形/截断、tool/max-token stop、
+  refusal/error、401/403/429/500/503、请求前/headers 前/流中取消及超时。
+- metadata/compat 非法 UTF-8 回归已实际观察到修复前失败、修复后通过；编码前
+  拒绝非法 UTF-8/JSON，不静默替换。初次取消 fixture 的 handler 未读完 POST
+  body，清理等待超时；修正 fake handler 后通过，不归因为产品或 sandbox 缺陷。
+- 完成 hook 的既有 packaged-app 检查在 sandbox 内未取得启动诊断（I007；
+  I004/I005 已有同样记录）；同一未修改检查在 macOS host 权限下通过，输出
+  `Forge packaged resources PASS`。未变更该检查或降低验证要求。
+
+显式差异：Rust 逐网络 chunk 的 lossy UTF-8 解码可能损坏分片字符；Go 保留完整
+字节行再解码。Rust 允许缺少 message_start 的空流成功、EOF 仅处理 message_stop、
+异常 index 可能别名到既有 block、最终畸形 tool JSON 可退成 `{}`；Go 对这些异常
+报错，未知 block 隔离忽略且不污染已知 block。Rust 的 refusal/sensitive/未知 stop
+会发 reason=Error 的 Done；Go 发 Error 终态。Go 必须收到 start/stop、内容块必须
+关闭，取消为 Aborted、deadline 为 Error，错误不伪造 Done。这些防护遵循本项
+error/cancel 不伪造 final success 的验收要求；正常流事件顺序和字段按源码对照。
+
+凭据文件、shell profile 与完整 provider 环境解析由 T024 补齐，OAuth
+login/refresh/logout 由 T032 负责；T018 仅支持显式 key 与注入的 Anthropic/
+Cloudflare 环境查找。产品注册、agent owner 与 session 持久化接线留给 T020。
+没有读取真实凭据、请求真实 provider 或做 Linux/Windows 实机验证；没有进入
+全项目 TEST。其他三个 provider 仍待对应任务。本项完成后交还 TASK_ROADMAP
+写入权给 T004；前端设计文件与本项产品文件独立。
+
 T010 为当前 RPC 方法定义 typed errors 和接收取消契约；T011 增补当前 session 切片的并发与事件同步基础，产品工作 abort 随业务切片接入。批准的库协议行为见 [M010](evidence/M010.md) 和 SPEC，操作入口见 CONTRIBUTING。
 
 ### TASK-T011：当前 session 并发与 snapshot 同步
@@ -293,7 +342,7 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 | 功能族 | 覆盖范围 | 实现 owner | 当前状态 |
 | --- | --- | --- | --- |
 | F01 | 模型配置、registry、thinking/context/quota | TASK-T016、TASK-T028、TASK-T033、TASK-T042、TASK-T048 | 待实现 |
-| F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | 待实现 |
+| F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | [T018](#task-t018-anthropic-provider) Go Anthropic 请求/流契约与本地 fake provider 已验证；真实授权/产品接线及其他 providers 仍待各 owner |
 | F03 | credentials、PKCE/callback/device、刷新/注销 | TASK-T024、TASK-T032、TASK-T033、TASK-T034、TASK-T054 | 待实现 |
 | F04 | Agent loop、hooks、并行/终止/取消 | TASK-T019、TASK-T020、TASK-T026、TASK-T037、TASK-T038 | 待实现 |
 | F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T010、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；T010 协议见 [M010](evidence/M010.md)；[T017](#task-t017-jsonl-manager) 已补齐 Go manager 写入/重开/分支/rename/delete/cwd；运行会话与产品入口仍待 T037/T044 |

@@ -1,0 +1,25 @@
+{
+  "model":"claude-fixture", "max_tokens":2048, "stream":true,
+  "system":[
+    {"type":"text","text":"You are Claude Code, Anthropic's official CLI for Claude.","cache_control":{"type":"ephemeral","ttl":"1h"}},
+    {"type":"text","text":"system","cache_control":{"type":"ephemeral","ttl":"1h"}}
+  ],
+  "messages":[
+    {"role":"user","content":[{"type":"text","text":"(see attached image)"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aW1n"}}]},
+    {"role":"assistant","content":[
+      {"type":"text","text":"answer"},
+      {"type":"thinking","thinking":"signed","signature":"signature"},
+      {"type":"text","text":"unsigned"},
+      {"type":"redacted_thinking","data":"opaque"},
+      {"type":"tool_use","id":"call:unchanged","name":"Read","input":{"path":"a"}}
+    ]},
+    {"role":"user","content":[
+      {"type":"tool_result","tool_use_id":"call:unchanged","content":"a\nb","is_error":false},
+      {"type":"tool_result","tool_use_id":"other","content":[{"type":"text","text":"(see attached image)"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aW1n"}}],"is_error":true,"cache_control":{"type":"ephemeral","ttl":"1h"}}
+    ]}
+  ],
+  "tools":[{"name":"Read","description":"read a file","input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]},"eager_input_streaming":true,"cache_control":{"type":"ephemeral","ttl":"1h"}}],
+  "thinking":{"type":"enabled","budget_tokens":4096,"display":"summarized"},
+  "metadata":{"user_id":"fixture-user"},
+  "tool_choice":{"type":"auto"}
+}
