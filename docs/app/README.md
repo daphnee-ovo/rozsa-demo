@@ -46,6 +46,12 @@ rozsa-app/src/
 └── slash_commands.rs        # slash command 解析（尚未充分实现）
 ```
 
+## Go app 配置切片
+
+Electron+Go 迁移中的对应模块按产品职责位于 `backend/internal/app/settings/` 与 `backend/internal/platform/configpaths/`。`settings.Load` 按 defaults → global → project → local 合并；嵌套对象逐字段继承，`tools`/`skills` 按名称覆盖，重置通过删除指定层的字段恢复继承。`devFlow` 只取 global 层。读取会区分缺失文件、读取、JSON 解析及 schema 校验错误；设置更新保留未知同级字段，校验通过后才落盘。
+
+`configpaths.Discover` 使用 `ROZSA_CONFIG_DIR` 和 `ROZSA_PROJECT_CONFIG_DIR` 覆盖全局与项目根；默认根分别为 `$HOME/.rozsa` 和 `<project>/.rozsa`。用户级 `.agents/skills` 路径单独暴露。模块专用行为验证命令：`go -C backend test ./internal/app/settings/... ./internal/platform/configpaths/...`。这些 Go 包服务于迁移模块复用；当前 Rust/Tauri 产品结构仍以本文上方 crate 模块为准。
+
 ## 核心类型
 
 ### AgentSession

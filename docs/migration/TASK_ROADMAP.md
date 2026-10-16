@@ -196,6 +196,10 @@ T065：Forge/Vite 开发与可运行 package（依赖 T064）。
 | TASK-T041 | 移植 Dev Flow discovery/dashboard/REST/SSE 重连回收 | TASK-T015、TASK-T026、TASK-T037 |
 | TASK-T044 | 完成 CLI 全参数、GUI 启动与所有 slash/session 操作 | TASK-T009、TASK-T017、TASK-T020、TASK-T021、TASK-T022、TASK-T023、TASK-T032、TASK-T033、TASK-T034、TASK-T025、TASK-T026、TASK-T035、TASK-T027、TASK-T028、TASK-T037、TASK-T040、TASK-T038、TASK-T041、TASK-T030、TASK-T031 |
 
+TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/platform/configpaths/`。行为对照 Rust `settings/{schema,merge,storage}.rs`、`config_paths.rs` 及 `settings_test.rs`、`config_paths_test.rs`：层级顺序为 defaults → global → project → local；嵌套字段继承、tools/skills 名称覆盖、移除局部字段恢复继承；`devFlow` 只读取 global；appearance/compaction 校验、缺失配置、读/解析/写错误均由专用 Go 测试覆盖。路径 fixture 验证 macOS/Linux/Windows 风格根、项目 key、两个环境变量和 `.agents/skills` 用户路径，不访问凭据或用户配置。
+
+落盘保持 Rust 的 pretty JSON、写入换行差异（字段更新有换行，`save_global` 无额外换行）及进程 umask 控制的目录/文件权限。Go 用 `map[string]any` 暴露可复用的设置视图；Rust 原实现的公开配置类型仍是强类型结构。平台 fixture 是宿主内的路径规则验证，不代表 Linux/Windows 实机验证。针对性命令：`go -C backend test ./internal/app/settings/... ./internal/platform/configpaths/...`。
+
 ### 对应界面的设计审阅（仅阻断受影响 UI）
 
 | 任务 | 具体产出 | 前置任务 |
