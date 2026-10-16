@@ -11,7 +11,7 @@ import { SessionList } from "../renderer/features/session-list.ts";
 
 if (process.argv[2] && process.argv[2] !== "session-list") throw new Error("Only the session-list slice is available");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const binary = join(root, "dist/migration", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
+const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const entry = { id: "synthetic", path: "/isolated/example.jsonl", name: "<img src=x onerror=alert(1)>", modified: "2026-10-13T00:00:00Z", message_count: 2 };
 
 test("session-list controlled preload retains the no-argument list method", async () => {

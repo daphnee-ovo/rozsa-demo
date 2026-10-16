@@ -5,8 +5,8 @@ import { BackendService } from "./backend-service.js";
 import { createWindow, pageURL } from "./window.js";
 import { installSessionBridge } from "./session-bridge.js";
 
-// Candidate runtime storage is isolated as well as the catalog inputs.
-app.setName("Rózsa Migration");
+// Development runtime storage is isolated as well as the catalog inputs.
+app.setName("Rózsa");
 const profile = resolve(app.commandLine.getSwitchValue("user-data-dir") || (app.isPackaged ? app.getPath("userData") : join(app.getAppPath(), "../tmp/migration/electron-profile")));
 mkdirSync(profile, { recursive: true });
 app.setPath("userData", profile);
@@ -43,8 +43,8 @@ app.on("window-all-closed", () => app.quit());
 // Forge main hot restart sends SIGTERM. Reuse the normal owned-backend shutdown.
 process.once("SIGTERM", () => app.quit());
 void app.whenReady().then(async () => {
-  app.setName("Rózsa Migration");
-  backend = new BackendService(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "../dist/migration"), process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"), directories(process.argv));
+  app.setName("Rózsa");
+  backend = new BackendService(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "../dist"), process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"), directories(process.argv));
   await backend.initialize();
   if (quitting) return;
   const window = createWindow();

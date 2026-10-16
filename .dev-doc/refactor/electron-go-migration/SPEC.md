@@ -92,7 +92,7 @@ backend/                    一个 Go module
   internal/transport/       协议、dispatch、事件输出；不实现业务
   internal/platform/        OS 路径、进程控制等适配
 contracts/                  按当前切片需要增补的 IPC/TS 类型与小契约用例
-tests/fixtures/migration/   实际跨语言用例需要时才加入的小输入与来源
+tests/fixtures/             实际跨语言用例需要时才加入的小输入与来源
 devtools/                  Go/JS/跨进程构建和验收编排
 prototype/                 保留 scene/gallery/mock，复用 desktop/renderer/ 的同一份前端资源
 ```
@@ -231,7 +231,7 @@ TASK_ROADMAP 的功能覆盖随实现维护；未做功能保持待实现。最�
 ## Test Plan
 
 1. 先读现有测试与 fixture，不运行全面生产测试来装饰规划结论。按模块建立差异测试；例如 `agent_session_restore_test.rs`、`permissions_test.rs`、`bash_abort_test.rs`、`settings_test.rs`、`dev_flow_real_dow_contract_test.rs`、provider 和 GUI tests。
-2. Go 特性用所属 package 的 `_test.go`；Electron 的 JS/TS 测试集中于 `desktop/tests/`，其他模块测试仍归各自模块。只有跨语言/跨进程验证确有需要时才增加 shell 编排。fixture 和预期结果就近放置；跨语言确需共享时放 `tests/fixtures/migration/`。长期保留独有决策和确需追溯的真实验收结果；不读真实凭据，不归档无关内容。
+2. Go 特性用所属 package 的 `_test.go`；Electron 的 JS/TS 测试集中于 `desktop/tests/`，其他模块测试仍归各自模块。只有跨语言/跨进程验证确有需要时才增加 shell 编排。fixture 和预期结果就近放置；跨语言确需共享时放 `tests/fixtures/`。长期保留独有决策和确需追溯的真实验收结果；不读真实凭据，不归档无关内容。
 3. 核对持久化 bytes/结构、模型请求、流式分片、事件因果、文件变化、权限结果、进程退出。固定 clock/ID/provider；并行事件只比较合同要求的先后，不把 scheduler 偶然顺序写成业务规则。
 4. 真实 GUI 对照在相同主题/尺寸/状态下看截图与动态操作；DOM/截图不替代 IME、drag、native blur、全屏和崩溃清理。测试实例结束立即关闭。
 5. macOS watcher/FSEvents 必须 host 验证；其他系统分别执行平台 fixture/集成及 GUI。失败先归因现存问题或本次改动，不 reset/stash 共享工作区。

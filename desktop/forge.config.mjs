@@ -1,7 +1,7 @@
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
-import { backendPath, prepareCandidate, projectRoot } from "./scripts/backend.mjs";
+import { backendPath, prepareDesktopBuild, projectRoot } from "./scripts/backend.mjs";
 
 export default {
   packagerConfig: {
@@ -19,8 +19,8 @@ export default {
     { name: "@electron-forge/maker-deb", config: { options: { name: "rozsa", productName: "Rózsa" } } },
   ],
   hooks: {
-    preStart: () => prepareCandidate(),
-    prePackage: (_config, platform, arch) => prepareCandidate(platform, arch),
+    preStart: () => prepareDesktopBuild(),
+    prePackage: (_config, platform, arch) => prepareDesktopBuild(platform, arch),
   },
   plugins: [new VitePlugin({
     hotRestart: true,

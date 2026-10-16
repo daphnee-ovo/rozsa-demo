@@ -12,10 +12,10 @@ import { ProductFailure, remoteFault, validatedBridgeFault, bridgeFault } from "
 import { historyReply, sessionReply, sessionSnapshot, type ProductBridge, type SessionSnapshot } from "../main/session-contract.ts";
 
 const root = resolve(import.meta.dirname, "../..");
-const binary = join(root, "dist/migration", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
+const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const target = { path: "/synthetic/file-stem.jsonl", catalogId: "header-id" };
 const snapshot: SessionSnapshot = { ...target, sessionId: "file-stem", cwd: "/synthetic", messages: [{ entryId: "entry-id", role: "user", content: [{ type: "text", text: "text" }] }], contextMessageCount: 1 };
-const cases = JSON.parse(await readFile(join(root, "tests/fixtures/migration/session-rpc.json"), "utf8"));
+const cases = JSON.parse(await readFile(join(root, "tests/fixtures/session-rpc.json"), "utf8"));
 
 test("shared Go/JS inputs use library transport and preserve transport/product identities", {timeout:15000}, async () => {
   for (const item of cases) {

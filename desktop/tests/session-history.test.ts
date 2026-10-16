@@ -12,7 +12,7 @@ import { SessionHistory, type HistorySource } from "../renderer/features/session
 import { SessionList } from "../renderer/features/session-list.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const binary = join(root, "dist/migration", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
+const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const a = { id: "header-a", path: "/synthetic/a.jsonl", name: "A", modified: "t", message_count: 1 };
 const b = { ...a, id: "header-b", path: "/synthetic/b.jsonl", name: "B" };
 function snapshot(target: SessionTarget): SessionSnapshot {

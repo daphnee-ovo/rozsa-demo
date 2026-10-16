@@ -1,4 +1,4 @@
-//! Rust-owned reference fixtures; the Go candidate maintains its own equivalent cases.
+//! Session reader behavior fixtures shared with the Go implementation's equivalent cases.
 use std::fs;
 use std::path::PathBuf;
 

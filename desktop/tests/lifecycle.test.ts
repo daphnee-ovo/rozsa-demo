@@ -11,7 +11,7 @@ import { RozsaBridge } from "../preload/bridge.ts";
 import { ProductClient } from "../renderer/product-client.ts";
 
 const root = resolve(import.meta.dirname, "../..");
-const binary = join(root, "dist/migration", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
+const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions"];
 async function poll(check: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 6000;
@@ -142,7 +142,7 @@ if (process.argv.includes("--native")) test("actual Electron candidate lifecycle
   const electron = join(root, "desktop/node_modules/electron/dist", (await readFile(join(root, "desktop/node_modules/electron/path.txt"), "utf8")).trim());
   for (const mode of ["normal", "crash", "pipe", "version", "missing", "handshake-timeout", "shutdown-timeout", "quit-startup"]) {
     const base = join(root, "tmp/migration-lifecycle-native"); await mkdir(base, { recursive: true });
-    const directory = await mkdtemp(join(base, `${mode}-`)), app = join(directory, "desktop"), backendDirectory = join(directory, "dist/migration");
+    const directory = await mkdtemp(join(base, `${mode}-`)), app = join(directory, "desktop"), backendDirectory = join(directory, "dist");
     await mkdir(app); await mkdir(backendDirectory, { recursive: true });
     await cp(join(root, "desktop/.vite"), join(app, ".vite"), { recursive: true });
     await writeFile(join(app, "package.json"), JSON.stringify({ name: "rozsa-migration-native-test", main: ".vite/build/acceptance.cjs" }));

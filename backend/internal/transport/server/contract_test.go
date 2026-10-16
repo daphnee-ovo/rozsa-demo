@@ -10,7 +10,7 @@ import (
 )
 
 func TestSharedSessionContract(t *testing.T) {
-	data, err := os.ReadFile("../../../../tests/fixtures/migration/session-rpc.json")
+	data, err := os.ReadFile("../../../../tests/fixtures/session-rpc.json")
 	if err != nil {
 		t.Fatal(err)
 	}

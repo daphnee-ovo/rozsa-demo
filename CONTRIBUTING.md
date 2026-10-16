@@ -59,13 +59,14 @@ verification. Serve the prototype from the repository HTTP root (for example,
 backend or prototype inputs; `./run.sh` launches it. Close validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
 for host boundaries and design gaps.
 
-## Electron + Go migration candidate
+## Electron + Go development and acceptance
 
-The migration branch builds a separate read-only session-list/history candidate. The
-default `./run.sh` still launches Tauri. Run the combined acceptance target with:
+The Electron + Go implementation is the target Rózsa desktop application. Until
+T061, the current `./run.sh` still launches Tauri. Run the combined desktop
+acceptance target with:
 
 ```bash
-bash devtools/test-migration-build.sh
+bash devtools/test-desktop.sh
 ```
 
 Go dependencies and Electron/TypeScript/tsx/jsdom versions are defined by their module manifests and lockfiles. Use those files as the single source of version truth.
@@ -84,7 +85,7 @@ dow 0.3.10 does not recognize the tsx TypeScript test runner.
 Launch against explicit synthetic directories in layer order:
 
 ```bash
-bash devtools/run-migration.sh --session-dir /absolute/synthetic/global --session-dir /absolute/synthetic/project
+npm --prefix desktop start -- -- --user-data-dir="$PWD/tmp/migration/electron-profile" --session-dir /absolute/synthetic/global --session-dir /absolute/synthetic/project
 ```
 
 The renderer cannot supply paths or arbitrary IPC. No default user session or
@@ -103,7 +104,7 @@ T002's focused reader checks consume the same small fixtures in Go and Rust:
 
 ```bash
 go -C backend test ./internal/app/session/...
-cargo test -p rozsa-app --test session_reader_migration_test --test agent_session_restore_test
+cargo test -p rozsa-app --test session_reader_reference_test --test agent_session_restore_test
 ```
 
 See [M002](docs/migration/evidence/M002.md) for fixture origins, restoration rules
@@ -140,31 +141,29 @@ checks with:
 npm --prefix desktop/tests run test:session-contract
 ```
 
-The combined `bash devtools/test-migration-build.sh` target includes this module
+The combined `bash devtools/test-desktop.sh` target includes this module
 test alongside Go session/transport, list/history and resource checks. It does
 not launch a GUI or enter full TEST. See
 [M010](docs/migration/evidence/M010.md) for results and remaining slice boundaries.
 
-## Candidate Forge/Vite development and package (TASK-T065)
+## Desktop Forge/Vite development and package (TASK-T065)
 
 Tool versions and the supported Node range are defined by `desktop/package.json`
 and its lockfile. Install the declared dependencies with `npm ci`; build/package/run
 scripts place temporary working files under project `tmp/migration/`.
 
 ```bash
-bash devtools/build-migration.sh
-bash devtools/run-migration.sh --session-dir /absolute/synthetic/sessions
-bash devtools/package-migration-candidate.sh
-bash devtools/package-migration-candidate.sh make
-bash devtools/test-migration-build.sh
+bash devtools/build-desktop.sh
+npm --prefix desktop start -- -- --user-data-dir="$PWD/tmp/migration/electron-profile" --session-dir /absolute/synthetic/sessions
+bash devtools/package-desktop.sh
+bash devtools/package-desktop.sh make
+bash devtools/test-desktop.sh
 ```
 
-`test-migration-build.sh` accepts an explicit `ROZSA_MIGRATION_SOURCE_ROOT`
-absolute source directory for isolated acceptance. It checks that tree's module
-manifests, packages it and runs its complete `desktop/tests` behavior suite plus
-Go/resource checks. The default is the current repository. This also works with
-`dow task done TASK-T060` through the supported Shell test adapter; the selected
-tree must contain the reviewed task changes and declared dependency inputs.
+`test-desktop.sh` resolves the repository root from its own location, validates
+the module manifests, packages the current tree and runs the `desktop/tests`
+behavior suite plus Go/resource checks. Run it from a tree containing the
+reviewed task changes and declared dependency inputs.
 
 Forge owns start/package. The trusted launcher runs electron-forge start;
 directly use `npm --prefix desktop start -- -- --session-dir /absolute/synthetic/sessions`
@@ -202,9 +201,9 @@ JS/CSS sources.
 
 Forge puts app code in app.asar and the Go binary separately under Resources
 (resources on Linux/Windows). Runtime resolves Go using resourcesPath in
-package and dist/migration/ in development, independently of launch CWD.
+packages and dist/rozsa-backend in development, independently of launch CWD.
 No user session/credential paths are discovered. Native tests pass an isolated
-user-data-dir; packaged default storage uses its distinct Rózsa Migration
+user-data-dir; packaged default storage uses its Rózsa
 app userData directory. Foreign platform/architecture packaging is rejected
 here so a host Go binary cannot enter an incompatible package. Corresponding
 platform tasks own cross-build and native acceptance.
@@ -235,7 +234,7 @@ T060 establishes the final frontend source and test paths before T013 converts
 shared core/port and prototype TS loading; T014 adds Forge makers/installer
 acceptance after T012/T013.
 Forge `make` creates a macOS DMG, Windows Squirrel installer set, and Debian
-package. Build the host installer with `bash devtools/package-migration-candidate.sh make`;
+package. Build the host installer with `bash devtools/package-desktop.sh make`;
 the default command above still creates the runnable app package. T014 checks
 the installer contents and host install/runtime resources. Signing, actual
 install/uninstall acceptance and Linux/Windows native acceptance remain
