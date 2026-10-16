@@ -1,1 +1,1 @@
-export { init } from "../../../crates/rozsa-gui/frontend/ui/scripts/flows/composer-interruption.js";
+export { init } from "../../../desktop/renderer/scripts/flows/composer-interruption.js";

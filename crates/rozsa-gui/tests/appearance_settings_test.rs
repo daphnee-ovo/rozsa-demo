@@ -1,8 +1,8 @@
 #[test]
 fn appearance_settings_are_in_a_dedicated_tab() {
-    let html = include_str!("../frontend/ui/templates/features/settings.html");
-    let css = include_str!("../frontend/ui/styles/features/appearance.css");
-    let settings_css = include_str!("../frontend/ui/styles/features/settings.css");
+    let html = include_str!("../../../desktop/renderer/templates/features/settings.html");
+    let css = include_str!("../../../desktop/renderer/styles/features/appearance.css");
+    let settings_css = include_str!("../../../desktop/renderer/styles/features/settings.css");
     let tauri = include_str!("../tauri.conf.json");
 
     assert!(html.contains("data-settings-pane=\"appearance\""));
@@ -142,7 +142,7 @@ fn appearance_settings_are_in_a_dedicated_tab() {
 
 #[test]
 fn appearance_is_backend_persisted_and_theme_files_are_loaded() {
-    let js = include_str!("../frontend/app.js");
+    let js = include_str!("../../../desktop/renderer/app.js");
     let rust = include_str!("../src/commands.rs");
     let lib = include_str!("../src/lib.rs");
 

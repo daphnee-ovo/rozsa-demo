@@ -1,1 +1,1 @@
-export { loadTemplate, clearTemplateCache } from "../../../crates/rozsa-gui/frontend/ui/scripts/core/template-loader.js";
+export { loadTemplate, clearTemplateCache } from "../../../desktop/renderer/scripts/core/template-loader.js";

@@ -1,1 +1,1 @@
-export { init } from '../../../crates/rozsa-gui/frontend/ui/scripts/components/notification.js';
+export { init } from '../../../desktop/renderer/scripts/components/notification.js';

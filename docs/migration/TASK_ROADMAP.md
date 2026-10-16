@@ -128,6 +128,26 @@ UI 接收；session 同步停止另外释放订阅，不伪称停止产品工作
 
 T009 建立候选资源构建与 watch 基础；T060 在 UI 切片前把共享前端源码和测试迁到最终目录，T013 随后负责 core/port TS 转换与原型同源装载。
 
+T060 已将共享 scripts/templates/styles 与保留的 Tauri host 资源迁入
+`desktop/renderer/`；Tauri 主入口为 `tauri.html`，Electron 保持 `index.html`，
+旧宿主专用 CSS 位于 `styles/legacy/`。两个既有 JS 测试模块合并为
+`desktop/tests/` 的单一 manifest/lockfile，原 Rust GUI 测试更新为最终资源路径。
+
+2026-10-16 macOS arm64 针对性验收：排除 T013 未完成转换的暂存树中，
+91 项 JS/TS 行为测试、TS7、Forge package、资源/source map 检查通过；
+真实 Forge 的共享 CSS HMR、TS/HTML 自动刷新、原 Go process 复用及退出清理通过。
+不含 `crates/rozsa-gui` 的 Forge fixture 实际运行；packaged app 会话列表验收通过。
+HTTP 原型实际装载共享 JS/CSS/templates，修改共享模板后刷新观察到标记，再恢复；
+staged Tauri 实际显示 `tauri.html` 与 `sidebar.html`，所有验证窗口均关闭。
+
+T013 交接：原有 TS、HTML 与 tsconfig 改动保留为未提交内容，按最终目录迁移；
+`runtime/entries/main.ts` 的 notification facade 仍有缺少 `init` 的 TS2322，
+当前 HTML 指向 TS 的断言失败仍未完成。隔离验收携带原有未跟踪的
+session-list/scene-state 与 fixture 依赖；本任务仅首次纳入已存在的测试 lockfile
+及 session runner。Rust GUI 测试的搬迁路径检查通过；隔离基线文档检查仍发现
+HEAD 原有的缺失 `M067.md` 链接，当前工作区既有 CONTRIBUTING 改动已移除它。
+这些验证不表示 T013、完整产品或 Linux/Windows 验收完成。
+
 T064 将本地 TypeScript compiler 设为默认工具链；T065 迁移为 Forge/Vite 开发与可运行 package；T014 负责后续 installer/发行资源验收。
 
 T065：Forge/Vite 开发与可运行 package（依赖 T064）。

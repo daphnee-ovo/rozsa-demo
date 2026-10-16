@@ -19,11 +19,11 @@ fi
 if [[ "$mode" != --rust ]]; then
   command -v node >/dev/null
   command -v npm >/dev/null
-  if [[ ! -d crates/rozsa-gui/js-tests/node_modules/jsdom ]]; then
-    printf '%s\n' 'Missing JS test dependencies. Run: npm ci --prefix crates/rozsa-gui/js-tests' >&2
+  if [[ ! -d desktop/tests/node_modules/jsdom ]]; then
+    printf '%s\n' 'Missing JS test dependencies. Run: npm ci --prefix desktop/tests' >&2
     exit 1
   fi
-  npm test --prefix crates/rozsa-gui/js-tests
+  npm --prefix desktop/tests run test:ui
 fi
 if [[ "$mode" != --js ]]; then
   cargo test -p rozsa-gui --tests

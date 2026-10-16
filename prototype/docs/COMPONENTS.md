@@ -1,6 +1,6 @@
 # 原型组件目录
 
-原型与 Tauri 使用同一份 `crates/rozsa-gui/frontend/ui/`。组件的 template、CSS、renderer、flow 及特殊化关系详见 [共享组件目录](../../docs/gui/FRONTEND_COMPONENTS.md)，职责约束见 [前端界面规范](../../docs/gui/FRONTEND_INTERFACE_STANDARD.md)。
+原型与 Tauri 使用同一份 `desktop/renderer/`。组件的 template、CSS、renderer、flow 及特殊化关系详见 [共享组件目录](../../docs/gui/FRONTEND_COMPONENTS.md)，职责约束见 [前端界面规范](../../docs/gui/FRONTEND_INTERFACE_STANDARD.md)。
 
 ## 原型装配
 

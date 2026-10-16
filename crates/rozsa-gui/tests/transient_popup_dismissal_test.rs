@@ -1,6 +1,6 @@
 #[test]
 fn transient_popups_share_outside_click_and_escape_dismissal() {
-    let source = include_str!("../frontend/app.js");
+    let source = include_str!("../../../desktop/renderer/app.js");
 
     for id in [
         "autocomplete",
@@ -37,7 +37,7 @@ fn transient_popups_share_outside_click_and_escape_dismissal() {
 
 #[test]
 fn transient_popup_dismissal_preserves_permission_handling() {
-    let source = include_str!("../frontend/app.js");
+    let source = include_str!("../../../desktop/renderer/app.js");
     let keydown_start = source.find("document.addEventListener('keydown'").unwrap();
     let keydown = &source[keydown_start..];
 

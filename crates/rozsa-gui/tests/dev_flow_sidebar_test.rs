@@ -689,20 +689,25 @@ fn short_ids_normalize_canonical_task_and_issue_ids() {
 
 #[test]
 fn sidebar_and_detail_static_contracts() {
-    let shared_sidebar_html = include_str!("../frontend/ui/templates/features/sidebar.html");
-    let shared_dev_flow_template = include_str!("../frontend/ui/templates/features/dev-flow.html");
-    let sidebar_js = include_str!("../frontend/sidebar.js");
-    let index_html = include_str!("../frontend/index.html");
-    let app_js = include_str!("../frontend/app.js");
+    let shared_sidebar_html =
+        include_str!("../../../desktop/renderer/templates/features/sidebar.html");
+    let shared_dev_flow_template =
+        include_str!("../../../desktop/renderer/templates/features/dev-flow.html");
+    let sidebar_js = include_str!("../../../desktop/renderer/sidebar.js");
+    let index_html = include_str!("../../../desktop/renderer/tauri.html");
+    let app_js = include_str!("../../../desktop/renderer/app.js");
     let commands = include_str!("../src/commands.rs");
     let lib = include_str!("../src/lib.rs");
     let dev_flow = include_str!("../src/dev_flow.rs");
     let capabilities = include_str!("../capabilities/default.json");
-    let sidebar_css = include_str!("../frontend/styles/features/sidebar-window.css");
-    let sidebar_actions_css = include_str!("../frontend/styles/components/actions.css");
-    let detail_css = include_str!("../frontend/ui/styles/features/dev-flow-runtime.css");
-    let shared_dev_flow = include_str!("../frontend/ui/scripts/features/dev-flow.js");
-    let dev_flow_adapter = include_str!("../frontend/runtime/adapters/sidebar-dev-flow.js");
+    let sidebar_css =
+        include_str!("../../../desktop/renderer/styles/legacy/features/sidebar-window.css");
+    let sidebar_actions_css =
+        include_str!("../../../desktop/renderer/styles/legacy/components/actions.css");
+    let detail_css = include_str!("../../../desktop/renderer/styles/features/dev-flow-runtime.css");
+    let shared_dev_flow = include_str!("../../../desktop/renderer/scripts/features/dev-flow.js");
+    let dev_flow_adapter =
+        include_str!("../../../desktop/renderer/runtime/adapters/sidebar-dev-flow.js");
 
     // Summary, claimed rows, more N, and the Dashboard entry live in the
     // sidebar; Dashboard sits immediately above Settings.

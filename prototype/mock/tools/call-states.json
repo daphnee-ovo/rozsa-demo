@@ -1,8 +1,8 @@
 {
-  "read-gui": { "id": "read-gui", "name": "Read", "args": "crates/rozsa-gui/frontend/index.html", "kind": "code", "content": "<main data-od-id=\"main-panel\">\n  <div class=\"chat-messages\">\n  <div class=\"input-wrapper\">", "output": "Current GUI structure loaded" },
+  "read-gui": { "id": "read-gui", "name": "Read", "args": "desktop/renderer/tauri.html", "kind": "code", "content": "<main data-od-id=\"main-panel\">\n  <div class=\"chat-messages\">\n  <div class=\"input-wrapper\">", "output": "Current GUI structure loaded" },
   "edit-adapter": { "id": "edit-adapter", "name": "Edit", "args": "rozsa-gui.js", "kind": "diff", "patch": "@@ -1,3 +1,5 @@\n const root = document.documentElement;\n+const sceneName = root.dataset.rozsaScene || '';\n+applySceneFixture();\n const state = {};", "output": "Updated shared scene adapter" },
   "bash-check": { "id": "bash-check", "name": "Bash", "args": "node --check rozsa-gui.js", "output": "\n> rozsa-gui@0.1.0 check\n> node --check rozsa-gui.js\n\nProcess exited with code 0", "className": "dev-flow-tool-call" },
-  "read-current-gui": { "id": "read-current-gui", "name": "Read", "args": "crates/rozsa-gui/frontend/index.html", "output": "430 lines read · structure preserved", "expanded": true },
+  "read-current-gui": { "id": "read-current-gui", "name": "Read", "args": "desktop/renderer/tauri.html", "output": "430 lines read · structure preserved", "expanded": true },
   "bash-current-check": { "id": "bash-current-check", "name": "Bash", "args": "node --check rozsa-gui.js", "output": "Process exited with code 0", "className": "dev-flow-tool-call", "expanded": true },
   "ask-question": { "id": "ask-question", "name": "AskUserQuestion", "args": "1 question · waiting for answer", "output": "The separate question panel is awaiting your answer.", "expanded": true },
   "dev-flow-status": { "id": "dev-flow-status", "name": "Bash", "args": "dow status", "output": "phase DEV · 2 tasks · 1 issue · dashboard ready", "className": "dev-flow-tool-call", "expanded": true },

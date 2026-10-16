@@ -60,8 +60,8 @@ fn sidebar_snapshot_is_complete_and_has_lifecycle_triggers() {
 
 #[test]
 fn webviews_do_not_duplicate_main_only_or_sidebar_only_consumers() {
-    let main = include_str!("../frontend/app.js");
-    let sidebar = include_str!("../frontend/sidebar.js");
+    let main = include_str!("../../../desktop/renderer/app.js");
+    let sidebar = include_str!("../../../desktop/renderer/sidebar.js");
 
     for event in ["ui-state", "tool-event", "permission-request"] {
         assert!(main.contains(&format!("listen('{event}'")));

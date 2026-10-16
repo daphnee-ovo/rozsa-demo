@@ -1,1 +1,1 @@
-export { init } from "../../../crates/rozsa-gui/frontend/ui/scripts/components/interruption-panel.js";
+export { init } from "../../../desktop/renderer/scripts/components/interruption-panel.js";

@@ -140,7 +140,7 @@ fn close_releases_titlebar_observers_and_actions_before_split_teardown() {
 
 #[test]
 fn native_frontend_does_not_run_the_css_width_threshold() {
-    let app = include_str!("../frontend/app.js");
+    let app = include_str!("../../../desktop/renderer/app.js");
     let start = app.find("function syncMainSidebarViewport()").unwrap();
     let end = app[start..]
         .find("function sidebarChromeBoundary")
@@ -159,7 +159,7 @@ fn native_frontend_does_not_run_the_css_width_threshold() {
 #[test]
 fn prototype_and_tauri_share_the_measured_minimum_window() {
     let config = include_str!("../tauri.conf.json");
-    let reset = include_str!("../frontend/ui/styles/foundations/reset.css");
+    let reset = include_str!("../../../desktop/renderer/styles/foundations/reset.css");
 
     assert!(config.contains("\"minWidth\": 640"));
     assert!(config.contains("\"minHeight\": 480"));

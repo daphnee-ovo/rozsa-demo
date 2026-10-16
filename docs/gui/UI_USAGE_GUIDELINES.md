@@ -478,8 +478,8 @@ allow 规则一样可删除、移动和恢复；分组使用独立折叠容器�
 - 主要区域和可调元素应保留稳定的 `data-od-id`，便于检查和后续精修。
 - 组件样式优先复用现有 token，不在组件内新增散乱色值。
 - 根目录 `prototype/` 的 gallery 可以保留展示所需的少量 runtime value；产品运行时 HTML 禁止 `<style>` 与静态 `style` 属性。
-- 产品样式经 `styles/main.css` 或 `styles/sidebar.css` 装配唯一共享 `ui/styles/`：design value 进 foundations，窗口几何进 layouts，基础控件进 primitives，复合控件进 composites，功能组件进 features。原型引用相同 owner；宿主只做数据接入与平台边界适配。
-- `main.css` / `sidebar.css` 的导入顺序属于级联契约；新增或移动 import 时必须验证两个 WebView 的资源存在性、无循环依赖和视觉优先级。完整规则见 [共享样式](../../crates/rozsa-gui/frontend/ui/styles/README.md) 与 [组件规范](./FRONTEND_INTERFACE_STANDARD.md)。缺失设计入口保留空容器并暂停，不能安全暂停的被动状态保留旧实现且标为受阻，详见 [DESIGN_GAPS](../../prototype/docs/DESIGN_GAPS.md)。
+- 产品样式经 `styles/main.css` 或 `styles/sidebar.css` 装配唯一共享 `styles/`：design value 进 foundations，窗口几何进 layouts，基础控件进 primitives，复合控件进 composites，功能组件进 features。原型引用相同 owner；宿主只做数据接入与平台边界适配。
+- `main.css` / `sidebar.css` 的导入顺序属于级联契约；新增或移动 import 时必须验证两个 WebView 的资源存在性、无循环依赖和视觉优先级。完整规则见 [共享样式](../../desktop/renderer/styles/README.md) 与 [组件规范](./FRONTEND_INTERFACE_STANDARD.md)。缺失设计入口保留空容器并暂停，不能安全暂停的被动状态保留旧实现且标为受阻，详见 [DESIGN_GAPS](../../prototype/docs/DESIGN_GAPS.md)。
 - 复杂交互必须有真实行为：展开、复制、权限选择、设置 tab、发送消息、自动增长、autocomplete。
 - 不把说明文档、设计规范或调试控件塞进产品界面。
 - 新增 UI 模块时，必须同步考虑空态、加载态、成功态、错误态、键盘态和移动/窄屏降级。

@@ -1,10 +1,10 @@
 #[test]
 fn native_scene_roots_are_precreated_and_switched_by_visibility() {
-    let main_html = include_str!("../frontend/index.html");
-    let sidebar_html = include_str!("../frontend/sidebar.html");
-    let main_js = include_str!("../frontend/app.js");
-    let sidebar_js = include_str!("../frontend/sidebar.js");
-    let shared = include_str!("../frontend/gui_shared.js");
+    let main_html = include_str!("../../../desktop/renderer/tauri.html");
+    let sidebar_html = include_str!("../../../desktop/renderer/sidebar.html");
+    let main_js = include_str!("../../../desktop/renderer/app.js");
+    let sidebar_js = include_str!("../../../desktop/renderer/sidebar.js");
+    let shared = include_str!("../../../desktop/renderer/gui_shared.js");
 
     assert!(main_html.contains("id=\"mainContentScene\" data-native-scene-root=\"main-content\""));
     assert!(main_html.contains("id=\"settingsPanel\" data-native-scene-root=\"settings-content\""));

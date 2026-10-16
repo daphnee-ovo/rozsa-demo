@@ -1,1 +1,1 @@
-export { init } from "../../../crates/rozsa-gui/frontend/ui/scripts/components/composer.js";
+export { init } from "../../../desktop/renderer/scripts/components/composer.js";

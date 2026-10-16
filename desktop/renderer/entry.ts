@@ -1,5 +1,5 @@
-import "../../crates/rozsa-gui/frontend/ui/styles/foundations/tokens.css";
-import "../../crates/rozsa-gui/frontend/ui/styles/features/sidebar.css";
+import "./styles/foundations/tokens.css";
+import "./styles/features/sidebar.css";
 import type { ProductBridge } from "../main/session-contract.js";
 import { ProductClient } from "./product-client.js";
 import { SessionList } from "./features/session-list.js";

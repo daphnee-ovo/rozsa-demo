@@ -11,10 +11,11 @@ fn ordered_offsets(haystack: &str, needles: &[&str]) -> Vec<usize> {
 
 #[test]
 fn settings_navigation_and_panes_match_the_product_order() {
-    let index = include_str!("../frontend/index.html");
-    let entry = include_str!("../frontend/runtime/entries/main.js");
-    let settings = include_str!("../frontend/ui/scripts/features/settings.js");
-    let shared_template = include_str!("../frontend/ui/templates/features/settings.html");
+    let index = include_str!("../../../desktop/renderer/tauri.html");
+    let entry = include_str!("../../../desktop/renderer/runtime/entries/main.js");
+    let settings = include_str!("../../../desktop/renderer/scripts/features/settings.js");
+    let shared_template =
+        include_str!("../../../desktop/renderer/templates/features/settings.html");
     let panes = [
         "data-settings-pane=\"skills\"",
         "data-settings-pane=\"tools\"",
@@ -45,8 +46,9 @@ fn settings_navigation_and_panes_match_the_product_order() {
 
 #[test]
 fn capability_backend_keeps_layered_updates_without_preloading_paused_settings() {
-    let frontend = include_str!("../frontend/app.js");
-    let shared_template = include_str!("../frontend/ui/templates/features/settings.html");
+    let frontend = include_str!("../../../desktop/renderer/app.js");
+    let shared_template =
+        include_str!("../../../desktop/renderer/templates/features/settings.html");
     let commands = include_str!("../src/commands.rs");
     let state = include_str!("../src/state.rs");
     let lib = include_str!("../src/lib.rs");
@@ -70,8 +72,8 @@ fn capability_backend_keeps_layered_updates_without_preloading_paused_settings()
 
 #[test]
 fn legacy_permission_rule_renderer_remains_available_for_t036_cleanup_gate() {
-    let frontend = include_str!("../frontend/app.js");
-    let css = include_str!("../frontend/styles/features/settings.css");
+    let frontend = include_str!("../../../desktop/renderer/app.js");
+    let css = include_str!("../../../desktop/renderer/styles/legacy/features/settings.css");
     let commands = include_str!("../src/commands.rs");
 
     assert!(commands.contains("name: \"Read-only Bash\""));
@@ -88,7 +90,7 @@ fn legacy_permission_rule_renderer_remains_available_for_t036_cleanup_gate() {
 
 #[test]
 fn uncovered_settings_panes_are_cleared_and_blocked_before_interaction() {
-    let settings = include_str!("../frontend/ui/scripts/features/settings.js");
+    let settings = include_str!("../../../desktop/renderer/scripts/features/settings.js");
     assert!(settings.contains("'general'"));
     assert!(settings.contains("'permissions'"));
     assert!(settings.contains("container.replaceChildren()"));

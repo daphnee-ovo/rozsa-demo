@@ -96,11 +96,14 @@ fn application_shell_templates_preserve_mount_contract() {
     let sidebar_forwarder =
         fs::read_to_string(repository_root().join("prototype/templates/features/sidebar.html"))
             .expect("prototype sidebar template must be readable");
-    assert!(sidebar_forwarder.contains(
-        "data-ui-template-src=\"../../../crates/rozsa-gui/frontend/ui/templates/features/sidebar.html\""
-    ), "prototype sidebar must load its shared source");
+    assert!(
+        sidebar_forwarder.contains(
+            "data-ui-template-src=\"../../../desktop/renderer/templates/features/sidebar.html\""
+        ),
+        "prototype sidebar must load its shared source"
+    );
     let sidebar = fs::read_to_string(
-        repository_root().join("crates/rozsa-gui/frontend/ui/templates/features/sidebar.html"),
+        repository_root().join("desktop/renderer/templates/features/sidebar.html"),
     )
     .expect("shared sidebar template must be readable");
     assert!(
@@ -120,14 +123,12 @@ fn application_shell_templates_preserve_mount_contract() {
     )
     .expect("prototype interruption component must be readable");
     assert!(
-        interruption_forwarder.contains(
-            "../../../crates/rozsa-gui/frontend/ui/scripts/components/interruption-panel.js"
-        ),
+        interruption_forwarder
+            .contains("../../../desktop/renderer/scripts/components/interruption-panel.js"),
         "prototype interruption must load its shared source"
     );
     let interruption = fs::read_to_string(
-        repository_root()
-            .join("crates/rozsa-gui/frontend/ui/scripts/components/interruption-panel.js"),
+        repository_root().join("desktop/renderer/scripts/components/interruption-panel.js"),
     )
     .expect("shared interruption component must be readable");
     assert!(

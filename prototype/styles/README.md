@@ -1,6 +1,6 @@
 # 新版 GUI 原型样式组件库
 
-本目录装配 `prototype/` 的 CSS。已覆盖组件的 CSS 只有一份实现，位于 [`frontend/ui/styles/`](../../crates/rozsa-gui/frontend/ui/styles/README.md)；本目录中的对应路径只转发，不保存第二份规则。共享目录包含 Composer、Conversation、tools、interruption、Settings、Sidebar、通知与 Dev Flow；gallery 专属内容留在原型宿主。
+本目录装配 `prototype/` 的 CSS。已覆盖组件的 CSS 只有一份实现，位于 [`desktop/renderer/styles/`](../../desktop/renderer/styles/README.md)；本目录中的对应路径只转发，不保存第二份规则。共享目录包含 Composer、Conversation、tools、interruption、Settings、Sidebar、通知与 Dev Flow；gallery 专属内容留在原型宿主。
 
 ## 分层
 

@@ -49,8 +49,8 @@ fn context_usage_uses_the_latest_prompt_not_cumulative_session_usage() {
 #[test]
 fn settings_ui_uses_compaction_ratios() {
     let commands = include_str!("../src/commands.rs");
-    let app = include_str!("../frontend/app.js");
-    let html = include_str!("../frontend/index.html");
+    let app = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../../../desktop/renderer/tauri.html");
 
     assert!(commands.contains("compaction_trigger_ratio"));
     assert!(commands.contains("compaction_target_ratio"));

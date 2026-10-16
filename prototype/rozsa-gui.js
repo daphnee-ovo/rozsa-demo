@@ -50,7 +50,7 @@
   async function loadBehaviorModules() {
     const api = window.RozsaPrototype;
     if (!api) throw new Error("Prototype behavior API is unavailable");
-    const { createConversationFlow } = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/flows/conversation.js", legacyScriptUrl));
+    const { createConversationFlow } = await import(new URL("../desktop/renderer/scripts/flows/conversation.js", legacyScriptUrl));
     const { createMockConversationAdapter } = await import(new URL("./scripts/adapters/mock-adapter.js", legacyScriptUrl));
     Object.assign(api, createConversationFlow(createMockConversationAdapter(api)));
     const flowEntry = document.body?.dataset.rozsaFlowEntry;
@@ -255,7 +255,7 @@
     if (message.error) body += '<div class="msg-content msg-error"><pre>' + escapeHtml(message.error) + "</pre></div>";
     if (message.thinking) body += thinkingMarkup(message.thinking, message.thinkingExpanded !== false, message.thinkingActive, message.thinkingDuration);
     if (message.text) body += textMarkup(message.text);
-    if (message.tool) body += toolMarkup("read-" + index, "Read", "crates/rozsa-gui/frontend/index.html", "Read the current GUI entry and preserve its existing structure.", "s-success", { expanded: Boolean(message.toolExpanded) });
+    if (message.tool) body += toolMarkup("read-" + index, "Read", "desktop/renderer/tauri.html", "Read the current GUI entry and preserve its existing structure.", "s-success", { expanded: Boolean(message.toolExpanded) });
     if (Array.isArray(message.tools)) message.tools.forEach((tool, toolIndex) => {
       let bodyHtml = "";
       if (tool.kind === "code") bodyHtml = sharedTools.evidenceViewMarkup("code", tool.content);
@@ -823,12 +823,12 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     const bootstrap = async () => {
-      sharedConversation = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/conversation.js", legacyScriptUrl));
-      sharedTools = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/tools.js", legacyScriptUrl));
-      sharedPermissions = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/permissions.js", legacyScriptUrl));
-      sharedNotifications = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/notifications.js", legacyScriptUrl));
-      sharedSidebar = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/sidebar.js", legacyScriptUrl));
-      sharedDevFlow = await import(new URL("../crates/rozsa-gui/frontend/ui/scripts/features/dev-flow.js", legacyScriptUrl));
+      sharedConversation = await import(new URL("../desktop/renderer/scripts/features/conversation.js", legacyScriptUrl));
+      sharedTools = await import(new URL("../desktop/renderer/scripts/features/tools.js", legacyScriptUrl));
+      sharedPermissions = await import(new URL("../desktop/renderer/scripts/features/permissions.js", legacyScriptUrl));
+      sharedNotifications = await import(new URL("../desktop/renderer/scripts/features/notifications.js", legacyScriptUrl));
+      sharedSidebar = await import(new URL("../desktop/renderer/scripts/features/sidebar.js", legacyScriptUrl));
+      sharedDevFlow = await import(new URL("../desktop/renderer/scripts/features/dev-flow.js", legacyScriptUrl));
       await sharedTools.loadToolTemplate();
       loadState();
       mountTemplates();

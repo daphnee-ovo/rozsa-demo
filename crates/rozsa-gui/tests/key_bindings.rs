@@ -79,11 +79,11 @@ fn path_is_owned_by_the_global_gui_configuration_root() {
 
 #[test]
 fn frontend_routes_supported_actions_through_the_effective_registry() {
-    let html = include_str!("../frontend/index.html");
-    let settings = include_str!("../frontend/ui/templates/features/settings.html");
-    let sidebar_entry = include_str!("../frontend/runtime/entries/sidebar.js");
-    let settings_feature = include_str!("../frontend/ui/scripts/features/settings.js");
-    let script = include_str!("../frontend/app.js");
+    let html = include_str!("../../../desktop/renderer/tauri.html");
+    let settings = include_str!("../../../desktop/renderer/templates/features/settings.html");
+    let sidebar_entry = include_str!("../../../desktop/renderer/runtime/entries/sidebar.js");
+    let settings_feature = include_str!("../../../desktop/renderer/scripts/features/settings.js");
+    let script = include_str!("../../../desktop/renderer/app.js");
 
     assert!(html.contains("id=\"pane-keyboard-shortcuts\""));
     assert!(html.contains("id=\"keyBindingList\""));

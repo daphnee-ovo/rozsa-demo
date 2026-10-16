@@ -4,11 +4,12 @@
 
 #[test]
 fn frontend_keeps_prototype_write_edit_and_turn_diff_contracts() {
-    let app = include_str!("../frontend/app.js");
-    let html = include_str!("../frontend/index.html");
-    let overlay_css = include_str!("../frontend/styles/components/overlays.css");
-    let tool_css = include_str!("../frontend/styles/features/tools.css");
-    let form_css = include_str!("../frontend/styles/components/forms.css");
+    let app = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../../../desktop/renderer/tauri.html");
+    let overlay_css =
+        include_str!("../../../desktop/renderer/styles/legacy/components/overlays.css");
+    let tool_css = include_str!("../../../desktop/renderer/styles/legacy/features/tools.css");
+    let form_css = include_str!("../../../desktop/renderer/styles/legacy/components/forms.css");
 
     assert!(app.contains("function renderCodeView(content)"));
     assert!(app.contains("typeof args.content === 'string' ? args.content : null"));

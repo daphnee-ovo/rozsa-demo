@@ -1,8 +1,0 @@
-{
-  "name": "rozsa-gui-tests",
-  "private": true,
-  "type": "module",
-  "scripts": { "test": "node --test *.test.js" },
-  "engines": { "node": ">=22" },
-  "devDependencies": { "jsdom": "^27.0.0" }
-}

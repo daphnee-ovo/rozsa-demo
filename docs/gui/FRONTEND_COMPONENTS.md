@@ -1,8 +1,8 @@
 # Rózsa 共享前端组件
 
-已覆盖组件的唯一实现位于 `crates/rozsa-gui/frontend/ui/`。原型与 Tauri 宿主共享模板、CSS 和组件交互；场景和数据接入留在各自宿主。层级、状态归属与新增方法见 [前端界面规范](./FRONTEND_INTERFACE_STANDARD.md)。
+已覆盖组件的唯一实现位于 `desktop/renderer/`。原型与 Tauri 宿主共享模板、CSS 和组件交互；场景和数据接入留在各自宿主。层级、状态归属与新增方法见 [前端界面规范](./FRONTEND_INTERFACE_STANDARD.md)。
 
-下表路径均相对于 `frontend/ui/`。稳定结构由 template 或 renderer 唯一拥有，数据数量决定的重复内容由 feature renderer 生成。
+下表路径均相对于 `desktop/renderer/`。稳定结构由 template 或 renderer 唯一拥有，数据数量决定的重复内容由 feature renderer 生成。
 
 | 组件 | 稳定结构 | CSS | 行为与组合 |
 | --- | --- | --- | --- |
@@ -38,4 +38,4 @@ Gallery 的 topbar、说明与展示布局属于 `prototype/gallery/`，不加�
 - [GUI 架构](./ARCHITECTURE.md)
 - [原型组件与入口](../../prototype/docs/COMPONENTS.md)
 - [原型流程](../../prototype/docs/FLOWS.md)
-- [共享样式](../../crates/rozsa-gui/frontend/ui/styles/README.md)
+- [共享样式](../../desktop/renderer/styles/README.md)

@@ -259,4 +259,4 @@
 
 - [`GUI 界面对照表`](./UI_COVERAGE.md)
 - [`机器可读界面对照表`](./UI_COVERAGE.json)
-- [`SPEC：GUI 原型与真实前端组件化重构`](../../.dev-doc/refactor/ui-architecture/SPEC.md)
+- [共享 GUI 架构](../../docs/gui/ARCHITECTURE.md)

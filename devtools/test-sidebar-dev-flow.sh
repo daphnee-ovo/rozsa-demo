@@ -5,13 +5,13 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 node --test \
-  crates/rozsa-gui/js-tests/shared-dev-flow.test.js \
-  crates/rozsa-gui/js-tests/shared-suspension.test.js \
-  crates/rozsa-gui/js-tests/shared-sidebar.test.js \
-  crates/rozsa-gui/js-tests/shared-ui-host-contract.test.js \
-  crates/rozsa-gui/js-tests/dev-flow-sidebar.test.js \
-  crates/rozsa-gui/js-tests/dev-flow-settings.test.js \
-  crates/rozsa-gui/js-tests/dev-flow-tool-presentation.test.js
+  desktop/tests/shared-dev-flow.test.js \
+  desktop/tests/shared-suspension.test.js \
+  desktop/tests/shared-sidebar.test.js \
+  desktop/tests/shared-ui-host-contract.test.js \
+  desktop/tests/dev-flow-sidebar.test.js \
+  desktop/tests/dev-flow-settings.test.js \
+  desktop/tests/dev-flow-tool-presentation.test.js
 
 cargo test -p rozsa-gui \
   --test dev_flow_runtime_wiring_test \

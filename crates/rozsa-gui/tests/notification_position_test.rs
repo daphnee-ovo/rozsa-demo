@@ -4,9 +4,9 @@
 
 #[test]
 fn notifications_have_one_global_host_and_expand_down_from_the_top_right() {
-    let sidebar = include_str!("../frontend/sidebar.html");
-    let entry = include_str!("../frontend/runtime/entries/sidebar.js");
-    let css = include_str!("../frontend/ui/styles/composites/feedback.css");
+    let sidebar = include_str!("../../../desktop/renderer/sidebar.html");
+    let entry = include_str!("../../../desktop/renderer/runtime/entries/sidebar.js");
+    let css = include_str!("../../../desktop/renderer/styles/composites/feedback.css");
     assert!(!sidebar.contains("data-template-mount=\"notification\""));
     assert!(!entry.contains("composites/notification.html"));
     let center = css

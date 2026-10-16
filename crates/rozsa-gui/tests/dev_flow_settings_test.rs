@@ -67,11 +67,12 @@ fn relative_custom_path_is_rejected_and_does_not_persist() {
 
 #[test]
 fn settings_pane_uses_shared_style_and_covers_overview_switches_and_install_hints() {
-    let index = include_str!("../frontend/index.html");
-    let settings = include_str!("../frontend/ui/templates/features/settings.html");
-    let app_js = include_str!("../frontend/app.js");
-    let main_entry = include_str!("../frontend/runtime/entries/main.js");
-    let runtime_adapter = include_str!("../frontend/runtime/adapters/sidebar-dev-flow.js");
+    let index = include_str!("../../../desktop/renderer/tauri.html");
+    let settings = include_str!("../../../desktop/renderer/templates/features/settings.html");
+    let app_js = include_str!("../../../desktop/renderer/app.js");
+    let main_entry = include_str!("../../../desktop/renderer/runtime/entries/main.js");
+    let runtime_adapter =
+        include_str!("../../../desktop/renderer/runtime/adapters/sidebar-dev-flow.js");
 
     for markup in [index, settings] {
         assert!(markup.contains("data-settings-pane=\"dev-flow\""));

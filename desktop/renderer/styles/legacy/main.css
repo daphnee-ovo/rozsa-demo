@@ -1,0 +1,36 @@
+/* Rózsa main-window stylesheet entry point.
+ * Import order is part of the cascade contract: foundations, layout,
+ * reusable components, feature surfaces, then state utilities.
+ */
+@import url("./tokens.css");
+@import url("./reset.css");
+@import url("./base.css");
+@import url("./layout/app-shell.css");
+@import url("./features/conversation.css");
+@import url("./features/tools.css");
+@import url("./components/forms.css");
+@import url("./components/overlays.css");
+@import url("./features/settings.css");
+@import url("./utilities.css");
+@import url("./features/appearance.css");
+@import url("./components/feedback.css");
+
+/* Shared prototype foundations take precedence during component cutover.
+ * Legacy feature consumers are removed after their own migration checks. */
+@import url("../entries/main.css");
+@import url("../features/sidebar.css");
+@import url("../features/dev-flow.css");
+@import url("../features/dev-flow-detail.css");
+@import url("../features/sidebar-window.css");
+@import url("../features/dev-flow-runtime.css");
+@import url("../primitives/actions.css");
+@import url("../features/conversation.css");
+@import url("../features/thinking.css");
+@import url("../features/tools.css");
+@import url("../composites/composer.css");
+@import url("../features/queue.css");
+@import url("../features/steering.css");
+@import url("../composites/popover.css");
+@import url("../composites/permission-question.css");
+@import url("../foundations/motion.css");
+@import url("./native-host.css");

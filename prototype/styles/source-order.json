@@ -12,7 +12,7 @@
         1,
         102
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/foundations/tokens.css",
+      "target": "desktop/renderer/styles/foundations/tokens.css",
       "sha256": "efa704b8b7eb2e825c9b8450d726779776b35f2b6b5c23adc94b6ac59f2c355c",
       "prototype_source": "prototype/styles/foundations/tokens.css"
     },
@@ -22,7 +22,7 @@
         103,
         115
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/foundations/reset.css",
+      "target": "desktop/renderer/styles/foundations/reset.css",
       "sha256": "6852851a0a5d99c34299e0e3951ed7d029f04201c116b19f11a49ac0c597cab2",
       "prototype_source": "prototype/styles/foundations/reset.css"
     },
@@ -32,7 +32,7 @@
         116,
         170
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/foundations/base.css",
+      "target": "desktop/renderer/styles/foundations/base.css",
       "sha256": "0e181a7ae24b72b1bd387dccf5b9a23c5f70331b634a00dada2fdd644e9d76a2",
       "prototype_source": "prototype/styles/foundations/base.css"
     },
@@ -42,7 +42,7 @@
         171,
         190
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css",
+      "target": "desktop/renderer/styles/layouts/app-shell.css",
       "sha256": "9c062bb699e8307d29c9dee4bbc33fe5db722d4b762d5b9a28920322954a0aba",
       "prototype_source": "prototype/styles/layouts/app-shell.css"
     },
@@ -52,7 +52,7 @@
         191,
         204
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/layouts/sidebar-shell.css",
+      "target": "desktop/renderer/styles/layouts/sidebar-shell.css",
       "sha256": "5bd0a97a2ff11b174727f1454038ea290ca8b318ecebaaf7f4fe702b70a14722",
       "prototype_source": "prototype/styles/layouts/sidebar-shell.css"
     },
@@ -62,7 +62,7 @@
         205,
         286
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/features/sidebar.css",
+      "target": "desktop/renderer/styles/features/sidebar.css",
       "sha256": "f138fc5b2cddf56a09d382d98cc6dc23a8b8c4b142a14f515872bd2abf55a42e"
     },
     {
@@ -71,7 +71,7 @@
         287,
         402
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/features/conversation.css",
+      "target": "desktop/renderer/styles/features/conversation.css",
       "sha256": "b0a87541083dd9db82bdc525fb48c472b2658f692600cdd7166ac6f4267021c3",
       "prototype_source": "prototype/styles/features/conversation.css"
     },
@@ -85,8 +85,8 @@
       "sha256": "45354a4cd26467d9faee04336d5612425cb3354a885e4e33e05a336d86a9aefe",
       "original_sha256": "ffd6b3964aa2baf398b853811e74afc0b67a5df9f580d797342b26920c5dcb87",
       "owners": [
-        "crates/rozsa-gui/frontend/ui/styles/features/thinking.css",
-        "crates/rozsa-gui/frontend/ui/styles/features/tools.css"
+        "desktop/renderer/styles/features/thinking.css",
+        "desktop/renderer/styles/features/tools.css"
       ]
     },
     {
@@ -95,7 +95,7 @@
         490,
         524
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/composites/composer.css",
+      "target": "desktop/renderer/styles/composites/composer.css",
       "sha256": "ac79930b63b9d42712bd65b5f346e8fd54f8d6b334681777a670cfa5d85033f6",
       "prototype_source": "prototype/styles/composites/composer.css"
     },
@@ -105,13 +105,13 @@
         525,
         648
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/composites/overlays.css",
+      "target": "desktop/renderer/styles/composites/overlays.css",
       "sha256": "84cfa69ca9976cd1b02f72c12d6ab6754935e663027077f2204848e458e6fa03",
       "original_sha256": "afb36943249d9756ce06e02cf0a07a6e837b265357c187495b071255f7873c10",
       "prototype_source": "prototype/styles/composites/overlays.css",
       "owners": [
-        "crates/rozsa-gui/frontend/ui/styles/composites/permission-question.css",
-        "crates/rozsa-gui/frontend/ui/styles/composites/popover.css"
+        "desktop/renderer/styles/composites/permission-question.css",
+        "desktop/renderer/styles/composites/popover.css"
       ]
     },
     {
@@ -120,7 +120,7 @@
         649,
         726
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/features/settings.css",
+      "target": "desktop/renderer/styles/features/settings.css",
       "sha256": "08b9922553c0e92ce50f6f40127c5ad01b49232d5a8b533ccca400d2ca0e30ab",
       "prototype_source": "prototype/styles/features/settings.css"
     },
@@ -130,7 +130,7 @@
         727,
         899
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/features/appearance.css",
+      "target": "desktop/renderer/styles/features/appearance.css",
       "sha256": "d237c15e86a57c6683e169dbde188542b6c80060e6f8500ff6fac3f1eb5e189a",
       "prototype_source": "prototype/styles/features/appearance.css"
     },
@@ -140,7 +140,7 @@
         900,
         931
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/primitives/actions.css",
+      "target": "desktop/renderer/styles/primitives/actions.css",
       "sha256": "cbb3380e2c103f61a7a356d6979815f7088e3f19765e40b16c8a3c4a4f615fee",
       "prototype_source": "prototype/styles/primitives/actions.css"
     },
@@ -159,7 +159,7 @@
         981,
         1030
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/features/dev-flow.css",
+      "target": "desktop/renderer/styles/features/dev-flow.css",
       "sha256": "f31e964677e529f3bcbb6f9d92aa1c47da106d35f281216e860aa2fc236fb55c",
       "prototype_source": "prototype/styles/features/dev-flow.css"
     },
@@ -169,7 +169,7 @@
         1031,
         1057
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/composites/feedback.css",
+      "target": "desktop/renderer/styles/composites/feedback.css",
       "sha256": "aa1f4da45fee31d4a577348bc275e5a40051474f970a3e6108ecb46a70a78a49",
       "prototype_source": "prototype/styles/composites/feedback.css"
     },
@@ -179,7 +179,7 @@
         1058,
         1083
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/features/dev-flow-detail.css",
+      "target": "desktop/renderer/styles/features/dev-flow-detail.css",
       "sha256": "a9c46c87d359111609e096059af1d28952ca9f916f64d33f515eda2357a43b78",
       "prototype_source": "prototype/styles/features/dev-flow-detail.css"
     },
@@ -189,7 +189,7 @@
         1084,
         1090
       ],
-      "target": "crates/rozsa-gui/frontend/ui/styles/features/sidebar-window.css",
+      "target": "desktop/renderer/styles/features/sidebar-window.css",
       "sha256": "79dfdb7ee2767ca74cb21fe0810b47f7eba776f3dc1175d419df806b2108520e",
       "prototype_source": "prototype/styles/features/sidebar-window.css"
     }
@@ -241,7 +241,7 @@
         1091,
         1094
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/dev-flow-detail.css",
+      "owner_file": "desktop/renderer/styles/features/dev-flow-detail.css",
       "owner": "dev-flow-detail",
       "media": "max-width: 1100px",
       "sha256": "ecd5a4b39ec7f607b5047c4b4c0a2539e7a988aad0f19326c335524bf41ecf3d"
@@ -252,7 +252,7 @@
         1097,
         1097
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css",
+      "owner_file": "desktop/renderer/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 900px",
       "sha256": "82f5d2e02faac94bb34a08ce6f59ee85e236ca32ac136cf509c1bd8a8ecfd71d",
@@ -264,7 +264,7 @@
         1098,
         1098
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/conversation.css",
+      "owner_file": "desktop/renderer/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 900px",
       "sha256": "cb34449713e4c12d09bd9d964b103f96393436714b6dee970eec39349eaf6b56"
@@ -275,7 +275,7 @@
         1099,
         1099
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/settings.css",
+      "owner_file": "desktop/renderer/styles/features/settings.css",
       "owner": "settings",
       "media": "max-width: 900px",
       "sha256": "700d2e143bfeb55c78425c942083fb0757898e7ada66ae979136b253180ba782",
@@ -287,7 +287,7 @@
         1100,
         1100
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/dev-flow.css",
+      "owner_file": "desktop/renderer/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 900px",
       "sha256": "035ab95e09aaa7a8bdd7667666472349581756fa97e10af564acb22789526f2a"
@@ -298,7 +298,7 @@
         1103,
         1107
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css",
+      "owner_file": "desktop/renderer/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 760px",
       "current_media": "max-width: 780px",
@@ -311,7 +311,7 @@
         1108,
         1109
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/conversation.css",
+      "owner_file": "desktop/renderer/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 760px",
       "sha256": "451299d51bebb018188dac39e58bfe6c84df9054d33a92dce49e89a756f83798"
@@ -322,7 +322,7 @@
         1110,
         1116
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/settings.css",
+      "owner_file": "desktop/renderer/styles/features/settings.css",
       "owner": "settings",
       "media": "max-width: 760px",
       "sha256": "d18dc58f89e1971ee3c1127b2cdeee3ff0a1448c3f518f75dc1fa8045c43f475",
@@ -345,7 +345,7 @@
         1120,
         1120
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/dev-flow.css",
+      "owner_file": "desktop/renderer/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 760px",
       "sha256": "5d132843b2eefdda77758c69f4160b6c009ec56cf0f3b4bd9f662d76436276f6"
@@ -356,7 +356,7 @@
         1123,
         1124
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/sidebar.css",
+      "owner_file": "desktop/renderer/styles/features/sidebar.css",
       "owner": "sidebar",
       "media": "max-width: 560px",
       "sha256": "b4b2881d29ac15bb1208dace9ac84b5836861d500f3cd6ce7d6213cb9ab66b37"
@@ -367,7 +367,7 @@
         1125,
         1125
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css",
+      "owner_file": "desktop/renderer/styles/layouts/app-shell.css",
       "owner": "app-shell",
       "media": "max-width: 560px",
       "sha256": "d57d02b31922b164639dd82b54ba7f63d597b29de496fbffb0088b33d30b4494",
@@ -379,7 +379,7 @@
         1126,
         1133
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/conversation.css",
+      "owner_file": "desktop/renderer/styles/features/conversation.css",
       "owner": "conversation",
       "media": "max-width: 560px",
       "sha256": "35b9714050faa7955fab0bd429f49e75cd4c9a78341b23c73d7edcbcb74e81e6"
@@ -390,7 +390,7 @@
         1134,
         1158
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/appearance.css",
+      "owner_file": "desktop/renderer/styles/features/appearance.css",
       "owner": "appearance",
       "media": "max-width: 560px",
       "sha256": "e0e54e84663f17c2a36aa0970945b814ff18279d79a2296e8b98d61d44209126",
@@ -402,7 +402,7 @@
         1159,
         1160
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/dev-flow.css",
+      "owner_file": "desktop/renderer/styles/features/dev-flow.css",
       "owner": "dev-flow",
       "media": "max-width: 560px",
       "sha256": "569a4fe319dfacd251be403d89d1a3e8817490229c3e8d4afe4b61c37ba20897"
@@ -413,7 +413,7 @@
         1161,
         1162
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/composites/feedback.css",
+      "owner_file": "desktop/renderer/styles/composites/feedback.css",
       "owner": "notification",
       "media": "max-width: 560px",
       "sha256": "6ccb21158a057d3295085761039a1d3c698ff649fff09fc84024c05097f68841"
@@ -424,7 +424,7 @@
         1163,
         1165
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/features/dev-flow-detail.css",
+      "owner_file": "desktop/renderer/styles/features/dev-flow-detail.css",
       "owner": "dev-flow-detail",
       "media": "max-width: 560px",
       "sha256": "916654d1a1a34d55a40e781b96103247c3072612a0a715fd9447285d229fcf2c"
@@ -435,7 +435,7 @@
         1167,
         1171
       ],
-      "owner_file": "crates/rozsa-gui/frontend/ui/styles/foundations/motion.css",
+      "owner_file": "desktop/renderer/styles/foundations/motion.css",
       "owner": "motion",
       "media": "prefers-reduced-motion: reduce",
       "sha256": "f76acab354454f9e31e038674318abf8e2a43558956e111c281c453536ca1d59",

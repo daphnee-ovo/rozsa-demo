@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "node scripts/typecheck.mjs",
     "package": "electron-forge package",
-    "test:resources": "npm --prefix js-tests run test:resources",
+    "test:resources": "npm --prefix tests run test:resources",
     "start": "electron-forge start"
   },
   "devDependencies": {

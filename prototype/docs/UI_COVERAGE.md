@@ -65,27 +65,27 @@ Permission request 队列、reply 失败、被动 message/tool 状态与在途�
 
 - 项目：`UI-PERMISSION-001`、`UI-PERMISSION-002`、`UI-QUESTION-001`。
 - 结论：AskUserQuestion 单问题单选已覆盖，完整状态为 `partial`；permission main/hint 为 `partial`，trust、排队、错误与取消为 `missing`。
-- Runtime 边界：正常 permission main/hint 与单问题单选共用 `ui/templates/composites/interruption-panel.html`、`ui/styles/composites/permission-question.css`、共享 component/feature/focus flow；真实请求、队列与 IPC 留在 runtime adapter/handler。
+- Runtime 边界：正常 permission main/hint 与单问题单选共用 `templates/composites/interruption-panel.html`、`styles/composites/permission-question.css`、共享 component/feature/focus flow；真实请求、队列与 IPC 留在 runtime adapter/handler。
 - 主面板保留原型四个选项；Trust 按钮禁用，后续空 slot 与选择入口暂停。多问题、多选、长/复合命令、排队及真实响应失败保留现有处理，迁移受阻；T036 不得删除这些出口。缺失设计留待后续迭代。
 
 ### Settings、Appearance 与 permission settings
 
 - 项目：`UI-SETTINGS-001`、`UI-SETTINGS-002`、`UI-SETTINGS-003`、`UI-SETTINGS-004`、`UI-SETTINGS-005`、`UI-SETTINGS-006`。
 - 结论：Appearance 与 Extensions 空状态已覆盖；General、Skills/Tools、keyboard shortcut 和填充后的 permission rules 为 `missing`。
-- 共享边界：两宿主引用 `ui/templates/features/settings.html`、共享 Settings/Appearance CSS 和 `ui/scripts/features/settings.js`；native Settings 导航也从同一模板装配。原型使用 mock state，runtime adapter 保留真实 settings/theme IPC、持久化键与平台主题处理。
+- 共享边界：两宿主引用 `templates/features/settings.html`、共享 Settings/Appearance CSS 和 `scripts/features/settings.js`；native Settings 导航也从同一模板装配。原型使用 mock state，runtime adapter 保留真实 settings/theme IPC、持久化键与平台主题处理。
 - 暂停边界：五个未覆盖 pane 为空容器，main/sidebar 导航与路由、旧 renderer 和修改入口暂停；不预载 capability/permission settings。全局快捷键读取和真实审批流程保留。Dev Flow settings 已共享；受阻区域所需的惰性模板与隔离规则保留，不计入已迁移范围。
 
 ### Notification 与错误反馈
 
 - 项目：`UI-NOTIFICATION-001`、`UI-NOTIFICATION-002`、`UI-FEEDBACK-001`。
-- 共享边界：两宿主共用 `ui/templates/composites/notification.html`、`ui/styles/composites/feedback.css` 和 notification renderer/事件绑定。即时通知、未解决错误入口和列表统一位于整个窗口右上角。运行时仅 main 挂载全局通知中心，保留身份、计时、悬停暂停和 resolve；sidebar 的 IPC rejection 转交 main，关闭后保留未解决错误。
+- 共享边界：两宿主共用 `templates/composites/notification.html`、`styles/composites/feedback.css` 和 notification renderer/事件绑定。即时通知、未解决错误入口和列表统一位于整个窗口右上角。运行时仅 main 挂载全局通知中心，保留身份、计时、悬停暂停和 resolve；sidebar 的 IPC rejection 转交 main，关闭后保留未解决错误。
 - 暂停边界：跨组件异常 variant 仍为 `partial`，缺失 retry/cancel/恢复操作沿各区域缺口暂停。被动错误继续透明表达；共享 UI bootstrap 失败时保留旧错误出口，该分支不计为已迁移。sidebar 已接入同一全局通知出口，已覆盖通知视觉只有一份共享 owner。
 
 ### Dev Flow
 
 - 项目：`UI-DEVFLOW-001`、`UI-DEVFLOW-002`、`UI-DEVFLOW-003`、`UI-DEVFLOW-004`、`UI-DEVFLOW-005`。
 - 结论：settings、sidebar、runtime detail、Bash presentation 与双 WebView/native ownership 均已分类；native host 项为 `non-visual`。
-- 已覆盖 Sidebar 与 Dev Flow 结构、样式和交互共用生产 `ui/`；原型使用 mock，runtime adapter 连接真实 Tauri 数据。quota tooltip 暂停；native snapshot 未提供的 tool chip/subagent 数据保持空 slot。详情中的 done_when 与空列表提示为 `partial`，沿用 [GAP-014](./DESIGN_GAPS.md) 留待后续设计。
+- 已覆盖 Sidebar 与 Dev Flow 结构、样式和交互共用生产 `desktop/renderer/`；原型使用 mock，runtime adapter 连接真实 Tauri 数据。quota tooltip 暂停；native snapshot 未提供的 tool chip/subagent 数据保持空 slot。详情中的 done_when 与空列表提示为 `partial`，沿用 [GAP-014](./DESIGN_GAPS.md) 留待后续设计。
 
 ### Gallery 视觉参考
 
@@ -101,13 +101,13 @@ Permission request 队列、reply 失败、被动 message/tool 状态与在途�
 - prototype CSS 路径必须对应 `foundations`、`primitives`、`composites`、`features` 或 `layouts` 的唯一 owner；`styles/scenes` 不是 application runtime owner，响应式规则直接归属于实际 owner，入口只负责保持 import source order。
 - application shell 的稳定 HTML 只能来自 `templates/`，入口只提供 mount；`scripts/core/` 只负责加载、装配和 renderer 边界，scene 文件是配置输入且不得带有运行时 stylesheet 加载。
 - scene/gallery 的唯一路由登记入口是 `scenarios/registry.js`；scene 读取路径经过 `scripts/core/scene-loader.js` 和 `scripts/adapters/mock-adapter.js`，gallery 通过统一 entry route 装配；mock 文件及每个 scene 的全部使用方必须登记在 JSON `scenario_inventory`，未知 ID 必须明确报错且不能 fallback 到未定义页面。
-- 已提升的 Composer、conversation 与 Popover 由 `crates/rozsa-gui/frontend/ui/` 定义模板、样式与组件行为，prototype 同路径文件转发到共享 owner。未覆盖受阻区域保留必要的 runtime owner；各组件使用方必须在 JSON 的 `behavior` 和 `used_by` 中闭合记录。
+- 已提升的 Composer、conversation 与 Popover 由 `desktop/renderer/` 定义模板、样式与组件行为，prototype 同路径文件转发到共享 owner。未覆盖受阻区域保留必要的 runtime owner；各组件使用方必须在 JSON 的 `behavior` 和 `used_by` 中闭合记录。
 - 跨组件 flow 的唯一归属是 `scripts/flows/`：`composer-interruption.js` 只协调 interruption 与 composer 的 focus restore，`scenario-flow.js` 只协调 scene-ready 与 application shell 的装配时序；两者的 component、feature、scene 使用方登记在 JSON `flow_inventory`，按全部使用方统一验证。
 - 本清单与自动化测试只证明分类和引用闭合，不证明视觉或交互等价；实际验收使用 baseline 与真实宿主重放；gallery 仅浏览器验证，缺口不计为迁移完成。
 
 ## Related Docs
 
-- [`SPEC：GUI 原型与真实前端组件化重构`](../../.dev-doc/refactor/ui-architecture/SPEC.md)
+- [共享 GUI 架构](../../docs/gui/ARCHITECTURE.md)
 - [`设计缺口表`](./DESIGN_GAPS.md)
 - [`GUI 架构`](./ARCHITECTURE.md)
 - [`界面使用指南`](../../docs/gui/UI_USAGE_GUIDELINES.md)

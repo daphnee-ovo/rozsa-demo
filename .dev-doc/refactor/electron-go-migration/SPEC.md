@@ -113,7 +113,7 @@ TASK-T064 将本地 TypeScript compiler 设为默认工具链；TASK-T065 将默
 
 分别配置共享 UI/renderer 的 DOM 类型边界与 main/preload 的 Electron/Node 类型边界，启用 strict 类型检查，禁止 renderer 获得 Node 能力。原型与产品包读取同一批共享生成资源，不直接加载 TS，也不维护手写 JS 副本。静态资源加载与模板 URL 必须通过实际页面验收。
 
-每个模块按原有 JS 行为测试完成转换，再进行新宿主接线。Electron main/preload/bridge/renderer/native host 的所有 JS/TS 测试统一归 `desktop/tests/`，不另设 `desktop/js-tests/`。类型检查单独运行，运行时测试使用锁定的 TS runner 或受测编译产物。禁止把类型检查通过等同于产品逻辑通过。原型 mock/scene/gallery 脚本随之迁移，但演示数据与代码不得进入生产包。
+每个模块按原有 JS 行为测试完成转换，再进行新宿主接线。Electron main/preload/bridge/renderer/native host 的所有 JS/TS 测试统一归 `desktop/tests/`。类型检查单独运行，运行时测试使用锁定的 TS runner 或受测编译产物。禁止把类型检查通过等同于产品逻辑通过。原型 mock/scene/gallery 脚本随之迁移，但演示数据与代码不得进入生产包。
 
 TASK-T060 在 UI 切片前把当前共享 UI 源码和前端测试迁入最终目录；不要求它们暂留旧目录，也不在完整验收后安排第二次搬迁。随后各 UI 切片直接在 `desktop/renderer/` 实现并通过 `desktop/tests/` 验证。Electron 构建/运行只从 `desktop/` 读取前端资源，不依赖 `crates/rozsa-gui`；prototype、Electron 与仍保留的 Tauri 开发入口使用同一份资源。现有 Rust/Tauri 源码和 Git 历史继续作为行为参照，Tauri 作为旧宿主在默认入口切换前退役。
 
@@ -151,7 +151,7 @@ response。测试中的库诊断错误码不表示实际 wire response；合法�
 
 启动握手检查协议版本和能力后再 ready；事件订阅任务实现先订阅再取带水位 snapshot、重放缓冲及拒绝旧 epoch/重复事件。不承诺持久化事件日志；溢出透明报错并重新同步，审批/终态不静默丢弃。所选库的单 body 上限为 1 GiB；涉及长输出时仍须测定并测试应用层容量、背压与所需的更小业务 payload 限制，不为只读列表预先测量全产品。
 
-库提供 request context 与 `Preempter` 钩子（可用于按序处理取消 notification）；项目负责把明确的产品 abort 路由到 Go 工作、取消对应工具/进程树并保留业务取消语义。AbortSignal 取消 UI 接收不等于停止产品操作，沿用现有 [port](../../../crates/rozsa-gui/frontend/ui/scripts/core/ports.js) 语义。协议库不拥有产品状态恢复：超时、断管或 backend 异常退出只报告失败/中断，不自动重发 Write/Edit/Bash/审批响应。恢复读取已持久化状态；不能伪称在途任务已恢复。
+库提供 request context 与 `Preempter` 钩子（可用于按序处理取消 notification）；项目负责把明确的产品 abort 路由到 Go 工作、取消对应工具/进程树并保留业务取消语义。AbortSignal 取消 UI 接收不等于停止产品操作，沿用现有 [port](../../../desktop/renderer/scripts/core/ports.js) 语义。协议库不拥有产品状态恢复：超时、断管或 backend 异常退出只报告失败/中断，不自动重发 Write/Edit/Bash/审批响应。恢复读取已持久化状态；不能伪称在途任务已恢复。
 
 renderer reload 只重订阅和恢复快照，不重新启动同一会话。生命周期及相关业务切片分别读取旧关闭/退出/异常中断逻辑：当前窗口关闭拒绝待审批、取消问题；工作取消、dashboard 关闭和写入/退出顺序随接入核对。Go 保留业务语义，Electron 关闭握手承接进程边界；不能增加自动保存或恢复。超时透明报告并按 OS adapter 清理。CLI stdout 不混入服务 framing。
 

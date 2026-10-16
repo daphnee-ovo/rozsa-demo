@@ -45,35 +45,25 @@ fn application_scenes_are_configuration_only() {
 fn shared_state_rules_live_with_component_owners() {
     let root = repository_root();
     let entries = fs::read_to_string(root.join("prototype/styles/entries/main.css")).unwrap();
-    let composer = fs::read_to_string(
-        root.join("crates/rozsa-gui/frontend/ui/styles/composites/composer.css"),
-    )
-    .unwrap();
+    let composer =
+        fs::read_to_string(root.join("desktop/renderer/styles/composites/composer.css")).unwrap();
     let queue =
-        fs::read_to_string(root.join("crates/rozsa-gui/frontend/ui/styles/features/queue.css"))
-            .unwrap();
+        fs::read_to_string(root.join("desktop/renderer/styles/features/queue.css")).unwrap();
     let steering =
-        fs::read_to_string(root.join("crates/rozsa-gui/frontend/ui/styles/features/steering.css"))
-            .unwrap();
+        fs::read_to_string(root.join("desktop/renderer/styles/features/steering.css")).unwrap();
     let sidebar =
-        fs::read_to_string(root.join("crates/rozsa-gui/frontend/ui/styles/features/sidebar.css"))
+        fs::read_to_string(root.join("desktop/renderer/styles/features/sidebar.css")).unwrap();
+    let dev_flow =
+        fs::read_to_string(root.join("desktop/renderer/styles/features/dev-flow-runtime.css"))
             .unwrap();
-    let dev_flow = fs::read_to_string(
-        root.join("crates/rozsa-gui/frontend/ui/styles/features/dev-flow-runtime.css"),
-    )
-    .unwrap();
-    let overlays = fs::read_to_string(
-        root.join("crates/rozsa-gui/frontend/ui/styles/composites/permission-question.css"),
-    )
-    .unwrap();
+    let overlays =
+        fs::read_to_string(root.join("desktop/renderer/styles/composites/permission-question.css"))
+            .unwrap();
 
     assert!(entries.contains("../composites/composer.css"));
     assert!(entries.contains("../features/queue.css"));
     assert!(entries.contains("../features/steering.css"));
-    assert!(
-        entries
-            .contains("../../../crates/rozsa-gui/frontend/ui/styles/features/dev-flow-runtime.css")
-    );
+    assert!(entries.contains("../../../desktop/renderer/styles/features/dev-flow-runtime.css"));
     assert!(!entries.contains("../primitives/forms.css"));
 
     assert!(composer.contains(".input-wrapper > .running-messages:not([hidden]) ~ .rich-input"));

@@ -53,10 +53,10 @@ fn component_files_have_explicit_owners() {
         );
     }
     for owner in [
-        "crates/rozsa-gui/frontend/ui/styles/composites/composer.css",
-        "crates/rozsa-gui/frontend/ui/styles/features/queue.css",
-        "crates/rozsa-gui/frontend/ui/styles/features/steering.css",
-        "crates/rozsa-gui/frontend/ui/styles/features/dev-flow-runtime.css",
+        "desktop/renderer/styles/composites/composer.css",
+        "desktop/renderer/styles/features/queue.css",
+        "desktop/renderer/styles/features/steering.css",
+        "desktop/renderer/styles/features/dev-flow-runtime.css",
     ] {
         assert!(
             main_owners.contains(&root.join(owner).canonicalize().unwrap()),
@@ -128,19 +128,19 @@ fn stylesheet_entries_are_external_acyclic_and_runtime_shaped() {
     // The prototype sidebar imports the shared sidebar entry, then applies its
     // two prototype-specific owner shims and motion tokens.
     let mut expected_sidebar_owners =
-        imported_owners(&root.join("crates/rozsa-gui/frontend/ui/styles/entries/sidebar.css"));
+        imported_owners(&root.join("desktop/renderer/styles/entries/sidebar.css"));
     expected_sidebar_owners.push(
-        root.join("crates/rozsa-gui/frontend/ui/styles/features/sidebar.css")
+        root.join("desktop/renderer/styles/features/sidebar.css")
             .canonicalize()
             .unwrap(),
     );
     expected_sidebar_owners.push(
-        root.join("crates/rozsa-gui/frontend/ui/styles/features/sidebar-window.css")
+        root.join("desktop/renderer/styles/features/sidebar-window.css")
             .canonicalize()
             .unwrap(),
     );
     expected_sidebar_owners.push(
-        root.join("crates/rozsa-gui/frontend/ui/styles/foundations/motion.css")
+        root.join("desktop/renderer/styles/foundations/motion.css")
             .canonicalize()
             .unwrap(),
     );

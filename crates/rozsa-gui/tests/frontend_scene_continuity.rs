@@ -1,7 +1,7 @@
 #[test]
 fn main_scene_state_is_captured_without_rebuilding_stateful_roots() {
-    let js = include_str!("../frontend/app.js");
-    let html = include_str!("../frontend/index.html");
+    let js = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../../../desktop/renderer/tauri.html");
 
     assert!(html.contains("id=\"mainContentScene\" data-native-scene-root=\"main-content\""));
     let start = js.find("function captureMainSceneContinuity").unwrap();
@@ -31,7 +31,7 @@ fn main_scene_state_is_captured_without_rebuilding_stateful_roots() {
 
 #[test]
 fn ime_defers_the_latest_complete_scene_until_composition_end() {
-    let js = include_str!("../frontend/app.js");
+    let js = include_str!("../../../desktop/renderer/app.js");
 
     let apply_start = js.find("function applyGuiSceneSnapshot").unwrap();
     let apply_end = js[apply_start..]
@@ -53,7 +53,7 @@ fn ime_defers_the_latest_complete_scene_until_composition_end() {
 
 #[test]
 fn returning_to_main_restores_focus_or_uses_the_composer_fallback() {
-    let js = include_str!("../frontend/app.js");
+    let js = include_str!("../../../desktop/renderer/app.js");
     let start = js.find("function restoreMainSceneContinuity").unwrap();
     let end = js[start..]
         .find("function flushPendingGuiSceneTransition")

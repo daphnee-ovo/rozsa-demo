@@ -23,6 +23,10 @@ Dependency direction is `rozsa-cli` / `rozsa-gui` → `rozsa-app` → `rozsa-cor
 
 The active product is implemented entirely in the five Rust crates above. Do not introduce dependencies on retired terminal, TypeScript, or process-bridge implementations.
 
+On the migration branch, shared UI sources live in `desktop/renderer/` and all
+frontend/Electron tests in `desktop/tests/`. Prototype and retained Tauri entries
+reuse these resources; Electron build/run must not read `crates/rozsa-gui`.
+
 ## Cross-Platform Compatibility
 
 - Multi-system compatibility applies to every crate and module, not only `rozsa-gui` or UI components.

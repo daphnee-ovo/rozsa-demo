@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-node --test crates/rozsa-gui/js-tests/*.test.js
+node --test desktop/tests/*.test.js
 cargo test -p rozsa-gui \
   --test dev_flow_runtime_wiring_test \
   --test dev_flow_sidebar_test \

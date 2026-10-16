@@ -8,7 +8,7 @@
 
 #[test]
 fn thinking_rendering_preserves_expand_state_and_patches_streaming_dom() {
-    let source = include_str!("../frontend/app.js");
+    let source = include_str!("../../../desktop/renderer/app.js");
     assert!(source.contains("patchStreamingThinking"));
     assert!(source.contains("expandedThinkingBySession"));
     assert!(source.contains("aria-expanded"));
@@ -17,7 +17,7 @@ fn thinking_rendering_preserves_expand_state_and_patches_streaming_dom() {
 
 #[test]
 fn thinking_animation_does_not_restart_on_each_token() {
-    let source = include_str!("../frontend/ui/styles/features/thinking.css");
+    let source = include_str!("../../../desktop/renderer/styles/features/thinking.css");
     assert!(source.contains(".thinking-block.active .thinking-icon"));
     assert!(!source.contains("animation: thinkPulse"));
     assert!(!source.contains("animation: thinkDots"));
@@ -25,7 +25,7 @@ fn thinking_animation_does_not_restart_on_each_token() {
 
 #[test]
 fn thinking_block_uses_the_shared_prototype_card_and_disclosure() {
-    let source = include_str!("../frontend/ui/styles/features/thinking.css");
+    let source = include_str!("../../../desktop/renderer/styles/features/thinking.css");
     let block = source
         .split(".thinking-block {")
         .nth(1)
@@ -40,8 +40,8 @@ fn thinking_block_uses_the_shared_prototype_card_and_disclosure() {
 
 #[test]
 fn hide_thinking_setting_hides_expanded_and_collapsed_shared_cards() {
-    let app = include_str!("../frontend/app.js");
-    let css = include_str!("../frontend/ui/styles/features/thinking.css");
+    let app = include_str!("../../../desktop/renderer/app.js");
+    let css = include_str!("../../../desktop/renderer/styles/features/thinking.css");
     assert!(app.contains("classList.toggle('hide-thinking', Boolean(settings.hide_thinking))"));
     assert!(app.contains("classList.toggle('hide-thinking', enabled)"));
     let hidden_rule = css
@@ -56,11 +56,11 @@ fn hide_thinking_setting_hides_expanded_and_collapsed_shared_cards() {
 
 #[test]
 fn thinking_effort_picker_uses_model_support_and_compacts_missing_levels() {
-    let source = include_str!("../frontend/app.js");
+    let source = include_str!("../../../desktop/renderer/app.js");
 
     assert!(source.contains("option.value === 'off' || unavailable[option.value] !== null"));
     assert!(source.contains("function normalizeThinkingEffort(options, requested)"));
-    let component = include_str!("../frontend/ui/scripts/components/popover.js");
+    let component = include_str!("../../../desktop/renderer/scripts/components/popover.js");
     assert!(source.contains("window.RozsaPopover.renderChoice(options, selectedIndex)"));
     assert!(component.contains("slider.max = String(options.length - 1)"));
     assert!(component.contains("slider.disabled = options.length === 1"));

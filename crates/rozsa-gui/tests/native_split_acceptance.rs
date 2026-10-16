@@ -38,7 +38,7 @@ fn implementation_keeps_two_webviews_targeted_routing_and_native_backing() {
     let native = include_str!("../src/native_split_view.rs");
     let router = include_str!("../src/scene_router.rs");
     let events = include_str!("../src/events.rs");
-    let frontend = include_str!("../frontend/app.js");
+    let frontend = include_str!("../../../desktop/renderer/app.js");
 
     assert!(native.contains("WebviewBuilder::new(\"sidebar\""));
     assert!(native.contains(".transparent(true)"));

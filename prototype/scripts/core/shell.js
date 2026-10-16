@@ -1,10 +1,10 @@
 import { loadTemplate } from "./template-loader.js";
 import { mountTemplateChildren } from "./renderer.js";
-import { mountShell } from "../../../crates/rozsa-gui/frontend/ui/scripts/core/shell.js";
+import { mountShell } from "../../../desktop/renderer/scripts/core/shell.js";
 import { resolveSceneId } from "../../scenarios/registry.js";
-import { createUIHost } from "../../../crates/rozsa-gui/frontend/ui/scripts/core/renderer.js";
+import { createUIHost } from "../../../desktop/renderer/scripts/core/renderer.js";
 import { createMockAdapter } from "../adapters/mock-adapter.js";
-import { bindViewport } from '../../../crates/rozsa-gui/frontend/ui/scripts/core/viewport.js';
+import { bindViewport } from '../../../desktop/renderer/scripts/core/viewport.js';
 
 window.RozsaUIHost = createUIHost(createMockAdapter());
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });

@@ -1,4 +1,4 @@
-import { init as bindSidebar, suspendQuotaTooltip } from '../../../crates/rozsa-gui/frontend/ui/scripts/features/sidebar.js';
+import { init as bindSidebar, suspendQuotaTooltip } from '../../../desktop/renderer/scripts/features/sidebar.js';
 export function init(api) {
   suspendQuotaTooltip();
   bindSidebar({ ...api, openDevFlowDashboard: api.openDevFlowDashboardDemo,

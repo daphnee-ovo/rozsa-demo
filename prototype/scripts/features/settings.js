@@ -1,4 +1,4 @@
-import { init as bindSettings } from '../../../crates/rozsa-gui/frontend/ui/scripts/features/settings.js';
+import { init as bindSettings } from '../../../desktop/renderer/scripts/features/settings.js';
 
 export function init(api) {
   bindSettings({ ...api,

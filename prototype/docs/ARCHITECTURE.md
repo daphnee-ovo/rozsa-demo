@@ -1,6 +1,6 @@
 # 原型架构
 
-根目录 `prototype/` 保存唯一可编辑的原型场景、gallery 和 mock。已覆盖组件的模板、CSS 与交互唯一位于 `crates/rozsa-gui/frontend/ui/`，原型与真实 GUI 引用同一份实现。设计概念见 [DESIGN.md](../../DESIGN.md)，生产职责见 [GUI 架构](../../docs/gui/ARCHITECTURE.md)。
+根目录 `prototype/` 保存唯一可编辑的原型场景、gallery 和 mock。已覆盖组件的模板、CSS 与交互唯一位于 `desktop/renderer/`，原型与真实 GUI 引用同一份实现。设计概念见 [DESIGN.md](../../DESIGN.md)，生产职责见 [GUI 架构](../../docs/gui/ARCHITECTURE.md)。
 
 ## 入口与加载
 
