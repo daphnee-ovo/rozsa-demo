@@ -180,6 +180,18 @@ T065：Forge/Vite 开发与可运行 package（依赖 T064）。
 | TASK-T022 | 移植 OpenAI Responses 转换、stream/continuation 与错误 | TASK-T016 |
 | TASK-T023 | 移植 Bedrock Converse/event-stream/签名与错误 | TASK-T016 |
 | TASK-T024 | 实现 credentials 优先级与 OAuth 公共 PKCE/callback/device 基础 | TASK-T015 |
+
+#### TASK-T016 当前覆盖
+
+Go `model/types` 提供 provider/API/model/cost/thinking effort 和 quota window 类型；
+`app/modelregistry` 支持生成模型载入、用户目录后项目目录覆盖、自定义模型、URL/headers、
+thinking map、context、来源标记、配置诊断与事务式 refresh。未配置 thinking map 与映射中
+显式 `null` 保持不同语义。刷新失败返回错误并保留旧 registry；model selection 留在 settings，
+refresh 不改选中值。这里实现 quota 数据类型，不包含网络 quota 查询。
+
+针对性验证：`go -C backend test ./internal/model/types/... ./internal/app/modelregistry/...`。
+覆盖 thinking 默认/null、项目覆盖、headers/context、自定义模型、空 registry、坏文件诊断及
+refresh error。完整 provider/OAuth/stream 行为和真实授权仍由后续任务及 T053–T059 验收。
 | TASK-T025 | 移植 Read/Write/Edit、模糊匹配/锁与 diff evidence | TASK-T019 |
 | TASK-T026 | 移植 Bash/命令分段与三平台 process tree 取消 | TASK-T019 |
 | TASK-T027 | 移植 AskUserQuestion 多题/多选/Other、队列与迟到处理 | TASK-T019 |

@@ -44,6 +44,7 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
 | `compat` | 否 | 兼容性标志 |
 | `models` | 否 | 模型定义列表 |
 | `modelOverrides` | 否 | 按 model ID 覆盖已有模型字段 |
+| `baseUrl` / `headers` | — | 后加载配置覆盖 URL；headers 按键合并，项目级配置后于用户级 |
 
 ### Model 级
 
@@ -54,7 +55,7 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
 | `api` | 否 | 继承 provider 级 |
 | `baseUrl` | 否 | 继承 provider 级 |
 | `reasoning` | 否 | false |
-| `thinkingEffortMap` | 否 | 模型的逻辑思考强度到 provider 请求值的映射；`null` 表示该档不可用 |
+| `thinkingEffortMap` | 否 | 未提供时沿用 reasoning 默认档位；映射中的显式 `null` 表示该档不可用 |
 | `input` | 否 | ["text"] |
 | `contextWindow` | 否 | 128000 |
 | `maxTokens` | 否 | 16384 |
@@ -237,6 +238,8 @@ Rózsa 通过扫描 `~/.rozsa/models/` 目录下的 JSON 文件加载可用模�
 项目级配置优先于用户级 — 同名 provider/model 会被项目级覆盖。
 
 每个目录内的文件按文件名字母序加载。
+
+Go registry 刷新按完整候选结果替换当前模型集合；读取或生成数据失败时保留现有集合并返回错误，不会改写 settings 中选中的 provider/model。registry 诊断会保留路径和错误信息，并允许其它有效配置继续加载。
 
 推荐命名：`<provider>.json`（如 `anthropic.json`、`deepseek.json`）。
 
