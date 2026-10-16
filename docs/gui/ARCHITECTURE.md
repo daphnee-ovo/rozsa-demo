@@ -1,6 +1,6 @@
 # Rózsa GUI 架构
 
-新版原型与 Tauri 产品对已覆盖组件引用同一份生产 UI。原型使用 mock adapter，产品使用 Tauri adapter；设计概念见 [DESIGN.md](../../DESIGN.md)，场景和设计参考见根目录 [prototype/](../../prototype/)。
+旧 Rust/Tauri 独立维护 crate 内前端、测试和静态资源。新 Electron+Go 与原型共享 `desktop/renderer/`，不参与旧工程构建、运行或测试；设计概念见 [DESIGN.md](../../DESIGN.md)，场景和设计参考见根目录 [prototype/](../../prototype/)。
 
 ## 职责与依赖
 
@@ -8,23 +8,23 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| `desktop/renderer/styles/` | 唯一共享 CSS，按 foundations、primitives、composites、features、layouts、entries 分层 |
-| `desktop/renderer/templates/` | 稳定 DOM 骨架，不读取产品或 mock 数据 |
-| `desktop/renderer/scripts/` | 共享 renderer、组件交互、feature 与跨组件 flow |
-| `desktop/renderer/runtime/adapters/` | Tauri request、订阅、数据转换与宿主能力 |
-| `desktop/renderer/runtime/entries/` | main/sidebar 装配入口 |
-| `desktop/renderer/app.js`、`sidebar.js`、`gui_shared.js` | 现有产品接线、session UI state 与 WebView revision 契约 |
-| `prototype/` | 场景、gallery、mock adapter、演示数据与共享实现的路径转发 |
+| `frontend/ui/styles/` | 唯一共享 CSS，按 foundations、primitives、composites、features、layouts、entries 分层 |
+| `frontend/ui/templates/` | 稳定 DOM 骨架，不读取产品或 mock 数据 |
+| `frontend/ui/scripts/` | 共享 renderer、组件交互、feature 与跨组件 flow |
+| `frontend/runtime/adapters/` | Tauri request、订阅、数据转换与宿主能力 |
+| `frontend/runtime/entries/` | main/sidebar 装配入口 |
+| `frontend/app.js`、`sidebar.js`、`gui_shared.js` | 现有产品接线、session UI state 与 WebView revision 契约 |
+| `prototype/` | 新工程的场景、gallery、mock 与 desktop 资源转发；不是旧 Tauri 依赖 |
 
 组件管理 focus、展开与选择；flow 协调提交、等待、错误和恢复；adapter 连接数据与操作，不选择 DOM/CSS。draft、caret、scroll 和随 session 恢复的展开状态由产品宿主管理。详见 [前端界面规范](./FRONTEND_INTERFACE_STANDARD.md) 与 [组件目录](./FRONTEND_COMPONENTS.md)。
 
 ## 双宿主启动
 
-原型 `prototype/index.html` 校验 scene/gallery ID。Application scene 的 shell 通过转发模板装配共享 UI，由 mock adapter 提供数据与演示结果。Gallery 有独立展示布局，不代表产品页面。
+新原型 `prototype/index.html` 校验 scene/gallery ID，转发到 desktop 的模板/组件；其 mock 和 Gallery 不进入任何产品包。旧 Tauri 不加载原型资源。
 
-Tauri 的 `tauri.html` 和 `sidebar.html` 加载 `runtime/entries/main.js`、`sidebar.js`。main 在 `RozsaUIReady` 完成共享模板/组件装配后接入产品事件；sidebar 装配同一共享 Sidebar/Dev Flow renderer。两种宿主都使用共享模板加载机制。Tauri 配置指向 `desktop/renderer/`，主窗口使用 `tauri.html`，sidebar 保持 `sidebar.html`；Electron 的 `index.html` 由 Vite 单独打包，不依赖原型 scene 或 mock。
+Tauri 的 `index.html` 和 `sidebar.html` 加载 `runtime/entries/main.js`、`sidebar.js`。main 在 `RozsaUIReady` 完成共享模板/组件装配后接入产品事件；sidebar 装配同一共享 Sidebar/Dev Flow renderer。两种宿主都使用共享模板加载机制。生产包只包含 `frontend/`，不依赖原型 scene 或 mock。
 
-`scripts/core/ports.js` 统一 request、订阅清理与单调 revision 提交。异常保持拒绝，dispose 撤销订阅。AbortSignal 取消结果接收，不代表 Tauri 后台操作停止；产品取消仍须调用现有 abort 契约。
+`ui/scripts/core/ports.js` 统一 request、订阅清理与单调 revision 提交。异常保持拒绝，dispose 撤销订阅。AbortSignal 取消结果接收，不代表 Tauri 后台操作停止；产品取消仍须调用现有 abort 契约。
 
 ## 原生窗口与事件
 
@@ -54,7 +54,7 @@ NativeTitlebarHost + NativeSplitHost
 
 ## 覆盖与缺口
 
-[UI_COVERAGE.json](../../prototype/docs/UI_COVERAGE.json) 记录设计覆盖、共享 owner、真实触发方式和使用方；[DESIGN_GAPS.md](../../prototype/docs/DESIGN_GAPS.md) 记录未覆盖状态及恢复条件。
+新工程的 [UI_COVERAGE.json](../../prototype/docs/UI_COVERAGE.json) 记录设计覆盖、新共享 owner、真实触发方式和使用方；[DESIGN_GAPS.md](../../prototype/docs/DESIGN_GAPS.md) 记录未覆盖状态及恢复条件。
 
 已覆盖的 Sidebar、Conversation frame、Composer、工具内容、替换式面板、Settings、通知与 Dev Flow 使用共享实现。未覆盖主动入口保留空容器并暂停操作，后续迭代逐项补齐设计。无法安全暂停的被动消息状态、在途恢复和错误出口保留原运行实现，标为受阻；不计入已迁移区域，不作为共享 UI 的备用实现。
 
@@ -62,9 +62,9 @@ NativeTitlebarHost + NativeSplitHost
 
 ## 开发与验证
 
-仓库根目录 `./run.sh` 启动 staged debug app，`./run.sh --prepare-only` 验证 bundle。原型 HTTP root 必须是仓库根目录，才能加载共享 UI。
+仓库根目录 `./run.sh` 启动 staged debug app，`./run.sh --prepare-only` 验证 bundle。旧 bundle 不执行 Node/Vite 构建；新原型从仓库 HTTP root 加载 desktop 资源。
 
-小功能用所属语言测试；前端 JS/TS 测试统一位于 `desktop/tests/`。[CONTRIBUTING.md](../../CONTRIBUTING.md) 说明统一编排。契约测试不等于视觉验收，prototype/app 的截图、DOM、computed style 与交互须按相同条件成对比较。[Native split 验证](./NATIVE_SPLIT_VALIDATION.md) 区分实际验证与平台限制；Linux/Windows 真实视觉保持 pending。
+小功能用所属语言测试；JavaScript 位于模块 `js-tests/`。[CONTRIBUTING.md](../../CONTRIBUTING.md) 说明统一编排。契约测试不等于视觉验收，prototype/app 的截图、DOM、computed style 与交互须按相同条件成对比较。[Native split 验证](./NATIVE_SPLIT_VALIDATION.md) 区分实际验证与平台限制；Linux/Windows 真实视觉保持 pending。
 
 ## 相关文档
 
@@ -73,5 +73,5 @@ NativeTitlebarHost + NativeSplitHost
 - [前端术语](./FRONTEND_TERMINOLOGY.md)
 - [主题配置](./themes.md)
 - [Dev Flow 集成](./DEV_FLOW_INTEGRATION.md)
-- [共享样式](../../desktop/renderer/styles/README.md)
+- [共享样式](../../crates/rozsa-gui/frontend/ui/styles/README.md)
 - [原型架构](../../prototype/docs/ARCHITECTURE.md)

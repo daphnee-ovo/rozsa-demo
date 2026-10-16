@@ -1,0 +1,43 @@
+.session-item.active { border-color: color-mix(in oklch, var(--accent) 26%, var(--border)); background: var(--surface); }
+.session-status { width: 7px; height: 7px; flex: none; border-radius: 50%; }
+.session-status.running { background: var(--accent); }
+.session-status.approval { background: var(--warning); }
+.session-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
+.session-meta { color: var(--muted); font: 10.5px var(--font-mono); }
+.status-panel { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 14px; }
+.dev-flow-group { display: flex; flex-direction: column; gap: 3px; }
+.dev-flow-group[hidden] { display: none; }
+.dev-flow-summary { border: 0; border-radius: 7px; background: transparent; padding: 3px 6px; margin: 0 -6px; color: var(--fg); font-size: 11.5px; font-weight: 600; cursor: pointer; text-align: left; }
+.dev-flow-summary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.dev-flow-summary:disabled { color: var(--muted); cursor: default; }
+.dev-flow-summary.stale { color: var(--muted); }
+.dev-flow-claimed { display: flex; flex-direction: column; gap: 1px; }
+.dev-flow-claimed-row { min-width: 0; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 7px; background: transparent; padding: 3px 6px; margin: 0 -6px; color: var(--fg); font-size: 12px; cursor: pointer; text-align: left; }
+.dev-flow-claimed-row:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.dev-flow-claimed-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); }
+.dev-flow-claimed-id { flex: none; color: var(--accent); font: 10.5px var(--font-mono); }
+.dev-flow-claimed-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-flow-more { border: 0; border-radius: 7px; background: transparent; padding: 3px 6px; margin: 0 -6px; color: var(--muted); font: 11px var(--font-ui); cursor: pointer; text-align: left; }
+.dev-flow-more:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--fg); }
+.dev-flow-more[hidden] { display: none; }
+.git-branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--font-mono); }
+.git-stats { display: flex; gap: 5px; font: 10.5px var(--font-mono); }
+.git-add { color: var(--success); } .git-del { color: var(--error); } .git-files { color: var(--muted); }
+.quota-group { display: flex; flex-direction: column; gap: 8px; }
+.quota-row { display: flex; flex-direction: column; gap: 4px; }
+.quota-row[hidden], .quota-group[hidden] { display: none; }
+.quota-label { display: flex; justify-content: space-between; color: var(--muted); font: 10.5px var(--font-mono); }
+.quota-bar-track { height: 4px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--border) 72%, transparent); }
+.quota-bar-fill { height: 100%; border-radius: inherit; background: var(--accent); transition: width .18s ease; }
+.quota-bar-fill.warn { background: var(--warning); }
+.sidebar-bottom { padding: 8px 6px; }
+.sidebar-action, .settings-back, .settings-tab { width: 100%; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; text-align: left; }
+.sidebar-action[hidden] { display: none; }
+.sidebar-action:hover, .settings-back:hover, .settings-tab:hover, .settings-tab.active { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--fg); }
+.settings-scene { padding: 54px 14px 20px; }
+.settings-back { margin-bottom: 18px; }
+.settings-tab { min-height: 36px; padding-inline: 12px; }
+.settings-tab.active { font-weight: 600; }
+.empty, .error { padding: 10px; color: var(--muted); font-size: 11px; }
+.error { color: var(--error); }
+body.native-fullscreen .sidebar-scene { padding-top: 0; }

@@ -1,6 +1,8 @@
 # 原型组件目录
 
-原型与 Tauri 使用同一份 `desktop/renderer/`。组件的 template、CSS、renderer、flow 及特殊化关系详见 [共享组件目录](../../docs/gui/FRONTEND_COMPONENTS.md)，职责约束见 [前端界面规范](../../docs/gui/FRONTEND_INTERFACE_STANDARD.md)。
+原型属于新 Electron+Go 工程，只与 `desktop/renderer/` 共享真源。旧 Rust/Tauri 使用 crate 自有资源与测试，独立构建运行，不加载本原型。
+
+原型与新 Electron 使用同一份 `desktop/renderer/`。组件的 template、CSS、renderer、flow 及特殊化关系详见 [共享组件目录](../../docs/gui/FRONTEND_COMPONENTS.md)，职责约束见 [前端界面规范](../../docs/gui/FRONTEND_INTERFACE_STANDARD.md)。
 
 ## 原型装配
 

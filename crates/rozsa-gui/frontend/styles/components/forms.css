@@ -1,0 +1,32 @@
+.subagent-meta { color: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+.turn-activity-file {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.turn-activity-file:hover { text-decoration: underline; }
+[data-tool-ui="legacy"] .turn-diff-inline {
+  margin: 2px 0 5px 22px;
+}
+[data-tool-ui="legacy"] .turn-diff-inline[hidden] { display: none; }
+[data-tool-ui="legacy"] .turn-diff-inline .diff-view { max-height: 260px; overflow: auto; padding: 2px 0 !important; }
+.input-wrapper.valid-token {
+  border-color: color-mix(in oklch, var(--success) 48%, var(--accent));
+}
+.input-wrapper.file-drop-active {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface));
+}
+
+.valid-token-text {
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 11%, white);
+  border-radius: 4px;
+  padding: 1px 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}

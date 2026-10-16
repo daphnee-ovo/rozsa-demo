@@ -1,6 +1,8 @@
 # Rózsa 主题配置
 
-Appearance 设置位于 GUI 设置面板的 `Appearance` tab，稳定结构与交互来自共享 `templates/features/settings.html` 和 `scripts/features/settings.js`。原型用 mock，产品 adapter 读取并保存真实主题；原生 backing 先更新，再向两端发布完整 theme snapshot。界面只暴露以下运行时选项：
+本文的 `frontend/` 路径与 Tauri 行为属于旧 Rust 工程。新前端及其原型只共享 `desktop/renderer/`；两套工程的源码、测试、资源、入口和构建产物互不依赖。下文的共享约束仅限各自工程内部。
+
+Appearance 设置位于 GUI 设置面板的 `Appearance` tab，稳定结构与交互来自共享 `ui/templates/features/settings.html` 和 `ui/scripts/features/settings.js`。原型用 mock，产品 adapter 读取并保存真实主题；原生 backing 先更新，再向两端发布完整 theme snapshot。界面只暴露以下运行时选项：
 
 - `Theme Mode`: `system`、`light`、`dark`
 - `Font Size`: 5–50px
@@ -58,6 +60,6 @@ Accent、Background、Foreground、UI font、Code font 和 Translucent sidebar �
 
 `mode` 必须与 Light/Dark Theme 匹配。主题文件解析失败、字段为空、CSS 变量名非法或值包含不支持的字符时，GUI 会返回明确错误，不会静默加载空主题。
 
-视觉 token 位于共享 `styles/foundations/tokens.css`；新增组件不在宿主保存第二套颜色。设计与缺口边界见 [GUI 架构](./ARCHITECTURE.md)。
+视觉 token 位于共享 `ui/styles/foundations/tokens.css`；新增组件不在宿主保存第二套颜色。设计与缺口边界见 [GUI 架构](./ARCHITECTURE.md)。
 
 代码入口：[`crates/rozsa-app/src/themes.rs`](../../crates/rozsa-app/src/themes.rs)；GUI IPC 入口：[`crates/rozsa-gui/src/commands.rs`](../../crates/rozsa-gui/src/commands.rs)。

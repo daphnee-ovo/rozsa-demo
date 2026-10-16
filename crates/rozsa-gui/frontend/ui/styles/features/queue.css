@@ -1,0 +1,12 @@
+/* Queue 与 Steering 共享 running-messages 的基础呈现。 */
+.running-messages { margin: 10px 12px 0; padding: 10px 12px; border-radius: var(--radius-card); background: color-mix(in oklch, var(--surface) 76%, transparent); color: var(--muted); font-size: 11px; }
+.running-messages-title { color: var(--fg); font: 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.running-messages ol { margin: 7px 0 0 18px; padding: 0; }
+.running-messages li { margin: 3px 0; }
+#queuedMessages {
+  margin: 0;
+  padding: 13px 17px 11px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 0;
+  background: transparent;
+}

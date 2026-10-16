@@ -67,8 +67,8 @@ fn selected_session_uses_name_then_preview_then_untitled() {
 
 #[test]
 fn frontend_places_thinking_effort_next_to_model_and_reserves_brand_for_no_session() {
-    let html = include_str!("../../../desktop/renderer/templates/primitives/input.html");
-    let app = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../frontend/ui/templates/primitives/input.html");
+    let app = include_str!("../frontend/app.js");
     let model = html.find("id=\"modelSelector\"").unwrap();
     let thinking = html.find("id=\"thinkingEffort\"").unwrap();
 
@@ -79,9 +79,9 @@ fn frontend_places_thinking_effort_next_to_model_and_reserves_brand_for_no_sessi
 
 #[test]
 fn composer_thinking_effort_offers_six_model_aware_persisted_choices() {
-    let html = include_str!("../../../desktop/renderer/templates/primitives/input.html");
-    let popover = include_str!("../../../desktop/renderer/templates/composites/popover.html");
-    let app = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../frontend/ui/templates/primitives/input.html");
+    let popover = include_str!("../frontend/ui/templates/composites/popover.html");
+    let app = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"thinkingEffort\""));
     assert!(html.contains("aria-haspopup=\"dialog\""));
@@ -97,10 +97,10 @@ fn composer_thinking_effort_offers_six_model_aware_persisted_choices() {
 
 #[test]
 fn thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame() {
-    let component = include_str!("../../../desktop/renderer/scripts/components/popover.js");
-    let html = include_str!("../../../desktop/renderer/tauri.html");
-    let css = include_str!("../../../desktop/renderer/styles/composites/popover.css");
-    let app = include_str!("../../../desktop/renderer/app.js");
+    let component = include_str!("../frontend/ui/scripts/components/popover.js");
+    let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/ui/styles/composites/popover.css");
+    let app = include_str!("../frontend/app.js");
     let settings_start = html
         .find("<!-- ============ 设置面板")
         .expect("settings boundary must exist");
@@ -124,7 +124,7 @@ fn thinking_effort_slider_popover_is_not_clipped_by_the_composer_frame() {
 
 #[test]
 fn thinking_slider_uses_compact_composer_scale() {
-    let css = include_str!("../../../desktop/renderer/styles/composites/popover.css");
+    let css = include_str!("../frontend/ui/styles/composites/popover.css");
 
     assert!(css.contains("width: min(320px, calc(100vw - 32px));"));
     assert!(css.contains("max-height: calc(100vh - 32px);"));
@@ -142,8 +142,8 @@ fn thinking_slider_uses_compact_composer_scale() {
 #[test]
 fn title_generation_starts_before_the_main_prompt_and_exposes_small_models() {
     let commands = include_str!("../src/commands.rs");
-    let html = include_str!("../../../desktop/renderer/tauri.html");
-    let app = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../frontend/index.html");
+    let app = include_str!("../frontend/app.js");
     let send = commands.find("pub async fn send_message").unwrap();
     let naming = commands[send..]
         .find("spawn_session_name_generation(")

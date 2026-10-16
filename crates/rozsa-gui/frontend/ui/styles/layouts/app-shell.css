@@ -1,0 +1,45 @@
+/* 应用骨架 */
+[data-od-id="app-body"] {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--main-sidebar-width) minmax(0, 1fr);
+  padding-top: var(--native-titlebar-offset);
+  overflow: hidden;
+  background: var(--bg);
+}
+body.native-fullscreen { --native-titlebar-offset: 0px; }
+body.native-split-main [data-od-id="app-body"] { padding-top: 0; }
+[data-native-scene-root][hidden] { display: none !important; }
+body.settings-visible [data-od-id="app-body"] { visibility: hidden; }
+#nativeGuiInteractionLayer,
+#nativeSidebarEdgeTrigger { position: fixed; pointer-events: none; }
+
+/* 780px = 约 220px sidebar + 560px 主内容舒适下限；低于此宽度
+   让主内容优先，sidebar 退为可由 edge trigger / native host 重开的 drawer。 */
+
+:root:where([data-ui-max-width~="900"]) { --main-sidebar-width: clamp(220px, calc(28 * var(--ui-vw)), 270px); }
+
+:where(:root[data-ui-max-width~="780"]) [data-od-id="app-body"] { display: block; }
+:where(:root[data-ui-max-width~="780"]) [data-od-id="main-panel"] { width: 100%; height: 100%; min-width: 0; }
+:where(:root[data-ui-max-width~="780"]) [data-od-id="panel-header"] { min-height: 56px; height: 60px; padding-inline: 16px; }
+
+:where(:root[data-ui-max-width~="560"]) [data-od-id="panel-header"] { padding-inline: 14px; }
+
+/* The root entry adds a shell and stable template mounts around the original
+   grid items. Keep those wrappers layout-neutral and viewport-constrained. */
+[data-application-shell] {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+[data-od-id="app-body"] > [data-template-mount="sidebar"],
+[data-od-id="app-body"] > [data-template-mount="conversation"] { display: contents; }

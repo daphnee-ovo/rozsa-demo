@@ -34,9 +34,9 @@ uv run python -m http.server 4173 --bind 127.0.0.1 --directory .
 在根目录执行：
 
 ```text
-cargo test -p rozsa-gui --test prototype_root_cutover_test --test prototype_coverage_inventory_test --test prototype_stylesheet_extraction_test --test prototype_scene_ownership_test
-cargo fmt --all -- --check
+npm ci --prefix desktop/tests
+npm --prefix desktop/tests run test:ui
 git diff --check
 ```
 
-专项测试检查路径、coverage 双向闭合、CSS source order、外置样式、gallery 入口和旧路径删除；视觉等价仍以实际页面证据为准。运行共享 UI 专项编排可用 `bash devtools/test-shared-gui-acceptance.sh`。验证材料放在项目 `tmp/`，不写入规范或组件说明。
+专项测试检查路径、coverage 双向闭合、CSS source order、外置样式、gallery 入口和旧路径删除；视觉等价仍以实际页面证据为准。原型和新前端检查统一属于 desktop/tests；旧 GUI 的 `bash devtools/test-shared-gui-acceptance.sh` 只检查其自有资源，不验证新原型。验证材料放在项目 `tmp/`，不写入规范或组件说明。

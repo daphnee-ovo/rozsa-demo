@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-node --test desktop/tests/*.test.js
+node --test crates/rozsa-gui/js-tests/*.test.js
 cargo test -p rozsa-gui \
   --test frontend_stylesheet_structure_test \
   --test theme_surface \
@@ -39,6 +39,5 @@ cargo test -p rozsa-gui \
   --test native_window_behavior \
   --test file_drag_test \
   --test session_fork_gui_test \
-  --test prototype_coverage_inventory_test \
   --test gui_coding_agent_e2e \
   --no-fail-fast

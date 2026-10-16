@@ -1,6 +1,8 @@
 # Dev Flow GUI 集成
 
-Dev Flow 是可选的项目级集成。app 层发现兼容 `dow`，提供 typed snapshot；共享 UI 显示 Settings、sidebar 状态与只读详情。原型通过 mock adapter 演示同一份组件，产品通过 [runtime adapter](../../desktop/renderer/runtime/adapters/sidebar-dev-flow.js) 接入。
+本文的 `frontend/` 路径与 Tauri 行为属于旧 Rust 工程。新前端及其原型只共享 `desktop/renderer/`；两套工程的源码、测试、资源、入口和构建产物互不依赖。下文的共享约束仅限各自工程内部。
+
+Dev Flow 是可选的项目级集成。app 层发现兼容 `dow`，提供 typed snapshot；共享 UI 显示 Settings、sidebar 状态与只读详情。原型通过 mock adapter 演示同一份组件，产品通过 [runtime adapter](../../crates/rozsa-gui/frontend/runtime/adapters/sidebar-dev-flow.js) 接入。
 
 ## 发现与设置
 

@@ -38,10 +38,6 @@ function sources(root) {
 }
 
 test('production shared UI and runtime relative references stay inside frontend', () => {
-  const configRoot = new URL('crates/rozsa-gui/', repositoryRoot);
-  const config = JSON.parse(readFileSync(new URL('tauri.conf.json', configRoot), 'utf8'));
-  assert.equal(new URL(config.build.frontendDist + '/', configRoot).href, frontendRoot.href,
-    'Tauri must bundle only the production frontend');
   for (const root of ['./']) {
     for (const url of sources(new URL(root, frontendRoot))) {
       const text = readFileSync(url, 'utf8');

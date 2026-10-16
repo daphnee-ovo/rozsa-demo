@@ -2,10 +2,10 @@
 
 本文规定 Rózsa 原型与真实 GUI 共同遵守的前端组织方式。它描述长期有效的职责、依赖、状态、数据接入和验证规则，不记录文件迁移历史。
 
-原型与真实 GUI 对已覆盖组件引用同一份生产实现：
+工程边界：旧 Rust/Tauri 与新 Electron+Go 各自独立拥有源码、测试、资源及入口。单一共享真源仅适用于新 Electron 与其原型：
 
 - 根目录 `prototype/` 保存唯一原型场景、gallery、mock 与 adapter，引用 `desktop/renderer/` 的模板、样式和交互。
-- 真实 GUI 的 main/sidebar 通过 `runtime/entries/` 和 `runtime/adapters/` 装配同一份 UI，继续使用现有产品状态、handler、event 和 IPC。
+- 旧 Tauri 的 main/sidebar 通过 crate 内 `frontend/runtime/entries/` 和 `runtime/adapters/` 装配自有 UI，继续使用原产品状态、handler、event 和 IPC；不读取新工程及其产物。
 - 原型修整保持原有 baseline；真实 GUI 已覆盖组件以新版原型为准。未覆盖主动入口留空并暂停，无法安全暂停的被动状态保留旧实现且标为受阻。
 
 ## 1. 术语
@@ -95,7 +95,7 @@ CSS entry 必须保留已验证的 cascade 顺序，不能形成循环 import。
 
 ## 3. CSS 规则
 
-原型和 runtime 使用 `styles/{foundations,primitives,composites,features,layouts,entries}` 的同一份规则。宿主入口只装配；prototype 路径转发不保存组件副本，runtime 的 `native-host.css` 只负责原生窗口边界。
+原型和 runtime 使用 `ui/styles/{foundations,primitives,composites,features,layouts,entries}` 的同一份规则。宿主入口只装配；prototype 路径转发不保存组件副本，runtime 的 `native-host.css` 只负责原生窗口边界。
 
 重构现有 CSS 时：
 
@@ -125,7 +125,7 @@ CSS entry 必须保留已验证的 cascade 顺序，不能形成循环 import。
 
 ### 4.1 Prototype template
 
-`templates/` 保存两种宿主共用的稳定 HTML；`prototype/templates/` 通过 `data-ui-template-src` 转发到共享 owner。Template 可以包含：
+`ui/templates/` 保存两种宿主共用的稳定 HTML；`prototype/templates/` 通过 `data-ui-template-src` 转发到共享 owner。Template 可以包含：
 
 - 语义化标签和稳定 DOM 层级；
 - ARIA role、label、expanded/selected 等属性位置；
@@ -151,7 +151,7 @@ Script 不得保存一份与 template 重复的稳定 skeleton。由数据数量
 
 ### 4.3 Runtime renderer
 
-两种宿主使用 `scripts/core/template-loader.js` 和 `shell.js` 装配共享模板。Runtime main 在 `RozsaUIReady` 完成后接入产品事件；原生窗口仍遵守 main/sidebar readiness handshake。数据决定的重复结构由共享 feature renderer 生成，宿主不复制稳定 markup。
+两种宿主使用 `ui/scripts/core/template-loader.js` 和 `shell.js` 装配共享模板。Runtime main 在 `RozsaUIReady` 完成后接入产品事件；原生窗口仍遵守 main/sidebar readiness handshake。数据决定的重复结构由共享 feature renderer 生成，宿主不复制稳定 markup。
 
 ## 5. 状态归属
 
@@ -274,7 +274,7 @@ Prototype 演示数据集中在 `prototype/mock/`，包括 session/message、too
 
 1. 明确语义和 light/dark 值；
 2. 确认不是单个 component 的局部值；
-3. 放入唯一共享 `styles/foundations/`；
+3. 放入唯一共享 `ui/styles/foundations/`；
 4. 登记所有使用方并检查 contrast、focus、reduced-motion 和响应式结果；
 5. 更新相关文档与 baseline。
 
@@ -283,7 +283,7 @@ Prototype 演示数据集中在 `prototype/mock/`，包括 session/message、too
 1. 检查已有结构，只有 DOM、状态语义、交互三者都一致才共享；
 2. 选择 primitive/composite/feature 层级；
 3. 定义稳定 markup、输入、意图和 UI state；
-4. 在 `desktop/renderer/` 建唯一 template/renderer，由 mock/Tauri adapter 接入；
+4. 在 `ui/` 建唯一 template/renderer，由 mock/Tauri adapter 接入；
 5. 把数据调用留给 adapter，把跨组件顺序留给 flow；
 6. 在 `UI_COVERAGE` 登记 CSS/markup/behavior/used_by/verification；
 7. 为每个使用 scene/runtime surface 建立并重放 baseline。
@@ -345,7 +345,7 @@ Gallery view 只保存展示特有布局/说明；公共 token、control 和 beh
 
 ## Related Docs
 
-- [共享 GUI 架构](./ARCHITECTURE.md)
+- [`SPEC：GUI 原型与真实前端组件化重构`](../../.dev-doc/refactor/ui-architecture/SPEC.md)
 - [`GUI 界面对照表`](../../prototype/docs/UI_COVERAGE.md)
 - [`GUI 设计缺口表`](../../prototype/docs/DESIGN_GAPS.md)
 - [`GUI 架构`](./ARCHITECTURE.md)

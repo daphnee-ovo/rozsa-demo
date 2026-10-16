@@ -26,9 +26,13 @@ The tool uses `git ls-remote` and does not require a local Codex checkout. Use `
 Use the implementation language directly for tests of a small feature. Keep
 JavaScript tests in the corresponding module's `js-tests/` directory; do not
 wrap Node tests in Rust or Cargo subprocesses. All Electron JS/TS tests—main,
-preload, bridge, renderer and native host—live in `desktop/tests/`. The shared UI behavior suite and Electron tests share this module and lockfile:
+preload, bridge, renderer and native host—live in `desktop/tests/`. The retained
+Rust/Tauri GUI owns a separate JS behavior suite and lockfile:
 
 ```bash
+npm ci --prefix crates/rozsa-gui/js-tests
+bash devtools/test-gui.sh
+# New frontend and prototype, independently:
 npm ci --prefix desktop/tests
 npm --prefix desktop/tests run test:ui
 ```
@@ -44,9 +48,10 @@ acceptance checks. It does not replace full-project testing or native visual
 verification. Serve the prototype from the repository HTTP root (for example,
 `uv run python -m http.server 4173 --bind 127.0.0.1 --directory .`) and open
 `/prototype/index.html`; it reuses the production UI under
-`desktop/renderer/`. The retained Tauri entry uses `tauri.html` and
-`sidebar.html` from that source until T061 retires it. Launch the native app with
-`./run.sh` and close validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
+`desktop/renderer/`. Rust/Tauri independently embeds
+`crates/rozsa-gui/frontend/index.html`, `sidebar.html` and their local resources.
+`./run.sh --prepare-only` builds the Rust bundle without Node, Vite, desktop,
+backend or prototype inputs; `./run.sh` launches it. Close validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
 for host boundaries and design gaps.
 
 ## Candidate Go toolchain (TASK-T067)
@@ -142,10 +147,11 @@ edit. tsx remains the module test runner.
 
 The shared HTML/CSS/JS source lives in `desktop/renderer/`; all frontend and
 Electron behavior/native tests live in `desktop/tests/`, with one test manifest,
-lockfile and runner. Prototype forwarding, Vite and the retained Tauri entry
-consume those assets. Tauri host styles live under `styles/legacy/` so they do
-not shadow shared style owners. Electron build and run use no files from
-`crates/rozsa-gui`. T013 continues core/port conversion at these final paths. CSS HMR
+lockfile and runner. Only the new prototype and Electron consume these assets.
+The old GUI owns its frontend, JS tests, Rust tests and static resource graph;
+neither project builds, runs or tests against the other project's assets.
+Vite packages only the candidate entry; retained draft Tauri adapters under
+desktop are migration references, not old-product entry points. T013 remains paused. CSS HMR
 retains renderer state;
 HTML/renderer TS changes automatically reload. Forge reloads preload changes
 and restarts Electron for main changes. Go changes require closing and

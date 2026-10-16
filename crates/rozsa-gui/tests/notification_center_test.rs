@@ -68,9 +68,9 @@ fn notification_event_name_is_stable() {
 
 #[test]
 fn notification_layer_is_global_to_the_main_webview() {
-    let html = include_str!("../../../desktop/renderer/tauri.html");
-    let template = include_str!("../../../desktop/renderer/templates/composites/notification.html");
-    let entry = include_str!("../../../desktop/renderer/runtime/entries/main.js");
+    let html = include_str!("../frontend/index.html");
+    let template = include_str!("../frontend/ui/templates/composites/notification.html");
+    let entry = include_str!("../frontend/runtime/entries/main.js");
     let main_start = html.find("id=\"mainContentScene\"").unwrap();
     let settings_start = html.find("id=\"settingsPanel\"").unwrap();
     let center = html.find("data-template-mount=\"notification\"").unwrap();
@@ -93,7 +93,7 @@ fn notification_layer_is_global_to_the_main_webview() {
 
 #[test]
 fn stable_ids_deduplicate_toasts() {
-    let js = include_str!("../../../desktop/renderer/app.js");
+    let js = include_str!("../frontend/app.js");
     assert!(js.contains("const notificationToasts = new Map();"));
     let dedup = js
         .find("const existing = notificationToasts.get(id);")
@@ -110,8 +110,8 @@ fn stable_ids_deduplicate_toasts() {
 
 #[test]
 fn toasts_stack_downward_with_independent_six_second_timers() {
-    let js = include_str!("../../../desktop/renderer/app.js");
-    let css = include_str!("../../../desktop/renderer/styles/composites/feedback.css");
+    let js = include_str!("../frontend/app.js");
+    let css = include_str!("../frontend/ui/styles/composites/feedback.css");
     assert!(js.contains("const NOTIFICATION_TIMEOUT_MS = 6000;"));
     assert!(js.contains("notificationStack().appendChild(element);"));
     assert!(js.contains("toast.timer = setTimeout(() => expireNotification(id), timeoutMs);"));
@@ -121,8 +121,8 @@ fn toasts_stack_downward_with_independent_six_second_timers() {
 
 #[test]
 fn errors_collapse_into_unresolved_tray_with_circled_count() {
-    let js = include_str!("../../../desktop/renderer/app.js");
-    let template = include_str!("../../../desktop/renderer/templates/composites/notification.html");
+    let js = include_str!("../frontend/app.js");
+    let template = include_str!("../frontend/ui/templates/composites/notification.html");
     assert!(js.contains("function updateNotificationErrorTray()"));
     assert!(js.contains("notificationErrorCount().textContent = String(count);"));
     assert!(js.contains("notificationErrorTray().hidden = count === 0;"));

@@ -1,6 +1,8 @@
 # 原型架构
 
-根目录 `prototype/` 保存唯一可编辑的原型场景、gallery 和 mock。已覆盖组件的模板、CSS 与交互唯一位于 `desktop/renderer/`，原型与真实 GUI 引用同一份实现。设计概念见 [DESIGN.md](../../DESIGN.md)，生产职责见 [GUI 架构](../../docs/gui/ARCHITECTURE.md)。
+原型属于新 Electron+Go 工程，只与 `desktop/renderer/` 共享真源。旧 Rust/Tauri 使用 crate 自有资源与测试，独立构建运行，不加载本原型。
+
+根目录 `prototype/` 保存唯一可编辑的原型场景、gallery 和 mock。已覆盖组件的模板、CSS 与交互唯一位于 `desktop/renderer/`，原型与新 Electron 引用同一份实现。设计概念见 [DESIGN.md](../../DESIGN.md)，生产职责见 [GUI 架构](../../docs/gui/ARCHITECTURE.md)。
 
 ## 入口与加载
 
@@ -27,6 +29,6 @@ Application scene 不复制 shell，不动态加载 scene stylesheet。input tem
 
 ## 数据与新增方法
 
-Mock 只由原型 adapter 读取；生产 runtime、Rust、Tauri 配置与 bundle 对它零依赖。新增 scene 先登记 registry、mock 与初始状态，复用共享 UI，然后更新 [场景](./SCENARIOS.md)、[覆盖](./UI_COVERAGE.md) 和验证材料。新增组件在共享 owner 实现，通过 mock/Tauri adapter 接入；不在 scene 建组件副本。
+Mock 只由原型 adapter 读取；生产 runtime、Rust、Tauri 配置与 bundle 对它零依赖。新增 scene 先登记 registry、mock 与初始状态，复用共享 UI，然后更新 [场景](./SCENARIOS.md)、[覆盖](./UI_COVERAGE.md) 和验证材料。新增组件在共享 owner 实现，通过 mock/Electron adapter 接入；不在 scene 建组件副本。
 
 原型没有覆盖的产品状态按 [设计缺口](./DESIGN_GAPS.md) 留待后续迭代，当前不推导新视觉。

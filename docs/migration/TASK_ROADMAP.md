@@ -126,27 +126,17 @@ UI 接收；session 同步停止另外释放订阅，不伪称停止产品工作
 仅 macOS arm64 候选验收；Linux/Windows 实机、完整产品/原生视觉与未迁移业务均未验证，未进入
 全项目 TEST。未新增 M012、证据页、报告或包装脚本；正式状态以 `dow task show TASK-T012` 为准。
 
-T009 建立候选资源构建与 watch 基础；T060 在 UI 切片前把共享前端源码和测试迁到最终目录，T013 随后负责 core/port TS 转换与原型同源装载。
+TASK-T075 负责恢复双向独立；T009 建立候选资源构建与 watch 基础；T060 在 UI 切片前把共享前端源码和测试迁到最终目录，T013 随后负责 core/port TS 转换与原型同源装载。
 
-T060 已将共享 scripts/templates/styles 与保留的 Tauri host 资源迁入
-`desktop/renderer/`；Tauri 主入口为 `tauri.html`，Electron 保持 `index.html`，
-旧宿主专用 CSS 位于 `styles/legacy/`。两个既有 JS 测试模块合并为
-`desktop/tests/` 的单一 manifest/lockfile，原 Rust GUI 测试更新为最终资源路径。
+T060 的 f8aa583 将旧源码/测试搬入 desktop 并让 Tauri 使用新资源，破坏了双向独立边界；TASK-T075 纠正此范围。旧 Rust/Tauri 恢复 `crates/rozsa-gui/frontend/`、`js-tests/`、本地 Rust 测试及 `index.html`/`sidebar.html` 静态入口，`run.sh` 不构建 Vite。新工程保留 `desktop/renderer/` 和 `desktop/tests/` 成果，Vite 只构建 Electron 候选入口。两边构建、运行与测试不得读取对方源码或产物；单一真源仅限新前端及其原型。
 
-2026-10-16 macOS arm64 针对性验收：排除 T013 未完成转换的暂存树中，
-91 项 JS/TS 行为测试、TS7、Forge package、资源/source map 检查通过；
-真实 Forge 的共享 CSS HMR、TS/HTML 自动刷新、原 Go process 复用及退出清理通过。
-不含 `crates/rozsa-gui` 的 Forge fixture 实际运行；packaged app 会话列表验收通过。
-HTTP 原型实际装载共享 JS/CSS/templates，修改共享模板后刷新观察到标记，再恢复；
-staged Tauri 实际显示 `tauri.html` 与 `sidebar.html`，所有验证窗口均关闭。
+T060 已完成记录不能直接由 dow 修改，当前边界以 T075 与修订 SPEC 为准。原型专属检查从旧 Cargo suite 转入 desktop/tests，旧原生行为断言继续读取 crate 自有资源。Rust/Go 的会话 fixture 各自保存，不跨工程读取。
 
-T013 交接：原有 TS、HTML 与 tsconfig 改动保留为未提交内容，按最终目录迁移；
-`runtime/entries/main.ts` 的 notification facade 仍有缺少 `init` 的 TS2322，
-当前 HTML 指向 TS 的断言失败仍未完成。隔离验收携带原有未跟踪的
-session-list/scene-state 与 fixture 依赖；本任务仅首次纳入已存在的测试 lockfile
-及 session runner。Rust GUI 测试的搬迁路径检查通过；隔离基线文档检查仍发现
-HEAD 原有的缺失 `M067.md` 链接，当前工作区既有 CONTRIBUTING 改动已移除它。
-这些验证不表示 T013、完整产品或 Linux/Windows 验收完成。
+T013 保持 pending/暂停：现有通知、模板、TS 与 Vite 草稿保留；本次只纠正跨工程接线，不继续转换或宣称 T013 验收完成。后续 T013/T053 的 HTTP+Electron 同源验收不含旧 Tauri；pending 文件范围与错误的 renderer/ui 路径已同步通过 dow 修正。
+
+此前 T060 的 macOS 验收属于当时耦合布局的历史记录，不能证明当前双向独立；T075 在缺少另一工程的隔离树验收：旧 Rust CLI/staged Tauri 构建、全部 GUI Rust 测试、58 项 JS 与会话恢复对照通过；实际窗口显示主界面与 sidebar。新树 TS7、Forge package、资源/source maps、Go 与 97 项 JS/TS 通过；真实 Forge CSS/TS/HTML 更新、Go 复用与退出清理，以及 packaged 会话历史通过。验证实例均已退出。Linux/Windows 实机与完整产品验收仍未执行。
+
+共享工作树仍保留暂停的 T013 草稿；其 host-contract 用例存在 JS/TS 入口断言和 HTTP template fixture 装载失败，不计为本次修复已通过。隔离验收使用待提交内容，未将草稿混入修复；未运行全项目 TEST。
 
 T064 将本地 TypeScript compiler 设为默认工具链；T065 迁移为 Forge/Vite 开发与可运行 package；T014 负责后续 installer/发行资源验收。
 
@@ -171,8 +161,8 @@ T065：Forge/Vite 开发与可运行 package（依赖 T064）。
 | TASK-T010 | 实现当前 RPC 方法的类型化错误与取消路由 | TASK-T001 |
 | TASK-T011 | 扩展 stdio 并发调度与 snapshot 事件同步 | TASK-T010 |
 | TASK-T012 | 完善 Electron bridge 与 Go 异常退出及重载生命周期 | TASK-T011 |
-| TASK-T060 | 将共享 UI 源码与前端测试迁入 desktop 最终目录 | TASK-T009、TASK-T065 |
-| TASK-T013 | 在 Forge/Vite 资源图中转换共享 core/port 与原型 TS 装载 | TASK-T060 |
+| TASK-T060 | 建立新 UI/测试最终目录；跨工程搬迁由 T075 纠正 | TASK-T009、TASK-T065 |
+| TASK-T013 | 暂停；仅转换新前端 core/port 与原型 TS 装载 | TASK-T060、TASK-T075 |
 | TASK-T014 | 完善 Forge installer 配置及发行资源验收 | TASK-T009、TASK-T012、TASK-T013、TASK-T065 |
 | TASK-T064 | 默认 TypeScript 工具链切换 TS7 | TASK-T009 |
 | TASK-T065 | Forge/Vite 开发与可运行 package | TASK-T064 |
@@ -251,7 +241,7 @@ T065：Forge/Vite 开发与可运行 package（依赖 T064）。
 
 | 任务 | 具体产出 | 前置任务 |
 | --- | --- | --- |
-| TASK-T061 | 切换默认 Electron+Go 开发/发行并退役 Rust/Tauri 生产链 | TASK-T059、TASK-T060 |
+| TASK-T061 | 切换默认 Electron+Go 开发/发行并退役 Rust/Tauri 生产链 | TASK-T059、TASK-T060、TASK-T075 |
 | TASK-T062 | 最终证据/文档/数据与全部 AC 交付闭环 | TASK-T061 |
 
 ## 功能覆盖与差异（随实现更新）

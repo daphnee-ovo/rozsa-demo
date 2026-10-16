@@ -35,7 +35,7 @@ fn gui_startup_refreshes_codex_models_only_after_oauth_login() {
 #[test]
 fn changed_catalog_atomically_replaces_registry_and_notifies_frontend() {
     let commands = include_str!("../src/commands.rs");
-    let frontend = include_str!("../../../desktop/renderer/app.js");
+    let frontend = include_str!("../frontend/app.js");
 
     assert!(commands.contains("current_registry.all_json() != refreshed_registry.all_json()"));
     assert!(commands.contains(".write()\n        .map_err"));

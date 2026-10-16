@@ -3,7 +3,7 @@
   "version": "1.0.4",
   "identifier": "dev.rozsa.app",
   "build": {
-    "frontendDist": "../../desktop/renderer"
+    "frontendDist": "frontend"
   },
   "app": {
     "withGlobalTauri": true,
@@ -11,7 +11,7 @@
     "windows": [
       {
         "title": "Rózsa",
-        "url": "tauri.html",
+        "url": "index.html",
         "width": 1280,
         "height": 820,
         "minWidth": 640,

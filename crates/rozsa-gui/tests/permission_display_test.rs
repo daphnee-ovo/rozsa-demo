@@ -1,7 +1,6 @@
 #[test]
 fn permission_panel_matches_the_requested_action_layout() {
-    let html =
-        include_str!("../../../desktop/renderer/templates/composites/interruption-panel.html");
+    let html = include_str!("../frontend/ui/templates/composites/interruption-panel.html");
 
     assert!(html.contains("class=\"perm-panel-tool\" id=\"permTool\""));
     assert!(html.contains("class=\"perm-panel-desc\" id=\"permDesc\""));
@@ -19,7 +18,7 @@ fn permission_panel_matches_the_requested_action_layout() {
 
 #[test]
 fn permission_rendering_uses_description_and_bash_prompt() {
-    let source = include_str!("../../../desktop/renderer/app.js");
+    let source = include_str!("../frontend/app.js");
 
     assert!(source.contains("desc.textContent = ev.description || '';"));
     assert!(source.contains(r#"perm-syn-prompt">$ </span>"#));

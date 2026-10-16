@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "owners": [
+    {
+      "file": "foundations/tokens.css",
+      "sha256": "6b00a975a785b5555c83f4ce00870a1364f3b4a0c63236b91c2cc7747b444d45"
+    },
+    {
+      "file": "foundations/reset.css",
+      "sha256": "6852851a0a5d99c34299e0e3951ed7d029f04201c116b19f11a49ac0c597cab2"
+    },
+    {
+      "file": "foundations/base.css",
+      "sha256": "2cf731a8a0ae09372bdf8196c6fb95c33c8456aa847b0f4e516967e2280cab05"
+    },
+    {
+      "file": "foundations/motion.css",
+      "sha256": "38ab80d3d6e8121a95694ac71bd30de8b328828e935c6bf730bc2c79d4be7bcf"
+    },
+    {
+      "file": "primitives/actions.css",
+      "sha256": "c713b8e16e28b00c334989c05da4d2ad317e94ba144a66680f7dacd18a5984e3"
+    },
+    {
+      "file": "primitives/forms.css",
+      "sha256": "ad8ac18c38b8a2e6c4d8192346bf721f9eed54bc80fc41a4ea9824fc0a77a8fe"
+    },
+    {
+      "file": "layouts/app-shell.css",
+      "sha256": "ebb9449accde0886da019a54a1cf9f83d0a2947f8b6f25a913af8ce52db951bf"
+    },
+    {
+      "file": "layouts/sidebar-shell.css",
+      "sha256": "bfec2b9aa7e1c9c6e2a1b93f25ecf64cd941df7dfef45788c3fb86db8ae7dcd0"
+    },
+    {
+      "file": "composites/composer.css",
+      "sha256": "95aacd4534533af46687fdd0443cb96f450bfb5674829a088becfe5a5df5b712"
+    },
+    {
+      "file": "features/conversation.css",
+      "sha256": "dcf3bd42e406c03211e8441e2aca857645e693d81bcb7fc6106f754bcfb00107"
+    },
+    {
+      "file": "features/queue.css",
+      "sha256": "e448d991b6a2de8963ad3ae8695d447b4b96d4f9781af93a4ec90628124cc59a"
+    },
+    {
+      "file": "features/steering.css",
+      "sha256": "cb2cae252a46495f76b7cff4b7d0272247e2df4600a235877280add370ae115c"
+    },
+    {
+      "file": "features/thinking.css",
+      "sha256": "ecd17e92c51ee7a4c6f1acbb13cc4e9cf7852d6e5d946b03be5142227ae3de4b"
+    },
+    {
+      "file": "features/tools.css",
+      "sha256": "f2bc0cfaec15b24e5ee56af9c90e23e98fcf79e65336eceaf75f9361bfc2b26c"
+    },
+    {
+      "file": "features/settings.css",
+      "sha256": "db2b54cf3d90cc10c5b50da442313ba1b63a8ed5e8080060eee70bb75a2938c7"
+    },
+    {
+      "file": "features/appearance.css",
+      "sha256": "f96592e33c90090ccee9a338518f597ee802862d59c16fc01636075ff609f1eb"
+    },
+    {
+      "file": "features/sidebar.css",
+      "sha256": "f138fc5b2cddf56a09d382d98cc6dc23a8b8c4b142a14f515872bd2abf55a42e"
+    },
+    {
+      "file": "features/dev-flow.css",
+      "sha256": "f31e964677e529f3bcbb6f9d92aa1c47da106d35f281216e860aa2fc236fb55c"
+    },
+    {
+      "file": "features/sidebar-window.css",
+      "sha256": "79dfdb7ee2767ca74cb21fe0810b47f7eba776f3dc1175d419df806b2108520e"
+    },
+    {
+      "file": "features/dev-flow-detail.css",
+      "sha256": "a9c46c87d359111609e096059af1d28952ca9f916f64d33f515eda2357a43b78"
+    },
+    {
+      "file": "features/dev-flow-runtime.css",
+      "sha256": "29ed37863af020f749d4aa0706c49864db16041ad97dc0177ff0f52c04c2bc19"
+    },
+    {
+      "file": "composites/feedback.css",
+      "sha256": "c917752c8e6c3b9fd0fffa35545498bebffc5082795026e1861c878dd9e06a32"
+    }
+  ],
+  "entries": {
+    "main": [
+      "foundations/tokens.css",
+      "foundations/reset.css",
+      "foundations/base.css",
+      "layouts/app-shell.css",
+      "layouts/sidebar-shell.css",
+      "features/settings.css",
+      "features/appearance.css",
+      "composites/feedback.css"
+    ],
+    "sidebar": [
+      "foundations/tokens.css",
+      "foundations/reset.css",
+      "foundations/base.css",
+      "layouts/app-shell.css",
+      "layouts/sidebar-shell.css",
+      "features/settings.css",
+      "features/appearance.css",
+      "composites/feedback.css"
+    ]
+  },
+  "late_imports": [
+    "primitives/actions.css",
+    "composites/composer.css",
+    "features/conversation.css",
+    "features/thinking.css",
+    "features/queue.css",
+    "features/steering.css",
+    "features/sidebar.css",
+    "features/dev-flow.css",
+    "features/dev-flow-detail.css",
+    "features/sidebar-window.css",
+    "features/dev-flow-runtime.css",
+    "foundations/motion.css",
+    "features/tools.css"
+  ],
+  "unloaded": [
+    "primitives/forms.css"
+  ]
+}

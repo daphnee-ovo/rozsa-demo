@@ -1,6 +1,6 @@
 #[test]
 fn sidebar_webview_surface_stays_transparent() {
-    let css = include_str!("../../../desktop/renderer/styles/legacy/layout/sidebar-shell.css");
+    let css = include_str!("../frontend/styles/layout/sidebar-shell.css");
     let native = include_str!("../src/native_split_view.rs");
 
     assert!(css.contains("body { color: var(--fg); background: transparent;"));
@@ -40,9 +40,9 @@ fn native_backing_updates_before_the_revision_is_emitted() {
 
 #[test]
 fn both_webviews_discard_old_theme_revisions() {
-    let shared = include_str!("../../../desktop/renderer/gui_shared.js");
-    let main = include_str!("../../../desktop/renderer/app.js");
-    let sidebar = include_str!("../../../desktop/renderer/sidebar.js");
+    let shared = include_str!("../frontend/gui_shared.js");
+    let main = include_str!("../frontend/app.js");
+    let sidebar = include_str!("../frontend/sidebar.js");
 
     assert!(shared.contains("revision <= state.revision"));
     assert!(shared.contains("function applyThemeSnapshot"));
@@ -56,7 +56,7 @@ fn both_webviews_discard_old_theme_revisions() {
 
 #[test]
 fn system_appearance_change_requests_one_new_backend_revision() {
-    let main = include_str!("../../../desktop/renderer/app.js");
+    let main = include_str!("../frontend/app.js");
     let start = main.find("function installSystemThemeListener").unwrap();
     let end = main[start..]
         .find("function applyThemeDefinition")

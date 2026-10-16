@@ -1,7 +1,7 @@
 #[test]
 fn product_composer_converts_native_file_drop_paths_to_at_references() {
-    let js = include_str!("../../../desktop/renderer/app.js");
-    let css = include_str!("../../../desktop/renderer/styles/legacy/components/forms.css");
+    let js = include_str!("../frontend/app.js");
+    let css = include_str!("../frontend/styles/components/forms.css");
 
     for event_name in [
         "tauri://drag-enter",

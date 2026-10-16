@@ -24,7 +24,7 @@
 
 | ID | 用户要求或证据 | 路线约束 | 验收 |
 | --- | --- | --- | --- |
-| R1 | “降低开发维护成本，统一使用 Electron + Go” | 单一 Go 产品运行时；共享 UI 只有一份；Electron main 不承载第二套业务 | AC-003、013 |
+| R1 | “降低开发维护成本，统一使用 Electron + Go” | 单一 Go 产品运行时；新前端与原型 UI 只有一份；Electron main 不承载第二套业务 | AC-003、013 |
 | R2 | “不区分第几版，只要是原本该有的功能，迁移后页必须完整实现” | 功能对照表逐项收口，暂停入口必须恢复；中间 smoke 不算交付 | AC-001、008、012 |
 | R3 | “是逻辑，不是具体实现”及 JSONL 示例 | 比较决策、顺序、状态、副作用、错误和持久化；不逐行翻译 Rust | AC-002、004、005、006 |
 | R4 | 用户确认实验支持单 WebView | 单 renderer；接管 split、材质、浮层、焦点与全屏职责 | AC-007、009 |
@@ -81,7 +81,7 @@ Session manager 在内存/index 更新前追加序列化 entry；append 没有�
 desktop/
   main/                     窗口、系统能力、Go lifecycle、受控 IPC
   preload/                  限定的 host/product bridge
-  renderer/                 唯一前端真源：HTML/CSS、templates、UI/runtime TypeScript、scene/session state 与 adapter
+  renderer/                 新前端与其原型的唯一真源：HTML/CSS、templates、UI/runtime TypeScript、scene/session state 与 adapter
   tests/                    全部 Electron JS/TS 测试：main、preload、bridge、renderer 与 native host
 backend/                    一个 Go module
   cmd/rozsa/                CLI；GUI 启动或直接调用 app
@@ -109,13 +109,13 @@ Go 依赖方向：cmd/transport → app → core → model。platform 由需要�
 
 共享领域输入、command/result、事件变体用明确 interface/discriminated union；不把原有动态对象一律标成 any。TypeScript 类型不替代跨进程 payload 的运行时校验。只为当前功能建立 IPC 类型、Go struct/tag 和实际用例；以同一小输入验证字段与错误语义。后续切片增补自己的契约，不先建立全方法 schema 或通用生成器。
 
-TASK-T064 将本地 TypeScript compiler 设为默认工具链；TASK-T065 将默认开发/package 流程切换为 Electron Forge + Vite。严格类型检查与 bundling 分开；Forge 管理 start/package，Vite 构建 main/preload/renderer 资源。单 sandbox preload、Node/DOM 类型边界、共享 CSS/HTML 同源与无第二套 emit/watch 链属于已批准的设计约束。TASK-T060 先将共享前端源码与前端测试迁入 `desktop/renderer/` 和 `desktop/tests/`；TASK-T013 随后在最终目录转换 core/port 与原型 TS 装载。原型、Electron 与仍保留的 Tauri 开发入口共用 `desktop/renderer/` 资源；Electron 构建/运行不得依赖 `crates/rozsa-gui`，Tauri 可作为旧宿主使用该资源直至退役。T014 负责 installer，平台任务负责发行验收。具体命令、依赖版本与产物路径见 CONTRIBUTING；真实验收及边界见 [M065](../../../docs/migration/evidence/M065.md)。
+TASK-T064 将本地 TypeScript compiler 设为默认工具链；TASK-T065 将默认开发/package 流程切换为 Electron Forge + Vite。严格类型检查与 bundling 分开；Forge 管理 start/package，Vite 构建 main/preload/renderer 资源。单 sandbox preload、Node/DOM 类型边界、共享 CSS/HTML 同源与无第二套 emit/watch 链属于已批准的设计约束。TASK-T060 先将共享前端源码与前端测试迁入 `desktop/renderer/` 和 `desktop/tests/`；TASK-T013 随后在最终目录转换 core/port 与原型 TS 装载。新原型与 Electron 共用 `desktop/renderer/` 资源。旧 Rust/Tauri 保有 `crates/rozsa-gui/frontend/`、crate 内 JS/Rust 测试及入口；其构建、运行和测试不得读取 desktop、backend 或新原型资源，也不依赖 Node/Vite。Electron+Go 同样不依赖旧工程源码、资源或生成产物。T014 负责 installer，平台任务负责发行验收。具体命令、依赖版本与产物路径见 CONTRIBUTING；真实验收及边界见 [M065](../../../docs/migration/evidence/M065.md)。
 
 分别配置共享 UI/renderer 的 DOM 类型边界与 main/preload 的 Electron/Node 类型边界，启用 strict 类型检查，禁止 renderer 获得 Node 能力。原型与产品包读取同一批共享生成资源，不直接加载 TS，也不维护手写 JS 副本。静态资源加载与模板 URL 必须通过实际页面验收。
 
 每个模块按原有 JS 行为测试完成转换，再进行新宿主接线。Electron main/preload/bridge/renderer/native host 的所有 JS/TS 测试统一归 `desktop/tests/`。类型检查单独运行，运行时测试使用锁定的 TS runner 或受测编译产物。禁止把类型检查通过等同于产品逻辑通过。原型 mock/scene/gallery 脚本随之迁移，但演示数据与代码不得进入生产包。
 
-TASK-T060 在 UI 切片前把当前共享 UI 源码和前端测试迁入最终目录；不要求它们暂留旧目录，也不在完整验收后安排第二次搬迁。随后各 UI 切片直接在 `desktop/renderer/` 实现并通过 `desktop/tests/` 验证。Electron 构建/运行只从 `desktop/` 读取前端资源，不依赖 `crates/rozsa-gui`；prototype、Electron 与仍保留的 Tauri 开发入口使用同一份资源。现有 Rust/Tauri 源码和 Git 历史继续作为行为参照，Tauri 作为旧宿主在默认入口切换前退役。
+TASK-T060 在 UI 切片前把当前共享 UI 源码和前端测试迁入最终目录；不要求它们暂留旧目录，也不在完整验收后安排第二次搬迁。随后各 UI 切片直接在 `desktop/renderer/` 实现并通过 `desktop/tests/` 验证。Electron 构建/运行/测试只使用新工程资源；prototype 与 Electron 共享新前端。旧 Rust/Tauri 是自有源码、测试、资源及入口的独立工程，不是新资源的宿主。T060 的 f8aa583 跨工程搬迁及 T013 草稿耦合由 T075 纠正；T013 保持暂停，不推进 TS 转换。T061 完整验收与批准切换前保持双向独立，现有 Rust/Tauri 源码和 Git 历史供只读行为对照。
 
 缺口设计在迁移到对应界面时提出具体方案，复用已批准视觉并补齐交互/错误状态。需改变原型时先展示方案并获得用户批准，再由对应 UI 任务实现。设计批准只阻断受影响界面，独立后端模块不等待全套设计；“尚未设计”不是最终交付豁免。
 
@@ -188,7 +188,7 @@ macOS 的验收参照原生效果；Linux/Windows 按各自既有产品行为验
 | 共享 UI 前置迁入 T060 | 把共享源码和前端测试放入 `desktop/renderer/` 与 `desktop/tests/`，使 prototype 与 Electron 共用前端资源 | 在 T013 和后续 UI 切片之前完成；不等待最终完整验收 |
 | 产品模块与界面切片 | settings/registry/JSONL写入/providers/OAuth/tools/权限/问题/运行会话/subagent/Dev Flow/CLI，以及对应 TS UI | 只等待真实代码依赖；缺口设计 T004–T008 在对应界面迁移时审阅并批准。当前 UI 切片立即接 Go，不推迟到最后统一接线 |
 | 最终完整验收 T053–T059 | 汇接复核、整链路故障/重启、真实授权、三平台安装与 GUI、完整功能核对和收益报告 | 汇总切片证据，按全部旧源码入口和设计缺口找遗漏；真实未验证项保持未完成；性能测量在候选就绪后做 |
-| 完整验收后的入口切换 T061–T062 | 默认入口切换、Rust/Tauri生产依赖退役与最终文档 | T061 同时依赖 T059 完整功能验收和 T060 共享 UI 前置迁入；旧生产链仍保留到完整验收通过 |
+| 完整验收后的入口切换 T061–T062 | 默认入口切换、Rust/Tauri生产依赖退役与最终文档 | T061 同时依赖 T059 完整功能验收和 T060 共享 UI 前置迁入；旧生产链保持独立可用到完整验收与批准切换 |
 
 分组是索引，不是额外阶段 gate。每次只执行一个已声明范围的任务，完成后再接下一项；全部任务 `parallel=false`。共享 manifest/lock、transport/bridge/入口、CSS、原型接线与 TASK_ROADMAP 只由当前任务写入；涉及新增文件先用 dow 更新 scope，不把无关依赖串成全局前置链。
 
@@ -205,14 +205,14 @@ TASK_ROADMAP 的功能覆盖随实现维护；未做功能保持待实现。最�
 - SPEC-AC-005: 所有 provider/OAuth/stream/error/usage 行为及模型配置覆盖通过；真实授权验证缺失时明确未完成。
 - SPEC-AC-006: 工具、并行/取消、hooks、权限、问题、subagent、queue/steer/fork/compaction 与 Dev Flow 整链路通过，含真实进程退出和 watcher。
 - SPEC-AC-007: IPC schema、握手、所选库的 framing/message semantics、背压、request/notification 与身份路由、领域错误映射、订阅/快照竞态、reload、断管、关闭均有测试；副作用请求不自动重试。该验收要求不表示实现已通过。
-- SPEC-AC-008: 全部设计缺口恢复且用户已批准相关原型；完整状态矩阵通过；原型和产品保持一份 UI，生产包不含 mock/gallery。
+- SPEC-AC-008: 全部设计缺口恢复且用户已批准相关原型；完整状态矩阵通过；新原型和 Electron 产品保持一份 UI（不包含旧 Rust/Tauri），生产包不含 mock/gallery。
 - SPEC-AC-009: 单 WebView 原生视觉与交互成对检查通过；separator ARIA/键盘、最小化、极限宽度等实验遗留项全部验收。
 - SPEC-AC-010: macOS/Linux/Windows 在各自系统验证 CLI、文件/进程/凭据/输入/窗口；交叉编译不能替代真实 GUI 验收。
 - SPEC-AC-011: Go 与 JS/TS 单元/特性测试各归模块；跨语言 shell 集成；新增 bug 修复有先失败后通过的回归证据；TEST 阶段仅按用户显式请求进入。
 - SPEC-AC-012: 首条 smoke、局部迁移或平台 skipped 不算完成；功能矩阵、设计缺口和必需未验证项均归零才交付。
 - SPEC-AC-013: 最终安装包/默认开发入口运行 Electron+Go；不依赖 Rust/Tauri；原型、README、AGENTS、CONTRIBUTING、架构/测试/版本脚本及 backlinks 同步。
 - SPEC-AC-014: 候选就绪后对开发启动、修改到验证、构建、安装包/内存作相同场景的新旧记录，注明可用旧产品或 Git 历史参照与条件差异；维护收益有 owner/重复实现减少的依据，不预先声称性能提升。无可用比较明确缺测；阈值经用户确认，未确认只报告数值。测量不阻塞具体功能开工。
-- SPEC-AC-015: 共享 UI、runtime/原型脚本与 Electron main/preload 完成 TypeScript 迁移；严格类型检查和原有运行行为测试分别通过；产品与原型读取同源生成资源，无手写 JS/TS 双真源，生产不携带 mock。
+- SPEC-AC-015: 共享 UI、runtime/原型脚本与 Electron main/preload 完成 TypeScript 迁移；严格类型检查和原有运行行为测试分别通过；新 Electron 产品与其原型读取同源生成资源，无手写 JS/TS 双真源，生产不携带 mock。
 
 ## Risks
 

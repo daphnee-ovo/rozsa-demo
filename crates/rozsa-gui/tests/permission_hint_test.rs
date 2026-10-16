@@ -1,10 +1,8 @@
 #[test]
 fn deny_and_hints_opens_a_prefixed_editable_input() {
-    let html =
-        include_str!("../../../desktop/renderer/templates/composites/interruption-panel.html");
-    let component =
-        include_str!("../../../desktop/renderer/scripts/components/interruption-panel.js");
-    let source = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../frontend/ui/templates/composites/interruption-panel.html");
+    let component = include_str!("../frontend/ui/scripts/components/interruption-panel.js");
+    let source = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"permHintInput\""));
     assert!(html.contains("value=\"Deny, \""));
@@ -19,7 +17,7 @@ fn deny_and_hints_opens_a_prefixed_editable_input() {
 
 #[test]
 fn deny_and_hints_supports_h_and_tab_confirmation() {
-    let source = include_str!("../../../desktop/renderer/app.js");
+    let source = include_str!("../frontend/app.js");
 
     assert!(source.contains(
         "if (e.key === 'h' || e.key === 'H') { e.preventDefault(); enterPermissionHint(); return; }"
@@ -31,7 +29,7 @@ fn deny_and_hints_supports_h_and_tab_confirmation() {
 
 #[test]
 fn custom_hint_reaches_the_permission_response() {
-    let source = include_str!("../../../desktop/renderer/app.js");
+    let source = include_str!("../frontend/app.js");
     let commands = include_str!("../src/commands.rs");
 
     assert!(source.contains("hint: choice === 'deny-hint' ? hint || null : null"));

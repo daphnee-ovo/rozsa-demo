@@ -23,9 +23,12 @@ Dependency direction is `rozsa-cli` / `rozsa-gui` → `rozsa-app` → `rozsa-cor
 
 The active product is implemented entirely in the five Rust crates above. Do not introduce dependencies on retired terminal, TypeScript, or process-bridge implementations.
 
-On the migration branch, shared UI sources live in `desktop/renderer/` and all
-frontend/Electron tests in `desktop/tests/`. Prototype and retained Tauri entries
-reuse these resources; Electron build/run must not read `crates/rozsa-gui`.
+On the migration branch, Rust/Tauri owns `crates/rozsa-gui/frontend/`, its Rust
+integration tests and `crates/rozsa-gui/js-tests/`. Electron+Go owns `desktop/renderer/`
+and `desktop/tests/`. Only the new frontend and `prototype/` share one source.
+Both projects must build, run and test without the other project's sources,
+resources or generated output. Tauri must not require Node/Vite or desktop assets;
+Electron must not read `crates/rozsa-gui`. Keep this boundary until T061's approved final cutover.
 
 ## Cross-Platform Compatibility
 

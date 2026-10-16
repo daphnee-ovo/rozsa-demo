@@ -1,0 +1,4 @@
+.sidebar-scroll { flex: 1; min-height: 0; padding: 0 6px 8px; overflow-y: auto; }
+.sidebar-section.sessions { min-height: var(--dev-flow-sessions-min, 96px); }
+.session-item { min-height: 34px; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
+.session-item:hover { background: color-mix(in srgb, var(--surface) 45%, transparent); }

@@ -1,13 +1,15 @@
 # Rózsa GUI 术语表与沟通图
 
+本文的 `frontend/` 路径与 Tauri 行为属于旧 Rust 工程。新前端及其原型只共享 `desktop/renderer/`；两套工程的源码、测试、资源、入口和构建产物互不依赖。下文的共享约束仅限各自工程内部。
+
 这份文档是 GUI 讨论的共同词汇。它描述当前实现，不把视觉原型、旧架构文档或历史命名当成运行时事实。
 
 判断问题落在哪一层时，先用这组边界：
 
 ```text
-main DOM / 输入 / Settings form -> desktop/renderer/ + runtime/entries/main.js；app.js 管理产品接线
+main DOM / 输入 / Settings form -> frontend/ui/ + runtime/entries/main.js；app.js 管理产品接线
 sidebar scene / session 导航    -> frontend/sidebar.html + sidebar.js
-组件视觉 / layout / theme token -> desktop/renderer/styles/；宿主入口装配
+组件视觉 / layout / theme token -> frontend/ui/styles/；宿主入口装配
 Tauri command / event / tab 状态 -> crates/rozsa-gui/src/
 Agent loop / tool / session 文件 -> crates/rozsa-app/ + crates/rozsa-core/
 macOS pane / 窗口行为           -> native_split_view.rs + native_titlebar.rs
@@ -50,7 +52,7 @@ macOS pane / 窗口行为           -> native_split_view.rs + native_titlebar.rs
 | 术语 | 当前含义 | 不要混称为 |
 | --- | --- | --- |
 | GUI | 整个 Tauri 桌面应用，包含 WebView、Rust runtime 和原生窗口层 | 只有前端页面 |
-| frontend | 共享 `desktop/renderer/` 与 runtime adapter/entry，负责 DOM、输入、显示状态和视觉；产品接线保留 app.js/sidebar.js | GUI runtime |
+| frontend | 共享 `frontend/ui/` 与 runtime adapter/entry，负责 DOM、输入、显示状态和视觉；产品接线保留 app.js/sidebar.js | GUI runtime |
 | GUI runtime | `rozsa-gui` Rust 层，负责 tabs、commands、events 和后端 session 的拥有关系 | 浏览器状态 |
 | IPC | frontend 与 Rust 之间的命令/事件通道；前端 `invoke`，后端 `emit` | Agent event stream 本身 |
 | backend | 需要按上下文说明：通常指 `rozsa-gui` Rust runtime；若指 agent loop，应说 `AgentSession` 或 `rozsa-app` | 一个没有边界的“后端” |
@@ -171,7 +173,7 @@ agent loop 产生 AgentEvent
 | abort | Stop button 或 1 秒内连续两次 Escape 发送取消信号，并丢弃尚未执行的 queue / steer / follow-up；不删除 session、不清空历史，也不撤销已完成的文件变更 |
 | partial output | abort 或错误前已经收到的流式输出；讨论时要说明它是 UI 已显示内容还是已持久化 message |
 
-代码锚点：[`agent_session.rs`](../../crates/rozsa-app/src/agent_session.rs)、[`events.rs`](../../crates/rozsa-gui/src/events.rs)、[`app.js`](../../desktop/renderer/app.js)。
+代码锚点：[`agent_session.rs`](../../crates/rozsa-app/src/agent_session.rs)、[`events.rs`](../../crates/rozsa-gui/src/events.rs)、[`app.js`](../../crates/rozsa-gui/frontend/app.js)。
 
 ## 4. Tool、File Delta、Turn Activity 与 Workspace Diff
 
@@ -268,13 +270,13 @@ project trust:  <project>/.rozsa/settings.json
 
 讨论权限问题时，至少同时说清：`session_id`、tool、目标（命令/文件）、裁定（allow/block/ask）和 trust scope。只说“权限弹窗不对”信息不够。
 
-代码锚点：[`permissions/mod.rs`](../../crates/rozsa-app/src/permissions/mod.rs)、[`app.js` permission flow](../../desktop/renderer/app.js)、[`commands.rs` permission commands](../../crates/rozsa-gui/src/commands.rs)。
+代码锚点：[`permissions/mod.rs`](../../crates/rozsa-app/src/permissions/mod.rs)、[`app.js` permission flow](../../crates/rozsa-gui/frontend/app.js)、[`commands.rs` permission commands](../../crates/rozsa-gui/src/commands.rs)。
 
 ### 5.4 Agent question 与 Permission 的边界
 
 `askUserQuestion` 的 question panel 是 agent 主动请求用户提供上下文，不是授权操作本身。tool 调用仍先经过 `PermissionController`，默认命中 `allowed_tools` 白名单而直接得到 `Allow`；显式 `deny` / `ask` 规则仍按 permission 语义处理。question 结果只返回给当前 tool call，不写入 session trust，也没有允许 agent 关闭 `Other` 的配置项。
 
-代码锚点：[`ask_user_question.rs`](../../crates/rozsa-app/src/tools/ask_user_question.rs)、[`state.rs` question state](../../crates/rozsa-gui/src/state.rs)、[`app.js` question flow](../../desktop/renderer/app.js)。
+代码锚点：[`ask_user_question.rs`](../../crates/rozsa-app/src/tools/ask_user_question.rs)、[`state.rs` question state](../../crates/rozsa-gui/src/state.rs)、[`app.js` question flow](../../crates/rozsa-gui/frontend/app.js)。
 
 ## 6. 输入框、Caret、IME 与 Token
 
@@ -307,7 +309,7 @@ project trust:  <project>/.rozsa/settings.json
 
 沟通时说“输入框 bug”还不够。应指出是 `text extraction`、`caret/selection`、`IME composition`、`token parser`、`autocomplete` 还是 `auto-resize`。
 
-代码锚点：[`index.html` input](../../desktop/renderer/tauri.html)、[`app.js` input flow](../../desktop/renderer/app.js)、[`slash_commands.rs`](../../crates/rozsa-app/src/slash_commands.rs)、[`commands.rs` token handling](../../crates/rozsa-gui/src/commands.rs)。
+代码锚点：[`index.html` input](../../crates/rozsa-gui/frontend/index.html)、[`app.js` input flow](../../crates/rozsa-gui/frontend/app.js)、[`slash_commands.rs`](../../crates/rozsa-app/src/slash_commands.rs)、[`commands.rs` token handling](../../crates/rozsa-gui/src/commands.rs)。
 
 ## 7. Window Chrome、Titlebar、Sidebar 与 Fullscreen
 
@@ -343,14 +345,14 @@ NSWindow（系统拥有窗口语义）
 ### 窗口问题的定位顺序
 
 ```text
-按钮/文字/布局错       -> desktop/renderer/templates / scripts / styles
+按钮/文字/布局错       -> frontend/ui/templates / scripts / styles
 divider / collapse 错   -> native_split_view.rs / NSSplitViewController
 拖动或双击缩放错       -> native_titlebar.rs / NSWindow event routing
 全屏进出错             -> NativeSplitHost + native titlebar observer
 sidebar material 错     -> native_split_view.rs + revisioned theme-state
 ```
 
-代码锚点：[`native_split_view.rs`](../../crates/rozsa-gui/src/native_split_view.rs)、[`native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs)、[`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../desktop/renderer/gui_shared.js)、[`themes.md`](./themes.md)。
+代码锚点：[`native_split_view.rs`](../../crates/rozsa-gui/src/native_split_view.rs)、[`native_titlebar.rs`](../../crates/rozsa-gui/src/native_titlebar.rs)、[`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js)、[`themes.md`](./themes.md)。
 
 ## 8. Appearance、Theme 与 Visual State
 
@@ -405,10 +407,10 @@ Dev Flow 的 task/issue 数量只统计未关闭项。项目切换会跟随当�
 | GUI 启动与 session factory | [`crates/rozsa-gui/src/lib.rs`](../../crates/rozsa-gui/src/lib.rs)、[`state.rs`](../../crates/rozsa-gui/src/state.rs) |
 | IPC commands | [`crates/rozsa-gui/src/commands.rs`](../../crates/rozsa-gui/src/commands.rs) |
 | session event forwarding | [`crates/rozsa-gui/src/events.rs`](../../crates/rozsa-gui/src/events.rs) |
-| frontend state/input/rendering | [`desktop/renderer/app.js`](../../desktop/renderer/app.js)、[`tauri.html`](../../desktop/renderer/tauri.html) |
-| sidebar scene/rendering | [`sidebar.js`](../../desktop/renderer/sidebar.js)、[`sidebar.html`](../../desktop/renderer/sidebar.html) |
-| frontend styles / component library | [共享组件](./FRONTEND_COMPONENTS.md)、[共享样式](../../desktop/renderer/styles/README.md)； [`styles/main.css`](../../desktop/renderer/styles/legacy/main.css)、[`styles/sidebar.css`](../../desktop/renderer/styles/legacy/sidebar.css)、[`styles/README.md`](../../desktop/renderer/styles/legacy/README.md) |
-| scene revision / shared frontend | [`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../desktop/renderer/gui_shared.js) |
+| frontend state/input/rendering | [`crates/rozsa-gui/frontend/app.js`](../../crates/rozsa-gui/frontend/app.js)、[`index.html`](../../crates/rozsa-gui/frontend/index.html) |
+| sidebar scene/rendering | [`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js)、[`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html) |
+| frontend styles / component library | [共享组件](./FRONTEND_COMPONENTS.md)、[共享样式](../../crates/rozsa-gui/frontend/ui/styles/README.md)； [`styles/main.css`](../../crates/rozsa-gui/frontend/styles/main.css)、[`styles/sidebar.css`](../../crates/rozsa-gui/frontend/styles/sidebar.css)、[`styles/README.md`](../../crates/rozsa-gui/frontend/styles/README.md) |
+| scene revision / shared frontend | [`scene_router.rs`](../../crates/rozsa-gui/src/scene_router.rs)、[`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js) |
 | live agent loop and abort | [`crates/rozsa-app/src/agent_session.rs`](../../crates/rozsa-app/src/agent_session.rs) |
 | askUserQuestion tool | [`crates/rozsa-app/src/tools/ask_user_question.rs`](../../crates/rozsa-app/src/tools/ask_user_question.rs)、[`crates/rozsa-gui/src/events.rs`](../../crates/rozsa-gui/src/events.rs) |
 | permission runtime | [`crates/rozsa-app/src/permissions/mod.rs`](../../crates/rozsa-app/src/permissions/mod.rs) |

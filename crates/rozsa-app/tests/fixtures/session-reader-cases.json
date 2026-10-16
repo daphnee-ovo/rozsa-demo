@@ -1,0 +1,169 @@
+[
+  {
+    "reference": "SessionManager cases; each project maintains its own fixture copy",
+    "name": "normal messages and metadata leaf",
+    "lines": [
+      {"type":"session","version":3,"id":"s","timestamp":"created","cwd":"C:\\synthetic\\工作","parentSession":"/synthetic/origin.jsonl"},
+      {"type":"message","id":"u","timestamp":"9","message":{"role":"user","content":"previous question","timestamp":1}},
+      {"type":"message","id":"a","parentId":"u","timestamp":"3","message":{"role":"assistant","model":"scripted","api":"openai-completions","provider":"openai","content":[{"type":"text","text":"previous answer"}],"timestamp":2}},
+      {"type":"message","id":"t","parentId":"a","timestamp":"2","message":{"role":"toolResult","toolCallId":"call-1","toolName":"askUserQuestion","content":[{"type":"text","text":"question result"}],"timestamp":3}},
+      {"type":"session_info","id":"info","parentId":"t","timestamp":"1","name":"renamed"}
+    ],
+    "leaf":"info", "history":["u","a","t","info"],
+    "messages":[
+      {"role":"user","content":[{"type":"text","text":"previous question"}],"timestamp":1},
+      {"role":"assistant","model":"scripted","api":"openai-completions","provider":"openai","content":[{"type":"text","text":"previous answer"}],"usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2},
+      {"role":"toolResult","toolCallId":"call-1","toolName":"askUserQuestion","content":[{"type":"text","text":"question result"}],"isError":false,"timestamp":3}
+    ]
+  },
+  {
+    "name":"blank lines and arbitrary version",
+    "lines":["", "  \t", {"type":"session","version":4294967295,"id":"s","timestamp":"t","cwd":"/synthetic"}, "", {"type":"message","id":"u","timestamp":"t","message":{"role":"user","content":[]}}, "  "],
+    "leaf":"u", "history":["u"], "messages":[{"role":"user","content":[],"timestamp":0}]
+  },
+  {
+    "name":"header only",
+    "lines":[{"type":"session","version":0,"id":"","timestamp":"","cwd":"","parentSession":null}],
+    "leaf":null, "history":[], "messages":[]
+  },
+  {
+    "name":"malformed entries skipped",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"u","timestamp":"t","message":{"role":"user","content":"kept"}},
+      "bad json", "{\"type\":\"message\",\"id\":\"broken",
+      {"type":"unknown","id":"unknown","parentId":"u","timestamp":"z"},
+      {"type":"message","id":"missing","timestamp":"z","message":{"role":"user"}},
+      {"type":"message","id":"bad-content","timestamp":"z","message":{"role":"assistant","model":"m","content":null}},
+      "{\"type\":\"message\",\"id\":\"first\",\"id\":\"second\",\"timestamp\":\"z\",\"message\":{\"role\":\"user\",\"content\":\"bad\"}}",
+      "{\"type\":\"message\",\"id\":\"unicode\",\"timestamp\":\"z\",\"message\":{\"role\":\"user\",\"content\":\"\\ud800\"}}"
+    ],
+    "leaf":"u", "history":["u"], "messages":[{"role":"user","content":[{"type":"text","text":"kept"}],"timestamp":0}]
+  },
+  {
+    "name":"branch ignores sibling compaction and timestamps",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"root","timestamp":"1","message":{"role":"user","content":"root"}},
+      {"type":"message","id":"sibling","parentId":"root","timestamp":"9","message":{"role":"user","content":"sibling"}},
+      {"type":"compaction","id":"offbranch","parentId":"sibling","timestamp":"99","summary":"offbranch","firstKeptEntryId":"sibling","tokensBefore":10},
+      {"type":"message","id":"chosen","parentId":"root","timestamp":"0","message":{"role":"user","content":"chosen"}}
+    ],
+    "leaf":"chosen", "history":["root","chosen"], "messages":[{"role":"user","content":[{"type":"text","text":"root"}],"timestamp":0},{"role":"user","content":[{"type":"text","text":"chosen"}],"timestamp":0}]
+  },
+  {
+    "name":"latest compaction keeps history and excludes summary",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"old","timestamp":"1","message":{"role":"user","content":"old"}},
+      {"type":"compaction","id":"c1","parentId":"old","timestamp":"2","summary":"earlier","firstKeptEntryId":"old","tokensBefore":12},
+      {"type":"message","id":"kept","parentId":"c1","timestamp":"3","message":{"role":"user","content":"kept"}},
+      {"type":"compaction","id":"c2","parentId":"kept","timestamp":"4","summary":"not a message","firstKeptEntryId":"kept","tokensBefore":18446744073709551615,"details":{"why":"synthetic"},"fromHook":true},
+      {"type":"message","id":"next","parentId":"c2","timestamp":"5","message":{"role":"user","content":"next"}}
+    ],
+    "leaf":"next", "history":["old","c1","kept","c2","next"], "messages":[{"role":"user","content":[{"type":"text","text":"kept"}],"timestamp":0},{"role":"user","content":[{"type":"text","text":"next"}],"timestamp":0}]
+  },
+  {
+    "name":"latest compaction missing kept id restores full branch",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"old","timestamp":"1","message":{"role":"user","content":"old"}},
+      {"type":"message","id":"kept","parentId":"old","timestamp":"2","message":{"role":"user","content":"kept"}},
+      {"type":"compaction","id":"c1","parentId":"kept","timestamp":"3","summary":"s","firstKeptEntryId":"kept","tokensBefore":10},
+      {"type":"compaction","id":"c2","parentId":"c1","timestamp":"4","summary":"s","firstKeptEntryId":"absent","tokensBefore":10}
+    ],
+    "leaf":"c2", "history":["old","kept","c1","c2"], "messages":[{"role":"user","content":[{"type":"text","text":"old"}],"timestamp":0},{"role":"user","content":[{"type":"text","text":"kept"}],"timestamp":0}]
+  },
+  {
+    "name":"kept id may target metadata",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"old","timestamp":"1","message":{"role":"user","content":"old"}},
+      {"type":"custom","id":"boundary","parentId":"old","timestamp":"2","customType":"x","data":[1,null]},
+      {"type":"message","id":"kept","parentId":"boundary","timestamp":"3","message":{"role":"user","content":"kept"}},
+      {"type":"compaction","id":"c","parentId":"kept","timestamp":"4","summary":"s","firstKeptEntryId":"boundary","tokensBefore":10}
+    ],
+    "leaf":"c", "history":["old","boundary","kept","c"], "messages":[{"role":"user","content":[{"type":"text","text":"kept"}],"timestamp":0}]
+  },
+  {
+    "name":"kept id may be after compaction",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"old","timestamp":"1","message":{"role":"user","content":"old"}},
+      {"type":"compaction","id":"c","parentId":"old","timestamp":"2","summary":"s","firstKeptEntryId":"next","tokensBefore":10},
+      {"type":"message","id":"next","parentId":"c","timestamp":"3","message":{"role":"user","content":"next"}}
+    ],
+    "leaf":"next", "history":["old","c","next"], "messages":[{"role":"user","content":[{"type":"text","text":"next"}],"timestamp":0}]
+  },
+  {
+    "name":"missing parent terminates walk",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"old","timestamp":"1","message":{"role":"user","content":"old"}},
+      {"type":"message","id":"chosen","parentId":"missing","timestamp":"2","message":{"role":"user","content":"chosen"}}
+    ],
+    "leaf":"chosen", "history":["chosen"], "messages":[{"role":"user","content":[{"type":"text","text":"chosen"}],"timestamp":0}]
+  },
+  {
+    "name":"duplicate id replaces indexed value",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"root","timestamp":"1","message":{"role":"user","content":"old"}},
+      {"type":"message","id":"child","parentId":"root","timestamp":"2","message":{"role":"user","content":"child"}},
+      {"type":"message","id":"root","timestamp":"0","message":{"role":"user","content":"replacement"}},
+      {"type":"session_info","id":"leaf","parentId":"child","timestamp":"0","name":null}
+    ],
+    "leaf":"leaf", "history":["root","child","leaf"], "messages":[{"role":"user","content":[{"type":"text","text":"replacement"}],"timestamp":0},{"role":"user","content":[{"type":"text","text":"child"}],"timestamp":0}]
+  },
+  {
+    "name":"all metadata variants and aliases",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"thinking_level_change","id":"legacy","timestamp":"1","thinkingLevel":"high"},
+      {"type":"thinking_effort_change","id":"effort","parentId":"legacy","timestamp":"2","thinkingEffort":"low"},
+      {"type":"model_change","id":"model","parentId":"effort","timestamp":"3","provider":"custom","modelId":"m"},
+      {"type":"custom","id":"custom","parentId":"model","timestamp":"4","customType":"x","data":null},
+      {"type":"label","id":"label","parentId":"custom","timestamp":"5","targetId":"legacy","label":"bookmark"},
+      {"type":"session_info","id":"info","parentId":"label","timestamp":"6","name":"name"}
+    ],
+    "leaf":"info", "history":["legacy","effort","model","custom","label","info"], "messages":[]
+  },
+  {
+    "name":"rich messages preserve provider and content fields",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      {"type":"message","id":"u","timestamp":"1","message":{"role":"user","displayText":"显示","timestamp":-9223372036854775808,"content":[{"type":"text","text":"你好 🌹\nline","textSignature":"sig"},{"type":"image","data":"synthetic","mimeType":"image/png"}]}},
+      {"type":"message","id":"a","parentId":"u","timestamp":"2","message":{"role":"assistant","api":"custom-api","provider":"custom-provider","model":"m","responseModel":"served","responseId":"response","stopReason":"ToolUse","errorMessage":"visible error","timestamp":9223372036854775807,"usage":{"input":9007199254740993,"output":2,"cacheRead":3,"cacheWrite":4,"totalTokens":9007199254741002,"cost":{"input":0.5,"output":0.25,"cacheRead":0.125,"cacheWrite":0.125,"total":1.0}},"content":[{"type":"thinking","thinking":"reason","thinkingSignature":"think","redacted":true},{"type":"toolCall","id":"call","name":"Read","arguments":{"n":9007199254740993,"path":"/synthetic"}},{"type":"text","text":"answer","textSignature":"text"}]}},
+      {"type":"message","id":"t","parentId":"a","timestamp":"3","message":{"role":"toolResult","toolCallId":"call","toolName":"Read","isError":true,"details":{"n":18446744073709551615},"timestamp":3,"content":[{"type":"text","text":"failed"}]}}
+    ],
+    "leaf":"t", "history":["u","a","t"],
+    "messages":[
+      {"role":"user","displayText":"显示","timestamp":-9223372036854775808,"content":[{"type":"text","text":"你好 🌹\nline","textSignature":"sig"},{"type":"image","data":"synthetic","mimeType":"image/png"}]},
+      {"role":"assistant","api":"custom-api","provider":"custom-provider","model":"m","responseModel":"served","responseId":"response","stopReason":"toolUse","errorMessage":"visible error","timestamp":9223372036854775807,"usage":{"input":9007199254740993,"output":2,"cacheRead":3,"cacheWrite":4,"totalTokens":9007199254741002,"cost":{"input":0.5,"output":0.25,"cacheRead":0.125,"cacheWrite":0.125,"total":1.0}},"content":[{"type":"thinking","thinking":"reason","thinkingSignature":"think","redacted":true},{"type":"toolCall","id":"call","name":"Read","arguments":{"n":9007199254740993,"path":"/synthetic"}},{"type":"text","text":"answer","textSignature":"text"}]},
+      {"role":"toolResult","toolCallId":"call","toolName":"Read","isError":true,"details":{"n":18446744073709551615},"timestamp":3,"content":[{"type":"text","text":"failed"}]}
+    ]
+  },
+  {
+    "name":"custom serde optional defaults and duplicate message keys",
+    "lines":[
+      {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"},
+      "{\"type\":\"message\",\"id\":\"u\",\"timestamp\":\"1\",\"message\":{\"role\":\"user\",\"content\":\"old\",\"content\":\"last\",\"displayText\":99,\"timestamp\":9223372036854775808}}",
+      {"type":"message","id":"a","parentId":"u","timestamp":"2","message":{"role":"assistant","model":"m","api":null,"provider":3,"stopReason":"future","responseId":false,"responseModel":null,"errorMessage":[],"usage":{"input":-1,"output":2,"cacheRead":"bad","cacheWrite":3,"totalTokens":null,"cost":{"input":"bad","total":0.0}}}},
+      {"type":"message","id":"t","parentId":"a","timestamp":"3","message":{"role":"toolResult","toolCallId":"call","toolName":"Tool","details":null,"isError":"bad","timestamp":1.5,"content":[{"type":"toolCall","id":"c1","name":"first"},{"type":"toolCall","id":"c2","name":"second","arguments":null},{"type":"thinking","thinking":"x","thinkingSignature":4,"redacted":"bad"},{"type":"text","text":"x","textSignature":false}]}}
+    ],
+    "leaf":"t", "history":["u","a","t"],
+    "messages":[
+      {"role":"user","content":[{"type":"text","text":"last"}],"timestamp":0},
+      {"role":"assistant","model":"m","api":"anthropic-messages","provider":"anthropic","stopReason":"stop","content":[],"timestamp":0,"usage":{"input":0,"output":2,"cacheRead":0,"cacheWrite":3,"totalTokens":5,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}},
+      {"role":"toolResult","toolCallId":"call","toolName":"Tool","isError":false,"timestamp":0,"content":[{"type":"toolCall","id":"c1","name":"first","arguments":{}},{"type":"toolCall","id":"c2","name":"second","arguments":null},{"type":"thinking","thinking":"x"},{"type":"text","text":"x"}]}
+    ]
+  },
+  {"name":"empty file","lines":[],"errorPrefix":"Session file "},
+  {"name":"only blanks","lines":["", " \t"],"errorPrefix":"Session file "},
+  {"name":"invalid header json","lines":["bad json"],"errorPrefix":"Invalid session header in "},
+  {"name":"missing cwd","lines":[{"type":"session","version":3,"id":"s","timestamp":"t"}],"errorPrefix":"Invalid session header in "},
+  {"name":"null version","lines":[{"type":"session","version":null,"id":"s","timestamp":"t","cwd":"c"}],"errorPrefix":"Invalid session header in "},
+  {"name":"wrong header type","lines":[{"type":"message","version":3,"id":"s","timestamp":"t","cwd":"c"}],"errorPrefix":"Missing 'session' header in "},
+  {"name":"duplicate header field","lines":["{\"type\":\"session\",\"version\":3,\"id\":\"s\",\"id\":\"other\",\"timestamp\":\"t\",\"cwd\":\"c\"}"],"errorPrefix":"Invalid session header in "},
+  {"name":"wrong header case","lines":[{"Type":"session","version":3,"id":"s","timestamp":"t","cwd":"c"}],"errorPrefix":"Invalid session header in "}
+]

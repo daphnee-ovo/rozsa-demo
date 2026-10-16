@@ -1,6 +1,8 @@
 # Rózsa 前端页面术语表
 
-这份文档约定 WebView 前端中的页面区域、组件、控件、动态内容和交互状态怎么称呼。截图只是场景示例，不是术语范围；未出现在截图中的条件渲染面板、消息内容和 Settings 控件也必须按当前实现命名。已覆盖组件的结构、CSS 和交互以共享 `desktop/renderer/` 为准，组成见 [FRONTEND_COMPONENTS.md](./FRONTEND_COMPONENTS.md)。main 宿主入口与产品接线分别以 [`tauri.html`](../../desktop/renderer/tauri.html) 和 [`app.js`](../../desktop/renderer/app.js) 为准；sidebar 宿主入口与产品接线分别以 [`sidebar.html`](../../desktop/renderer/sidebar.html) 和 [`sidebar.js`](../../desktop/renderer/sidebar.js) 为准；视觉规则以 [`styles/main.css`](../../desktop/renderer/styles/legacy/main.css) 与 [`styles/sidebar.css`](../../desktop/renderer/styles/legacy/sidebar.css) 的导入图为准；共享 revision 规则在 [`gui_shared.js`](../../desktop/renderer/gui_shared.js)。session ownership、permission runtime、AgentSession 等运行时概念见 [`TERMINOLOGY.md`](./TERMINOLOGY.md)。
+本文的 `frontend/` 路径与 Tauri 行为属于旧 Rust 工程。新前端及其原型只共享 `desktop/renderer/`；两套工程的源码、测试、资源、入口和构建产物互不依赖。下文的共享约束仅限各自工程内部。
+
+这份文档约定 WebView 前端中的页面区域、组件、控件、动态内容和交互状态怎么称呼。截图只是场景示例，不是术语范围；未出现在截图中的条件渲染面板、消息内容和 Settings 控件也必须按当前实现命名。已覆盖组件的结构、CSS 和交互以共享 `frontend/ui/` 为准，组成见 [FRONTEND_COMPONENTS.md](./FRONTEND_COMPONENTS.md)。main 宿主入口与产品接线分别以 [`index.html`](../../crates/rozsa-gui/frontend/index.html) 和 [`app.js`](../../crates/rozsa-gui/frontend/app.js) 为准；sidebar 宿主入口与产品接线分别以 [`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html) 和 [`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js) 为准；视觉规则以 [`styles/main.css`](../../crates/rozsa-gui/frontend/styles/main.css) 与 [`styles/sidebar.css`](../../crates/rozsa-gui/frontend/styles/sidebar.css) 的导入图为准；共享 revision 规则在 [`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js)。session ownership、permission runtime、AgentSession 等运行时概念见 [`TERMINOLOGY.md`](./TERMINOLOGY.md)。
 
 截图对应当前主界面：左侧是 `sidebar`，右侧是 `main panel`，底部整块是 `composer`。其中最底部的一排控件才叫 `input toolbar`；`tool call` 是 agent 执行工具的概念，不能和 `toolbar` 混用。动态内容出现在哪个场景，不改变它的术语。
 
@@ -54,7 +56,7 @@ NativeSplitHost
       └─ current settings pane                   #pane-*
 ```
 
-非 macOS fallback 仍由 `index.html` 中的 templates materialize sidebar 和 settings navigation，并使用 `styles/features/appearance.css` 中的 CSS grid；这不是 macOS 的 pane owner。
+非 macOS fallback 仍由 `index.html` 中的 templates materialize sidebar 和 settings navigation，并使用 `ui/styles/features/appearance.css` 中的 CSS grid；这不是 macOS 的 pane owner。
 
 ## 2. 区域、组件、控件的边界
 
@@ -249,16 +251,16 @@ settings scene
 
 | 页面部分 | 代码入口 |
 | --- | --- |
-| sidebar WebView scene roots | [`sidebar.html`](../../desktop/renderer/sidebar.html)、[`sidebar.js`](../../desktop/renderer/sidebar.js) |
-| session list、status section、settings action | [共享 Sidebar template](../../desktop/renderer/templates/features/sidebar.html) |
-| main WebView scene roots | [`tauri.html`](../../desktop/renderer/tauri.html)、`renderNativeMainScene()` |
-| panel header、chat region、empty state | [共享 Conversation template](../../desktop/renderer/templates/features/conversation.html)，挂载到 `#mainContentScene`；样式见 [`layouts/app-shell.css`](../../desktop/renderer/styles/layouts/app-shell.css) 与 [`features/conversation.css`](../../desktop/renderer/styles/features/conversation.css) |
-| composer、message editor、input toolbar | [共享 Composer template](../../desktop/renderer/templates/composites/composer.html) 的 `[data-od-id="chat-input"]`；样式见 [`composites/composer.css`](../../desktop/renderer/styles/composites/composer.css) |
-| settings content scene | [共享 Settings template](../../desktop/renderer/templates/features/settings.html) 的 `#settingsPanel` |
-| session list rendering | [共享 Sidebar renderer](../../desktop/renderer/scripts/features/sidebar.js)，sidebar.js 接入真实数据 |
-| composer input、IME（autocomplete 已暂停） | [`app.js`](../../desktop/renderer/app.js) 的 `handleInput()`、`updateAutocomplete()`、`handleComposition*()` |
-| scene/theme revision | [`gui_shared.js`](../../desktop/renderer/gui_shared.js) 的 `applySceneSnapshot()`、`applyThemeSnapshot()` |
-| stylesheet entries 与分层规则 | [`styles/main.css`](../../desktop/renderer/styles/legacy/main.css)、[`styles/sidebar.css`](../../desktop/renderer/styles/legacy/sidebar.css)、[`styles/README.md`](../../desktop/renderer/styles/legacy/README.md) |
+| sidebar WebView scene roots | [`sidebar.html`](../../crates/rozsa-gui/frontend/sidebar.html)、[`sidebar.js`](../../crates/rozsa-gui/frontend/sidebar.js) |
+| session list、status section、settings action | [共享 Sidebar template](../../crates/rozsa-gui/frontend/ui/templates/features/sidebar.html) |
+| main WebView scene roots | [`index.html`](../../crates/rozsa-gui/frontend/index.html)、`renderNativeMainScene()` |
+| panel header、chat region、empty state | [共享 Conversation template](../../crates/rozsa-gui/frontend/ui/templates/features/conversation.html)，挂载到 `#mainContentScene`；样式见 [`layouts/app-shell.css`](../../crates/rozsa-gui/frontend/ui/styles/layouts/app-shell.css) 与 [`features/conversation.css`](../../crates/rozsa-gui/frontend/ui/styles/features/conversation.css) |
+| composer、message editor、input toolbar | [共享 Composer template](../../crates/rozsa-gui/frontend/ui/templates/composites/composer.html) 的 `[data-od-id="chat-input"]`；样式见 [`composites/composer.css`](../../crates/rozsa-gui/frontend/ui/styles/composites/composer.css) |
+| settings content scene | [共享 Settings template](../../crates/rozsa-gui/frontend/ui/templates/features/settings.html) 的 `#settingsPanel` |
+| session list rendering | [共享 Sidebar renderer](../../crates/rozsa-gui/frontend/ui/scripts/features/sidebar.js)，sidebar.js 接入真实数据 |
+| composer input、IME（autocomplete 已暂停） | [`app.js`](../../crates/rozsa-gui/frontend/app.js) 的 `handleInput()`、`updateAutocomplete()`、`handleComposition*()` |
+| scene/theme revision | [`gui_shared.js`](../../crates/rozsa-gui/frontend/gui_shared.js) 的 `applySceneSnapshot()`、`applyThemeSnapshot()` |
+| stylesheet entries 与分层规则 | [`styles/main.css`](../../crates/rozsa-gui/frontend/styles/main.css)、[`styles/sidebar.css`](../../crates/rozsa-gui/frontend/styles/sidebar.css)、[`styles/README.md`](../../crates/rozsa-gui/frontend/styles/README.md) |
 
 ## 10. 消息流与内容渲染
 

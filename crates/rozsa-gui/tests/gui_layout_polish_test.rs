@@ -8,8 +8,8 @@
 
 #[test]
 fn sidebar_and_settings_keep_compact_titlebar_spacing() {
-    let sidebar = include_str!("../../../desktop/renderer/styles/legacy/layout/sidebar-shell.css");
-    let main = include_str!("../../../desktop/renderer/styles/legacy/features/appearance.css");
+    let sidebar = include_str!("../frontend/styles/layout/sidebar-shell.css");
+    let main = include_str!("../frontend/styles/features/appearance.css");
 
     assert!(
         sidebar.contains(
@@ -23,11 +23,11 @@ fn sidebar_and_settings_keep_compact_titlebar_spacing() {
 
 #[test]
 fn composer_controls_follow_the_requested_order_and_hint_behavior() {
-    let html = include_str!("../../../desktop/renderer/templates/primitives/input.html");
-    let css = include_str!("../../../desktop/renderer/styles/legacy/features/appearance.css");
-    let layout_css = include_str!("../../../desktop/renderer/styles/features/sidebar.css");
-    let form_css = include_str!("../../../desktop/renderer/styles/features/conversation.css");
-    let js = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../frontend/ui/templates/primitives/input.html");
+    let css = include_str!("../frontend/styles/features/appearance.css");
+    let layout_css = include_str!("../frontend/ui/styles/features/sidebar.css");
+    let form_css = include_str!("../frontend/ui/styles/features/conversation.css");
+    let js = include_str!("../frontend/app.js");
     let input = html.split("id=\"msgInput\"").nth(1).unwrap();
     let toolbar = html.split("<div class=\"input-toolbar\"").nth(1).unwrap();
 
@@ -56,9 +56,9 @@ fn composer_controls_follow_the_requested_order_and_hint_behavior() {
 
 #[test]
 fn native_main_content_stays_centered_while_resizing() {
-    let css = include_str!("../../../desktop/renderer/styles/legacy/features/appearance.css");
-    let conversation = include_str!("../../../desktop/renderer/styles/features/conversation.css");
-    let composer = include_str!("../../../desktop/renderer/styles/composites/composer.css");
+    let css = include_str!("../frontend/styles/features/appearance.css");
+    let conversation = include_str!("../frontend/ui/styles/features/conversation.css");
+    let composer = include_str!("../frontend/ui/styles/composites/composer.css");
     let split = include_str!("../src/native_split_view.rs");
 
     assert!(css.contains("--main-content-max-width: 960px"));
@@ -106,10 +106,10 @@ fn native_sidebar_button_reflects_real_collapsed_state() {
 
 #[test]
 fn native_collapsed_sidebar_reveals_at_the_edge_and_avoids_the_titlebar() {
-    let html = include_str!("../../../desktop/renderer/tauri.html");
-    let css = include_str!("../../../desktop/renderer/styles/legacy/features/appearance.css");
-    let frontend = include_str!("../../../desktop/renderer/app.js");
-    let sidebar_frontend = include_str!("../../../desktop/renderer/sidebar.js");
+    let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/features/appearance.css");
+    let frontend = include_str!("../frontend/app.js");
+    let sidebar_frontend = include_str!("../frontend/sidebar.js");
     let lib = include_str!("../src/lib.rs");
     let split = include_str!("../src/native_split_view.rs");
 

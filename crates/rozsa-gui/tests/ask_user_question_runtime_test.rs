@@ -102,10 +102,9 @@ async fn cancellation_resolves_only_the_requested_session() {
 
 #[test]
 fn frontend_contract_always_exposes_custom_input() {
-    let html =
-        include_str!("../../../desktop/renderer/templates/composites/interruption-panel.html");
-    let css = include_str!("../../../desktop/renderer/styles/composites/permission-question.css");
-    let source = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../frontend/ui/templates/composites/interruption-panel.html");
+    let css = include_str!("../frontend/ui/styles/composites/permission-question.css");
+    let source = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"questionPanel\""));
     assert!(html.contains("id=\"questionPanelTitle\""));

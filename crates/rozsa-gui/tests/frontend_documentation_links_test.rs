@@ -1,27 +1,8 @@
 use std::{fs, path::Path};
 
 const DOCUMENTS: &[&str] = &[
-    "CONTRIBUTING.md",
-    "docs/gui/ARCHITECTURE.md",
-    "docs/gui/FRONTEND_INTERFACE_STANDARD.md",
-    "docs/gui/FRONTEND_COMPONENTS.md",
-    "docs/gui/FRONTEND_TERMINOLOGY.md",
-    "docs/gui/TERMINOLOGY.md",
-    "docs/gui/UI_USAGE_GUIDELINES.md",
-    "docs/gui/DEV_FLOW_INTEGRATION.md",
-    "docs/gui/NATIVE_SPLIT_VALIDATION.md",
-    "docs/gui/themes.md",
-    "desktop/renderer/styles/legacy/README.md",
-    "desktop/renderer/styles/README.md",
-    "prototype/styles/README.md",
-    "prototype/docs/ARCHITECTURE.md",
-    "prototype/docs/COMPONENTS.md",
-    "prototype/docs/SCENARIOS.md",
-    "prototype/docs/FLOWS.md",
-    "prototype/docs/MOCK_DATA.md",
-    "prototype/docs/VALIDATION.md",
-    "prototype/docs/UI_COVERAGE.md",
-    "prototype/docs/DESIGN_GAPS.md",
+    "crates/rozsa-gui/frontend/styles/README.md",
+    "crates/rozsa-gui/frontend/ui/styles/README.md",
 ];
 
 fn missing_links(source: &str, directory: &Path) -> Vec<String> {

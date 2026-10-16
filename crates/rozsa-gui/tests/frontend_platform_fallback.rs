@@ -1,8 +1,8 @@
 #[test]
 fn non_macos_materializes_the_existing_css_sidebar_and_settings_navigation() {
-    let html = include_str!("../../../desktop/renderer/tauri.html");
-    let css = include_str!("../../../desktop/renderer/styles/legacy/features/appearance.css");
-    let js = include_str!("../../../desktop/renderer/app.js");
+    let html = include_str!("../frontend/index.html");
+    let css = include_str!("../frontend/styles/features/appearance.css");
+    let js = include_str!("../frontend/app.js");
 
     assert!(html.contains("id=\"fallbackSidebarTemplate\""));
     assert!(html.contains("id=\"fallbackSettingsNavigationTemplate\""));
@@ -15,8 +15,8 @@ fn non_macos_materializes_the_existing_css_sidebar_and_settings_navigation() {
 
 #[test]
 fn macos_main_webview_uses_native_pane_width_and_the_existing_sidebar_webview_overlay() {
-    let css = include_str!("../../../desktop/renderer/styles/legacy/features/appearance.css");
-    let js = include_str!("../../../desktop/renderer/app.js");
+    let css = include_str!("../frontend/styles/features/appearance.css");
+    let js = include_str!("../frontend/app.js");
     let split = include_str!("../src/native_split_view.rs");
 
     assert!(css.contains("body.native-split-main [data-od-id=\"app-body\"]"));
