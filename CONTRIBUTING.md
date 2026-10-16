@@ -95,8 +95,9 @@ configured` error. Closing the last candidate window shuts down its owned Go
 process. Session rows select Go-owned Loaded tabs via controlled `switch_session`;
 the renderer shows active-branch display history, separately from effective
 model context, and retains scroll/Thinking expansion on re-entry. The Go session
-module provides read-only `Open`, `Entries`, and `ContextMessages`; no session
-writes or agent startup are available yet. History is a text projection;
+module provides read-only `Open`, `Entries`, and `ContextMessages`, plus a writable
+`Manager` for internal JSONL persistence; desktop RPC remains read-only and agent
+startup is not connected yet. History is a text projection;
 full Markdown, image/tool content and running sessions remain later slices.
 See [M003](docs/migration/evidence/M003.md) for identity, errors and coverage.
 

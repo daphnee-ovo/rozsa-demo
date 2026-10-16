@@ -345,6 +345,38 @@ pub fn rename(path, new_name) -> Result<()>
 pub fn list_dir(dir) -> Result<Vec<SessionMeta>>
 ```
 
+迁移分支的 Go `backend/internal/app/session.Manager` 已补齐上述持久化职责。
+`Create` / `CreateLazy` 创建，`OpenManager` 复用既有只读 `Open` 和同一套
+header/entry 解析；`Append` 接收封闭的 entry 类型，也提供对应的具名 append
+方法。短 ID 在本实例 index 内避重；写入和 close 成功后才更新 index/leaf。
+消息按 Rust `types_serde.rs` 的字段和可选字段规则写入，user 文本规范化为
+content blocks。`CurrentName` / `LatestCustom` 按整个 index 的最大 timestamp
+选择，timestamp 相同的优先级沿用未定义边界。
+
+Lazy 文件在首次 append 或修改为不同 cwd 时创建；相同 cwd、查询、空上下文
+复制和无效 label target 不创建文件。`Rename(path, name)` 追加 `session_info`；
+对正在使用的实例应调用 `AppendSessionInfo`，独立 rename 不刷新其他实例。
+`SetCwd` 重写第一物理行的 header，保留后续原始 bytes，成功后才更新内存 cwd；
+其第一行要求比 `Open` 跳过开头空行更严格，沿用 Rust 行为。
+续接分支通过新 session 的 `parentSession` 与 `CopyContextMessagesFrom[Path]`
+复制源分支的有效消息，生成新 ID/关联，不复制 metadata 或压缩掉的历史。
+中途失败会返回错误，已成功追加的消息不回滚。`Delete` 删除指定文件，缺失文件
+和目录报错；已打开实例不会自动重新创建被删除的文件。
+
+持久化边界保持迁移 SPEC：实例内串行访问，无 fsync、原子 header 替换、文件锁
+或跨实例协调。写入错误（包括短写、底层取消错误、close 错误）返回失败，不推进
+内存；磁盘可能已经部分或全部改变，不自动重试。重开沿用空行跳过、malformed
+entry 跳过及 header/UTF-8 错误；截断尾行不会被自动修复，不能据此宣称取消后
+恢复或崩溃耐久成功。两个旧快照实例追加可能形成同源 sibling branches，重开
+取最后有效 leaf，不能宣称冲突已解决。产品 abort、运行会话 owner 与 RPC 写接口
+由后续任务接线；当前桌面会话 RPC 仍只读。
+
+针对性验证：`go -C backend test -race ./internal/app/session/...`。
+测试仅写临时 fixture 副本，覆盖旧文件读取→追加→重开→续接、全部 entry/message
+字段、lazy/cwd/rename/delete、压缩后的分支复制、失败后的内存不变、部分复制、
+截断重开、独立实例分支及同实例并发/查询副本隔离。覆盖记录见
+[TASK-T017](../migration/TASK_ROADMAP.md#task-t017-jsonl-manager)。
+
 **SessionMeta**（轻量级元数据，用于 Sessions selector UI）：
 ```rust
 pub struct SessionMeta {
@@ -716,9 +748,9 @@ match policy.evaluate("Bash", &args) {
 1. **Separation of concerns**：agent loop logic（core）、应用状态（app）、GUI/CLI 输入输出清晰分离
 2. **Async-first**：所有 I/O 和状态访问都是 async，锁粒度小（Mutex 只保护必要的共享状态）
 3. **Event-driven**：通过 `broadcast::channel` 向 GUI 推送 `AgentEvent`，解耦 session 和 UI
-4. **Append-only persistence**：JSONL session file 永不修改历史，只追加（tree structure via parent_id）
+4. **Append-only persistence**：JSONL entry 历史只追加（tree structure via parent_id）；修改 cwd 时重写 header 并保留后续 bytes
 5. **Scope isolation**：subagent 通过 `SubagentScope` 限制工具访问，防止逃逸
-6. **Lazy materialization**：session file 在首次 append 时才创建（`create_lazy`），减少空会话文件
+6. **Lazy materialization**：`create_lazy` 延后到首次 append 或修改为不同 cwd 时创建文件
 
 ## 未来扩展点
 

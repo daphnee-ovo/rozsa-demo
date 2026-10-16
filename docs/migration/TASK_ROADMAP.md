@@ -14,7 +14,7 @@
 
 保留 Electron 单 WebView + TypeScript + Go、stdio JSON-RPC、全部原有功能与处理逻辑等价、原 JSONL 写入/恢复规则。最终完整核对全部旧能力，真实平台/原生/授权未验证时不得宣称通过。
 
-## 已完成的会话读取切片
+## 已完成的会话模块切片
 
 **TASK-T001：打通 Electron→Go 会话列表读取纵向切片**，无前置依赖。已实现
 Go catalog、stdio framing/dispatch、受控 Electron/preload/renderer 与候选构建；
@@ -30,6 +30,32 @@ entry 选择 leaf，通过 `parentId` 回溯分支，保留历史与有效上下
 [M002](evidence/M002.md)；正式完成状态以 `dow task show TASK-T002` 为准。
 T003 负责 Electron 切换/历史链路，T017 负责完整写入 manager，T028 负责实际
 压缩与配置 overlay；本项完成后停止，等待用户安排。
+
+### TASK-T017 JSONL manager
+
+Go `session.Manager` 已在 T002 reader 上补齐 `Create` / `CreateLazy` /
+`OpenManager`、全部七类 entry 的 append、短 ID/index/leaf、rename 的
+`session_info` 追加、cwd header 重写、有效上下文复制续接分支和 delete。
+依据为当前 Rust `session/manager.rs`、`types_serde.rs`，以及既有 reader、
+working-directory 和 agent-session-restore 测试；没有第二套解析器。
+规则与 API 见 [app SessionManager](../app/README.md#sessionmanager)。
+
+2026-10-17 针对性验证：`go -C backend test -race ./internal/app/session/...`
+及 `go -C backend test -race ./...` 通过；Rust
+`cargo test -p rozsa-app --test session_reader_reference_test --test working_directory_persistence_test --test agent_session_restore_test`
+通过（5 tests）。Go 模块测试覆盖旧 fixture 副本读取→追加→重开→续接、
+header/malformed/空行、所有 entry/message 字段、lazy 的 append 与不同 cwd
+触发、追加成功后更新内存、rename/cwd/delete、压缩后的分支复制、部分复制失败、
+真实文件写入拒绝、短写/底层取消/close 错误、截断尾行和实例访问隔离。
+非法 UTF-8 写入已有先失败后通过的回归测试，避免 Go 编码器静默替换数据。
+
+保持 SPEC 的持久化边界：无 fsync、原子 header 替换或跨实例锁；Go 显式回报
+close 错误，失败不推进内存，但磁盘可能已改变，不自动重试或修复截断。
+独立实例可保持旧 leaf 并写成 sibling branches，重开只取最后有效 leaf；
+这是已验证的旧快照限制，不是跨实例冲突解决或取消/崩溃恢复成功。
+timestamp 相同的名称/custom 选择顺序未定义。桌面 RPC 仍只读；产品取消、运行
+owner 和实际压缩/配置 overlay 分别留给后续任务。只使用临时 fixture 副本，
+未读写真实用户数据；未进入全项目 TEST、未做 Linux/Windows 实机验证。
 
 **TASK-T003：会话切换与只读历史恢复 TS 链路** 已接通受控 renderer → preload
 → main → stdio RPC → Go LoadedSessions/Reader。Go 按 path 复用 Loaded tab，
@@ -269,7 +295,7 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 | F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | 待实现 |
 | F03 | credentials、PKCE/callback/device、刷新/注销 | TASK-T024、TASK-T032、TASK-T033、TASK-T034、TASK-T054 | 待实现 |
 | F04 | Agent loop、hooks、并行/终止/取消 | TASK-T019、TASK-T020、TASK-T026、TASK-T037、TASK-T038 | 待实现 |
-| F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T010、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；T010 为现有方法增补类型化错误、库通信与接收取消，见 [M010](evidence/M010.md)；写入与运行会话等操作待实现 |
+| F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T010、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；T010 协议见 [M010](evidence/M010.md)；[T017](#task-t017-jsonl-manager) 已补齐 Go manager 写入/重开/分支/rename/delete/cwd；运行会话与产品入口仍待 T037/T044 |
 | F06 | compaction、有效上下文与会话配置 overlay | TASK-T002、TASK-T028 | T002 已恢复持久化有效上下文，见 M002；实际压缩与配置 overlay 待 T028 |
 | F07 | Read/Write/Edit/Bash、锁、diff/evidence与进程树 | TASK-T025、TASK-T026、TASK-T045 | 待实现 |
 | F08 | permission模式/规则/approval/trust/Hint | TASK-T035、TASK-T039、TASK-T050 | 待实现 |
