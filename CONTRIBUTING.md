@@ -1,5 +1,10 @@
 # Contributing to Rózsa
 
+## 后端命名规范
+
+- 变量命名需要清晰表达语义，做到自解释。必须使用完整单词或通用缩写，如`name`,`cnt`,`msg`,`dir`,在循环中使用`i` or `j`; 禁止使用语义晦涩的缩写，如用`h`代替`header`。
+
+
 ## Development Tools
 
 Development and synchronization tools live in `devtools/`.
@@ -54,59 +59,82 @@ verification. Serve the prototype from the repository HTTP root (for example,
 backend or prototype inputs; `./run.sh` launches it. Close validation instances after testing. See [GUI architecture](docs/gui/ARCHITECTURE.md)
 for host boundaries and design gaps.
 
-## Candidate Go toolchain (TASK-T067)
+## Electron + Go migration candidate
 
-The backend requires Go **1.27.2** or newer through the `go` directive in
-`backend/go.mod`; the validated baseline is official Go 1.27.2 (2026-10-08).
-Use `go -C backend ...` or run Go inside `backend/` so native module toolchain
-selection applies. The directive also provides an implicit minimum toolchain;
-there is no separate version manager or global `go env -w` configuration.
-With `GOTOOLCHAIN=auto`, Go may select/download a required toolchain when the
-installed version is older; `GOTOOLCHAIN=local` instead fails on older tools.
-Installation/upgrades of the local Go tool are user-managed.
-
-Forge's shared start/package hook reports the selected Go version and builds
-the host binary with the same module/environment. Tool caches use their default
-locations; only temporary build files and test evidence use project `tmp/`.
-The focused acceptance target runs all backend packages, dependency integrity,
-Go/TS RPC and session tests, Forge package and prepare-only. Its TS module test
-checks both development and packaged binary build metadata against the selected
-toolchain:
+The migration branch builds a separate read-only session-list/history candidate. The
+default `./run.sh` still launches Tauri. Run the combined acceptance target with:
 
 ```bash
-go version
-go -C backend version
-bash devtools/test-migration-go-toolchain.sh
-# After a fresh package, run only the metadata check:
-npm --prefix desktop/tests run test:go-toolchain
+bash devtools/test-migration-build.sh
 ```
 
-Go 1.27 uses the v2 implementation behind `encoding/json`, preserving the v1
-API's behavior; exact error text can change. Keep the JSONL validation and RPC
-contracts covered by their existing fixtures. The pinned RPC JSON dependency
-uses standard-library aliases with this default engine. Do not add
-`GOEXPERIMENT=nojsonv2` as a compatibility workaround. See
-[M067](docs/migration/evidence/M067.md) for official sources, selected files,
-dependency compatibility and verification results.
+Go dependencies and Electron/TypeScript/tsx/jsdom versions are defined by their module manifests and lockfiles. Use those files as the single source of version truth.
 
-## Current session RPC contract (TASK-T010)
+The combined script is the shared T001/T003/T010 cross-language task target. It
+runs Go session/transport checks, list/history/RPC-contract module tests and one
+resource prepare check; Forge performs the package, TypeScript check and Go build
+once. While developing a slice, Go tests can run directly with
+`go -C backend test -count=1 ./internal/app/session/... ./internal/transport/...`,
+and JS module tests with `npm --prefix desktop/tests run test:session-list`,
+`session-history`, or `npm --prefix desktop/tests run test:session-contract`.
+Native acceptance remains separate; it never enters full TEST or starts a GUI
+from the task completion hook. This uses dow's supported Shell adapter because
+dow 0.3.10 does not recognize the tsx TypeScript test runner.
 
-T010 supersedes the initial standard-library-only bootstrap note: Go now pins
-`go.lsp.dev/jsonrpc2@v1.0.1` with dependencies in `backend/go.sum`, and Electron
-main uses `vscode-jsonrpc@9.0.3`. Use their native connection/framing/ID handling;
-do not implement an extra protocol parser or custom Stream. Unsupported library
-configuration requirements return to the main chat for a decision.
+Launch against explicit synthetic directories in layer order:
 
-Business contracts live in `contracts/ipc/session.ts` and Go
-`internal/transport/types`. Missing/null empty params are equivalent; required
-business fields are validated. Notifications receive no reply and cannot invoke
-this slice's product methods. Malformed JSON/envelopes terminate the Go connection
-with a diagnostic, without an extra wire response; bad business params in a valid
-call return a typed RPC error. UI cancellation does not send product abort or
-discard Go transport correlation. Timeouts/exits fail pending calls without
-replay. After the shutdown reply, main ends stdin and waits for its owned Go process.
+```bash
+bash devtools/run-migration.sh --session-dir /absolute/synthetic/global --session-dir /absolute/synthetic/project
+```
 
-Candidate test temporary files and generated outputs still live under `tmp/`. Run focused checks with:
+The renderer cannot supply paths or arbitrary IPC. No default user session or
+credential directories are discovered. Missing configured layers return an
+empty list; no configured layers show the existing `No session directories
+configured` error. Closing the last candidate window shuts down its owned Go
+process. Session rows select Go-owned Loaded tabs via controlled `switch_session`;
+the renderer shows active-branch display history, separately from effective
+model context, and retains scroll/Thinking expansion on re-entry. The Go session
+module provides read-only `Open`, `Entries`, and `ContextMessages`; no session
+writes or agent startup are available yet. History is a text projection;
+full Markdown, image/tool content and running sessions remain later slices.
+See [M003](docs/migration/evidence/M003.md) for identity, errors and coverage.
+
+T002's focused reader checks consume the same small fixtures in Go and Rust:
+
+```bash
+go -C backend test ./internal/app/session/...
+cargo test -p rozsa-app --test session_reader_migration_test --test agent_session_restore_test
+```
+
+See [M002](docs/migration/evidence/M002.md) for fixture origins, restoration rules
+and the remaining session tasks. These checks do not enter full TEST.
+
+`npm --prefix desktop/tests run test:native` opens its own Electron window
+with generated fixtures and an isolated profile under `tmp/`. It checks real
+rendering, refresh, restricted preload, unchanged JSONL, and normal shutdown
+with no owned Go process left. It writes a screenshot, result JSON and logs to
+the displayed evidence directory, then closes its instance. Run it with host
+permissions where the macOS application sandbox prevents GUI startup. This is
+focused slice acceptance; DOM tests do not prove native behavior, and the macOS
+result does not verify Linux/Windows or complete migration parity. See
+[TASK_ROADMAP](docs/migration/TASK_ROADMAP.md) and [M001](docs/migration/evidence/M001.md).
+
+`npm --prefix desktop/tests run test:native-history` likewise starts and closes
+only its isolated Electron/Go instance. It exercises actual selection, branch
+history versus context count, empty history, reader failure and manual retry,
+scroll/expansion re-entry, and unchanged JSONL bytes/mtime. It repairs only its
+own deliberately invalid synthetic input for the retry case. Results and four
+screenshots live under `tmp/migration-native-session-history/`; macOS evidence
+does not establish Linux/Windows or full native shell parity. Native runs need
+host GUI permissions and are separate from task completion and full TEST.
+
+## Current session RPC checks (TASK-T010)
+
+The approved library, framing, error, identity, and cancellation decisions are in
+the migration [SPEC](.dev-doc/refactor/electron-go-migration/SPEC.md) and
+[M010](docs/migration/evidence/M010.md). Implement them with the native library
+connections; do not add a second protocol parser or custom Stream. Run focused
+checks with:
 
 ```bash
 npm --prefix desktop/tests run test:session-contract
@@ -127,6 +155,7 @@ scripts place temporary working files under project `tmp/migration/`.
 bash devtools/build-migration.sh
 bash devtools/run-migration.sh --session-dir /absolute/synthetic/sessions
 bash devtools/package-migration-candidate.sh
+bash devtools/package-migration-candidate.sh make
 bash devtools/test-migration-build.sh
 ```
 
@@ -188,23 +217,29 @@ list/history/contract module tests; it does not launch a GUI or enter full TEST.
 ```bash
 npm --prefix desktop/tests run test:native-resources
 # macOS package acceptance, after package:
-ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rozsa Migration-darwin-arm64/Rozsa Migration.app/Contents/MacOS/rozsa-migration" npm --prefix desktop/tests run test:native
-ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rozsa Migration-darwin-arm64/Rozsa Migration.app/Contents/MacOS/rozsa-migration" npm --prefix desktop/tests run test:native-history
+ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rózsa-darwin-arm64/Rózsa.app/Contents/MacOS/rozsa" npm --prefix desktop/tests run test:native
+ROZSA_NATIVE_EXECUTABLE="$PWD/desktop/out/Rózsa-darwin-arm64/Rózsa.app/Contents/MacOS/rozsa" npm --prefix desktop/tests run test:native-history
+ROZSA_TEST_APP_BUNDLE="/Applications/Rózsa.app" npm --prefix desktop/tests exec -- tsx desktop/tests/package-resources.test.ts
 ```
 
 Native Forge validation edits only copied HTML/CSS/TS inputs under project tmp,
 then checks actual Electron automatic updates, controlled bridge, stdio history
 and owned process/server cleanup. Package checks reuse existing catalog/history
-scenarios against the actual executable from an unrelated CWD. Every validation
+scenarios against the actual executable from an unrelated CWD. The package
+resource check inspects the app archive, runs the packaged entry with its Go
+resource missing in a temporary copy, and verifies the startup diagnostic. Every validation
 instance closes after testing. Use host GUI permissions on macOS. Actual
 results and platform limits are in [M065](docs/migration/evidence/M065.md).
 
 T060 establishes the final frontend source and test paths before T013 converts
 shared core/port and prototype TS loading; T014 adds Forge makers/installer
 acceptance after T012/T013.
-This task stops at runnable package. Signing, installer, distribution and
-Linux/Windows native acceptance remain corresponding later tasks. Current
-package behavior and its limits are summarized in
+Forge `make` creates a macOS DMG, Windows Squirrel installer set, and Debian
+package. Build the host installer with `bash devtools/package-migration-candidate.sh make`;
+the default command above still creates the runnable app package. T014 checks
+the installer contents and host install/runtime resources. Signing, actual
+install/uninstall acceptance and Linux/Windows native acceptance remain
+T056/T057/T058. Current package behavior and its limits are summarized in
 [M065](docs/migration/evidence/M065.md).
 
 On the migration branch, after focused verification run `dow task done` before
@@ -219,10 +254,6 @@ existing untracked file modified by this task.
 - Include tests for new functionality
 - Do not edit `CHANGELOG.md` — maintainers handle changelog entries
 - Run the full check suite before submitting
-
-## Project Name
-
-Rózsa is named after **Rózsa Péter** (1905-1977), a Hungarian mathematician recognized as the founding mother of recursion theory. Her seminal work *Recursive Functions* (1951) systematized the theory that underpins all of modern computation. The name reflects both the recursive nature of an agent that reasons about and modifies code, and a tribute to a pioneer whose contributions were long underrecognized.
 
 ## Questions
 

@@ -1,0 +1,2 @@
+devtest:
+  run: npm --prefix desktop/tests exec -- tsx desktop/tests/package-resources.test.ts

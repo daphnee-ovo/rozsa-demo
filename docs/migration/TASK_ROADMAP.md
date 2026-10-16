@@ -140,7 +140,7 @@ T013 在 T075 完成后恢复执行：范围是 `desktop/renderer/` 与 prototyp
 T064 将本地 TypeScript compiler 设为默认工具链；T065 迁移为 Forge/Vite 开发与可运行 package；T014 负责后续 installer/发行资源验收。
 
 T065：Forge/Vite 开发与可运行 package（依赖 T064）。
-工具版本、构建分工、运行方式与产物路径见 CONTRIBUTING；真实验收与未验证项见 [M065](evidence/M065.md)。T060 先迁入 `desktop/renderer/` 与 `desktop/tests/`，T013 在该目录继续共享 TS/templates 装载，T014 负责 installer。
+工具版本、构建分工、运行方式与产物路径见 CONTRIBUTING；真实验收与未验证项见 [M065](evidence/M065.md)。T060 先迁入 `desktop/renderer/` 与 `desktop/tests/`，T013 在该目录继续共享 TS/templates 装载，T014 增加 Forge makers 并验收 installer 内的 UI/Go 资源及启动失败诊断；签名和各平台安装卸载由 T056/T057/T058 验收。
 
 分组仅便于检索，不是阶段 gate；任务顺序服从依赖关系。
 

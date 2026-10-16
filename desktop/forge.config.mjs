@@ -5,7 +5,7 @@ import { backendPath, prepareCandidate, projectRoot } from "./scripts/backend.mj
 
 export default {
   packagerConfig: {
-    name: "Rozsa Migration", executableName: "rozsa-migration",
+    name: "Rózsa", executableName: "rozsa",
     asar: true, extraResource: [backendPath],
     // Packager scratch files stay in the project; tool caches use defaults.
     tmpdir: resolve(projectRoot, "tmp/migration/packager"),
@@ -13,6 +13,11 @@ export default {
     // verification enabled without fetching mutable checksum metadata each run.
     download: { checksums: JSON.parse(readFileSync(new URL("./node_modules/electron/checksums.json", import.meta.url), "utf8")) },
   },
+  makers: [
+    { name: "@electron-forge/maker-dmg" },
+    { name: "@electron-forge/maker-squirrel", config: { authors: "Rózsa" } },
+    { name: "@electron-forge/maker-deb", config: { options: { name: "rozsa", productName: "Rózsa" } } },
+  ],
   hooks: {
     preStart: () => prepareCandidate(),
     prePackage: (_config, platform, arch) => prepareCandidate(platform, arch),

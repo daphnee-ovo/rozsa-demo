@@ -1,6 +1,7 @@
 {
   "name": "rozsa-desktop",
   "version": "0.0.0",
+  "description": "Rózsa desktop application",
   "private": true,
   "type": "module",
   "main": ".vite/build/main.cjs",
@@ -11,11 +12,15 @@
     "typecheck": "node scripts/typecheck.mjs",
     "build:renderer": "vite build --config vite.renderer.config.mjs",
     "package": "electron-forge package",
+    "make": "electron-forge make",
     "test:resources": "npm --prefix tests run test:resources",
     "start": "electron-forge start"
   },
   "devDependencies": {
     "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-deb": "8.0.1",
+    "@electron-forge/maker-dmg": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1",
     "@electron-forge/plugin-vite": "8.0.1",
     "@types/node": "24.10.1",
     "electron": "44.7.0",
