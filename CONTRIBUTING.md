@@ -194,6 +194,8 @@ Generated bundles/maps live in desktop/.vite/; Forge packages in desktop/out/.
 `npm --prefix desktop run build:renderer` builds the production renderer for
 resource inspection; `npm --prefix desktop/tests run test:ui` includes the
 shared host-contract and HTTP prototype resource checks.
+The Electron+Go message performance sample is isolated from both wildcard UI
+suites and runs independently with `npm --prefix desktop/tests run test:performance`.
 Main/preload follow Forge's main.cjs/preload.cjs convention. Preload is a single
 sandbox bundle with Electron as the only external runtime require. Strict
 Bundler-resolution TS configs keep Node globals out of renderer and DOM out of
