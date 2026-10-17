@@ -23,7 +23,7 @@ func (writer *permissionRuleWriter) AddProjectPermissionAllow(rule string) error
 	return writer.err
 }
 
-func testPolicy(t *testing.T, mode Mode, root string, rules Rules) *Policy {
+func testPolicy(t *testing.T, mode Mode, root string, rules Rules) Policy {
 	t.Helper()
 	policy, err := NewPolicy(mode, root, rules)
 	if err != nil {
@@ -55,12 +55,15 @@ func TestPermissionModeAndRulePrecedence(t *testing.T) {
 	if got := compound.Evaluate("s", "Bash", map[string]any{"command": "cargo test && git status"}); got.Kind != NeedApproval {
 		t.Fatalf("partial allow covered compound command: %#v", got)
 	}
-	compound.Mode = Yolo
-	compound.Rules.Ask = []string{"Bash(cargo test *)"}
+	if err := compound.Update(Yolo, "", Rules{Allow: []string{"Bash(cargo test *)"}, Ask: []string{"Bash(cargo test *)"}}); err != nil {
+		t.Fatal(err)
+	}
 	if got := compound.Evaluate("s", "Bash", map[string]any{"command": "cargo test unit"}); got.Kind != NeedApproval {
 		t.Fatalf("yolo bypassed explicit ask: %#v", got)
 	}
-	policy.Mode = Yolo
+	if err := policy.Update(Yolo, "", Rules{Deny: []string{"Bash(git push *)"}, Ask: []string{"Bash(cargo test *)"}, Allow: []string{"Bash(*)"}}); err != nil {
+		t.Fatal(err)
+	}
 	if got := policy.Evaluate("s", "Bash", map[string]any{"command": "git reset --hard"}); got.Kind != Block {
 		t.Fatalf("yolo bypassed destructive block: %#v", got)
 	}
@@ -72,7 +75,7 @@ func TestModeUpdatesKeepSessionTrustAndAutoApproveStillAsks(t *testing.T) {
 	if got := policy.Evaluate("s", "Bash", args); got.Kind != NeedApproval {
 		t.Fatalf("unimplemented auto-approve reviewer bypassed user approval: %#v", got)
 	}
-	if err := policy.RecordSessionApproval("s", "Bash:cargo test"); err != nil {
+	if err := policy.ApplyResponse("s", Response{Kind: AllowSession, TrustKey: "Bash:cargo test"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := policy.Update(OnRequest, "", Rules{Deny: []string{"Bash(git push *)"}}); err != nil {
@@ -128,14 +131,18 @@ func TestRustReadonlyShellCommandSetMatches(t *testing.T) {
 func TestPathGlobDirectRecursiveAndHomeScopes(t *testing.T) {
 	root := t.TempDir()
 	policy := testPolicy(t, OnRequest, root, Rules{})
-	policy.Rules.Deny = []string{"Edit(docs/*.md)"}
+	if err := policy.Update(OnRequest, root, Rules{Deny: []string{"Edit(docs/*.md)"}}); err != nil {
+		t.Fatal(err)
+	}
 	if got := policy.Evaluate("s", "Edit", map[string]any{"file_path": "docs/guide.md"}); got.Kind != Block {
 		t.Fatalf("direct glob did not match: %#v", got)
 	}
 	if got := policy.Evaluate("s", "Edit", map[string]any{"file_path": "docs/nested/guide.md"}); got.Kind != NeedApproval {
 		t.Fatalf("direct glob matched nested path: %#v", got)
 	}
-	policy.Rules.Deny = []string{"Edit(docs/**/*.md)"}
+	if err := policy.Update(OnRequest, root, Rules{Deny: []string{"Edit(docs/**/*.md)"}}); err != nil {
+		t.Fatal(err)
+	}
 	for _, path := range []string{"docs/guide.md", "docs/nested/guide.md"} {
 		if got := policy.Evaluate("s", "Edit", map[string]any{"file_path": path}); got.Kind != Block {
 			t.Errorf("recursive glob did not match %q: %#v", path, got)
@@ -145,7 +152,9 @@ func TestPathGlobDirectRecursiveAndHomeScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy.Rules.Deny = []string{"Edit($HOME/*.md)"}
+	if err := policy.Update(OnRequest, root, Rules{Deny: []string{"Edit($HOME/*.md)"}}); err != nil {
+		t.Fatal(err)
+	}
 	if got := policy.Evaluate("s", "Edit", map[string]any{"file_path": filepath.Join(home, "note.md")}); got.Kind != Block {
 		t.Fatalf("home-relative glob did not match: %#v", got)
 	}
@@ -213,15 +222,18 @@ func TestFileTrustScopesAndSymlinksStayWorkspaceBound(t *testing.T) {
 		t.Fatalf("symlink escaped workspace trust boundary: %#v", outsideVerdict)
 	}
 
-	policy.Rules.Deny = []string{"Edit(src/**/*.go)"}
+	if err := policy.Update(OnRequest, workspace, Rules{Deny: []string{"Edit(src/**/*.go)"}}); err != nil {
+		t.Fatal(err)
+	}
 	if got := policy.Evaluate("s", "Edit", map[string]any{"file_path": inside}); got.Kind != Block {
 		t.Fatalf("recursive path rule did not match: %#v", got)
 	}
 	if got := policy.Evaluate("s", "Edit", map[string]any{"file_path": filepath.Join(workspace, "README.md")}); got.Kind != NeedApproval {
 		t.Fatalf("path rule escaped its scope: %#v", got)
 	}
-	policy.Rules.Deny = nil
-	policy.Rules.Allow = []string{"Edit(src/**/*.go)"}
+	if err := policy.Update(OnRequest, workspace, Rules{Allow: []string{"Edit(src/**/*.go)"}}); err != nil {
+		t.Fatal(err)
+	}
 	if got := policy.Evaluate("s", "Edit", map[string]any{"file_path": inside}); got.Kind != Allow {
 		t.Fatalf("project path allow did not match: %#v", got)
 	}
@@ -232,7 +244,7 @@ func TestFileTrustScopesAndSymlinksStayWorkspaceBound(t *testing.T) {
 
 func TestTrustGroupsContainOnlyUntrustedShellSegments(t *testing.T) {
 	policy := testPolicy(t, OnRequest, "", Rules{})
-	if err := policy.RecordSessionApproval("s", "Bash:cargo test"); err != nil {
+	if err := policy.ApplyResponse("s", Response{Kind: AllowSession, TrustKey: "Bash:cargo test"}); err != nil {
 		t.Fatal(err)
 	}
 	got := policy.Evaluate("s", "Bash", map[string]any{"command": "cargo test && git status"})
@@ -445,14 +457,14 @@ func TestProjectRuleStorePersistsOnlyToProjectLayer(t *testing.T) {
 
 func TestSessionTrustRequiresEveryCompoundCommandSegment(t *testing.T) {
 	policy := testPolicy(t, OnRequest, "", Rules{})
-	if err := policy.RecordSessionApproval("one", "Bash:cargo test"); err != nil {
+	if err := policy.ApplyResponse("one", Response{Kind: AllowSession, TrustKey: "Bash:cargo test"}); err != nil {
 		t.Fatal(err)
 	}
 	args := map[string]any{"command": "cargo test && git status"}
 	if got := policy.Evaluate("one", "Bash", args); got.Kind != NeedApproval {
 		t.Fatalf("partial trust allowed whole command: %#v", got)
 	}
-	if err := policy.RecordSessionApproval("one", "Bash:git status"); err != nil {
+	if err := policy.ApplyResponse("one", Response{Kind: AllowSession, TrustKey: "Bash:git status"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := policy.Evaluate("one", "Bash", args); got.Kind != Allow {
@@ -495,7 +507,7 @@ func TestPolicySupportsConcurrentEvaluationAndTrustUpdates(t *testing.T) {
 		go func(index int) {
 			defer workers.Done()
 			for iteration := 0; iteration < 50; iteration++ {
-				_ = policy.RecordSessionApproval("session", fmt.Sprintf("Bash:cmd-%d", index))
+				_ = policy.ApplyResponse("session", Response{Kind: AllowSession, TrustKey: fmt.Sprintf("Bash:cmd-%d", index)})
 			}
 		}(index)
 		go func() {

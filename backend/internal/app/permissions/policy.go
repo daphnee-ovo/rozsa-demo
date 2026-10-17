@@ -94,10 +94,17 @@ type Rules struct {
 	Allow []string
 }
 
-type Policy struct {
-	Mode          Mode
-	WorkspaceRoot string
-	Rules         Rules
+type Policy interface {
+	Evaluate(sessionID, tool string, args map[string]any) Verdict
+	Update(mode Mode, workspaceRoot string, rules Rules) error
+	ApplyResponse(sessionID string, response Response) error
+	RecordProjectApproval(trustKey string, store ProjectRuleStore) error
+}
+
+type policy struct {
+	mode          Mode
+	workspaceRoot string
+	rules         Rules
 	mu            sync.RWMutex
 	sessionTrust  map[string]map[string]struct{}
 }
@@ -107,7 +114,7 @@ type ProjectRuleStore interface {
 	AddProjectPermissionAllow(rule string) error
 }
 
-func NewPolicy(mode Mode, workspaceRoot string, rules Rules) (*Policy, error) {
+func NewPolicy(mode Mode, workspaceRoot string, rules Rules) (Policy, error) {
 	if _, err := ParseMode(string(mode)); err != nil {
 		return nil, err
 	}
@@ -118,10 +125,10 @@ func NewPolicy(mode Mode, workspaceRoot string, rules Rules) (*Policy, error) {
 		}
 		workspaceRoot = current
 	}
-	return &Policy{Mode: mode, WorkspaceRoot: workspaceRoot, Rules: cloneRules(rules), sessionTrust: make(map[string]map[string]struct{})}, nil
+	return &policy{mode: mode, workspaceRoot: workspaceRoot, rules: cloneRules(rules), sessionTrust: make(map[string]map[string]struct{})}, nil
 }
 
-func (p *Policy) Update(mode Mode, workspaceRoot string, rules Rules) error {
+func (p *policy) Update(mode Mode, workspaceRoot string, rules Rules) error {
 	if _, err := ParseMode(string(mode)); err != nil {
 		return err
 	}
@@ -134,7 +141,7 @@ func (p *Policy) Update(mode Mode, workspaceRoot string, rules Rules) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.Mode, p.WorkspaceRoot, p.Rules = mode, workspaceRoot, cloneRules(rules)
+	p.mode, p.workspaceRoot, p.rules = mode, workspaceRoot, cloneRules(rules)
 	return nil
 }
 
@@ -142,7 +149,7 @@ func cloneRules(rules Rules) Rules {
 	return Rules{Deny: append([]string(nil), rules.Deny...), Ask: append([]string(nil), rules.Ask...), Allow: append([]string(nil), rules.Allow...)}
 }
 
-func (p *Policy) RecordSessionApproval(sessionID, trustKey string) error {
+func (p *policy) recordSessionApproval(sessionID, trustKey string) error {
 	if sessionID == "" || trustKey == "" {
 		return fmt.Errorf("session approval requires session and trust identity")
 	}
@@ -158,18 +165,18 @@ func (p *Policy) RecordSessionApproval(sessionID, trustKey string) error {
 	return nil
 }
 
-func (p *Policy) ApplyResponse(sessionID string, response Response) error {
+func (p *policy) ApplyResponse(sessionID string, response Response) error {
 	switch response.Kind {
 	case AllowOnce, Deny, DenyWithHint:
 		return nil
 	case AllowSession:
-		return p.RecordSessionApproval(sessionID, response.TrustKey)
+		return p.recordSessionApproval(sessionID, response.TrustKey)
 	default:
 		return fmt.Errorf("unsupported permission response kind: %d", response.Kind)
 	}
 }
 
-func (p *Policy) RecordProjectApproval(trustKey string, store ProjectRuleStore) error {
+func (p *policy) RecordProjectApproval(trustKey string, store ProjectRuleStore) error {
 	if store == nil {
 		return fmt.Errorf("project permission store is required")
 	}
@@ -178,8 +185,8 @@ func (p *Policy) RecordProjectApproval(trustKey string, store ProjectRuleStore) 
 		return err
 	}
 	p.mu.Lock()
-	if !containsRule(p.Rules.Allow, rule) {
-		p.Rules.Allow = append(p.Rules.Allow, rule)
+	if !containsRule(p.rules.Allow, rule) {
+		p.rules.Allow = append(p.rules.Allow, rule)
 	}
 	p.mu.Unlock()
 	if err := store.AddProjectPermissionAllow(rule); err != nil {
@@ -197,7 +204,7 @@ func containsRule(rules []string, wanted string) bool {
 	return false
 }
 
-func (p *Policy) Evaluate(sessionID, tool string, args map[string]any) Verdict {
+func (p *policy) Evaluate(sessionID, tool string, args map[string]any) Verdict {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	command, _ := args["command"].(string)
@@ -211,14 +218,14 @@ func (p *Policy) Evaluate(sessionID, tool string, args map[string]any) Verdict {
 			}
 		}
 	}
-	targets := requestTargets(tool, args, p.WorkspaceRoot)
-	if matchesAny(p.Rules.Deny, tool, targets, p.WorkspaceRoot) {
+	targets := requestTargets(tool, args, p.workspaceRoot)
+	if matchesAny(p.rules.Deny, tool, targets, p.workspaceRoot) {
 		return Verdict{Kind: Block, Reason: "blocked by permission.deny rule"}
 	}
-	if matchesAny(p.Rules.Ask, tool, targets, p.WorkspaceRoot) {
+	if matchesAny(p.rules.Ask, tool, targets, p.workspaceRoot) {
 		return p.approval(sessionID, tool, args, targets)
 	}
-	if p.Mode == Yolo || matchesAllAllow(p.Rules.Allow, tool, targets, p.WorkspaceRoot, args) || p.inSessionTrust(sessionID, tool, targets) || safeRead(tool, args, p.WorkspaceRoot) {
+	if p.mode == Yolo || matchesAllAllow(p.rules.Allow, tool, targets, p.workspaceRoot, args) || p.inSessionTrust(sessionID, tool, targets) || safeRead(tool, args, p.workspaceRoot) {
 		return Verdict{Kind: Allow}
 	}
 	return p.approval(sessionID, tool, args, targets)
@@ -237,7 +244,7 @@ func DefaultReadOnlyBashRules() []string {
 	return rules
 }
 
-func (p *Policy) inSessionTrust(sessionID, tool string, targets []string) bool {
+func (p *policy) inSessionTrust(sessionID, tool string, targets []string) bool {
 	grants := p.sessionTrust[sessionID]
 	if len(targets) == 0 || len(grants) == 0 {
 		return false
@@ -258,7 +265,7 @@ func (p *Policy) inSessionTrust(sessionID, tool string, targets []string) bool {
 	return true
 }
 
-func (p *Policy) approval(sessionID, tool string, args map[string]any, targets []string) Verdict {
+func (p *policy) approval(sessionID, tool string, args map[string]any, targets []string) Verdict {
 	var summary string
 	if isShell(tool) {
 		summary, _ = args["command"].(string)
@@ -309,7 +316,7 @@ func (p *Policy) approval(sessionID, tool string, args map[string]any, targets [
 		segments := SplitShellSegments(summary)
 		levels = nil
 		for _, segment := range segments {
-			if p.inSessionTrust(sessionID, tool, []string{segment}) || matchesAnyAllow(p.Rules.Allow, tool, segment, p.WorkspaceRoot, args) {
+			if p.inSessionTrust(sessionID, tool, []string{segment}) || matchesAnyAllow(p.rules.Allow, tool, segment, p.workspaceRoot, args) {
 				continue
 			}
 			segmentLevels := commandTrustLevels(tool, segment)
@@ -321,9 +328,9 @@ func (p *Policy) approval(sessionID, tool string, args map[string]any, targets [
 		if path == "" {
 			path, _ = args["path"].(string)
 		}
-		canonical := canonicalPath(path, p.WorkspaceRoot)
-		if !p.inSessionTrust(sessionID, tool, []string{canonical}) && !matchesAnyAllow(p.Rules.Allow, tool, canonical, p.WorkspaceRoot, args) {
-			levels = fileTrustLevels(tool, path, p.WorkspaceRoot)
+		canonical := canonicalPath(path, p.workspaceRoot)
+		if !p.inSessionTrust(sessionID, tool, []string{canonical}) && !matchesAnyAllow(p.rules.Allow, tool, canonical, p.workspaceRoot, args) {
+			levels = fileTrustLevels(tool, path, p.workspaceRoot)
 			groups = []TrustGroup{{Target: canonical, Levels: levels}}
 		} else {
 			levels = nil
