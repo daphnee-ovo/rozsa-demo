@@ -308,6 +308,23 @@ refresh error。完整 provider/OAuth/stream 行为和真实授权仍由后续�
 | TASK-T041 | 移植 Dev Flow discovery/dashboard/REST/SSE 重连回收 | TASK-T015、TASK-T026、TASK-T037 |
 | TASK-T044 | 完成 CLI 全参数、GUI 启动与所有 slash/session 操作 | TASK-T009、TASK-T017、TASK-T020、TASK-T021、TASK-T022、TASK-T023、TASK-T032、TASK-T033、TASK-T034、TASK-T025、TASK-T026、TASK-T035、TASK-T027、TASK-T028、TASK-T037、TASK-T040、TASK-T038、TASK-T041、TASK-T030、TASK-T031 |
 
+#### TASK-T024 当前覆盖与差异
+
+Go `model/credentials` 按已配置模型 key → provider 环境变量 → OAuth `auth.json`
+解析来源；`$NAME` 内部按进程环境 → 私有 `.env` → shell profile 的静态 literal
+赋值查找，不执行 shell。auth 写入原子替换并设私有权限，保留同文件的其他
+provider 数据；过期 OAuth refresh 可注入、按 auth 文件串行并尊重 context
+取消，登出只清理指定 provider。`model/oauth/common` 提供随机 PKCE/state、严格
+callback state 校验、仅 loopback callback listener 与 RFC 8628 pending、slow_down
+(+5s)、expiry、cancel polling。专用回归测试：
+`go -C backend test ./internal/model/credentials/... ./internal/model/oauth/common/...`。
+
+差异/边界：shell profiles 只读取安全的静态赋值；provider OAuth HTTP 登录、token
+交换及各 provider refresh 端点尚未实现，由 T032–T034 接线；真实账号授权仍由
+T054 验收。旧 Rust 手动粘贴的裸 authorization code 不含可验证 state，Go helper
+仅为兼容解析接口将调用方传入的 state 附于裸 code；HTTP callback/query/hash
+输入必须提供匹配 state。T024 的自动测试不代表真实授权或远端 provider 已验收。
+
 TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/platform/configpaths/`。行为对照 Rust `settings/{schema,merge,storage}.rs`、`config_paths.rs` 及 `settings_test.rs`、`config_paths_test.rs`：层级顺序为 defaults → global → project → local；嵌套字段继承、tools/skills 名称覆盖、移除局部字段恢复继承；`devFlow` 只读取 global；appearance/compaction 校验、缺失配置、读/解析/写错误均由专用 Go 测试覆盖。路径 fixture 验证 macOS/Linux/Windows 风格根、项目 key、两个环境变量和 `.agents/skills` 用户路径，不访问凭据或用户配置。
 
 落盘保持 Rust 的 pretty JSON、写入换行差异（字段更新有换行，`save_global` 无额外换行）及进程 umask 控制的目录/文件权限。Go 用 `map[string]any` 暴露可复用的设置视图；Rust 原实现的公开配置类型仍是强类型结构。平台 fixture 是宿主内的路径规则验证，不代表 Linux/Windows 实机验证。针对性命令：`go -C backend test ./internal/app/settings/... ./internal/platform/configpaths/...`。

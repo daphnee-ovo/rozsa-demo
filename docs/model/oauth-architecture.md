@@ -1,15 +1,19 @@
 # OAuth architecture
 
-`rozsa-model` owns the supported OAuth implementations. GUI commands start a
-flow, present its events to the user, and send required responses back to the
-same Rust flow; there is no TypeScript relay or process bridge.
+The current Rust/Tauri product keeps its OAuth implementations in
+`rozsa-model`. During the Electron + Go migration, reusable credential and
+provider-independent OAuth foundations are being implemented in the Go model
+module. Those Go foundations do not implement provider-specific login or token
+endpoints.
 
 ## Code map
 
-- [`oauth/`](../../crates/rozsa-model/src/oauth/): provider flows, PKCE, callback server, and device-code polling
+- [`oauth/`](../../crates/rozsa-model/src/oauth/): current Rust provider flows, PKCE, callback server, and device-code polling
 - [`oauth/types.rs`](../../crates/rozsa-model/src/oauth/types.rs): `OAuthCredentials`, `OAuthFlowEvent`, and errors
 - [`credentials.rs`](../../crates/rozsa-model/src/credentials.rs): credential storage and refresh during request-option resolution
 - [`commands.rs`](../../crates/rozsa-gui/src/commands.rs): GUI command boundary
+- [`credentials/`](../../backend/internal/model/credentials/): Go credential source resolution and private `auth.json` storage/refresh coordination
+- [`oauth/common/`](../../backend/internal/model/oauth/common/): Go PKCE, state-bound callback, and device polling primitives
 
 ## Supported flows
 
@@ -31,6 +35,15 @@ OAuth credentials are stored in `auth.json` through
 credentials for the supported providers before a model request is made. The
 credential file remains local user configuration and must not be logged or
 committed.
+
+The Go model foundations resolve a configured model key before provider environment
+variables and OAuth `auth.json`. A `$NAME` reference checks the process
+environment, the private `.env`, then literal assignments in supported shell
+startup files; it never executes shell code. OAuth refresh is injected by the
+provider owner, serialized per auth file within the process, cancellable,
+and written atomically with private file permissions. Provider-specific login,
+token exchange and refresh behavior remain outside these shared primitives;
+real account authorization requires separate end-to-end verification.
 
 ## OpenAI Codex compatibility note
 
