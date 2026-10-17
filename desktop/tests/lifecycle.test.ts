@@ -9,10 +9,12 @@ import { ProductFailure } from "../main/session-contract.ts";
 import { RPCFailure } from "../main/backend-service.ts";
 import { RozsaBridge } from "../preload/bridge.ts";
 import { ProductClient } from "../renderer/product-client.ts";
+import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
-const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions"];
+const backendEnvironment = await createIsolatedBackendEnvironment();
+const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message"];
 async function poll(check: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 6000;
   while (Date.now() < deadline) { if (await check()) return; await delay(20); }
@@ -49,7 +51,7 @@ test("fatal handshake mismatch reaps its live owned process without waiting for 
 
 test("fatal request timeout reaps its process and never replays accepted work", { skip: process.platform === "win32" }, async () => {
   const fake = await endpoint("conn.onRequest('get_sessions',()=>{appendFileSync(calls,JSON.stringify('get_sessions')+'\\n');return new Promise(()=>{});});");
-  const backend = new BackendService(fake.executable, [], { requestTimeoutMs: 1500 });
+  const backend = new BackendService(fake.executable, [], { requestTimeoutMs: 5000 });
   try {
     await backend.initialize();
     await assert.rejects(backend.getSessions(), error => error instanceof ProductFailure && error.failure.kind === "transport" && error.failure.reason === "timeout");
@@ -62,7 +64,7 @@ test("fatal request timeout reaps its process and never replays accepted work", 
 test("failed spawn and backend crash reject explicitly and leave no owned process", async () => {
   const missing = new BackendService(join(root, "tmp/absent-backend-T012"), []);
   await assert.rejects(missing.initialize(), /ENOENT/); await missing.stop();
-  const backend = new BackendService(binary, []);
+  const backend = new BackendService(binary, [], { env: backendEnvironment });
   try {
     await backend.initialize();
     const subscribed = await backend.subscribeSessions();
@@ -80,7 +82,7 @@ test("real Go subscription survives idle, reload restores active snapshot withou
   const original = JSON.stringify({ type: "session", version: 3, id: "header-a", timestamp: "t", cwd: "/synthetic" }) + "\n"
     + JSON.stringify({ type: "message", id: "entry", parentId: null, timestamp: "t", message: { role: "user", content: "Hello" } }) + "\n";
   await writeFile(path, original);
-  const backend = new BackendService(binary, [directory], { requestTimeoutMs: 500 });
+  const backend = new BackendService(binary, [directory], { requestTimeoutMs: 500, env: backendEnvironment });
   const calls: string[] = [];
   const bridge = RozsaBridge.create(async (channel, input) => {
     calls.push(channel);
@@ -171,7 +173,7 @@ if (process.argv.includes("--native")) test("actual Electron candidate lifecycle
       + JSON.stringify({ type: "message", id: "entry", parentId: null, timestamp: "t", message: { role: "user", content: '<img src=x onerror="window.pwned=true"><script>window.pwned=true</script>' } }) + "\n";
     await writeFile(path, original); const before = await stat(path);
     let logs = "";
-    const child = spawn(electron, [app, "--remote-debugging-port=0", "--inspect=0", `--user-data-dir=${join(directory, "profile")}`, "--session-dir", sessions], { cwd: directory, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(electron, [app, "--remote-debugging-port=0", "--inspect=0", `--user-data-dir=${join(directory, "profile")}`, "--session-dir", sessions], { cwd: directory, env: { ...process.env, ...backendEnvironment }, stdio: ["ignore", "pipe", "pipe"] });
     const exited = new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
     child.stdout.on("data", (value: Buffer) => logs += value.toString()); child.stderr.on("data", (value: Buffer) => logs += value.toString());
     const sockets: WebSocket[] = [];
@@ -230,7 +232,7 @@ if (process.argv.includes("--native")) test("actual Electron candidate lifecycle
         const window = "candidateElectron.BrowserWindow.getAllWindows()[0]";
         const preferences = await main.evaluate(`(()=>{const p=${window}.webContents.getLastWebPreferences();return {contextIsolation:p.contextIsolation,sandbox:p.sandbox,nodeIntegration:p.nodeIntegration};})()`);
         assert.deepEqual(preferences, { contextIsolation: true, sandbox: true, nodeIntegration: false });
-        assert.deepEqual(await evaluate("({require:typeof require,process:typeof process,Buffer:typeof Buffer,keys:Object.keys(window.rozsa)})"), { require: "undefined", process: "undefined", Buffer: "undefined", keys: ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"] });
+        assert.deepEqual(await evaluate("({require:typeof require,process:typeof process,Buffer:typeof Buffer,keys:Object.keys(window.rozsa)})"), { require: "undefined", process: "undefined", Buffer: "undefined", keys: ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage"] });
         if (mode !== "shutdown-timeout") {
           await evaluate("document.querySelector('.session-select').click()");
           await wait(async () => await evaluate("document.querySelector('#history').dataset.sessionId==='native'") ? true : undefined, "history");

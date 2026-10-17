@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -33,6 +34,22 @@ type processIO struct {
 func (processIO) Close() error { return nil }
 
 func TestStdioProcessProtocolAndDiagnostics(t *testing.T) {
+	configRoot := t.TempDir()
+	global := filepath.Join(configRoot, "global")
+	project := filepath.Join(configRoot, "project")
+	if err := os.MkdirAll(filepath.Join(global, "models"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(global, "settings.json"), []byte(`{"defaultProvider":"test","defaultModel":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modelConfig := `{"providers":{"test":{"api":"openai-completions","apiKey":"test-key","baseUrl":"http://127.0.0.1:1/v1","models":[{"id":"test","contextWindow":4096,"maxTokens":256}]}}}`
+	if err := os.WriteFile(filepath.Join(global, "models", "test.json"), []byte(modelConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for _, malformed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "clean shutdown", true: "malformed input"}[malformed], func(t *testing.T) {
 			executable, err := os.Executable()
@@ -42,7 +59,7 @@ func TestStdioProcessProtocolAndDiagnostics(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, executable, "-test.run=^TestBackendHelperProcess$")
-			cmd.Env = append(os.Environ(), "ROZSA_TEST_BACKEND_PROCESS=1")
+			cmd.Env = append(os.Environ(), "ROZSA_TEST_BACKEND_PROCESS=1", "ROZSA_CONFIG_DIR="+global, "ROZSA_PROJECT_CONFIG_DIR="+project)
 			input, err := cmd.StdinPipe()
 			if err != nil {
 				t.Fatal(err)
@@ -80,8 +97,8 @@ func TestStdioProcessProtocolAndDiagnostics(t *testing.T) {
 				t.Fatal(err)
 			}
 			send(2, "get_sessions", `{}`)
-			if read().Err() == nil {
-				t.Fatal("missing catalog was silently accepted")
+			if response := read(); response.Err() != nil || string(response.Result()) != "[]" {
+				t.Fatalf("get_sessions result = %s, error=%v; want empty configured catalog", response.Result(), response.Err())
 			}
 			if malformed {
 				frames := stream.(interface {

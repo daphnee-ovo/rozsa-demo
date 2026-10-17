@@ -48,11 +48,11 @@ test("main rejects foreign senders, subframes, destinations and arity before dis
   ui.window.emit("closed"); assert.equal(ui.handlers.size, 0);
 });
 
-test("preload exposes only validated session capabilities and rejects malformed synchronization", async () => {
+test("preload exposes validated session and message capabilities and rejects malformed synchronization", async () => {
   const calls: unknown[][] = [];
   const bridge = RozsaBridge.create(async (...args) => { calls.push(args); return { ok: true, update: snapshot("1") }; });
   assert.ok(Object.isFrozen(bridge));
-  assert.deepEqual(Object.keys(bridge), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"]);
+  assert.deepEqual(Object.keys(bridge), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage"]);
   await assert.rejects((bridge.subscribeSessions as Function)("arbitrary"));
   await assert.rejects((bridge.nextSessionEvent as Function)("1", "extra"));
   await assert.rejects((bridge.nextSessionEvent as Function)({ subscriptionId: "1" }));

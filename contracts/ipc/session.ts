@@ -16,7 +16,18 @@ export interface SessionMethods {
   subscribe_sessions: { params: Record<string, never> | null | undefined; result: SessionUpdate };
   next_session_event: { params: { subscriptionId: string }; result: SessionUpdate };
   unsubscribe_sessions: { params: { subscriptionId: string }; result: true };
+  start_message: { params: { text: string }; result: { operationId: string } };
+  continue_message: { params: Record<string, never> | null | undefined; result: { operationId: string } };
+  subscribe_message_events: { params: { operationId: string }; result: { subscriptionId: string; operationId: string } };
+  next_message_event: { params: { subscriptionId: string }; result: { subscriptionId: string; operationId: string; event: MessageEvent } };
+  unsubscribe_message_events: { params: { subscriptionId: string }; result: true };
+  cancel_message: { params: { operationId: string }; result: true };
 }
+export type MessageEvent =
+  | { sequence: number; kind: "text_delta"; delta: string; error?: never }
+  | { sequence: number; kind: "completed"; delta?: never; error?: never }
+  | { sequence: number; kind: "error"; delta?: never; error: string }
+  | { sequence: number; kind: "canceled"; delta?: never; error?: never };
 export type SessionRequest = { [M in keyof SessionMethods]: { method: M; params: SessionMethods[M]["params"] } }[keyof SessionMethods];
 export type RemoteFault =
   | { kind: "parse"; code: -32700; message: string }
@@ -25,6 +36,7 @@ export type RemoteFault =
   | { kind: "invalid_params"; code: -32602; message: string }
   | { kind: "internal"; code: -32603; message: string }
   | { kind: "catalog" | "session"; code: -32001; message: string }
+  | { kind: "message"; code: -32008; message: string }
   | { kind: "not_initialized"; code: -32002; message: string }
   | { kind: "closing"; code: -32003; message: string }
   | { kind: "canceled"; code: -32800; message: string }
@@ -77,6 +89,7 @@ export function remoteFault(code: unknown, message: unknown, data?: unknown): Re
     case -32001:
       if (!object(data) || (data.kind !== "catalog" && data.kind !== "session")) throw new Error("Invalid backend error kind");
       kind = data.kind; break;
+    case -32008: kind = "message"; break;
     default: throw new Error("Unknown backend error code");
   }
   if (object(data) && data.kind !== kind) throw new Error("Backend error code/kind mismatch");

@@ -4,8 +4,10 @@ import { spawn } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, writeFile, symlink, rename } from "node:fs/promises";
 import { dirname, join, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const backendEnvironment = await createIsolatedBackendEnvironment();
 const base = join(root, "tmp/migration-native-forge"); await mkdir(base, { recursive: true });
 const output = await mkdtemp(join(base, "run-")), fixture = join(output, "project");
 await mkdir(fixture);
@@ -21,7 +23,7 @@ const cli = join(root, "desktop/node_modules/@electron-forge/cli/dist/electron-f
 let logs = "", normal = false, socket: WebSocket | undefined;
 const child = spawn(process.execPath, [cli, "start", "--", "--remote-debugging-port=0", `--user-data-dir=${join(output, "profile")}`, "--session-dir", sessions], {
   cwd: join(fixture, "desktop"), stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env, TMPDIR: join(root, "tmp/migration/install-tmp") },
+  env: { ...process.env, ...backendEnvironment, TMPDIR: join(root, "tmp/migration/install-tmp") },
 });
 const exited = new Promise<number | null>((accept, reject) => { child.once("error", reject); child.once("exit", accept); });
 child.stdout.on("data", b => logs += b.toString()); child.stderr.on("data", b => logs += b.toString());
@@ -125,7 +127,7 @@ try {
     })()`);
     assert.doesNotMatch(opaque.sidebar, /rgba?\(0, 0, 0, 0\)/);
   }
-  assert.deepEqual(await evaluate("({node:typeof window.require,bridge:Object.keys(window.rozsa)})"), { node: "undefined", bridge: ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"] });
+  assert.deepEqual(await evaluate("({node:typeof window.require,bridge:Object.keys(window.rozsa)})"), { node: "undefined", bridge: ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage"] });
   await evaluate("document.querySelector('#sessionList .session-item').click()");
   await poll(async () => await evaluate("document.querySelector('#chatMessages')?.textContent.includes('Forge stdio history')") ? true : undefined, "conversation history");
   const backendPID = Number(/Backend started: (\d+)/.exec(logs)?.[1]); assert.ok(backendPID > 0);

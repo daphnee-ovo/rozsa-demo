@@ -10,16 +10,25 @@ import { RozsaBridge } from "../preload/bridge.ts";
 import { ProductClient } from "../renderer/product-client.ts";
 import { ProductFailure, remoteFault, validatedBridgeFault, bridgeFault } from "../../contracts/ipc/session.ts";
 import { historyReply, sessionReply, sessionSnapshot, type ProductBridge, type SessionSnapshot } from "../main/session-contract.ts";
+import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
+const backendEnvironment = await createIsolatedBackendEnvironment();
+const catalogFixture = join(root, "tmp/migration/session-contract-catalog");
+await mkdir(catalogFixture, { recursive: true });
+const writableSessions = join(catalogFixture, "writable"), invalidCatalog = join(catalogFixture, "not-a-directory");
+await mkdir(writableSessions, { recursive: true });
+await writeFile(invalidCatalog, "synthetic file used as a session directory\n");
 const target = { path: "/synthetic/file-stem.jsonl", catalogId: "header-id" };
 const snapshot: SessionSnapshot = { ...target, sessionId: "file-stem", cwd: "/synthetic", messages: [{ entryId: "entry-id", role: "user", content: [{ type: "text", text: "text" }] }], contextMessageCount: 1 };
 const cases = JSON.parse(await readFile(join(root, "tests/fixtures/session-rpc.json"), "utf8"));
 
 test("shared Go/JS inputs use library transport and preserve transport/product identities", {timeout:15000}, async () => {
   for (const item of cases) {
-    const child = spawn(binary, [], { stdio: "pipe" });
+    const args = ["--session-dir", writableSessions];
+    if (item.request?.method === "get_sessions") args.push("--session-dir", invalidCatalog);
+    const child = spawn(binary, args, { stdio: "pipe", env: { ...process.env, ...backendEnvironment } });
     const reader = new StreamMessageReader(child.stdout), writer = new StreamMessageWriter(child.stdin);
     const responses: any[] = [];
     const received = Promise.withResolvers<void>();
@@ -127,15 +136,20 @@ test("late rejected UI work is consumed, transport failures keep their type", as
 });
 
 test("real backend typed errors remain usable; exit rejects without replay", async () => {
-  const backend = new BackendService(binary, []);
+  const backend = new BackendService(binary, [], { env: backendEnvironment });
   try {
     await assert.rejects(backend.getSessions(), error => error instanceof RPCFailure && error.remote.kind === "not_initialized");
     await backend.initialize();
-    await assert.rejects(backend.getSessions(), error => error instanceof RPCFailure && error.remote.kind === "catalog");
+    assert.deepEqual(await backend.getSessions(), []);
     await assert.rejects(backend.switchSession(target), error => error instanceof RPCFailure && error.remote.kind === "session");
     const closed = new Promise(resolve => backend.process.once("close", resolve)); backend.process.kill("SIGKILL"); await closed;
     await assert.rejects(backend.getSessions(), error => error instanceof ProductFailure && error.failure.kind === "transport");
   } finally { await backend.stop(); }
+  const brokenCatalog = new BackendService(binary, [writableSessions, invalidCatalog], { env: backendEnvironment });
+  try {
+    await brokenCatalog.initialize();
+    await assert.rejects(brokenCatalog.getSessions(), error => error instanceof RPCFailure && error.remote.kind === "catalog");
+  } finally { await brokenCatalog.stop(); }
 });
 
 test("timeout, pipe exit and malformed typed error never resend an uncertain request", {skip:process.platform === "win32",timeout:20000}, async () => {
@@ -148,7 +162,7 @@ test("timeout, pipe exit and malformed typed error never resend an uncertain req
     `const {createMessageConnection,ResponseError}=require(${JSON.stringify(join(root,"desktop/node_modules/vscode-jsonrpc/lib/node/main.js"))});`,
     "const {appendFileSync}=require('node:fs');",
     "const conn=createMessageConnection(process.stdin,process.stdout);",
-    "conn.onRequest('initialize',()=>({protocolVersion:1,capabilities:['get_sessions','switch_session','subscribe_sessions','next_session_event','unsubscribe_sessions']}));",
+    "conn.onRequest('initialize',()=>({protocolVersion:1,capabilities:['get_sessions','switch_session','subscribe_sessions','next_session_event','unsubscribe_sessions','start_message','continue_message','subscribe_message_events','next_message_event','unsubscribe_message_events','cancel_message']}));",
     "conn.onRequest('shutdown',()=>true);",
     `conn.onRequest('get_sessions',()=>{appendFileSync(${JSON.stringify(marker)},'one\\n');${mode === "exit" ? "process.exit(0);" : mode === "invalid-error" ? "throw new ResponseError(-32001,'Missing product error kind');" : "return new Promise(()=>{});"}});`,
     "conn.listen(); console.error('synthetic ready');", "",

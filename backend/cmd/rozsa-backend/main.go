@@ -3,9 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 
-	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/app/bootstrap"
+	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/transport/server"
 )
 
@@ -27,8 +30,44 @@ func main() {
 		fmt.Fprintln(os.Stderr, "unexpected positional arguments")
 		os.Exit(2)
 	}
-	if err := server.Serve(os.Stdin, os.Stdout, session.Catalog{Directories: dirs}); err != nil {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fail(err.Error())
+	}
+	writeDirectory := ""
+	catalogDirectories := []string(dirs)
+	if len(catalogDirectories) == 0 {
+		writeDirectory, catalogDirectories, err = bootstrap.SessionDirectories(cwd)
+		if err != nil {
+			fail(err.Error())
+		}
+	} else {
+		for index, directory := range catalogDirectories {
+			catalogDirectories[index], err = filepath.Abs(directory)
+			if err != nil {
+				fail(err.Error())
+			}
+		}
+		writeDirectory = catalogDirectories[0]
+	}
+	model, apiKey, authPath, err := bootstrap.ConfiguredModel("", "")
+	if err != nil {
+		fail(err.Error())
+	}
+	app, err := runtime.New(runtime.Config{
+		SessionDir: writeDirectory, SessionDirs: catalogDirectories,
+		Model: model, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
+	})
+	if err != nil {
+		fail(err.Error())
+	}
+	if err := server.ServeProductApplication(os.Stdin, os.Stdout, app, productMessageApplication{app: app}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func fail(message string) {
+	fmt.Fprintln(os.Stderr, message)
+	os.Exit(1)
 }

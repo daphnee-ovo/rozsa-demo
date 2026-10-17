@@ -1,4 +1,4 @@
-import { sessionReply, historyReply, syncReply, unsubscribeReply, sessionTarget, ProductFailure, transportFailure, type ProductBridge, type SessionListEntry, type SessionTarget, type SessionSnapshot, type SessionSyncReply } from "../main/session-contract.js";
+import { sessionReply, historyReply, syncReply, unsubscribeReply, sessionTarget, subscriptionId, messageOperation, messageSubscription, messageEventResult, ProductFailure, transportFailure, type ProductBridge, type SessionListEntry, type SessionTarget, type SessionSnapshot, type SessionSyncReply, type MessageOperation, type MessageSubscription, type MessageEventResult } from "../main/session-contract.js";
 
 export interface ReceiveOptions { signal?: AbortSignal }
 // Cancels UI delivery only. Neither AbortSignal nor an abort intent crosses IPC.
@@ -21,6 +21,7 @@ function validate<T>(check: () => T): T {
 }
 
 export class ProductClient {
+  private readonly messageSubscriptions = new Map<string, MessageSubscription>();
   constructor(private readonly bridge: Pick<ProductBridge, "getSessions"> & Partial<Omit<ProductBridge, "getSessions">>) {}
   async getSessions({ signal }: ReceiveOptions = {}): Promise<SessionListEntry[]> {
     const value = await receive(() => this.bridge.getSessions(), signal);
@@ -35,6 +36,45 @@ export class ProductClient {
     const reply = validate(() => historyReply(value, target));
     if (!reply.ok) throw new ProductFailure(reply.error);
     return reply.snapshot;
+  }
+  async startMessage(text: string): Promise<MessageOperation> {
+    if (typeof text !== "string" || text.trim() === "") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Message text must not be empty" });
+    if (!this.bridge.startMessage) throw new Error("Message sending is unavailable");
+    return messageOperation(await this.bridge.startMessage(text));
+  }
+  async continueMessage(): Promise<MessageOperation> {
+    if (!this.bridge.continueMessage) throw new Error("Message continuation is unavailable");
+    return messageOperation(await this.bridge.continueMessage());
+  }
+  async getActiveMessage(): Promise<MessageOperation | null> {
+    if (!this.bridge.getActiveMessage) throw new Error("Active message state is unavailable");
+    const value = await this.bridge.getActiveMessage();
+    return value === null ? null : messageOperation(value);
+  }
+  async cancelMessage(input: string): Promise<void> {
+    if (!this.bridge.cancelMessage) throw new Error("Message cancellation is unavailable");
+    if (typeof input !== "string" || input === "") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid message operation" });
+    await this.bridge.cancelMessage(input);
+  }
+  async subscribeMessageEvents(input: string): Promise<MessageSubscription> {
+    if (!this.bridge.subscribeMessageEvents) throw new Error("Message events are unavailable");
+    const subscription = messageSubscription(await this.bridge.subscribeMessageEvents(input), input);
+    this.messageSubscriptions.set(subscription.subscriptionId, subscription);
+    return subscription;
+  }
+  async nextMessageEvent(input: string, { signal }: ReceiveOptions = {}): Promise<MessageEventResult> {
+    if (!this.bridge.nextMessageEvent) throw new Error("Message events are unavailable");
+    const id = subscriptionId(input);
+    const subscription = this.messageSubscriptions.get(id);
+    if (!subscription) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Unknown message event subscription" });
+    const value = await receive(() => this.bridge.nextMessageEvent!(id), signal);
+    return messageEventResult(value, subscription);
+  }
+  async unsubscribeMessageEvents(input: string): Promise<void> {
+    if (!this.bridge.unsubscribeMessageEvents) throw new Error("Message events are unavailable");
+    const id = subscriptionId(input);
+    await this.bridge.unsubscribeMessageEvents(id);
+    this.messageSubscriptions.delete(id);
   }
   async syncSessions(deliver: (active: SessionSnapshot | null) => void, report: (error: unknown, resynchronizing: boolean) => void, { signal }: ReceiveOptions = {}): Promise<void> {
     let id: string | undefined, epoch: string | undefined, watermark = -1;

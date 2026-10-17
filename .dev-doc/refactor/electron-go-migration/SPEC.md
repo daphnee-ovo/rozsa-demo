@@ -1,13 +1,13 @@
 # SPEC：Electron 单 WebView + Go 完整迁移路线
 
-状态：用户于 2026-10-13 改为“边对照，边实现”；本次仅调整路线和任务，不开始产品实现。任务状态以 dow 为准。创建：2026-10-12；更新：2026-10-13，Asia/Singapore。
+状态：用户于 2026-10-13 确认“边对照，边实现”，并于 2026-10-17 批准 React+TypeScript UI 路线。任务状态以 dow 为准。创建：2026-10-12；更新：2026-10-17，Asia/Singapore。
 分支：`refactor/electron-go-migration`。工作流：`quick / DEV / step`。
 
 ## Goal
 
 将 Rózsa 从 Rust/Tauri 迁移为 Electron 单 WebView + Go，完整保留原有功能、业务规则和关键处理逻辑，减少长期重复维护。实施阶段只是内部验证顺序，不是按版本削减功能的依据。
 
-已确定：Electron 单 WebView、Go 产品后端、全部原有功能、处理逻辑等价。用户于 2026-10-13 确认 D1：前端同时转 TypeScript；D2：Electron 与 Go 采用 stdio JSON-RPC。保留现有 HTML/CSS 与组件/交互边界，不额外更换前端框架。
+已确定：Electron 单 WebView、Go 产品后端、全部原有功能、处理逻辑等价。用户于 2026-10-13 确认 D1：前端同时转 TypeScript；D2：Electron 与 Go 采用 stdio JSON-RPC。用户于 2026-10-17 更新 D1：产品 UI 采用 React+TypeScript/TSX，按既有功能切片逐步迁移；React 组件是最终 UI 真源，prototype 复用相同组件。保留既有 HTML/CSS、布局与交互语义，不额外重设计产品行为。
 
 执行方式已确定：每次选一个实际模块或纵向功能，读取相关旧源码和已有测试，随即实现对应 Go/TypeScript 逻辑，运行本项针对性验证，完成后再接下一项。当前源码与已有 Git 历史就是参照；取消全库冻结、源码复制、hash 清单、旧产物归档及全功能事前盘点。协议、类型和测试辅助按切片增量建立；不要求统一差异 runner、测量框架或完整全方法 schema 后才开工。
 
@@ -103,9 +103,13 @@ Go 依赖方向：cmd/transport → app → core → model。platform 由需要�
 
 `GuiState`（`crates/rozsa-gui/src/state.rs:287`）、GUI commands/events 和 CLI 中的 session/hook factory 必须拆分归属。不能把整个 GUI crate 翻译进 Electron main。
 
-### 2. D1：前端同时转换 TypeScript（用户已确认）
+### 2. D1：前端采用 React+TypeScript（用户已确认）
 
-保留现有 HTML/CSS、ES modules 和 template/component/flow/adapter 边界，将共享组件、runtime adapter/entry、原型脚本以及新 Electron main/preload 转为 TypeScript。类型迁移保持运行逻辑，不以重写框架替代；本轮不引入 React/Vue。既有 retired TypeScript 实现不作为复用来源。
+React+TypeScript/TSX 是共享产品 UI 的实现方式。按已有功能切片逐步把 DOM/template 结构和交互迁移为 React 组件，保留既有 CSS、布局、文案、复制/选择、焦点和滚动行为；不借框架迁移重设计产品行为。迁移完成后 React 组件是 UI 真源，不保留并行的手写 DOM 消息渲染实现。Prototype 通过 mock adapter 提供场景数据并复用 `desktop/renderer/` 的同一 React 组件；演示数据不进入生产包。React/Vite 继续使用 desktop 现有 Vite pipeline，不另建第二套 emit/watch 链。通用能力优先复用使用广泛、经过验证且维护积极的现有库；新增依赖应符合当前切片需要，控制体量与后续升级负担。库的默认行为须适配已批准的产品契约。既有 retired TypeScript 实现不作为复用来源。
+
+UI 功能按 TASK 所属切片迁移，不要求一次性重写整个 renderer。每个 UI task 在自己的 files scope 内转换既有 DOM/CSS/交互；具体路径在执行该切片前确定。旧 Tauri 工程继续独立持有其资源，不加载 Electron/prototype 的 React 组件。
+
+流式与历史消息更新按 session/message 粒度提交。已完成消息保持稳定身份，避免无关流式更新重复渲染或解析 Markdown；批量合并 UI 更新时保留业务事件顺序及 error/completed/canceled 终态。候选具备真实 Electron 链路后，按流式输出、长历史滚动和连续输入进行针对性性能观测，再依据观测选择优化。
 
 共享领域输入、command/result、事件变体用明确 interface/discriminated union；不把原有动态对象一律标成 any。TypeScript 类型不替代跨进程 payload 的运行时校验。只为当前功能建立 IPC 类型、Go struct/tag 和实际用例；以同一小输入验证字段与错误语义。后续切片增补自己的契约，不先建立全方法 schema 或通用生成器。
 

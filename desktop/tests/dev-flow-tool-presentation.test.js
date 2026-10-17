@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadApp, readFrontend } from './helpers/browser.js';
+import { act } from 'react';
+import { createConversationRenderer } from '../renderer/scripts/features/conversation-view.tsx';
+import { loadApp, readFrontend, withDOM } from './helpers/browser.js';
 
-function appWithSettings() {
-  const app = loadApp();
+function appWithSettings(html) {
+  const app = loadApp({ html });
   app.evaluate("devFlowSettings = { project: { dashboardUrl: 'http://127.0.0.1:9800/' } }");
   return app;
 }
@@ -75,12 +77,16 @@ test('bash evidence retains command output and execution facts', () => {
   } finally { app.close(); }
 });
 
-test('covered Dev Flow calls use semantic titles and shared output evidence', () => {
-  const app = appWithSettings();
+test('covered Dev Flow calls use semantic titles and shared output evidence', async () => {
+  const app = appWithSettings('<div id="chatMessages"></div>');
   try {
-    app.evaluate(`
+    await withDOM(app.dom, async () => {
+      globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+      const renderer = createConversationRenderer(app.document.getElementById('chatMessages'));
+      app.window.RozsaConversation = { renderView: renderer.render };
+      try {
+        await act(async () => app.evaluate(`
       window.requests = []; window.cards = []; window.evidenceCalls = [];
-      window.RozsaConversation = { createMessageFrame(role, body) { const el = document.createElement('div'); el.innerHTML = body; return el; } };
       window.RozsaTools = {
         toolView() { return {disposition:'covered',kind:'output',label:'Output',output:'Claim accepted',status:'s-success'}; },
         evidenceMarkup(label, output) { window.evidenceCalls.push([label, output]); return 'SHARED OUTPUT'; },
@@ -91,19 +97,24 @@ test('covered Dev Flow calls use semantic titles and shared output evidence', ()
       requestDevFlowTitles = (id, presentation) => window.requests.push([id, presentation]);
       activeSessionId = 'session-1';
       window.result = {isError:false,output:'Claim accepted',details:{success:true,exit_code:0}};
-      window.rendered = renderMessage({kind:'standard',message:{role:'assistant',content:[{type:'toolCall',id:'call-1',name:'bash',arguments:{command:'dow claim TASK-T001'}}]}},{'call-1':window.result});
-    `);
-    const card = app.window.cards[0];
-    assert.equal(card.name, 'Claimed');
-    assert.equal(card.arg, 'Task T001 Keep shared title');
-    assert.equal(card.status, 's-success');
-    assert.equal(card.options.bodyHtml, 'SHARED OUTPUT');
-    assert.equal(card.options.className, 'dev-flow-tool-call');
-    assert.deepEqual(JSON.parse(JSON.stringify(app.window.evidenceCalls)), [['Output', 'Claim accepted']]);
-    assert.equal(app.window.requests.length, 1);
-    assert.equal(app.window.requests[0][0], 'call-1');
-    assert.equal(app.window.requests[0][1].items[0].id, 'TASK-T001');
-    assert.ok(app.window.rendered.innerHTML.includes('data-session-id="session-1"'));
+      window.rawMessage = {kind:'standard',entryId:'assistant-1',message:{role:'assistant',content:[{type:'toolCall',id:'call-1',name:'bash',arguments:{command:'dow claim TASK-T001'}}]}};
+      window.toolResult = {kind:'standard',entryId:'result-1',message:{role:'toolResult',toolCallId:'call-1',toolName:'bash',content:[{type:'text',text:'Claim accepted'}],details:{success:true,exit_code:0},isError:false}};
+      renderToolChips = () => {};
+      renderMessages([window.rawMessage,window.toolResult], false, 'session-1');
+    `));
+        const card = app.window.cards[0];
+        assert.equal(card.name, 'Claimed');
+        assert.equal(card.arg, 'Task T001 Keep shared title');
+        assert.equal(card.status, 's-success');
+        assert.equal(card.options.bodyHtml, 'SHARED OUTPUT');
+        assert.equal(card.options.className, 'dev-flow-tool-call');
+        assert.deepEqual(JSON.parse(JSON.stringify(app.window.evidenceCalls)), [['Output', 'Claim accepted']]);
+        assert.equal(app.window.requests.length, 1);
+        assert.equal(app.window.requests[0][0], 'call-1');
+        assert.equal(app.window.requests[0][1].items[0].id, 'TASK-T001');
+        assert.ok(app.document.querySelector('#chatMessages [data-session-id="session-1"]'));
+      } finally { await act(async () => renderer.dispose()); }
+    });
   } finally { app.close(); }
 });
 

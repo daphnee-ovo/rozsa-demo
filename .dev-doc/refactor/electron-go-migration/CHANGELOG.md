@@ -27,3 +27,6 @@
 - 02:07 fix: ISSUE-I005：Test TASK-T017 fail:(node:76692) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
 - 02:09 fix: ISSUE-I006：Test TASK-T079 fail:(node:78207) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
 - 21:11 fix: ISSUE-I015：Test TASK-T023 fail:(node:64026) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+
+## 2026-10-18
+- 00:52 fix: ISSUE-I016：Test TASK-T029 fail:node:internal/modules/esm/get_format:243

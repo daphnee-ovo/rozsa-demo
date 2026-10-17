@@ -151,6 +151,45 @@ let renderedSteeringKey = '';
 let renderedSessionListKey = '';
 let sessionViewState = {};
 let sessionDraftState = {};
+let conversationPersistenceErrorShown = false;
+
+function restoreConversationState() {
+  try {
+    const views = sessionStorage.getItem('rozsa:conversation-views:v1');
+    const drafts = sessionStorage.getItem('rozsa:conversation-drafts:v1');
+    if (views !== null) {
+      const value = JSON.parse(views);
+      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.values(value).some(view =>
+        !view || typeof view !== 'object' || !Number.isFinite(view.scrollTop) || typeof view.autoScrollPaused !== 'boolean')) {
+        throw new Error('Stored conversation view state is malformed');
+      }
+      sessionViewState = value;
+    }
+    if (drafts !== null) {
+      const value = JSON.parse(drafts);
+      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.values(value).some(draft =>
+        !draft || typeof draft !== 'object' || typeof draft.text !== 'string' || !Number.isInteger(draft.selectionStart)
+        || !Number.isInteger(draft.selectionEnd) || typeof draft.runningSendMode !== 'string')) {
+        throw new Error('Stored conversation draft state is malformed');
+      }
+      sessionDraftState = value;
+    }
+  } catch (error) {
+    showError('Conversation state could not be restored: ' + String(error));
+  }
+}
+
+function persistConversationState() {
+  try {
+    sessionStorage.setItem('rozsa:conversation-views:v1', JSON.stringify(sessionViewState));
+    sessionStorage.setItem('rozsa:conversation-drafts:v1', JSON.stringify(sessionDraftState));
+  } catch (error) {
+    if (!conversationPersistenceErrorShown) {
+      conversationPersistenceErrorShown = true;
+      showError('Conversation state could not be saved: ' + String(error));
+    }
+  }
+}
 let permissionUiStateBySession = {};
 let restoringSessionScroll = false;
 let scrollStateFrame = 0;
@@ -259,6 +298,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     showError('Shared UI failed to load: ' + String(error));
     return;
   }
+  restoreConversationState();
   nativeSplitMode = false;
   preparePlatformSceneDom();
   setupChatScrollLock();
@@ -285,6 +325,19 @@ window.addEventListener('DOMContentLoaded', async () => {
   configureAttachmentPicker();
   await configureNativeFileDrag();
   setupComposerHints();
+  const composerInput = document.getElementById('msgInput');
+  let draftPersistFrame = 0;
+  const persistActiveDraft = () => {
+    if (!activeSessionId || draftPersistFrame) return;
+    draftPersistFrame = requestAnimationFrame(() => {
+      draftPersistFrame = 0;
+      captureSessionDraft(activeSessionId);
+    });
+  };
+  composerInput?.addEventListener('input', persistActiveDraft);
+  document.addEventListener('selectionchange', () => {
+    if (composerInput?.contains(document.getSelection()?.anchorNode || null)) persistActiveDraft();
+  });
   setupNotificationErrorTray();
 
   await listen('gui-scene-snapshot', ev => applyGuiSceneSnapshot(ev.payload));

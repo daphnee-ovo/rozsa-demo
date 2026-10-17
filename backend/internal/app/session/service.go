@@ -76,6 +76,27 @@ func (service *Service) Switch(ctx context.Context, path, catalogID string) (Loa
 	if err != nil {
 		return LoadedSnapshot{}, err
 	}
+	service.publish(active)
+	return active, nil
+}
+
+// Refresh reloads a selected tab after the runtime writes messages to its
+// session manager, then publishes the new product-owned snapshot.
+func (service *Service) Refresh(ctx context.Context, path, catalogID string) (LoadedSnapshot, error) {
+	service.loadedMu.Lock()
+	defer service.loadedMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return LoadedSnapshot{}, err
+	}
+	active, err := service.loaded.Refresh(path, catalogID)
+	if err != nil {
+		return LoadedSnapshot{}, err
+	}
+	service.publish(active)
+	return active, nil
+}
+
+func (service *Service) publish(active LoadedSnapshot) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.state.Active = &active
@@ -84,7 +105,6 @@ func (service *Service) Switch(ctx context.Context, path, catalogID string) (Loa
 	for subscriber := range service.subscribers {
 		subscriber.push(event)
 	}
-	return active, nil
 }
 
 func (service *Service) Snapshot(ctx context.Context) (StateSnapshot, error) {

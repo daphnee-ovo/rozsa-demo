@@ -74,7 +74,8 @@ export class SessionHistory {
       const article = doc.createElement("article");
       article.className = "history-message"; article.dataset.entryId = message.entryId;
       const heading = doc.createElement("h3");
-      heading.textContent = message.role === "toolResult" ? `Tool result · ${message.toolName}${message.isError ? " · Error" : ""}` : message.role === "user" ? "You" : "Assistant";
+      heading.textContent = message.role === "toolResult" ? `Tool result · ${message.toolName}${message.isError ? " · Error" : ""}`
+        : message.role === "user" ? "You" : message.role === "system" ? "System" : "Assistant";
       article.append(heading);
       message.content.forEach((block, index) => {
         if (block.type === "thinking") {
@@ -82,9 +83,17 @@ export class SessionHistory {
           const summary = doc.createElement("summary"); summary.textContent = "Thinking";
           const text = doc.createElement("p"); text.textContent = block.text ?? "";
           detail.append(summary, text); article.append(detail);
+        } else if (block.type === "image") {
+          const text = doc.createElement("p");
+          text.textContent = "[Image attachment]";
+          article.append(text);
+        } else if (block.type === "toolCall") {
+          const text = doc.createElement("p");
+          text.textContent = `[Tool call: ${block.name} — ${block.arguments ? JSON.stringify(block.arguments) : "{}"}]`;
+          article.append(text);
         } else {
           const text = doc.createElement("p");
-          text.textContent = block.type === "text" ? block.text ?? "" : block.type === "image" ? "[Image — full preview pending]" : `[Tool call: ${block.name} — full details pending]`;
+          text.textContent = block.text;
           article.append(text);
         }
       });

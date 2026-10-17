@@ -10,9 +10,11 @@ import { sessionSnapshot, type SessionSnapshot, type SessionTarget, type Product
 import { ProductClient } from "../renderer/product-client.ts";
 import { SessionHistory, type HistorySource } from "../renderer/features/session-history.ts";
 import { SessionList } from "../renderer/features/session-list.ts";
+import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
+const backendEnvironment = await createIsolatedBackendEnvironment();
 const a = { id: "header-a", path: "/synthetic/a.jsonl", name: "A", modified: "t", message_count: 1 };
 const b = { ...a, id: "header-b", path: "/synthetic/b.jsonl", name: "B" };
 function snapshot(target: SessionTarget): SessionSnapshot {
@@ -103,7 +105,7 @@ test("session-history runtime response and restricted preload validate payload/i
   vm.runInNewContext(await readFile(join(root,"desktop/.vite/build/preload.cjs"),"utf8"), { require: (name: string) => {
     assert.equal(name,"electron"); return { contextBridge:{exposeInMainWorld: (_:string,value:ProductBridge) => bridge=value}, ipcRenderer:{invoke:async (...args:unknown[]) => {calls.push(args);return {ok:true,snapshot:good};}} };
   } });
-  assert.deepEqual(Object.keys(bridge),["getSessions","switchSession","subscribeSessions","nextSessionEvent","unsubscribeSessions"]); assert.equal(Object.isFrozen(bridge),true);
+  assert.deepEqual(Object.keys(bridge),["getSessions","switchSession","subscribeSessions","nextSessionEvent","unsubscribeSessions","startMessage","continueMessage","getActiveMessage","subscribeMessageEvents","nextMessageEvent","unsubscribeMessageEvents","cancelMessage"]); assert.equal(Object.isFrozen(bridge),true);
   assert.deepEqual(await new ProductClient(bridge).switchSession(target),good);
   for (const invalid of [null,{}, {path:a.path,catalogId:1}, {...target,method:"write"}]) await assert.rejects(() => (bridge.switchSession as (value:unknown)=>Promise<unknown>)(invalid),/Invalid session target/);
   assert.equal(calls.length,1); assert.equal(calls[0][0],"product:switch-session");
@@ -117,7 +119,7 @@ test("session-history actual Go process restores branch history, empty, read fai
   const text = header("different-header")+message("a",null,"old")+message("fork","a","off branch")+message("b","a","kept")+JSON.stringify({type:"compaction",id:"c",parentId:"b",timestamp:"c",summary:"s",firstKeptEntryId:"b",tokensBefore:100})+"\n"+message("d","c","new");
   await writeFile(path,text); await writeFile(empty,header("empty")); await writeFile(bad,Buffer.concat([Buffer.from(header("bad")),Buffer.from([255,10])]));
   await writeFile(blank,header("blank")+JSON.stringify({type:"message",id:"tool",timestamp:"t",message:{role:"assistant",content:[{type:"text",text:""},{type:"toolCall",id:"call",name:"",arguments:{}}],api:"openai-completions",provider:"openai",model:"test",stopReason:"toolUse"}})+"\n");
-  const before = await stat(path); const service = new BackendService(binary,[dir]);
+  const before = await stat(path); const service = new BackendService(binary,[dir],{env:backendEnvironment});
   try {
     await service.initialize();
     const value = await service.switchSession({path,catalogId:"different-header"});

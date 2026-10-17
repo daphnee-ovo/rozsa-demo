@@ -4,8 +4,10 @@ import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, writeFile, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const backendEnvironment = await createIsolatedBackendEnvironment();
 const base = join(root,"tmp/migration-native-session-history"); await mkdir(base,{recursive:true});
 const output = await mkdtemp(join(base,"run-")); const dir = join(output,"sessions"); await mkdir(dir);
 const header = (id:string) => JSON.stringify({type:"session",version:3,id,timestamp:"t",cwd:"/synthetic"})+"\n";
@@ -22,7 +24,7 @@ await writeFile(path,original); await writeFile(empty,emptyText); await writeFil
 const before = await stat(path), emptyBefore = await stat(empty), badBefore = await stat(bad);
 const electron = join(root,"desktop/node_modules/electron/dist",(await readFile(join(root,"desktop/node_modules/electron/path.txt"),"utf8")).trim());
 let logs = "";
-const child = spawn(process.env.ROZSA_NATIVE_EXECUTABLE || electron,[...(process.env.ROZSA_NATIVE_EXECUTABLE ? [] : [join(root,"desktop")]),"--remote-debugging-port=0",`--user-data-dir=${join(output,"profile")}`,"--session-dir",dir],{cwd:output,env:{...process.env,TMPDIR:join(root,"tmp/migration/install-tmp")},stdio:["ignore","pipe","pipe"]});
+const child = spawn(process.env.ROZSA_NATIVE_EXECUTABLE || electron,[...(process.env.ROZSA_NATIVE_EXECUTABLE ? [] : [join(root,"desktop")]),"--remote-debugging-port=0",`--user-data-dir=${join(output,"profile")}`,"--session-dir",dir],{cwd:output,env:{...process.env,...backendEnvironment,TMPDIR:join(root,"tmp/migration/install-tmp")},stdio:["ignore","pipe","pipe"]});
 const exited = new Promise<number|null>((resolve,reject)=>{child.once("error",reject);child.once("exit",resolve);});
 child.stdout.on("data",(b:Buffer)=>logs+=b.toString()); child.stderr.on("data",(b:Buffer)=>logs+=b.toString());
 async function poll<T>(get:()=>Promise<T|undefined>,label:string):Promise<T> {
@@ -56,7 +58,7 @@ try {
   };
   await poll(async()=> await evaluate(`document.querySelectorAll('#sessionList .session-item').length===3`) ? true:undefined,"full UI session list");
   const boundary=await evaluate(`({node:typeof window.require,bridge:Object.keys(window.rozsa),frames:window.frames.length})`);
-  assert.deepEqual(boundary,{node:"undefined",bridge:["getSessions","switchSession","subscribeSessions","nextSessionEvent","unsubscribeSessions"],frames:0});
+  assert.deepEqual(boundary,{node:"undefined",bridge:["getSessions","switchSession","subscribeSessions","nextSessionEvent","unsubscribeSessions","startMessage","continueMessage","getActiveMessage","subscribeMessageEvents","nextMessageEvent","unsubscribeMessageEvents","cancelMessage"],frames:0});
   const history=await evaluate(`window.rozsa.switchSession({path:${JSON.stringify(path)},catalogId:'header-id'})`);
   assert.equal(history.ok,true); assert.equal(history.snapshot.sessionId,"filename");
   assert.deepEqual(history.snapshot.messages.map(message=>message.entryId),["a","b","d"]);

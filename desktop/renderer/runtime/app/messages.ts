@@ -1,4 +1,7 @@
 // @ts-nocheck
+let conversationEntryCache = new Map();
+let messageToolResultCache = new Map();
+
 function countTools(messages) {
   const counts = {};
   for (const raw of messages) {
@@ -54,6 +57,7 @@ function persistSessionViewState(sessionId, container) {
     scrollTop: container.scrollTop,
     autoScrollPaused: chatAutoScrollPaused,
   };
+  persistConversationState();
 }
 
 function restoreSessionViewState(sessionId, container, savedView) {
@@ -82,138 +86,59 @@ function assistantMessageGroupPosition(messages, index) {
   return isAssistantMessageRaw(messages[index - 1]) ? 'continuation' : 'start';
 }
 
-function renderMessage(raw, toolResultMap, isActiveStream = false, turnActivity = null, thinkingDurationMs = null, thinkingExpanded = false, showAssistantIdentity = true, messageIndex = 0) {
-  const div = document.createElement('div');
-
-  if (raw.kind === 'custom') {
-    div.className = 'msg msg-assistant';
-    const cm = raw.message;
-    const msgType = cm.message_type || cm.messageType || 'system';
-    let displayText = '';
-    if (msgType === 'bashExecution' && cm.payload) {
-      displayText = '$ ' + (cm.payload.command || '') + '\n' + (cm.payload.output || '');
-    } else {
-      displayText = typeof cm.payload === 'string' ? cm.payload : JSON.stringify(cm.payload, null, 2);
-    }
-    div.innerHTML = '<div class="msg-avatar">R</div><div class="msg-body">' +
-      '<div class="msg-role">' + escapeHtml(msgType) + '</div>' +
-      '<div class="msg-content"><pre style="font-family:var(--font-mono);font-size:12px;white-space:pre-wrap">' +
-      escapeHtml(displayText) + '</pre></div></div>';
-    return div;
+function buildToolMarkup(toolCall, result, sessionId) {
+  trackTool(toolCall.name);
+  const view = window.RozsaTools.toolView(toolCall, result);
+  if (view.disposition === 'suspended') {
+    return '<div data-ui-suspended="' + view.coverage + '" data-tool-call-id="' + escapeHtml(toolCall.id || '') + '"></div>';
   }
-
-  const msg = raw.message;
-  if (!msg) { div.textContent = JSON.stringify(raw); return div; }
-  const role = msg.role;
-  const content = msg.content || [];
-
-  if (role === 'user') {
-    const text = extractText(content);
-    return window.RozsaConversation.createMessageFrame('user', window.RozsaTools.messageTextMarkup(text), messageIndex);
-
-  } else if (role === 'assistant') {
-    let body = '';
-    const errorMessage = msg.errorMessage || '';
-    if (errorMessage) {
-      body += '<div class="msg-content msg-error"><pre>' + escapeHtml(errorMessage) + '</pre></div>';
-    }
-
-    const thinking = extractThinking(content);
-    const latestType = content.length ? content[content.length - 1].type : '';
-    if (thinking) {
-      const thinkingActive = isActiveStream && latestType === 'thinking';
-      const thinkingDuration = thinkingActive || thinkingDurationMs === null
-        ? ''
-        : formatThinkingDuration(thinkingDurationMs);
-      body += window.RozsaConversation.thinkingMarkup(renderMarkdown(thinking), {
-        expanded: thinkingExpanded, active: thinkingActive, duration: thinkingDuration,
-      });
-    }
-
-    const toolCalls = content.filter(b => b.type === 'toolCall');
-    for (const tc of toolCalls) {
-      trackTool(tc.name);
-      // 通过 tc.id 查找对应的 toolResult
-      const result = toolResultMap && tc.id ? toolResultMap[tc.id] : null;
-      const view = window.RozsaTools.toolView(tc, result);
-      if (view.disposition === 'suspended') {
-        body += '<div data-ui-suspended="' + view.coverage + '" data-tool-call-id="' + escapeHtml(tc.id || '') + '"></div>';
-        continue;
-      }
-      if (view.disposition === 'covered') {
-        const devFlowPresentation = parseDevFlowBashPresentation(tc, result, devFlowTitleForItem);
-        if (devFlowPresentation && tc.id) requestDevFlowTitles(tc.id, devFlowPresentation);
-        const title = resolveToolTitle(tc, devFlowPresentation);
-        const evidence = view.kind === 'output'
-          ? window.RozsaTools.evidenceMarkup(view.label, view.output)
-          : window.RozsaTools.evidenceViewMarkup(view.kind, view.content);
-        body += window.RozsaTools.toolMarkup(tc.id || '', title.name, title.arg, '', view.status, {
-          expanded: isToolCallExpanded(tc.id), bodyHtml: evidence,
-          className: devFlowPresentation ? 'dev-flow-tool-call' : '',
-        }).replace(' tabindex="0"', ' data-session-id="' + escapeHtml(activeSessionId || '') + '" tabindex="0"');
-        continue;
-      }
-      const devFlowPresentation = parseDevFlowBashPresentation(tc, result, devFlowTitleForItem);
-      if (devFlowPresentation && tc.id) requestDevFlowTitles(tc.id, devFlowPresentation);
-      const tcStatus = result ? (result.isError ? 's-error' : 's-success') : 's-running';
-      const toolTitle = resolveToolTitle(tc, devFlowPresentation);
-      const toolEvidence = renderToolEvidence(tc, result, devFlowPresentation);
-
-      body += '<div data-tool-ui="legacy" data-ui-migration-blocked="' + view.coverage + '" class="tool-call' + (isToolCallExpanded(tc.id) ? ' expanded' : '') +
-        (devFlowPresentation ? ' dev-flow-tool-call' : '') +
-        '" data-tool-call-id="' + escapeHtml(tc.id || '') + '" data-session-id="' +
-        escapeHtml(activeSessionId || '') + '">' +
-        '<div class="tool-track"><div class="tool-icon">' + toolIcon(tc.name) + '</div>' +
-        '</div>' +
-        '<div class="tool-content"><div class="tool-header">' +
-        '<span class="tool-call-status ' + tcStatus + '"></span>' +
-        '<span class="tool-name">' + escapeHtml(toolTitle.name) + '</span>' +
-        '<span class="tool-call-args">' + escapeHtml(toolTitle.arg) + '</span>' +
-        '<span class="tool-call-toggle">▸</span></div></div>' +
-        '<div class="tool-call-body' + toolEvidence.className + '">' +
-        toolEvidence.html +
-        '</div></div>';
-    }
-
-    const text = extractText(content);
-    if (text) {
-      const textActive = isActiveStream && latestType === 'text';
-      body += '<div class="msg-content markdown-body"' + (textActive ? ' data-stream-cursor-target="text"' : '') +
-        '>' + (isActiveStream || !showAssistantIdentity || errorMessage
-          ? renderMarkdown(text) : window.RozsaTools.messageTextMarkup(text)) + '</div>';
-    }
-
-    if (turnActivity && ((turnActivity.changedFiles && turnActivity.changedFiles.length) || turnActivity.verification)) {
-      body += renderTurnActivityCard(turnActivity);
-    }
-
-    return window.RozsaConversation.createMessageFrame('assistant', body, messageIndex, !showAssistantIdentity);
-
-  } else if (role === 'toolResult') {
-    div.className = 'msg msg-assistant';
-    const text = extractText(content);
-    const toolName = msg.toolName || 'tool';
-    const toolLabel = toolDisplayLabel(toolName);
-    const status = msg.isError ? 's-error' : 's-success';
-    trackTool(toolName);
-    const preview = (text || '').slice(0, 150);
-    div.innerHTML = '<div class="msg-avatar" style="visibility:hidden">R</div><div class="msg-body">' +
-      '<div class="tool-call" onclick="toggleToolCall(this)"><div class="tool-track">' +
-      '<div class="tool-icon">' + toolIcon(toolName) + '</div>' +
-      '<span class="tool-name">' + escapeHtml(toolLabel) + '</span></div>' +
-      '<div class="tool-content"><div class="tool-header">' +
-      '<span class="tool-call-status ' + status + '"></span>' +
-      '<span class="tool-call-args">' + escapeHtml(preview) + '</span>' +
-      '<span class="tool-call-toggle">▸</span></div></div>' +
-      '<div class="tool-call-body"><pre style="white-space:pre-wrap;margin:0">' + escapeHtml(text || '') + '</pre></div></div></div>';
-
-  } else {
-    div.className = 'msg msg-assistant';
-    div.innerHTML = '<div class="msg-avatar">R</div><div class="msg-body"><div class="msg-content"><pre>' +
-      escapeHtml(JSON.stringify(msg, null, 2)) + '</pre></div></div>';
+  const presentation = parseDevFlowBashPresentation(toolCall, result, devFlowTitleForItem);
+  if (presentation && toolCall.id) requestDevFlowTitles(toolCall.id, presentation);
+  const title = resolveToolTitle(toolCall, presentation);
+  if (view.disposition === 'covered') {
+    const evidence = view.kind === 'output'
+      ? window.RozsaTools.evidenceMarkup(view.label, view.output)
+      : window.RozsaTools.evidenceViewMarkup(view.kind, view.content);
+    return window.RozsaTools.toolMarkup(toolCall.id || '', title.name, title.arg, '', view.status, {
+      expanded: isToolCallExpanded(toolCall.id), bodyHtml: evidence,
+      className: presentation ? 'dev-flow-tool-call' : '',
+    }).replace(' tabindex="0"', ' data-session-id="' + escapeHtml(sessionId || '') + '" tabindex="0"');
   }
+  const status = result ? (result.isError ? 's-error' : 's-success') : 's-running';
+  const evidence = renderToolEvidence(toolCall, result, presentation);
+  return '<div data-tool-ui="legacy" data-ui-migration-blocked="' + view.coverage + '" class="tool-call' +
+    (isToolCallExpanded(toolCall.id) ? ' expanded' : '') + (presentation ? ' dev-flow-tool-call' : '') +
+    '" data-tool-call-id="' + escapeHtml(toolCall.id || '') + '" data-session-id="' + escapeHtml(sessionId || '') + '">' +
+    '<div class="tool-track"><div class="tool-icon">' + toolIcon(toolCall.name) + '</div></div>' +
+    '<div class="tool-content"><div class="tool-header"><span class="tool-call-status ' + status + '"></span>' +
+    '<span class="tool-name">' + escapeHtml(title.name) + '</span><span class="tool-call-args">' + escapeHtml(title.arg) +
+    '</span><span class="tool-call-toggle">▸</span></div></div><div class="tool-call-body' + evidence.className + '">' +
+    evidence.html + '</div></div>';
+}
 
-  return div;
+function createConversationEntry(raw, toolResultMap, isActiveStream, turnActivity, thinkingDurationMs, thinkingExpanded, showIdentity, messageIndex, sessionId) {
+  const message = raw && raw.message;
+  const role = message && message.role;
+  const content = message && Array.isArray(message.content) ? message.content : [];
+  const latestType = content.length ? content[content.length - 1].type : '';
+  let bodyMarkup = '';
+  if (role === 'assistant') {
+    for (const call of content.filter(block => block.type === 'toolCall')) {
+      const result = call.id ? toolResultMap[call.id] || null : null;
+      bodyMarkup += buildToolMarkup(call, result, sessionId);
+    }
+  }
+  const turnActivityMarkup = role === 'assistant' && turnActivity &&
+    ((turnActivity.changedFiles && turnActivity.changedFiles.length) || turnActivity.verification)
+    ? renderTurnActivityCard(turnActivity) : '';
+  const identity = raw && raw.entryId ? raw.entryId : message && message.timestamp ? message.timestamp : messageIndex;
+  return {
+    id: String(sessionId || '') + ':' + String(identity), kind: raw && raw.kind === 'custom' ? 'custom' : 'standard',
+    message: message || raw, messageIndex, continuation: role === 'assistant' && !showIdentity,
+    activeStream: isActiveStream, streamTarget: latestType === 'thinking' ? 'thinking' : latestType === 'text' ? 'text' : undefined,
+    thinkingExpanded, thinkingDuration: isActiveStream || thinkingDurationMs == null ? '' : formatThinkingDuration(thinkingDurationMs),
+    turnActivityMarkup, bodyMarkup,
+  };
 }
 
 function parseDevFlowBashPresentation(toolCall, result, titleLookup = null) {

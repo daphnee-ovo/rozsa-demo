@@ -1,11 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter, ResponseError, type MessageConnection } from "vscode-jsonrpc/node";
-import { record, sessionEntries, sessionTarget, sessionSnapshot, sessionUpdate, subscriptionId, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry } from "./session-contract.js";
+import { record, sessionEntries, sessionTarget, sessionSnapshot, sessionUpdate, subscriptionId, messageOperation, messageSubscription, messageEventResult, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry, type MessageOperation, type MessageSubscription, type MessageEventResult } from "./session-contract.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { SessionMethods } from "../../contracts/ipc/session.js";
 export { RPCFailure } from "./session-contract.js";
 
-export interface BackendOptions { requestTimeoutMs?: number }
+export interface BackendOptions { requestTimeoutMs?: number; env?: NodeJS.ProcessEnv }
 export class BackendService {
   readonly process: ChildProcessWithoutNullStreams;
   private readonly connection: MessageConnection;
@@ -18,7 +18,9 @@ export class BackendService {
   constructor(binary: string, directories: string[], options: BackendOptions = {}) {
     this.timeoutMs = options.requestTimeoutMs ?? 10000;
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("Invalid backend request timeout");
-    this.process = spawn(binary, directories.flatMap(dir => ["--session-dir", dir]), { stdio: "pipe", windowsHide: true });
+    this.process = spawn(binary, directories.flatMap(dir => ["--session-dir", dir]), {
+      stdio: "pipe", windowsHide: true, ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
+    });
     this.connection = createMessageConnection(new StreamMessageReader(this.process.stdout), new StreamMessageWriter(this.process.stdin));
     this.process.once("spawn", () => console.info(`Backend started: ${this.process.pid}`));
     this.closed = new Promise(resolve => this.process.once("close", () => {
@@ -62,7 +64,9 @@ export class BackendService {
       if (error instanceof ResponseError) {
         try {
           const fault = remoteFault(error.code, error.message, error.data);
-          if ((fault.kind === "catalog" && method !== "get_sessions") || (fault.kind === "session" && !["switch_session", "subscribe_sessions", "next_session_event"].includes(method))) throw new Error("Backend error owner mismatch");
+          if ((fault.kind === "catalog" && method !== "get_sessions")
+            || (fault.kind === "session" && !["switch_session", "subscribe_sessions", "next_session_event"].includes(method))
+            || (fault.kind === "message" && !["start_message", "continue_message", "subscribe_message_events", "next_message_event", "cancel_message"].includes(method))) throw new Error("Backend error owner mismatch");
           throw new RPCFailure(fault);
         } catch (fault) {
           if (fault instanceof RPCFailure) throw fault;
@@ -85,7 +89,8 @@ export class BackendService {
       const capabilities = record(value) ? value.capabilities : undefined;
       if (!record(value) || value.protocolVersion !== 1 || !Array.isArray(capabilities)
         || !capabilities.every(item => typeof item === "string")
-        || !["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions"].every(method => capabilities.includes(method))) {
+        || !["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions",
+          "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message"].every(method => capabilities.includes(method))) {
         throw transportFailure("protocol", "Incompatible backend handshake");
       }
     } catch (error) { this.fail(error instanceof ProductFailure ? error : transportFailure("io", asError(error).message, error)); throw error; }
@@ -123,6 +128,48 @@ export class BackendService {
     this.requireRunning();
     if (await this.request("unsubscribe_sessions", { subscriptionId: subscriptionId(input) }) !== true) {
       const failure = transportFailure("protocol", "Invalid unsubscribe response"); this.fail(failure); throw failure;
+    }
+  }
+  async startMessage(text: string): Promise<MessageOperation> {
+    this.requireRunning();
+    if (typeof text !== "string" || text.trim() === "") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Message text must not be empty" });
+    const value = await this.request("start_message", { text });
+    try { return messageOperation(value); }
+    catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  async continueMessage(): Promise<MessageOperation> {
+    this.requireRunning();
+    const value = await this.request("continue_message", {});
+    try { return messageOperation(value); }
+    catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  async subscribeMessageEvents(input: string): Promise<MessageSubscription> {
+    this.requireRunning();
+    if (!input) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid message operation" });
+    const value = await this.request("subscribe_message_events", { operationId: input });
+    try { return messageSubscription(value, input); }
+    catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  async nextMessageEvent(input: string): Promise<MessageEventResult> {
+    this.requireRunning();
+    const id = subscriptionId(input);
+    const value = await this.request("next_message_event", { subscriptionId: id }, Math.max(this.timeoutMs, 35000));
+    try {
+      if (!record(value) || typeof value.operationId !== "string" || typeof value.subscriptionId !== "string") throw new Error("Invalid message event identity");
+      return messageEventResult(value, { subscriptionId: id, operationId: value.operationId });
+    } catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  async unsubscribeMessageEvents(input: string): Promise<void> {
+    this.requireRunning();
+    if (await this.request("unsubscribe_message_events", { subscriptionId: subscriptionId(input) }) !== true) {
+      const failure = transportFailure("protocol", "Invalid message unsubscribe response"); this.fail(failure); throw failure;
+    }
+  }
+  async cancelMessage(input: string): Promise<void> {
+    this.requireRunning();
+    if (typeof input !== "string" || !input) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid message operation" });
+    if (await this.request("cancel_message", { operationId: input }) !== true) {
+      const failure = transportFailure("protocol", "Invalid message cancellation response"); this.fail(failure); throw failure;
     }
   }
   stop(): Promise<void> { this.stopPromise ??= this.close(); return this.stopPromise; }

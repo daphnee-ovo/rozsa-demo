@@ -63,13 +63,38 @@ func ServeApplication(input io.Reader, output io.Writer, app session.Application
 	return serve(input, output, app, requestTimeout)
 }
 
+// MessageApplication is the typed product boundary for agent message work.
+// The application owns operation lifecycle, stream state and cancellation.
+type MessageApplication interface {
+	StartMessage(context.Context, string) (string, error)
+	ContinueMessage(context.Context) (string, error)
+	SubscribeMessageEvents(context.Context, string) (MessageEventSubscription, error)
+	CancelMessage(context.Context, string) error
+}
+
+type MessageEventSubscription interface {
+	Next(context.Context) (types.MessageEvent, error)
+	Close()
+}
+
+// ServeProductApplication exposes session and message methods over the same
+// library-owned JSON-RPC connection.
+func ServeProductApplication(input io.Reader, output io.Writer, sessions session.ApplicationService, messages MessageApplication) error {
+	return serveWithMessages(input, output, sessions, messages, requestTimeout)
+}
+
 func serve(input io.Reader, output io.Writer, app session.ApplicationService, timeout time.Duration) error {
+	return serveWithMessages(input, output, app, nil, timeout)
+}
+
+func serveWithMessages(input io.Reader, output io.Writer, app session.ApplicationService, messages MessageApplication, timeout time.Duration) error {
 	lifetime, stop := context.WithCancelCause(context.Background())
 	defer stop(types.Error(types.Disconnected, "Connection ended"))
-	server := newServer(app, lifetime, timeout)
+	server := newServer(app, lifetime, timeout, messages)
 	defer func() {
 		stop(types.Error(types.Disconnected, "Connection ended"))
 		server.sync.close()
+		server.messageSync.close()
 		server.jobs.Wait()
 	}()
 	conn := jsonrpc2.NewConn(jsonrpc2.NewStream(ownedIO{stdio{input, output}, stop}), jsonrpc2.WithPreempter(server))
@@ -93,6 +118,7 @@ func serve(input io.Reader, output io.Writer, app session.ApplicationService, ti
 
 type rpcServer struct {
 	app        session.ApplicationService
+	messages   MessageApplication
 	lifetime   context.Context
 	timeout    time.Duration
 	slots      chan struct{}
@@ -103,12 +129,17 @@ type rpcServer struct {
 	// Only accessed inline, before Async releases the read loop.
 	ready, closing bool
 	sync           sessionSync
+	messageSync    messageSync
 }
 
-func newServer(app session.ApplicationService, lifetime context.Context, timeout time.Duration) *rpcServer {
+func newServer(app session.ApplicationService, lifetime context.Context, timeout time.Duration, messages ...MessageApplication) *rpcServer {
+	var messageApp MessageApplication
+	if len(messages) > 0 {
+		messageApp = messages[0]
+	}
 	return &rpcServer{app: app, lifetime: lifetime, timeout: timeout,
 		slots: make(chan struct{}, maxConcurrentRequests), pending: make(map[jsonrpc2.ID]context.CancelCauseFunc),
-		sync: sessionSync{app: app}}
+		sync: sessionSync{app: app}, messages: messageApp, messageSync: messageSync{app: messageApp}}
 }
 
 // Cancellation is the only accepted incoming notification. This ID is a
@@ -154,6 +185,9 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	method := types.Method(strings.Clone(req.Method()))
 	var switchParams types.SwitchParams
 	var subscriptionParams subscriptionParams
+	var startParams types.StartMessageParams
+	var operationParams types.MessageOperationParams
+	var messageSubscriptionParams types.MessageSubscriptionParams
 	switch method {
 	case types.Initialize:
 		var params types.InitializeParams
@@ -161,7 +195,11 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			return nil, types.Error(types.InvalidParams, "Unsupported protocol version or invalid params")
 		}
 		server.ready = true
-		return types.InitializeResult{ProtocolVersion: 1, Capabilities: []string{string(types.GetSessions), string(types.SwitchSession), string(types.SubscribeSessions), string(types.NextSessionEvent), string(types.UnsubscribeSessions)}}, nil
+		capabilities := []string{string(types.GetSessions), string(types.SwitchSession), string(types.SubscribeSessions), string(types.NextSessionEvent), string(types.UnsubscribeSessions)}
+		if server.messages != nil {
+			capabilities = append(capabilities, string(types.StartMessage), string(types.ContinueMessage), string(types.SubscribeMessage), string(types.NextMessageEvent), string(types.UnsubscribeMessage), string(types.CancelMessage))
+		}
+		return types.InitializeResult{ProtocolVersion: 1, Capabilities: capabilities}, nil
 	case types.Shutdown:
 		if !types.Params(req.Params(), &types.EmptyParams{}) {
 			return nil, types.Error(types.InvalidParams, "Invalid params")
@@ -173,6 +211,7 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 		}
 		server.mu.Unlock()
 		server.sync.close()
+		server.messageSync.close()
 		return true, nil
 	case types.GetSessions, types.SubscribeSessions:
 		if !types.Params(req.Params(), &types.EmptyParams{}) {
@@ -186,11 +225,34 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 		if !types.Params(req.Params(), &subscriptionParams) || subscriptionParams.SubscriptionID == "" {
 			return nil, types.Error(types.InvalidParams, "Invalid params")
 		}
+	case types.StartMessage:
+		if !types.Params(req.Params(), &startParams) || strings.TrimSpace(startParams.Text) == "" {
+			return nil, types.Error(types.InvalidParams, "Message text must not be empty")
+		}
+	case types.ContinueMessage:
+		if !types.Params(req.Params(), &types.EmptyParams{}) {
+			return nil, types.Error(types.InvalidParams, "Invalid params")
+		}
+	case types.SubscribeMessage:
+		if !types.Params(req.Params(), &operationParams) || operationParams.OperationID == "" {
+			return nil, types.Error(types.InvalidParams, "Invalid params")
+		}
+	case types.NextMessageEvent, types.UnsubscribeMessage:
+		if !types.Params(req.Params(), &messageSubscriptionParams) || messageSubscriptionParams.SubscriptionID == "" {
+			return nil, types.Error(types.InvalidParams, "Invalid params")
+		}
+	case types.CancelMessage:
+		if !types.Params(req.Params(), &operationParams) || operationParams.OperationID == "" {
+			return nil, types.Error(types.InvalidParams, "Invalid params")
+		}
 	default:
 		return nil, types.Error(types.MethodNotFound, "Method not found")
 	}
 	if !server.ready {
 		return nil, types.Error(types.NotInitialized, "Backend is not initialized")
+	}
+	if method == types.UnsubscribeMessage {
+		return server.messageSync.unsubscribe(messageSubscriptionParams.SubscriptionID)
 	}
 	if method == types.UnsubscribeSessions {
 		return server.sync.unsubscribe(subscriptionParams.SubscriptionID)
@@ -262,6 +324,8 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			result, err = cursor.snapshot(work)
 		case types.NextSessionEvent:
 			result, err = server.sync.next(work, subscriptionParams.SubscriptionID)
+		case types.StartMessage, types.ContinueMessage, types.SubscribeMessage, types.NextMessageEvent, types.CancelMessage:
+			result, err = server.messageSync.handle(work, method, startParams, operationParams, messageSubscriptionParams)
 		}
 		finished <- outcome{result, err}
 	}()

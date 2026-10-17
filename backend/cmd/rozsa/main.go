@@ -7,14 +7,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
-	"rozsa/backend/internal/app/modelregistry"
+	"rozsa/backend/internal/app/bootstrap"
 	"rozsa/backend/internal/app/runtime"
-	"rozsa/backend/internal/app/settings"
-	"rozsa/backend/internal/model/types"
-	"rozsa/backend/internal/platform/configpaths"
 )
 
 func main() {
@@ -36,7 +32,7 @@ func main() {
 	if continueSession == (flag.NArg() == 1) {
 		fail("provide a prompt or --continue, but not both", 2)
 	}
-	model, configuredKey, authPath, err := configuredModel(providerID, modelID)
+	model, configuredKey, authPath, err := bootstrap.ConfiguredModel(providerID, modelID)
 	if err != nil {
 		fail(err.Error(), 1)
 	}
@@ -60,55 +56,6 @@ func main() {
 	if err != nil {
 		fail(err.Error(), 1)
 	}
-}
-
-func configuredModel(providerOverride, modelOverride string) (types.Model, string, string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return types.Model{}, "", "", fmt.Errorf("get working directory: %w", err)
-	}
-	roots, err := configpaths.Discover(cwd)
-	if err != nil {
-		return types.Model{}, "", "", err
-	}
-	settingsPaths := roots.SettingsPaths()
-	projectSettings := settingsPaths[1]
-	settingsManager, err := settings.Load(settingsPaths[0], &projectSettings, nil)
-	if err != nil {
-		return types.Model{}, "", "", err
-	}
-	modelDirs := roots.ModelDirs()
-	registry, diagnostics, err := modelregistry.Load([]byte("{}"), modelDirs[:]...)
-	if err != nil {
-		return types.Model{}, "", "", err
-	}
-	for _, diagnostic := range diagnostics {
-		if diagnostic.Severity == "error" {
-			return types.Model{}, "", "", fmt.Errorf("model configuration %s: %s", diagnostic.Path, diagnostic.Message)
-		}
-	}
-	resolved := settingsManager.Resolved()
-	provider, _ := resolved["defaultProvider"].(string)
-	model, _ := resolved["defaultModel"].(string)
-	if providerOverride != "" {
-		provider = providerOverride
-	}
-	if modelOverride != "" {
-		model = modelOverride
-	}
-	if provider == "" || model == "" {
-		available := registry.All()
-		if len(available) != 1 {
-			return types.Model{}, "", "", errors.New("select a configured defaultProvider/defaultModel or pass --provider and --model")
-		}
-		provider, model = available[0].Provider, available[0].ID
-	}
-	selected, exists := registry.Find(provider, model)
-	if !exists {
-		return types.Model{}, "", "", fmt.Errorf("configured model %s/%s was not found", provider, model)
-	}
-	key, _ := registry.APIKey(provider)
-	return selected, key, filepath.Join(roots.Global(), "auth.json"), nil
 }
 
 func fail(message string, code int) {

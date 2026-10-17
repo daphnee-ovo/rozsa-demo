@@ -1,5 +1,6 @@
 import { validatedBridgeFault, ProductFailure, type BridgeFault } from "../../contracts/ipc/session.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
+import type { MessageEvent } from "../../contracts/ipc/session.js";
 export { ProductFailure, RPCFailure, bridgeFault, remoteFault, transportFailure } from "../../contracts/ipc/session.js";
 // Current slice only. Wire fields match Rust commands::SessionListEntry.
 export interface SessionListEntry {
@@ -13,14 +14,21 @@ export type SessionListReply =
   | { ok: true; sessions: SessionListEntry[] }
   | { ok: false; error: BridgeFault };
 export interface SessionTarget { path: string; catalogId: string }
-export type HistoryBlock = { type: "text"; text: string } | { type: "thinking"; text: string } | { type: "image" } | { type: "toolCall"; name: string };
+export type HistoryBlock =
+  | { type: "text" | "thinking"; text: string }
+  | { type: "image"; data?: string; mimeType?: string }
+  | { type: "toolCall"; id?: string; name: string; arguments?: unknown };
 export interface HistoryMessage {
-  entryId: string; role: "user" | "assistant" | "toolResult";
-  content: HistoryBlock[]; displayText?: string; toolName?: string; isError?: boolean;
+  entryId: string; role: "user" | "assistant" | "system" | "toolResult";
+  content: HistoryBlock[]; displayText?: string; toolCallId?: string; toolName?: string; details?: unknown;
+  errorMessage?: string | null; stopReason?: string; timestamp?: number; isError?: boolean;
 }
 export interface SessionSnapshot extends SessionTarget {
   sessionId: string; cwd: string; messages: HistoryMessage[]; contextMessageCount: number;
 }
+export interface MessageOperation { operationId: string }
+export interface MessageSubscription { subscriptionId: string; operationId: string }
+export interface MessageEventResult extends MessageSubscription { event: MessageEvent }
 export type SessionHistoryReply = { ok: true; snapshot: SessionSnapshot }
   | { ok: false; error: BridgeFault };
 export interface ProductBridge {
@@ -29,12 +37,26 @@ export interface ProductBridge {
   subscribeSessions(): Promise<SessionSyncReply>;
   nextSessionEvent(subscriptionId: string): Promise<SessionSyncReply>;
   unsubscribeSessions(subscriptionId: string): Promise<SessionUnsubscribeReply>;
+  startMessage(text: string): Promise<MessageOperation>;
+  continueMessage(): Promise<MessageOperation>;
+  getActiveMessage(): Promise<MessageOperation | null>;
+  subscribeMessageEvents(operationId: string): Promise<MessageSubscription>;
+  nextMessageEvent(subscriptionId: string): Promise<MessageEventResult>;
+  unsubscribeMessageEvents(subscriptionId: string): Promise<void>;
+  cancelMessage(operationId: string): Promise<void>;
 }
 export const SESSION_LIST_CHANNEL = "product:get-sessions";
 export const SESSION_HISTORY_CHANNEL = "product:switch-session";
 export const SESSION_SUBSCRIBE_CHANNEL = "product:subscribe-sessions";
 export const SESSION_NEXT_CHANNEL = "product:next-session-event";
 export const SESSION_UNSUBSCRIBE_CHANNEL = "product:unsubscribe-sessions";
+export const MESSAGE_START_CHANNEL = "product:start-message";
+export const MESSAGE_CONTINUE_CHANNEL = "product:continue-message";
+export const MESSAGE_ACTIVE_CHANNEL = "product:get-active-message";
+export const MESSAGE_SUBSCRIBE_CHANNEL = "product:subscribe-message-events";
+export const MESSAGE_NEXT_CHANNEL = "product:next-message-event";
+export const MESSAGE_UNSUBSCRIBE_CHANNEL = "product:unsubscribe-message-events";
+export const MESSAGE_CANCEL_CHANNEL = "product:cancel-message";
 export type SessionSyncReply = { ok: true; update: SessionUpdate } | { ok: false; error: BridgeFault };
 export type SessionUnsubscribeReply = { ok: true } | { ok: false; error: BridgeFault };
 
@@ -70,12 +92,19 @@ export function sessionTarget(value: unknown): SessionTarget {
 export function sessionSnapshot(value: unknown, target: SessionTarget): SessionSnapshot {
   const block = (b: unknown): boolean => record(b) && (
     ((b.type === "text" || b.type === "thinking") && typeof b.text === "string")
-    || b.type === "image" || (b.type === "toolCall" && typeof b.name === "string"));
+    || (b.type === "image" && (b.data === undefined || typeof b.data === "string")
+      && (b.mimeType === undefined || typeof b.mimeType === "string"))
+    || (b.type === "toolCall" && typeof b.name === "string"
+      && (b.id === undefined || typeof b.id === "string")));
   const message = (m: unknown): boolean => record(m) && typeof m.entryId === "string"
-    && ["user", "assistant", "toolResult"].includes(m.role as string)
+    && ["user", "assistant", "system", "toolResult"].includes(m.role as string)
     && Array.isArray(m.content) && m.content.every(block)
     && (m.displayText === undefined || typeof m.displayText === "string")
     && (m.toolName === undefined || typeof m.toolName === "string")
+    && (m.toolCallId === undefined || typeof m.toolCallId === "string")
+    && (m.errorMessage === undefined || m.errorMessage === null || typeof m.errorMessage === "string")
+    && (m.stopReason === undefined || typeof m.stopReason === "string")
+    && (m.timestamp === undefined || typeof m.timestamp === "number")
     && (m.isError === undefined || typeof m.isError === "boolean");
   if (!record(value) || value.path !== target.path || value.catalogId !== target.catalogId
     || typeof value.sessionId !== "string" || !value.sessionId || typeof value.cwd !== "string"
@@ -98,6 +127,45 @@ export function historyReply(value: unknown, target: SessionTarget): SessionHist
 export function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+export function messageSuccess(value: unknown): unknown {
+  if (!record(value) || typeof value.ok !== "boolean") throw new Error("Invalid message bridge reply");
+  if (value.ok === false) throw new ProductFailure(validatedBridgeFault(value.error));
+  const { ok: _ok, ...payload } = value;
+  return payload;
+}
+
+export function messageOperation(value: unknown): MessageOperation {
+  if (!record(value) || typeof value.operationId !== "string" || value.operationId.length === 0) throw new Error("Invalid message operation");
+  return { operationId: value.operationId };
+}
+
+export function messageSubscription(value: unknown, operationId?: string): MessageSubscription {
+  if (!record(value) || typeof value.subscriptionId !== "string" || value.subscriptionId.length === 0
+    || typeof value.operationId !== "string" || value.operationId.length === 0
+    || (operationId !== undefined && value.operationId !== operationId)) throw new Error("Invalid message event subscription");
+  return { subscriptionId: value.subscriptionId, operationId: value.operationId };
+}
+
+export function messageEventResult(value: unknown, subscription: MessageSubscription): MessageEventResult {
+  if (!record(value) || value.subscriptionId !== subscription.subscriptionId || value.operationId !== subscription.operationId
+    || !record(value.event) || !Number.isSafeInteger(value.event.sequence) || (value.event.sequence as number) <= 0) {
+    throw new Error("Invalid message event identity");
+  }
+  const event = value.event;
+  let validated: MessageEvent;
+  if (event.kind === "text_delta" && typeof event.delta === "string" && event.error === undefined) {
+    validated = { sequence: event.sequence as number, kind: "text_delta", delta: event.delta };
+  } else if (event.kind === "completed" && event.delta === undefined && event.error === undefined) {
+    validated = { sequence: event.sequence as number, kind: "completed" };
+  } else if (event.kind === "error" && typeof event.error === "string" && event.delta === undefined) {
+    validated = { sequence: event.sequence as number, kind: "error", error: event.error };
+  } else if (event.kind === "canceled" && event.delta === undefined && event.error === undefined) {
+    validated = { sequence: event.sequence as number, kind: "canceled" };
+  } else throw new Error("Invalid message event payload");
+  return { ...subscription, event: validated };
+}
+
 export function sessionEntries(value: unknown): SessionListEntry[] {
   if (!Array.isArray(value) || !value.every(entry => record(entry)
     && ["id", "path", "name", "modified"].every(key => typeof entry[key] === "string")

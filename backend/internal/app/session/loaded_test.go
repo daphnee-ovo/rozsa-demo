@@ -1,19 +1,34 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 )
 
+func TestHistoryBlockSerializationPreservesEmptyText(t *testing.T) {
+	for _, kind := range []string{"text", "thinking"} {
+		data, err := json.Marshal(HistoryBlock{Type: kind})
+		if err != nil || string(data) != `{"type":"`+kind+`","text":""}` {
+			t.Fatalf("%s block = %s, %v", kind, data, err)
+		}
+	}
+	data, err := json.Marshal(HistoryBlock{Type: "toolCall", ID: "call", Name: ""})
+	var toolCall map[string]any
+	if err != nil || json.Unmarshal(data, &toolCall) != nil || toolCall["id"] != "call" || toolCall["name"] != "" {
+		t.Fatalf("empty tool name = %s, %v", data, err)
+	}
+}
+
 func TestLoadedHistoryContextAndIdentity(t *testing.T) {
 	dir := fixtureDir(t)
 	text := sessionHeader("header-id") +
-		`{"type":"message","id":"a","timestamp":"1","message":{"role":"user","content":"old"}}` + "\n" +
-		`{"type":"message","id":"b","parentId":"a","timestamp":"2","message":{"role":"assistant","content":[{"type":"thinking","thinking":"reason"},{"type":"text","text":"answer"}],"api":"openai-completions","provider":"openai","model":"test","stopReason":"stop"}}` + "\n" +
+		`{"type":"message","id":"a","timestamp":"1","message":{"role":"user","content":[{"type":"text","text":"old"},{"type":"image","data":"aGVsbG8=","mimeType":"image/png"}]}}` + "\n" +
+		`{"type":"message","id":"b","parentId":"a","timestamp":"2","message":{"role":"assistant","content":[{"type":"thinking","thinking":"reason"},{"type":"text","text":"answer"},{"type":"toolCall","id":"call-read","name":"Read","arguments":{"path":"file.txt"}}],"api":"openai-completions","provider":"openai","model":"test","stopReason":"stop","errorMessage":"provider detail"}}` + "\n" +
 		`{"type":"compaction","id":"c","parentId":"b","timestamp":"3","summary":"compressed","firstKeptEntryId":"b","tokensBefore":100}` + "\n" +
-		`{"type":"message","id":"d","parentId":"c","timestamp":"4","message":{"role":"toolResult","toolCallId":"call","toolName":"Read","content":[{"type":"text","text":"result"}],"isError":false}}` + "\n"
+		`{"type":"message","id":"d","parentId":"c","timestamp":"4","message":{"role":"toolResult","toolCallId":"call-read","toolName":"Read","content":[{"type":"text","text":"result"}],"details":{"path":"file.txt"},"isError":false}}` + "\n"
 	path := write(t, dir, "filename-id.jsonl", text)
 	before, _ := os.Stat(path)
 	loadedSessions := LoadedSessions{Catalog: Catalog{Directories: []string{dir}}}
@@ -32,7 +47,14 @@ func TestLoadedHistoryContextAndIdentity(t *testing.T) {
 	if !reflect.DeepEqual(ids, []string{"a", "b", "d"}) || !reflect.DeepEqual(roles, []string{"user", "assistant", "toolResult"}) {
 		t.Fatalf("history: %+v", snapshot.Messages)
 	}
-	if snapshot.Messages[1].Content[0].Type != "thinking" || snapshot.Messages[2].Content[0].Text != "result" {
+	userImage, assistantCall := snapshot.Messages[0].Content[1], snapshot.Messages[1].Content[2]
+	if userImage.Type != "image" || userImage.Data != "aGVsbG8=" || userImage.MIMEType != "image/png" ||
+		assistantCall.Type != "toolCall" || assistantCall.ID != "call-read" || string(assistantCall.Arguments) != `{"path":"file.txt"}` ||
+		snapshot.Messages[1].ErrorMessage == nil || *snapshot.Messages[1].ErrorMessage != "provider detail" ||
+		snapshot.Messages[2].ToolCallID != "call-read" || string(snapshot.Messages[2].Details) != `{"path":"file.txt"}` {
+		t.Fatalf("renderable content was not preserved: %+v", snapshot.Messages)
+	}
+	if snapshot.Messages[1].Content[0].Type != "thinking" || snapshot.Messages[1].Content[1].Text != "answer" || snapshot.Messages[2].Content[0].Text != "result" {
 		t.Fatalf("content: %+v", snapshot.Messages)
 	}
 	assertUnchanged(t, path, []byte(text), before)

@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.shared.json",
-  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "rootDir": "..", "lib": ["ES2022", "DOM"], "types": [] },
-  "include": ["renderer/**/*.ts", "../prototype/scripts/core/*.ts", "../prototype/scripts/adapters/mock-adapter.ts", "../prototype/scenarios/registry.ts"]
+  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "rootDir": "..", "lib": ["ES2022", "DOM"], "types": [], "jsx": "react-jsx" },
+  "include": ["renderer/**/*.ts", "renderer/**/*.tsx", "../prototype/scripts/core/*.ts", "../prototype/scripts/adapters/mock-adapter.ts", "../prototype/scenarios/registry.ts"]
 }

@@ -17,6 +17,12 @@ const (
 	SubscribeSessions   Method = "subscribe_sessions"
 	NextSessionEvent    Method = "next_session_event"
 	UnsubscribeSessions Method = "unsubscribe_sessions"
+	StartMessage        Method = "start_message"
+	ContinueMessage     Method = "continue_message"
+	SubscribeMessage    Method = "subscribe_message_events"
+	NextMessageEvent    Method = "next_message_event"
+	UnsubscribeMessage  Method = "unsubscribe_message_events"
+	CancelMessage       Method = "cancel_message"
 )
 
 type InitializeParams struct {
@@ -30,6 +36,43 @@ type EmptyParams struct{}
 type SwitchParams struct {
 	Path      string `json:"path"`
 	CatalogID string `json:"catalogId"`
+}
+type StartMessageParams struct {
+	Text string `json:"text"`
+}
+type MessageOperationParams struct {
+	OperationID string `json:"operationId"`
+}
+type MessageSubscriptionParams struct {
+	SubscriptionID string `json:"subscriptionId"`
+}
+type MessageOperation struct {
+	OperationID string `json:"operationId"`
+}
+type MessageSubscription struct {
+	SubscriptionID string `json:"subscriptionId"`
+	OperationID    string `json:"operationId"`
+}
+type MessageEventKind string
+
+const (
+	MessageTextDelta MessageEventKind = "text_delta"
+	MessageCompleted MessageEventKind = "completed"
+	MessageFailed    MessageEventKind = "error"
+	MessageCanceled  MessageEventKind = "canceled"
+)
+
+// Exactly one payload field is populated for each event kind.
+type MessageEvent struct {
+	Sequence uint64           `json:"sequence"`
+	Kind     MessageEventKind `json:"kind"`
+	Delta    *string          `json:"delta,omitempty"`
+	Error    *string          `json:"error,omitempty"`
+}
+type MessageEventResult struct {
+	SubscriptionID string       `json:"subscriptionId"`
+	OperationID    string       `json:"operationId"`
+	Event          MessageEvent `json:"event"`
 }
 type ErrorKind string
 
@@ -45,6 +88,7 @@ const (
 	Disconnected   ErrorKind = "disconnected"
 	Busy           ErrorKind = "busy"
 	ResyncRequired ErrorKind = "resync_required"
+	Message        ErrorKind = "message"
 )
 
 type ErrorData struct {
@@ -74,6 +118,8 @@ func Error(kind ErrorKind, message string) *jsonrpc2.Error {
 		code = -32006
 	case ResyncRequired:
 		code = -32007
+	case Message:
+		code = -32008
 	default:
 		panic("unmapped RPC error kind")
 	}

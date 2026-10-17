@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { BackendService } from "./backend-service.js";
 import { createWindow, pageURL } from "./window.js";
 import { installSessionBridge } from "./session-bridge.js";
+import { installMessageBridge } from "./message-bridge.js";
 
 // Development runtime storage is isolated as well as the catalog inputs.
 app.setName("Rózsa");
@@ -49,6 +50,7 @@ void app.whenReady().then(async () => {
   if (quitting) return;
   const window = createWindow();
   installSessionBridge(window, ipcMain, backend, pageURL);
+  installMessageBridge(window, ipcMain, backend, pageURL);
   await window.loadURL(pageURL);
   if (quitting) return;
   // loadURL resolves after the document finishes loading. Do not gate native

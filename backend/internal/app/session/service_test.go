@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 )
@@ -80,5 +81,44 @@ func TestServiceConcurrentSnapshotSwitchAndClose(t *testing.T) {
 	unchanged, _ := service.Snapshot(t.Context())
 	if unchanged.Watermark != state.Watermark {
 		t.Fatal("canceled work mutated state")
+	}
+}
+
+func TestServiceRefreshReloadsWrittenMessagesAndPublishes(t *testing.T) {
+	dir := fixtureDir(t)
+	original := sessionHeader("session") + `{"type":"message","id":"user","parentId":null,"timestamp":"1","message":{"role":"user","content":"question"}}` + "\n"
+	path := write(t, dir, "session.jsonl", original)
+	service := NewService(Catalog{Directories: []string{dir}})
+	if _, err := service.Switch(t.Context(), path, "session"); err != nil {
+		t.Fatal(err)
+	}
+	subscription := service.Subscribe()
+	defer subscription.Close()
+
+	assistant := `{"type":"message","id":"assistant","parentId":"user","timestamp":"2","message":{"role":"assistant","model":"synthetic","content":[{"type":"text","text":"answer"}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(original+assistant), 0600); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := service.Refresh(t.Context(), path, "session")
+	if err != nil || len(refreshed.Messages) != 2 || refreshed.Messages[1].EntryID != "assistant" {
+		t.Fatalf("refreshed snapshot = %+v, %v", refreshed, err)
+	}
+	event, err := subscription.Next(t.Context())
+	if err != nil || event.Sequence != 2 || len(event.Active.Messages) != 2 || event.Active.Messages[1].EntryID != "assistant" {
+		t.Fatalf("refresh event = %+v, %v", event, err)
+	}
+	state, err := service.Snapshot(t.Context())
+	if err != nil || state.Watermark != 2 || state.Active == nil || len(state.Active.Messages) != 2 {
+		t.Fatalf("refreshed state = %+v, %v", state, err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := service.Refresh(ctx, path, "session"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled refresh error = %v", err)
+	}
+	unchanged, _ := service.Snapshot(t.Context())
+	if unchanged.Watermark != state.Watermark || len(unchanged.Active.Messages) != 2 {
+		t.Fatalf("canceled refresh mutated state: %+v", unchanged)
 	}
 }

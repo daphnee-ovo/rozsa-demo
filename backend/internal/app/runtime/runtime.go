@@ -25,12 +25,13 @@ import (
 )
 
 type Config struct {
-	SessionDir string
-	Model      types.Model
-	APIKey     string
-	AuthPath   string
-	Provider   agent.Provider
-	Output     io.Writer
+	SessionDir  string
+	SessionDirs []string
+	Model       types.Model
+	APIKey      string
+	AuthPath    string
+	Provider    agent.Provider
+	Output      io.Writer
 }
 
 // Runtime owns the active session and serializes prompts against it.
@@ -46,6 +47,7 @@ type Runtime struct {
 	queue     []string
 	revision  uint64
 	running   bool
+	messages  *messageOperations
 }
 
 func New(config Config) (*Runtime, error) {
@@ -91,7 +93,11 @@ func New(config Config) (*Runtime, error) {
 	if config.Output == nil {
 		config.Output = io.Discard
 	}
-	return &Runtime{session: manager, service: session.NewService(session.Catalog{Directories: []string{config.SessionDir}}), model: config.Model, provider: config.Provider, output: config.Output, questions: questions.NewOwner()}, nil
+	catalogDirectories := config.SessionDirs
+	if len(catalogDirectories) == 0 {
+		catalogDirectories = []string{config.SessionDir}
+	}
+	return &Runtime{session: manager, service: session.NewService(session.Catalog{Directories: catalogDirectories}), model: config.Model, provider: config.Provider, output: config.Output, questions: questions.NewOwner(), messages: newMessageOperations()}, nil
 }
 
 func resolveProviderKey(ctx context.Context, resolver credentials.Resolver, provider, configured, authPath string) (string, error) {
@@ -122,7 +128,21 @@ func (runtime *Runtime) GetSessions(ctx context.Context) ([]session.ListEntry, e
 }
 
 func (runtime *Runtime) Switch(ctx context.Context, path, catalogID string) (session.LoadedSnapshot, error) {
-	return runtime.service.Switch(ctx, path, catalogID)
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.running || runtime.messages.hasActive() {
+		return session.LoadedSnapshot{}, errors.New("cannot switch sessions while a message is running")
+	}
+	snapshot, err := runtime.service.Switch(ctx, path, catalogID)
+	if err != nil {
+		return session.LoadedSnapshot{}, err
+	}
+	manager, err := session.OpenManager(snapshot.Path)
+	if err != nil {
+		return session.LoadedSnapshot{}, fmt.Errorf("open selected session for writing: %w", err)
+	}
+	runtime.session = manager
+	return snapshot, nil
 }
 
 func (runtime *Runtime) Subscribe() session.EventSubscription { return runtime.service.Subscribe() }
@@ -192,15 +212,34 @@ func (runtime *Runtime) Continue(ctx context.Context) error { return runtime.run
 var _ session.ApplicationService = (*Runtime)(nil)
 
 func (runtime *Runtime) run(ctx context.Context, prompt *string) error {
+	manager, err := runtime.beginRun()
+	if err != nil {
+		return err
+	}
+	return runtime.runReserved(ctx, prompt, manager, nil)
+}
+
+func (runtime *Runtime) beginRun() (*session.Manager, error) {
 	runtime.mu.Lock()
-	if runtime.running {
+	if runtime.running || runtime.messages.hasActive() {
 		runtime.mu.Unlock()
-		return errors.New("agent session is already running")
+		return nil, errors.New("agent session is already running")
 	}
 	runtime.running = true
 	manager := runtime.session
 	runtime.mu.Unlock()
-	defer func() { runtime.mu.Lock(); runtime.running = false; runtime.mu.Unlock() }()
+	return manager, nil
+}
+
+func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, manager *session.Manager, emitText func(string)) (runErr error) {
+	defer func() {
+		if _, err := runtime.service.Refresh(context.Background(), manager.Path(), manager.SessionID()); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("refresh session snapshot: %w", err))
+		}
+		runtime.mu.Lock()
+		runtime.running = false
+		runtime.mu.Unlock()
+	}()
 
 	if prompt != nil {
 		user := types.UserMessage{Content: types.UserText(*prompt), Timestamp: time.Now().UnixMilli()}
@@ -225,9 +264,14 @@ func (runtime *Runtime) run(ctx context.Context, prompt *string) error {
 	for event := range result.Events {
 		switch event := event.(type) {
 		case agent.MessageUpdate:
-			if delta, ok := event.StreamEvent.(types.TextDelta); ok && outputErr == nil {
-				if _, err := io.WriteString(runtime.output, delta.Delta); err != nil {
-					outputErr = fmt.Errorf("write CLI output: %w", err)
+			if delta, ok := event.StreamEvent.(types.TextDelta); ok {
+				if emitText != nil {
+					emitText(delta.Delta)
+				}
+				if outputErr == nil {
+					if _, err := io.WriteString(runtime.output, delta.Delta); err != nil {
+						outputErr = fmt.Errorf("write CLI output: %w", err)
+					}
 				}
 			}
 		case agent.AgentEnd:

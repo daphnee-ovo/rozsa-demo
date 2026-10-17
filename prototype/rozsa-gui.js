@@ -41,6 +41,8 @@
   let questionRequest = null;
   let prototypeResponses = null;
   let sharedConversation;
+  let sharedConversationView;
+  let conversationRenderer;
   let sharedTools;
   let sharedPermissions;
   let sharedNotifications;
@@ -252,9 +254,6 @@
 
   function messageBody(message, index) {
     let body = "";
-    if (message.error) body += '<div class="msg-content msg-error"><pre>' + escapeHtml(message.error) + "</pre></div>";
-    if (message.thinking) body += thinkingMarkup(message.thinking, message.thinkingExpanded !== false, message.thinkingActive, message.thinkingDuration);
-    if (message.text) body += textMarkup(message.text);
     if (message.tool) body += toolMarkup("read-" + index, "Read", "desktop/renderer/tauri.html", "Read the current GUI entry and preserve its existing structure.", "s-success", { expanded: Boolean(message.toolExpanded) });
     if (Array.isArray(message.tools)) message.tools.forEach((tool, toolIndex) => {
       let bodyHtml = "";
@@ -275,16 +274,31 @@
   function renderMessages() {
     const chat = byId("chatMessages");
     if (!chat) return;
-    if (!state.messages.length) {
-      chat.innerHTML = sharedConversation.emptyConversationMarkup();
-      return;
+    if (!conversationRenderer) {
+      conversationRenderer = sharedConversationView.createConversationRenderer(chat);
+      window.addEventListener("pagehide", () => conversationRenderer?.dispose(), { once: true });
     }
-    chat.innerHTML = state.messages.map((message, index) => messageFrame(
-      message.role === "user" ? "user" : "assistant",
-      messageBody(message, index),
-      index,
-      Boolean(message.continuation),
-    )).join("");
+    if (typeof window.renderMarkdown !== "function") throw new Error("Shared Markdown renderer is unavailable");
+    const entries = state.messages.map((message, index) => ({
+      id: String(message.id || index),
+      kind: "standard",
+      message: {
+        role: message.role === "user" || message.role === "system" ? message.role : "assistant",
+        content: [
+          ...(message.thinking ? [{ type: "thinking", text: message.thinking }] : []),
+          ...(message.text ? [{ type: "text", text: message.text }] : []),
+        ],
+        errorMessage: message.error || null,
+      },
+      messageIndex: index,
+      continuation: Boolean(message.continuation),
+      activeStream: Boolean(message.typing),
+      streamTarget: message.typing ? "text" : undefined,
+      thinkingExpanded: message.thinkingExpanded !== false,
+      thinkingDuration: message.thinkingDuration || "",
+      bodyMarkup: messageBody(message, index),
+    }));
+    conversationRenderer.render({ entries, markdown: window.renderMarkdown, empty: entries.length === 0 });
   }
 
   function openPermissionDemo(request = permissionRequest) {
@@ -824,6 +838,8 @@
   document.addEventListener("DOMContentLoaded", () => {
     const bootstrap = async () => {
       sharedConversation = await import(new URL("../desktop/renderer/scripts/features/conversation.ts", legacyScriptUrl));
+      sharedConversationView = await import(new URL("./scripts/features/conversation.js", legacyScriptUrl));
+      await import(new URL("../desktop/renderer/runtime/app/markdown.ts", legacyScriptUrl));
       sharedTools = await import(new URL("../desktop/renderer/scripts/features/tools.js", legacyScriptUrl));
       sharedPermissions = await import(new URL("../desktop/renderer/scripts/features/permissions.js", legacyScriptUrl));
       sharedNotifications = await import(new URL("../desktop/renderer/scripts/features/notifications.js", legacyScriptUrl));

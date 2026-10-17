@@ -20,7 +20,7 @@
 Go catalog、stdio framing/dispatch、受控 Electron/preload/renderer 与候选构建；
 验收结果见 [M001](evidence/M001.md)，正式任务状态以 `dow task show TASK-T001` 为准。
 
-覆盖责任：T001 会话列表；T002 JSONL 只读树与有效上下文；T003 Electron 切换与只读历史。完整写入由 T017、完整消息状态由 T029/T045、运行会话由 T037/T049 负责。各切片的真实结果与未验证项见对应保留的 M001–M003。
+覆盖责任：T001 会话列表；T002 JSONL 只读树与有效上下文；T003 Electron 切换与只读历史；T029 React 消息状态及 Electron→Go 发送/续写/流事件/取消/错误接线。T045 继续负责其余消息 UI 状态，T037/T049 负责完整运行会话。各切片的真实结果与未验证项见对应保留的 M001–M003及本路线图 F13 记录。
 
 **TASK-T002：JSONL 只读打开与有效上下文恢复** 已实现 Go `Open`、
 `Entries`、`ContextMessages`，复用 catalog 的 header/entry 校验。按最后有效
@@ -62,8 +62,7 @@ owner 和实际压缩/配置 overlay 分别留给后续任务。只使用临时 
 展示全部 active-branch 消息，模型有效上下文保留在 Go；renderer 保存本切片的
 滚动/Thinking 展开，拒绝迟到响应，读取失败保留当前历史并支持手动重试。
 TS/Go 聚焦测试和 macOS 隔离 native 验收见 [M003](evidence/M003.md)。
-T029/T045 的完整消息、Markdown/image/tool 呈现和 T037/T049 的运行会话仍待实现；
-本项不是完整迁移交付。正式状态以 `dow task show TASK-T003` 为准。
+T029 已把消息、Markdown、image/tool 历史呈现迁入共享 React 真源，并接通真实消息运行链；T045/T051 的其余 UI 状态及 T037/T049 的运行会话仍待实现。本项不是完整迁移交付。正式状态以 `dow task show TASK-T003` 为准。
 
 ## 任务与实际依赖
 
@@ -400,7 +399,7 @@ T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T
 
 | 任务 | 具体产出 | 前置任务 |
 | --- | --- | --- |
-| TASK-T029 | 转换消息/Markdown TS 真源并恢复全部内容状态 | TASK-T013、TASK-T003、TASK-T020、TASK-T079、TASK-T080 |
+| TASK-T029 | React/TSX 消息真源、完整历史状态与 Electron→Go 消息运行链 | TASK-T013、TASK-T003、TASK-T020、TASK-T079、TASK-T080 |
 | TASK-T079 | 转换现有会话消息组件与 flow 为 TypeScript | TASK-T013 |
 | TASK-T080 | 接入既有完整 UI 到 Electron 单 WebView 产品入口 | TASK-T003、TASK-T009、TASK-T013、TASK-T079 |
 | TASK-T036 | 转换 settings/appearance TS 与恢复 General | TASK-T013、TASK-T015、TASK-T016、TASK-T024、TASK-T030 |

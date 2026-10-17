@@ -251,3 +251,5 @@ function applyFontSize(value) {
   root.style.setProperty('--ui-font-size', fontSize + 'px');
   root.style.setProperty('--ui-scale', String(fontSize / 14));
 }
+
+window.renderMarkdown = renderMarkdown;

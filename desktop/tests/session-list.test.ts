@@ -8,10 +8,12 @@ import { BackendService, RPCFailure } from "../main/backend-service.ts";
 import { sessionEntries, type ProductBridge } from "../main/session-contract.ts";
 import { ProductClient } from "../renderer/product-client.ts";
 import { SessionList } from "../renderer/features/session-list.ts";
+import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 
 if (process.argv[2] && process.argv[2] !== "session-list") throw new Error("Only the session-list slice is available");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
+const backendEnvironment = await createIsolatedBackendEnvironment();
 const entry = { id: "synthetic", path: "/isolated/example.jsonl", name: "<img src=x onerror=alert(1)>", modified: "2026-10-13T00:00:00Z", message_count: 2 };
 
 test("session-list controlled preload retains the no-argument list method", async () => {
@@ -23,7 +25,7 @@ test("session-list controlled preload retains the no-argument list method", asyn
     assert.equal(name, "electron");
     return { contextBridge: { exposeInMainWorld: (key: string, value: ProductBridge) => { assert.equal(key, "rozsa"); bridge = value; } }, ipcRenderer: { invoke: async (channel: string) => { calls.push(channel); return { ok: true, sessions: [] }; } } };
   } });
-  assert.deepEqual(Object.keys(bridge!), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"]);
+  assert.deepEqual(Object.keys(bridge!), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage"]);
   assert.equal(Object.isFrozen(bridge), true);
   assert.deepEqual(await new ProductClient(bridge!).getSessions(), []);
   await assert.rejects(() => (bridge!.getSessions as (arg: string) => Promise<unknown>)("/private"), /no arguments/);
@@ -64,7 +66,7 @@ test("session-list real Go process: layers, empty/corrupt input, directory error
   await writeFile(join(global, "session.jsonl"), content("global", "2026-09")); await writeFile(file, text);
   await writeFile(join(project, "broken.jsonl"), "not-json\n");
   const before = await stat(file);
-  const service = new BackendService(binary, [global, project]);
+  const service = new BackendService(binary, [global, project], { env: backendEnvironment });
   try {
     await service.initialize();
     const [first, second] = await Promise.all([service.getSessions(), service.getSessions()]);
@@ -73,18 +75,18 @@ test("session-list real Go process: layers, empty/corrupt input, directory error
   } finally { await service.stop(); }
   assert.equal(service.process.exitCode, 0);
   assert.throws(() => process.kill(service.process.pid!, 0), /ESRCH/);
-  const empty = new BackendService(binary, [join(dir, "missing")]);
+  const empty = new BackendService(binary, [join(dir, "missing")], { env: backendEnvironment });
   try { await empty.initialize(); assert.deepEqual(await empty.getSessions(), []); } finally { await empty.stop(); }
-  const bad = new BackendService(binary, [file]);
+  const bad = new BackendService(binary, [global, file], { env: backendEnvironment });
   try { await bad.initialize(); await assert.rejects(() => bad.getSessions(), (e: unknown) => e instanceof RPCFailure && e.code === -32001 && e.message === `Failed to read session dir: ${file}`); } finally { await bad.stop(); }
-  const unconfigured = new BackendService(binary, []);
-  try { await unconfigured.initialize(); await assert.rejects(() => unconfigured.getSessions(), /No session directories configured/); } finally { await unconfigured.stop(); }
+  const unconfigured = new BackendService(binary, [], { env: backendEnvironment });
+  try { await unconfigured.initialize(); assert.deepEqual(await unconfigured.getSessions(), []); } finally { await unconfigured.stop(); }
 });
 
 test("session-list backend exit and failed spawn reject rather than return empty", async () => {
   const missing = new BackendService(join(root, "tmp/missing-backend-binary"), []);
   try { await assert.rejects(() => missing.initialize(), /ENOENT/); } finally { await missing.stop(); }
-  const backend = new BackendService(binary, []);
+  const backend = new BackendService(binary, [], { env: backendEnvironment });
   await backend.initialize();
   const closed = new Promise(resolve => backend.process.once("close", resolve));
   const pending = backend.getSessions();

@@ -106,6 +106,7 @@ function captureSessionDraft(sessionId) {
     selectionEnd: selection.end,
     runningSendMode: mode ? mode.value : 'queue',
   };
+  persistConversationState();
 }
 
 function restoreSessionDraft(sessionId) {

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -8,17 +9,47 @@ import (
 
 // A display projection, not a provider context or full message schema.
 type HistoryBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-	Name string `json:"name"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Data      string          `json:"data,omitempty"`
+	MIMEType  string          `json:"mimeType,omitempty"`
 }
+
+func (block HistoryBlock) MarshalJSON() ([]byte, error) {
+	type wireBlock struct {
+		Type      string          `json:"type"`
+		Text      *string         `json:"text,omitempty"`
+		Name      *string         `json:"name,omitempty"`
+		ID        string          `json:"id,omitempty"`
+		Arguments json.RawMessage `json:"arguments,omitempty"`
+		Data      string          `json:"data,omitempty"`
+		MIMEType  string          `json:"mimeType,omitempty"`
+	}
+	wire := wireBlock{Type: block.Type, ID: block.ID, Arguments: block.Arguments, Data: block.Data, MIMEType: block.MIMEType}
+	if block.Type == "text" || block.Type == "thinking" {
+		wire.Text = &block.Text
+	}
+	if block.Type == "toolCall" {
+		wire.Name = &block.Name
+	}
+	return json.Marshal(wire)
+}
+
 type HistoryMessage struct {
-	EntryID     string         `json:"entryId"`
-	Role        string         `json:"role"`
-	Content     []HistoryBlock `json:"content"`
-	DisplayText *string        `json:"displayText,omitempty"`
-	ToolName    string         `json:"toolName,omitempty"`
-	IsError     bool           `json:"isError,omitempty"`
+	EntryID      string          `json:"entryId"`
+	Role         string          `json:"role"`
+	Content      []HistoryBlock  `json:"content"`
+	DisplayText  *string         `json:"displayText,omitempty"`
+	ToolCallID   string          `json:"toolCallId,omitempty"`
+	ToolName     string          `json:"toolName,omitempty"`
+	Details      json.RawMessage `json:"details,omitempty"`
+	ErrorMessage *string         `json:"errorMessage,omitempty"`
+	StopReason   string          `json:"stopReason,omitempty"`
+	Timestamp    int64           `json:"timestamp,omitempty"`
+	IsError      bool            `json:"isError,omitempty"`
 }
 type LoadedSnapshot struct {
 	Path                string           `json:"path"`
@@ -92,12 +123,25 @@ func (loadedSessions *LoadedSessions) Switch(path, catalogID string) (LoadedSnap
 	loadedSessions.activePath = path
 	return result, nil
 }
+
+// Refresh rereads an already-open tab after its writable session manager has
+// appended entries. Failed reads preserve the previously usable cached tab.
+func (loadedSessions *LoadedSessions) Refresh(path, catalogID string) (LoadedSnapshot, error) {
+	previous, existed := loadedSessions.tabs[path]
+	delete(loadedSessions.tabs, path)
+	snapshot, err := loadedSessions.Switch(path, catalogID)
+	if err != nil && existed {
+		loadedSessions.tabs[path] = previous
+	}
+	return snapshot, err
+}
+
 func historyMessage(id string, message Message) (HistoryMessage, error) {
 	history := HistoryMessage{EntryID: id, Content: []HistoryBlock{}}
 	var blocks []ContentBlock
 	switch typedMessage := message.(type) {
 	case UserMessage:
-		history.Role, history.DisplayText = "user", typedMessage.DisplayText
+		history.Role, history.DisplayText, history.Timestamp = "user", typedMessage.DisplayText, typedMessage.Timestamp
 		switch content := typedMessage.Content.(type) {
 		case UserText:
 			blocks = []ContentBlock{TextBlock{Text: string(content)}}
@@ -107,9 +151,9 @@ func historyMessage(id string, message Message) (HistoryMessage, error) {
 			return history, fmt.Errorf("Unsupported user content %T", content)
 		}
 	case AssistantMessage:
-		history.Role, blocks = "assistant", typedMessage.Content
+		history.Role, history.ErrorMessage, history.StopReason, history.Timestamp, blocks = "assistant", typedMessage.ErrorMessage, stopReasonName(typedMessage.StopReason), typedMessage.Timestamp, typedMessage.Content
 	case ToolResultMessage:
-		history.Role, history.ToolName, history.IsError, blocks = "toolResult", typedMessage.ToolName, typedMessage.IsError, typedMessage.Content
+		history.Role, history.ToolCallID, history.ToolName, history.Details, history.IsError, history.Timestamp, blocks = "toolResult", typedMessage.ToolCallID, typedMessage.ToolName, typedMessage.Details, typedMessage.IsError, typedMessage.Timestamp, typedMessage.Content
 	default:
 		return history, fmt.Errorf("Unsupported history message %T", message)
 	}
@@ -120,12 +164,29 @@ func historyMessage(id string, message Message) (HistoryMessage, error) {
 		case ThinkingBlock:
 			history.Content = append(history.Content, HistoryBlock{Type: "thinking", Text: contentBlock.Thinking})
 		case ImageBlock:
-			history.Content = append(history.Content, HistoryBlock{Type: "image"})
+			history.Content = append(history.Content, HistoryBlock{Type: "image", Data: contentBlock.Data, MIMEType: contentBlock.MimeType})
 		case ToolCallBlock:
-			history.Content = append(history.Content, HistoryBlock{Type: "toolCall", Name: contentBlock.Name})
+			history.Content = append(history.Content, HistoryBlock{Type: "toolCall", ID: contentBlock.ID, Name: contentBlock.Name, Arguments: contentBlock.Arguments})
 		default:
 			return history, fmt.Errorf("Unsupported history block %T", block)
 		}
 	}
 	return history, nil
+}
+
+func stopReasonName(reason StopReason) string {
+	switch reason {
+	case Stop:
+		return "stop"
+	case Length:
+		return "length"
+	case ToolUse:
+		return "toolUse"
+	case Error:
+		return "error"
+	case Aborted:
+		return "aborted"
+	default:
+		return "unknown"
+	}
 }

@@ -228,132 +228,76 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
   if (sessionChanged && renderedMessageSessionId) {
     persistSessionViewState(renderedMessageSessionId, container);
   }
+  if (sessionChanged) {
+    conversationEntryCache.clear();
+    messageToolResultCache.clear();
+  }
   const savedView = sessionId ? sessionViewState[sessionId] : null;
   if (sessionChanged) chatAutoScrollPaused = savedView?.autoScrollPaused === true;
   const restoringScroll = sessionChanged && savedView && Number.isFinite(savedView.scrollTop);
   const shouldStickToBottom = !restoringScroll && !chatAutoScrollPaused &&
     (sessionChanged ? !savedView : isChatNearBottom(container));
 
-  if (!messages || messages.length === 0) {
-    container.innerHTML = window.RozsaConversation.emptyConversationMarkup();
-    renderedMessageSessionId = sessionId;
-    renderedMessageKeys = [];
-    renderedRawMessageCount = 0;
-    renderedTurnActivityKey = '';
-    if (sessionId) restoreSessionViewState(sessionId, container, savedView);
-    return;
-  }
-
-  // 预建 toolResult 索引: toolCallId → { output, isError, toolName }
-  // 每个 toolResult 通过 toolCallId 严格对应一个 toolCall
-  const toolResultMap = {};
-  for (const raw of messages) {
-    if (raw.kind === 'standard' && raw.message && raw.message.role === 'toolResult') {
-      const m = raw.message;
-      const id = m.toolCallId;
-      if (id) {
-        const text = (m.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-        toolResultMap[id] = { output: text, isError: !!m.isError, toolName: m.toolName || '', details: m.details || {} };
-      }
+  const allMessages = Array.isArray(messages) ? messages : [];
+  const toolResultMap = Object.create(null);
+  for (const raw of allMessages) {
+    if (raw.kind !== 'standard' || !raw.message || raw.message.role !== 'toolResult') continue;
+    const message = raw.message;
+    const id = message.toolCallId;
+    if (!id) continue;
+    const resultKey = String(sessionId || '') + ':' + id;
+    const previous = messageToolResultCache.get(resultKey);
+    if (previous?.raw === raw) toolResultMap[id] = previous.value;
+    else {
+      const text = (message.content || []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+      const value = { output: text, isError: !!message.isError, toolName: message.toolName || '', details: message.details || {} };
+      messageToolResultCache.set(resultKey, { raw, value });
+      toolResultMap[id] = value;
     }
   }
-
-  const visibleMessages = messages.filter(raw =>
-    !(raw.kind === 'standard' && raw.message && raw.message.role === 'toolResult')
-  );
+  const visibleMessages = allMessages.filter(raw => !(raw.kind === 'standard' && raw.message && raw.message.role === 'toolResult'));
   const lastAssistantIndex = streaming ? -1 : visibleMessages.reduce((last, raw, index) =>
     raw.kind === 'standard' && raw.message && raw.message.role === 'assistant' ? index : last, -1);
-  const turnActivityKey = !streaming && turnActivity ? JSON.stringify(turnActivity) : '';
   const summariesByRawIndex = new Map((Array.isArray(turnSummaries) ? turnSummaries : [])
     .map(summary => [summary.assistantMessageIndex, summary.activity]));
   const activityForVisibleIndex = index => {
-    const rawIndex = messages.indexOf(visibleMessages[index]);
+    const rawIndex = allMessages.indexOf(visibleMessages[index]);
     return summariesByRawIndex.get(rawIndex) || (index === lastAssistantIndex ? turnActivity : null);
   };
-
-  const activeStreamIndex = activeStreamMessageIndex(messages, visibleMessages, streaming);
-  const thinkingDurationForIndex = updateThinkingTimings(
-    messages,
-    visibleMessages,
-    activeStreamIndex,
-    sessionId,
-  );
-  const keys = visibleMessages.map((raw, index) => JSON.stringify(raw) +
-    JSON.stringify(activityForVisibleIndex(index)) + ':' + (thinkingDurationForIndex(index) ?? '') +
-    bashPresentationRenderKey(raw, toolResultMap));
-  const sameSession = renderedMessageSessionId === sessionId;
-  let firstChanged = -1;
-  if (sameSession) {
-    const shared = Math.min(renderedMessageKeys.length, keys.length);
-    for (let i = 0; i < shared; i++) {
-      if (renderedMessageKeys[i] !== keys[i]) { firstChanged = i; break; }
-    }
-    if (firstChanged < 0 && renderedMessageKeys.length !== keys.length) firstChanged = shared;
-    // Tool results are hidden rows but change the preceding assistant tool card.
-    if (firstChanged < 0 && renderedRawMessageCount !== messages.length) {
-      firstChanged = Math.max(0, visibleMessages.length - 1);
-    }
-    if (firstChanged < 0 && turnActivityKey && turnActivityKey !== renderedTurnActivityKey) {
-      firstChanged = lastAssistantIndex;
-    }
-  }
-
-  const needsFullRender = !sameSession || container.children.length !== renderedMessageKeys.length || firstChanged === 0 && renderedMessageKeys.length === 0;
-  if (needsFullRender) {
-    container.replaceChildren();
-    firstChanged = 0;
-  }
-  let patchedThinking = false;
-  if (sameSession && firstChanged === activeStreamIndex && activeStreamIndex >= 0) {
-    patchedThinking = patchStreamingThinking(
-      container,
-      activeStreamIndex,
-      visibleMessages[activeStreamIndex],
-      thinkingDurationForIndex(activeStreamIndex),
-    );
-    if (patchedThinking) firstChanged = -1;
-  }
-
-  let preservedThinkingExpanded = false;
-  if (firstChanged >= 0 && container.children[firstChanged]) {
-    preservedThinkingExpanded = container.children[firstChanged]
-      .querySelector('.thinking-block')?.classList.contains('expanded') === true;
-    if (preservedThinkingExpanded) {
-      expandedThinkingBySession[thinkingStateKey(sessionId, firstChanged)] = true;
-    }
-  }
-
-  if (firstChanged >= 0) {
-    while (container.children.length > firstChanged) container.lastChild.remove();
-    for (let i = firstChanged; i < visibleMessages.length; i++) {
-      const assistantGroupPosition = assistantMessageGroupPosition(visibleMessages, i);
-      container.appendChild(renderMessage(
-        visibleMessages[i],
-        toolResultMap,
-        i === activeStreamIndex,
-        activityForVisibleIndex(i),
-        thinkingDurationForIndex(i),
-        isThinkingExpanded(sessionId, i),
-        assistantGroupPosition !== 'continuation',
-        i,
-      ));
-    }
-  }
-
-  container.querySelectorAll('.stream-cursor').forEach(cursor => cursor.remove());
-  if (activeStreamIndex >= 0) {
-    const active = container.children[activeStreamIndex];
-    if (active) attachStreamCursor(active);
-  }
+  const activeStreamIndex = activeStreamMessageIndex(allMessages, visibleMessages, streaming);
+  const thinkingDurationForIndex = updateThinkingTimings(allMessages, visibleMessages, activeStreamIndex, sessionId);
+  const entries = visibleMessages.map((raw, index) => {
+    const activity = activityForVisibleIndex(index);
+    const expanded = isThinkingExpanded(sessionId, index);
+    const showIdentity = assistantMessageGroupPosition(visibleMessages, index) !== 'continuation';
+    const messageIdentity = raw.entryId || raw.message?.timestamp || 'message';
+    const cacheKey = String(sessionId || '') + ':' + String(messageIdentity) + ':' + index;
+    const cached = conversationEntryCache.get(cacheKey);
+    const active = index === activeStreamIndex;
+    const duration = thinkingDurationForIndex(index);
+    const resultRefs = raw.message?.role === 'assistant'
+      ? (raw.message.content || []).filter(block => block.type === 'toolCall').map(block => toolResultMap[block.id] || null)
+      : [];
+    if (cached && cached.raw === raw && cached.activity === activity && cached.expanded === expanded
+      && cached.showIdentity === showIdentity && cached.active === active && cached.duration === duration
+      && cached.resultRefs.length === resultRefs.length && cached.resultRefs.every((value, resultIndex) => value === resultRefs[resultIndex])) return cached.entry;
+    const entry = createConversationEntry(raw, toolResultMap, active, activity, duration, expanded, showIdentity, index, sessionId);
+    conversationEntryCache.set(cacheKey, { raw, activity, expanded, showIdentity, active, duration, resultRefs, entry });
+    return entry;
+  });
 
   toolCounts = countTools(visibleMessages);
   renderToolChips();
+  if (!window.RozsaConversation?.renderView) throw new Error('React conversation renderer is unavailable');
+  window.RozsaConversation.renderView({ entries, markdown: renderMarkdown, empty: entries.length === 0 });
   renderedMessageSessionId = sessionId;
-  renderedMessageKeys = keys;
-  renderedRawMessageCount = messages.length;
-  if (turnActivityKey) renderedTurnActivityKey = turnActivityKey;
-  if (restoringScroll) restoreSessionViewState(sessionId, container, savedView);
-  else if (shouldStickToBottom) scrollChatToBottom(container);
+  renderedRawMessageCount = allMessages.length;
+  if (restoringScroll || shouldStickToBottom) {
+    requestAnimationFrame(() => {
+      if (restoringScroll) restoreSessionViewState(sessionId, container, savedView);
+      else scrollChatToBottom(container);
+    });
+  }
 }
 
 function bashPresentationRenderKey(raw, toolResultMap) {

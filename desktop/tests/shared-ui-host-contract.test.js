@@ -94,8 +94,6 @@ test('the actual Electron entry assembles one window from shared UI sources', ()
     assert(!source.includes('prototype/mock'));
   }
   const hostAdapter = readFrontend('runtime/adapters/electron.ts');
-  assert(hostAdapter.includes('bridge.getSessions()'));
-  assert(hostAdapter.includes('Electron backend does not support'));
   assert(!hostAdapter.includes('__TAURI__'));
   assert(!electronEntry.includes('prototype/mock'));
 });

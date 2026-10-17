@@ -7,6 +7,7 @@ import { init as bindComposer, renderSendState } from "../../scripts/components/
 import { init as bindConversation, emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup } from "../../scripts/features/conversation.ts";
 import { mountConversation, createConversationFlow } from "../../scripts/flows/conversation.ts";
 import { createConversationAdapter } from "../adapters/conversation.js";
+import { createConversationRenderer } from "../../scripts/features/conversation-view.tsx";
 import * as tools from '../../scripts/features/tools.js';
 import { init as bindTools } from '../../scripts/components/tool-call.js';
 import { toolView, activityView } from '../adapters/tools.js';
@@ -27,6 +28,8 @@ import { devFlowSettingsView, devFlowDetailView } from '../adapters/sidebar-dev-
 document.body.classList.toggle('macos-host', navigator.platform === 'MacIntel');
 window.RozsaUIHost = createUIHost(createElectronAdapter(window.rozsa));
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
+let conversationRenderer: ReturnType<typeof createConversationRenderer> | undefined;
+window.addEventListener("pagehide", () => conversationRenderer?.dispose(), { once: true });
 window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(document.getElementById("mainContentScene"))]).then(() => mountShell([
   { url: new URL("composites/popover.html", resolveTemplateRoot()), selector: "[data-template-mount=popover]", children: true },
   { url: new URL("composites/interruption-panel.html", resolveTemplateRoot()), selector: "[data-template-mount=interruption-panel]", children: true },
@@ -34,6 +37,9 @@ window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(docum
   { url: new URL("composites/notification.html", resolveTemplateRoot()), selector: "[data-template-mount=notification]", children: true },
   { url: new URL("features/dev-flow.html", resolveTemplateRoot()), selector: "[data-template-mount=dev-flow]", children: true },
 ])).then(async () => {
+  const conversationRoot = document.getElementById("chatMessages");
+  if (!conversationRoot) throw new Error("Conversation React root not found after mounting the conversation template");
+  conversationRenderer = createConversationRenderer(conversationRoot);
   const sidebarTemplate = await loadTemplate(new URL('features/sidebar.html', resolveTemplateRoot()));
   document.querySelector<HTMLTemplateElement>('#fallbackSidebarTemplate')!.content.replaceChildren(sidebarTemplate);
   window.RozsaSidebar = Object.freeze({ ...sidebar });
@@ -58,7 +64,8 @@ window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(docum
   bindInterruptionFlow(interruption);
   document.querySelector('[data-od-id="chat-input"]')!.prepend(document.querySelector<HTMLTemplateElement>('#runtimeSubagentTemplate')!.content.cloneNode(true));
   configureConversationSuspensions();
-  window.RozsaConversation = Object.freeze({ emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup });
+  window.RozsaConversation = Object.freeze({ emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup,
+    renderView: conversationRenderer.render });
   bindConversation({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), toggleThinking, renderMessages: () => {} });
   window.RozsaComposer = Object.freeze({ renderSendState });
   const flow = createConversationFlow(createConversationAdapter({
