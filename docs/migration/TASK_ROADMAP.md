@@ -116,6 +116,31 @@ Cloudflare 环境查找。产品注册、agent owner 与 session 持久化接线
 全项目 TEST。其他三个 provider 仍待对应任务。本项完成后交还 TASK_ROADMAP
 写入权给 T004；前端设计文件与本项产品文件独立。
 
+### TASK-T019 Go core agent loop
+
+Go core 位于 `backend/internal/core/{agent,tools,hooks}`。`agent.Run` / `Continue`
+驱动 Provider stream、消息上下文、tool batch、轮间更新、steering/follow-up 与
+终止条件；typed AgentEvent 保留消息和工具的 start/update/end 生命周期。parallel
+工具并发上限为 10，ToolExecutionEnd 与 ToolResultMessage 按调用输入顺序整理，
+不把 goroutine 调度顺序当行为契约。串行和 parallel 都使用同一工具参数规范化、
+hook 和错误结果路径。null 顶层参数转 `{}`；schema coercion 覆盖 number/integer、
+boolean、string、array、object 及 anyOf/oneOf。工具错误、pre-hook 错误/拒绝、
+取消都生成显式 error result；post-hook 可覆盖内容、错误和 terminate。Provider 与
+Tool 接收 context cancellation；取消中的 partial assistant 保留为 Aborted 终态。
+
+行为对照来源为 Rust `crates/rozsa-core/src/{agent_loop,config,events,messages,tool,coerce}.rs`
+和 `crates/rozsa-core/tests/{agent_loop_test,parallel_null_args_test}.rs`。专用 Go 测试
+使用 fake provider/tool 和固定 clock 验证并行结果顺序与串行结果、steering/follow-up
+上下文、stop 条件、tool 取消、局部错误、hook 拒绝/失败/覆盖、null 参数和 coercion。
+针对性验证：`go -C backend test -race ./internal/core/...`。这些测试固定关键因果和
+可见副作用，不比较并行工具的偶然调度完成顺序。
+
+本切片未连接 app/session、permission owner、具体工具、CLI 或 renderer；没有对真实
+provider、OS 工具或 Linux/Windows 实机做验证。hook/tool 的协作式取消依赖实现遵守
+Go `context.Context`；core 返回取消终态不构成外部副作用回滚保证。剩余生命周期、
+权限、AskUserQuestion、compaction 和产品接线由 T020、T025–T028、T035、T037–T038
+继续负责。
+
 T010 为当前 RPC 方法定义 typed errors 和接收取消契约；T011 增补当前 session 切片的并发与事件同步基础，产品工作 abort 随业务切片接入。批准的库协议行为见 [M010](evidence/M010.md) 和 SPEC，操作入口见 CONTRIBUTING。
 
 ### TASK-T011：当前 session 并发与 snapshot 同步
@@ -358,7 +383,7 @@ T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T
 | F01 | 模型配置、registry、thinking/context/quota | TASK-T016、TASK-T028、TASK-T033、TASK-T042、TASK-T048 | 待实现 |
 | F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | [T018](#task-t018-anthropic-provider) Go Anthropic 请求/流契约与本地 fake provider 已验证；真实授权/产品接线及其他 providers 仍待各 owner |
 | F03 | credentials、PKCE/callback/device、刷新/注销 | TASK-T024、TASK-T032、TASK-T033、TASK-T034、TASK-T054 | 待实现 |
-| F04 | Agent loop、hooks、并行/终止/取消 | TASK-T019、TASK-T020、TASK-T026、TASK-T037、TASK-T038 | 待实现 |
+| F04 | Agent loop、hooks、并行/终止/取消 | TASK-T019、TASK-T020、TASK-T026、TASK-T037、TASK-T038 | T019 Go core loop/tool/hooks 的 fake provider/tool 与 race 用例已验证；app/session owner、权限和产品生命周期/接线待 T020、T026、T037、T038 |
 | F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T010、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；T010 协议见 [M010](evidence/M010.md)；[T017](#task-t017-jsonl-manager) 已补齐 Go manager 写入/重开/分支/rename/delete/cwd；运行会话与产品入口仍待 T037/T044 |
 | F06 | compaction、有效上下文与会话配置 overlay | TASK-T002、TASK-T028 | T002 已恢复持久化有效上下文，见 M002；实际压缩与配置 overlay 待 T028 |
 | F07 | Read/Write/Edit/Bash、锁、diff/evidence与进程树 | TASK-T025、TASK-T026、TASK-T045 | 待实现 |

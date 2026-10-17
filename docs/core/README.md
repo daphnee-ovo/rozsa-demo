@@ -12,6 +12,20 @@ rozsa-core 是 agent 执行引擎，提供：
 
 不包含具体工具实现、session 管理、UI 等。纯引擎层。
 
+## Go 迁移切片（TASK-T019）
+
+Go 实现位于 `backend/internal/core/{agent,tools,hooks}`，共用
+`backend/internal/model/types` 的消息、内容块和 stream event。`agent.Run` 返回
+有序事件 channel；`agent.Continue` 在上下文为空或最后一条为 assistant 时直接
+结束。Provider 与 Tool 均通过 `context.Context` 接收取消，调用方仍需遵守 context
+取消约定。工具 parallel 模式最多同时运行 10 项，最终结果按 tool call 输入顺序
+交付；并行执行的调度完成顺序不属于契约。
+
+工具 schema coercion、null 参数规范化、pre-tool 拒绝/错误、post-tool 结果覆盖、
+逐轮更新、steering、follow-up、终止和 provider/tool 取消由 Go 专用测试覆盖。
+`TASK-T019` 只实现 core 契约，不接入 app/session、permission owner、CLI 或 UI；
+具体工具和完整产品生命周期继续由后续任务负责。旧 Rust 实现仍是逐切片行为参照。
+
 ## 模块结构
 
 ```
