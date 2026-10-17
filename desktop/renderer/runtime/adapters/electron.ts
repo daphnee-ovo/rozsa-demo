@@ -1,4 +1,4 @@
-import type { ProductBridge, SessionListEntry, SessionSnapshot } from "../../../main/session-contract.js";
+import type { ProductBridge, SessionListEntry, SessionSnapshot, SettingsSnapshot, ThemeDefinition } from "../../../main/session-contract.js";
 import { ProductClient } from "../../product-client.js";
 import type { Disposer, RequestOptions, UIAdapter } from "../../scripts/core/ports.ts";
 
@@ -182,6 +182,26 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
         signal?.throwIfAborted();
         return currentState();
       }
+      case "get_settings": {
+        const snapshot = await client.getSettings("global", { signal });
+        return legacySettings(snapshot);
+      }
+      case "list_themes":
+        return client.listThemes("global", { signal });
+      case "update_setting": {
+        if (!isRecord(data) || typeof data.key !== "string" || typeof data.value !== "string") throw new TypeError("Invalid setting update");
+        const value = settingValue(data.key, data.value);
+        return client.updateSetting("global", data.key, value, { signal });
+      }
+      case "get_theme": {
+        if (!isRecord(data) || typeof data.id !== "string" || (data.mode !== "light" && data.mode !== "dark")) throw new TypeError("Invalid theme request");
+        return client.getTheme(data.id, data.mode, { signal });
+      }
+      case "save_theme": {
+        if (!isRecord(data) || !isRecord(data.theme)) throw new TypeError("Invalid theme definition");
+        await client.saveTheme(data.theme as unknown as ThemeDefinition, { signal });
+        return true;
+      }
       case "send_message": {
         if (!isRecord(data) || typeof data.message !== "string") throw new TypeError("Invalid message request");
         const text = data.message.trim();
@@ -257,4 +277,46 @@ function legacyState(snapshot: SessionSnapshot, sessionName?: string): LegacySta
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function legacySettings(snapshot: SettingsSnapshot): Record<string, unknown> {
+  const values = snapshot.settings;
+  const appearance = isRecord(values.appearance) ? values.appearance : {};
+  const compaction = isRecord(values.compaction) ? values.compaction : {};
+  const retry = isRecord(values.retry) ? values.retry : {};
+  return {
+    thinkingEffort: values.defaultThinkingEffort,
+    model_id: values.defaultModel,
+    model_name: values.defaultModel,
+    model_provider: values.defaultProvider,
+    small_model: values.smallModel,
+    block_images: values.blockImages,
+    hide_thinking: values.hideThinking,
+    transport: values.transport,
+    auto_compact: compaction.enabled,
+    compaction_trigger_ratio: compaction.triggerRatio,
+    compaction_target_ratio: compaction.targetRatio,
+    retry_timeout_ms: retry.timeoutMs,
+    retry_max_retries: retry.maxRetries,
+    retry_max_delay_ms: retry.maxRetryDelayMs,
+    auto_session_naming: values.autoSessionNaming,
+    steering_mode: values.steeringMode,
+    follow_up_mode: values.followUpMode,
+    running_send_mode: values.runningSendMode,
+    appearance: { ...appearance, isMacos: navigator.userAgent.includes("Mac") },
+  };
+}
+
+function settingValue(key: string, value: string): unknown {
+  if (["auto_compact", "auto_session_naming", "block_images", "hide_thinking", "appearance_translucent_sidebar", "appearance_show_rate_limits", "appearance_show_hourly_rate_limit", "appearance_show_weekly_rate_limit"].includes(key)) {
+    if (value !== "true" && value !== "false") throw new TypeError(`Invalid boolean setting: ${key}`);
+    return value === "true";
+  }
+  if (["compaction_trigger_ratio", "compaction_target_ratio", "appearance_font_size", "retry_timeout_ms", "retry_max_retries", "retry_max_delay_ms"].includes(key)) {
+    if (value.trim() === "") return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) throw new TypeError(`Invalid numeric setting: ${key}`);
+    return parsed;
+  }
+  return value;
 }

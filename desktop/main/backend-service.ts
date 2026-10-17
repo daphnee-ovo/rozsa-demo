@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter, ResponseError, type MessageConnection } from "vscode-jsonrpc/node";
-import { record, sessionEntries, sessionTarget, sessionSnapshot, sessionUpdate, subscriptionId, messageOperation, messageSubscription, messageEventResult, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry, type MessageOperation, type MessageSubscription, type MessageEventResult } from "./session-contract.js";
+import { record, sessionEntries, sessionTarget, sessionSnapshot, sessionUpdate, subscriptionId, messageOperation, messageSubscription, messageEventResult, settingsSnapshot, themeDefinition, themeSummary, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry, type MessageOperation, type MessageSubscription, type MessageEventResult } from "./session-contract.js";
+import type { SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../contracts/ipc/session.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { SessionMethods } from "../../contracts/ipc/session.js";
 export { RPCFailure } from "./session-contract.js";
@@ -74,7 +75,8 @@ export class BackendService {
           if ((fault.kind === "catalog" && method !== "get_sessions")
             || (fault.kind === "session" && !["switch_session", "subscribe_sessions", "next_session_event"].includes(method))
             || (fault.kind === "message" && !["start_message", "continue_message", "subscribe_message_events", "next_message_event", "cancel_message"].includes(method))
-            || (fault.kind === "runtime_initialization" && method !== "runtime_status")) throw new Error("Backend error owner mismatch");
+            || (fault.kind === "runtime_initialization" && method !== "runtime_status")
+            || (fault.kind === "settings" && !["get_settings", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"].includes(method))) throw new Error("Backend error owner mismatch");
           throw new RPCFailure(fault);
         } catch (fault) {
           if (fault instanceof RPCFailure) throw fault;
@@ -103,7 +105,8 @@ export class BackendService {
       if (!record(value) || value.protocolVersion !== 1 || !Array.isArray(capabilities)
         || !capabilities.every(item => typeof item === "string")
         || !["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions",
-          "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message"].every(method => capabilities.includes(method))) {
+          "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message",
+          "get_settings", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"].every(method => capabilities.includes(method))) {
         throw transportFailure("protocol", "Incompatible backend handshake");
       }
     } catch (error) { this.fail(error instanceof ProductFailure ? error : transportFailure("io", asError(error).message, error)); throw error; }
@@ -226,6 +229,35 @@ export class BackendService {
     if (await this.request("cancel_message", { operationId: input }) !== true) {
       const failure = transportFailure("protocol", "Invalid message cancellation response"); this.fail(failure); throw failure;
     }
+  }
+  async getSettings(scope: SettingsScope): Promise<SettingsSnapshot> {
+    if (scope !== "global" && scope !== "project") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid settings scope" });
+    return settingsSnapshot(await this.request("get_settings", { scope }));
+  }
+  async updateSetting(scope: SettingsScope, key: string, value: unknown): Promise<SettingsSnapshot> {
+    if ((scope !== "global" && scope !== "project") || typeof key !== "string" || !key) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid setting update" });
+    return settingsSnapshot(await this.request("update_setting", { scope, key, value }));
+  }
+  async resetSetting(scope: SettingsScope, key: string): Promise<SettingsSnapshot> {
+    if ((scope !== "global" && scope !== "project") || typeof key !== "string" || !key) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid setting reset" });
+    return settingsSnapshot(await this.request("reset_setting", { scope, key }));
+  }
+  async listThemes(scope: SettingsScope): Promise<ThemeSummary[]> {
+    const value = await this.request("list_themes", { scope });
+    if (!Array.isArray(value)) { const failure = transportFailure("protocol", "Invalid theme list response"); this.fail(failure); throw failure; }
+    try { return value.map(themeSummary); }
+    catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  async getTheme(id: string, mode: "light" | "dark"): Promise<ThemeDefinition> {
+    try { return themeDefinition(await this.request("get_theme", { id, mode })); }
+    catch (error) {
+      if (error instanceof ProductFailure) throw error;
+      const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure;
+    }
+  }
+  async saveTheme(theme: ThemeDefinition): Promise<void> {
+    const value = await this.request("save_theme", theme);
+    if (value !== true) { const failure = transportFailure("protocol", "Invalid theme save response"); this.fail(failure); throw failure; }
   }
   stop(): Promise<void> { this.stopPromise ??= this.close(); return this.stopPromise; }
   private async close(): Promise<void> {

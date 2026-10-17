@@ -23,6 +23,24 @@ export interface SessionMethods {
   next_message_event: { params: { subscriptionId: string }; result: { subscriptionId: string; operationId: string; event: MessageEvent } };
   unsubscribe_message_events: { params: { subscriptionId: string }; result: true };
   cancel_message: { params: { operationId: string }; result: true };
+  get_settings: { params: { scope: SettingsScope }; result: SettingsSnapshot };
+  update_setting: { params: { scope: SettingsScope; key: string; value: unknown }; result: SettingsSnapshot };
+  reset_setting: { params: { scope: SettingsScope; key: string }; result: SettingsSnapshot };
+  list_themes: { params: { scope: SettingsScope }; result: ThemeSummary[] };
+  get_theme: { params: { id: string; mode: "light" | "dark" }; result: ThemeDefinition };
+  save_theme: { params: ThemeDefinition; result: true };
+}
+export type SettingsScope = "global" | "project";
+export interface ThemeDefinition {
+  id: string; name: string; mode: "light" | "dark"; accent: string; background: string;
+  foreground: string; uiFont: string; codeFont: string; variables: Record<string, string>;
+}
+export interface ThemeSummary { id: string; name: string; mode: "light" | "dark" }
+export interface SettingsSnapshot {
+  scope: SettingsScope;
+  settings: Record<string, unknown>;
+  appearance: { themeMode: "system" | "light" | "dark"; fontSize: number; translucentSidebar: boolean; lightTheme: ThemeDefinition; darkTheme: ThemeDefinition };
+  themes: ThemeSummary[];
 }
 export type MessageEvent =
   | { sequence: number; kind: "text_delta"; delta: string; error?: never }
@@ -39,6 +57,7 @@ export type RemoteFault =
   | { kind: "catalog" | "session"; code: -32001; message: string }
   | { kind: "message"; code: -32008; message: string }
   | { kind: "runtime_initialization"; code: -32009; message: string }
+  | { kind: "settings"; code: -32010; message: string }
   | { kind: "not_initialized"; code: -32002; message: string }
   | { kind: "closing"; code: -32003; message: string }
   | { kind: "canceled"; code: -32800; message: string }
@@ -93,6 +112,7 @@ export function remoteFault(code: unknown, message: unknown, data?: unknown): Re
       kind = data.kind; break;
     case -32008: kind = "message"; break;
     case -32009: kind = "runtime_initialization"; break;
+    case -32010: kind = "settings"; break;
     default: throw new Error("Unknown backend error code");
   }
   if (object(data) && data.kind !== kind) throw new Error("Backend error code/kind mismatch");

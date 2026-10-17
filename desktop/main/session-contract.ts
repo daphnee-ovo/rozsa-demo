@@ -1,4 +1,5 @@
-import { validatedBridgeFault, ProductFailure, type BridgeFault } from "../../contracts/ipc/session.js";
+import { validatedBridgeFault, ProductFailure, type BridgeFault, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary } from "../../contracts/ipc/session.js";
+export type { SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../contracts/ipc/session.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { MessageEvent } from "../../contracts/ipc/session.js";
 export { ProductFailure, RPCFailure, bridgeFault, remoteFault, transportFailure } from "../../contracts/ipc/session.js";
@@ -44,6 +45,12 @@ export interface ProductBridge {
   nextMessageEvent(subscriptionId: string): Promise<MessageEventResult>;
   unsubscribeMessageEvents(subscriptionId: string): Promise<void>;
   cancelMessage(operationId: string): Promise<void>;
+  getSettings(scope: SettingsScope): Promise<SettingsSnapshot>;
+  updateSetting(scope: SettingsScope, key: string, value: unknown): Promise<SettingsSnapshot>;
+  resetSetting(scope: SettingsScope, key: string): Promise<SettingsSnapshot>;
+  listThemes(scope: SettingsScope): Promise<ThemeSummary[]>;
+  getTheme(id: string, mode: "light" | "dark"): Promise<ThemeDefinition>;
+  saveTheme(theme: ThemeDefinition): Promise<void>;
 }
 export const SESSION_LIST_CHANNEL = "product:get-sessions";
 export const SESSION_HISTORY_CHANNEL = "product:switch-session";
@@ -57,6 +64,12 @@ export const MESSAGE_SUBSCRIBE_CHANNEL = "product:subscribe-message-events";
 export const MESSAGE_NEXT_CHANNEL = "product:next-message-event";
 export const MESSAGE_UNSUBSCRIBE_CHANNEL = "product:unsubscribe-message-events";
 export const MESSAGE_CANCEL_CHANNEL = "product:cancel-message";
+export const SETTINGS_GET_CHANNEL = "product:get-settings";
+export const SETTINGS_UPDATE_CHANNEL = "product:update-setting";
+export const SETTINGS_RESET_CHANNEL = "product:reset-setting";
+export const THEMES_LIST_CHANNEL = "product:list-themes";
+export const THEME_GET_CHANNEL = "product:get-theme";
+export const THEME_SAVE_CHANNEL = "product:save-theme";
 export type SessionSyncReply = { ok: true; update: SessionUpdate } | { ok: false; error: BridgeFault };
 export type SessionUnsubscribeReply = { ok: true } | { ok: false; error: BridgeFault };
 
@@ -126,6 +139,28 @@ export function historyReply(value: unknown, target: SessionTarget): SessionHist
 
 export function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function themeDefinition(value: unknown): ThemeDefinition {
+  if (!record(value) || typeof value.id !== "string" || !value.id || typeof value.name !== "string"
+    || (value.mode !== "light" && value.mode !== "dark")
+    || ![value.accent, value.background, value.foreground, value.uiFont, value.codeFont].every(item => typeof item === "string")
+    || !record(value.variables) || !Object.entries(value.variables).every(([key, item]) => key.startsWith("--") && typeof item === "string")) throw new Error("Invalid theme definition");
+  return value as unknown as ThemeDefinition;
+}
+export function themeSummary(value: unknown): ThemeSummary {
+  if (!record(value) || typeof value.id !== "string" || !value.id || typeof value.name !== "string" || (value.mode !== "light" && value.mode !== "dark")) throw new Error("Invalid theme summary");
+  return value as unknown as ThemeSummary;
+}
+export function settingsSnapshot(value: unknown): SettingsSnapshot {
+  if (!record(value) || (value.scope !== "global" && value.scope !== "project") || !record(value.settings) || !record(value.appearance) || !Array.isArray(value.themes)) throw new Error("Invalid settings response");
+  const appearance = value.appearance;
+  if (!["system", "light", "dark"].includes(appearance.themeMode as string) || !Number.isInteger(appearance.fontSize)
+    || typeof appearance.translucentSidebar !== "boolean") throw new Error("Invalid appearance response");
+  themeDefinition(appearance.lightTheme);
+  themeDefinition(appearance.darkTheme);
+  value.themes.forEach(themeSummary);
+  return value as unknown as SettingsSnapshot;
 }
 
 export function messageSuccess(value: unknown): unknown {

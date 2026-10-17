@@ -3,7 +3,7 @@ source: test
 nums: 1
 ---
 
-- [ ] ISSUE-I016：Test TASK-T029 fail:node:internal/modules/esm/get_format:243
+- [x] ISSUE-I016：Test TASK-T029 fail:node:internal/modules/esm/get_format:243
   - severity: P1
   - location：desktop/tests/message-states.test.js
   - description：node:internal/modules/esm/get_format:243
@@ -42,5 +42,6 @@ nums: 1
       'test failed'
   - reproduce：node --test 'message-states.test.js'
     project_root: /Users/xinyue/ballad/rozsa-demo
-  - fix：
+  - fix：当前正式入口 npm --prefix desktop/tests test 使用 tsx --test；其中 message-states.test.js 与其他 TSX 组件测试成功加载 conversation-view.tsx，未复现 ERR_UNKNOWN_FILE_EXTENSION。该记录仅针对旧裸 node --test 复现方式；完整正式入口仍有与 TSX 加载无关的既有失败，见本次验证报告。
   - files_modify: [desktop/tests/message-states.test.js]
+  - files_create: []

@@ -45,12 +45,13 @@ test('settings pane navigation, toggles and appearance controls preserve support
       assert.equal(document.getElementById('settingsFontSizeRange').value, '19');
       settings.renderThemeModeCards(document, 'dark');
       assert.equal(document.querySelector('[data-theme-mode-card="dark"]').getAttribute('aria-pressed'), 'true');
+      assert.equal(settings.isSettingsPaneAvailable('general'), true);
       assert.equal(settings.isSettingsPaneAvailable('permissions'), false);
     });
   } finally { dom.window.close(); }
 });
 
-test('suspended settings routes and mutations stay inert while font size edits remain usable', async () => {
+test('suspended capability routes and mutations stay inert while font size edits remain usable', async () => {
   const app = await loadApp({ html: `<body><main id="mainContentScene"></main><section id="settingsPanel"></section>
     <div id="pane-general"><p>old</p></div><div id="pane-skills"></div><div id="pane-tools"></div>
     <div id="pane-keyboard-shortcuts"></div><div id="pane-permissions"></div>
@@ -62,8 +63,8 @@ test('suspended settings routes and mutations stay inert while font size edits r
       invoke=async(command,payload)=>{testCalls.push([command,payload]);return command==='get_settings'?{appearance:{fontSize:18}}:[];};
       nativeSplitMode=true;`);
     app.window.testCalls = calls;
-    await evaluate(`(async()=>{await requestGuiScene('settings','general');switchSettingsTab('skills');
-      renderGeneralSettings({});renderCapabilityPane('tools',[{}]);renderPermissionSettings();renderPermissionRuleList('deny');
+    await evaluate(`(async()=>{await requestGuiScene('settings','permissions');switchSettingsTab('skills');
+      renderCapabilityPane('tools',[{}]);renderPermissionSettings();renderPermissionRuleList('deny');
       openPermissionRuleEditor('deny');await savePermissionRule();await replacePermissionRules('deny',[]);await movePermissionRule('deny','allow','Bash(*)');
       renderKeyBindings();beginKeyBindingCapture('openSettings');await resetKeyBinding('openSettings');
       if(await saveCapturedKeyBinding({})!==false)throw Error('suspended keybinding save was enabled');})()`);

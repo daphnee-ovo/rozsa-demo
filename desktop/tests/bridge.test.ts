@@ -6,8 +6,8 @@ import type { BackendService } from "../main/backend-service.ts";
 import { installSessionBridge } from "../main/session-bridge.ts";
 import { RozsaBridge } from "../preload/bridge.ts";
 import { ProductClient } from "../renderer/product-client.ts";
-import { ProductFailure, SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, type SessionSnapshot } from "../main/session-contract.ts";
-import type { SessionUpdate } from "../../contracts/ipc/session.ts";
+import { ProductFailure, SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SETTINGS_GET_CHANNEL, type SessionSnapshot } from "../main/session-contract.ts";
+import type { SessionUpdate, SettingsSnapshot, ThemeDefinition } from "../../contracts/ipc/session.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import { JSDOM } from "jsdom";
 import { SessionHistory } from "../renderer/features/session-history.ts";
@@ -16,6 +16,9 @@ const target = { path: "/synthetic/a.jsonl", catalogId: "header-a" };
 const active: SessionSnapshot = { ...target, sessionId: "a", cwd: "/synthetic", messages: [], contextMessageCount: 0 };
 const snapshot = (id: string, watermark = 0): SessionUpdate => ({ subscriptionId: id, snapshot: { epoch: "epoch", watermark, active } });
 function deferred<T>() { return Promise.withResolvers<T>(); }
+const lightTheme: ThemeDefinition = { id: "rozsa", name: "Rozsa", mode: "light", accent: "#D7827E", background: "#FFFFFF", foreground: "#575279", uiFont: "system-ui", codeFont: "monospace", variables: {} };
+const darkTheme: ThemeDefinition = { ...lightTheme, id: "rozsa-dark", name: "Rozsa Dark", mode: "dark" };
+const settingsSnapshot: SettingsSnapshot = { scope: "global", settings: { appearance: { themeMode: "system", fontSize: 14, translucentSidebar: false } }, appearance: { themeMode: "system", fontSize: 14, translucentSidebar: false, lightTheme, darkTheme }, themes: [{ id: lightTheme.id, name: lightTheme.name, mode: lightTheme.mode }, { id: darkTheme.id, name: darkTheme.name, mode: darkTheme.mode }] };
 function host(backend: Partial<BackendService>) {
   const url = "file:///synthetic/index.html", webContents = Object.assign(new EventEmitter(), { mainFrame: { url } });
   const window = Object.assign(new EventEmitter(), { webContents, isDestroyed: () => false });
@@ -48,11 +51,39 @@ test("main rejects foreign senders, subframes, destinations and arity before dis
   ui.window.emit("closed"); assert.equal(ui.handlers.size, 0);
 });
 
+test("settings and theme calls cross the trusted IPC bridge with runtime validation", async () => {
+  const calls: unknown[][] = [];
+  const ui = host({
+    getSettings: async scope => { calls.push(["get", scope]); return { ...settingsSnapshot, scope }; },
+    updateSetting: async (scope, key, value) => { calls.push(["update", scope, key, value]); return { ...settingsSnapshot, scope }; },
+    resetSetting: async (scope, key) => { calls.push(["reset", scope, key]); return { ...settingsSnapshot, scope }; },
+    listThemes: async () => [
+      { id: "rozsa", name: "Rozsa", mode: "light" }, { id: "rozsa-dark", name: "Rozsa Dark", mode: "dark" },
+    ],
+    getTheme: async () => lightTheme,
+    saveTheme: async () => { calls.push(["save"]); },
+  });
+  const settingsHandle = ui.handlers.get(SETTINGS_GET_CHANNEL)!;
+  await assert.rejects(settingsHandle({ ...ui.event, sender: {} } as IpcMainInvokeEvent, "global"), /Unauthorized settings request/);
+  await assert.rejects(settingsHandle(ui.event, "global", "extra"), /Unauthorized settings request/);
+  await assert.rejects(ui.bridge.getSettings("local" as "global"), /Invalid settings scope/);
+  assert.equal((await ui.bridge.getSettings("project")).scope, "project");
+  assert.equal((await ui.bridge.updateSetting("global", "appearance.fontSize", 18)).scope, "global");
+  assert.equal((await ui.bridge.resetSetting("project", "appearance.fontSize")).scope, "project");
+  assert.deepEqual(await ui.bridge.listThemes("global"), [
+    { id: "rozsa", name: "Rozsa", mode: "light" }, { id: "rozsa-dark", name: "Rozsa Dark", mode: "dark" },
+  ]);
+  assert.equal((await ui.bridge.getTheme("rozsa", "light")).id, "rozsa");
+  await ui.bridge.saveTheme(lightTheme);
+  assert.deepEqual(calls, [["get", "project"], ["update", "global", "appearance.fontSize", 18], ["reset", "project", "appearance.fontSize"], ["save"]]);
+  ui.window.emit("closed");
+});
+
 test("preload exposes validated session and message capabilities and rejects malformed synchronization", async () => {
   const calls: unknown[][] = [];
   const bridge = RozsaBridge.create(async (...args) => { calls.push(args); return { ok: true, update: snapshot("1") }; });
   assert.ok(Object.isFrozen(bridge));
-  assert.deepEqual(Object.keys(bridge), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage"]);
+  assert.deepEqual(Object.keys(bridge), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage", "getSettings", "updateSetting", "resetSetting", "listThemes", "getTheme", "saveTheme"]);
   await assert.rejects((bridge.subscribeSessions as Function)("arbitrary"));
   await assert.rejects((bridge.nextSessionEvent as Function)("1", "extra"));
   await assert.rejects((bridge.nextSessionEvent as Function)({ subscriptionId: "1" }));

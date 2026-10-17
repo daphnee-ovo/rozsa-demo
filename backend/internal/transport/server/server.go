@@ -13,7 +13,10 @@ import (
 	"time"
 
 	"go.lsp.dev/jsonrpc2"
+	"rozsa/backend/internal/app/productsettings"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/app/settings"
+	"rozsa/backend/internal/app/themes"
 	"rozsa/backend/internal/transport/types"
 )
 
@@ -83,20 +86,37 @@ type MessageEventSubscription interface {
 	Close()
 }
 
+type settingsParams struct {
+	Scope string `json:"scope"`
+}
+type settingParams struct {
+	Scope string          `json:"scope"`
+	Key   string          `json:"key"`
+	Value json.RawMessage `json:"value"`
+}
+type themeParams struct {
+	ID   string `json:"id"`
+	Mode string `json:"mode"`
+}
+
 // ServeProductApplication exposes session and message methods over the same
 // library-owned JSON-RPC connection.
-func ServeProductApplication(input io.Reader, output io.Writer, sessions session.ApplicationService, messages MessageApplication) error {
-	return serveWithMessages(input, output, sessions, messages, requestTimeout)
+func ServeProductApplication(input io.Reader, output io.Writer, sessions session.ApplicationService, messages MessageApplication, settingsApps ...productsettings.Service) error {
+	return serveProduct(input, output, sessions, messages, settingsApps, requestTimeout)
 }
 
 func serve(input io.Reader, output io.Writer, app session.ApplicationService, timeout time.Duration) error {
-	return serveWithMessages(input, output, app, nil, timeout)
+	return serveProduct(input, output, app, nil, nil, timeout)
 }
 
 func serveWithMessages(input io.Reader, output io.Writer, app session.ApplicationService, messages MessageApplication, timeout time.Duration) error {
+	return serveProduct(input, output, app, messages, nil, timeout)
+}
+
+func serveProduct(input io.Reader, output io.Writer, app session.ApplicationService, messages MessageApplication, settingsApps []productsettings.Service, timeout time.Duration) error {
 	lifetime, stop := context.WithCancelCause(context.Background())
 	defer stop(types.Error(types.Disconnected, "Connection ended"))
-	server := newServer(app, lifetime, timeout, messages)
+	server := newServerWithSettings(app, lifetime, timeout, messages, settingsApps...)
 	defer func() {
 		stop(types.Error(types.Disconnected, "Connection ended"))
 		server.sync.close()
@@ -125,6 +145,7 @@ func serveWithMessages(input io.Reader, output io.Writer, app session.Applicatio
 type rpcServer struct {
 	app        session.ApplicationService
 	messages   MessageApplication
+	settings   productsettings.Service
 	lifetime   context.Context
 	timeout    time.Duration
 	slots      chan struct{}
@@ -146,6 +167,14 @@ func newServer(app session.ApplicationService, lifetime context.Context, timeout
 	return &rpcServer{app: app, lifetime: lifetime, timeout: timeout,
 		slots: make(chan struct{}, maxConcurrentRequests), pending: make(map[jsonrpc2.ID]context.CancelCauseFunc),
 		sync: sessionSync{app: app}, messages: messageApp, messageSync: messageSync{app: messageApp}}
+}
+
+func newServerWithSettings(app session.ApplicationService, lifetime context.Context, timeout time.Duration, messages MessageApplication, settingsApps ...productsettings.Service) *rpcServer {
+	server := newServer(app, lifetime, timeout, messages)
+	if len(settingsApps) > 0 {
+		server.settings = settingsApps[0]
+	}
+	return server
 }
 
 // Cancellation is the only accepted incoming notification. This ID is a
@@ -194,6 +223,8 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	var startParams types.StartMessageParams
 	var operationParams types.MessageOperationParams
 	var messageSubscriptionParams types.MessageSubscriptionParams
+	var settingsScope settings.Scope
+	var settingsArguments any
 	switch method {
 	case types.Initialize:
 		traceRPCStartup("initialize-request-received")
@@ -209,6 +240,9 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 				capabilities = append(capabilities, string(types.RuntimeStatus))
 			}
 			capabilities = append(capabilities, string(types.StartMessage), string(types.ContinueMessage), string(types.SubscribeMessage), string(types.NextMessageEvent), string(types.UnsubscribeMessage), string(types.CancelMessage))
+		}
+		if server.settings != nil {
+			capabilities = append(capabilities, string(types.GetSettings), string(types.UpdateSetting), string(types.ResetSetting), string(types.ListThemes), string(types.GetTheme), string(types.SaveTheme))
 		}
 		return types.InitializeResult{ProtocolVersion: 1, Capabilities: capabilities}, nil
 	case types.Shutdown:
@@ -269,6 +303,32 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			return nil, types.Error(types.RuntimeInitialization, result.Error)
 		}
 		return result, nil
+	case types.GetSettings, types.ListThemes:
+		var params settingsParams
+		if !types.Params(req.Params(), &params) || !validSettingsScope(params.Scope) {
+			return nil, types.Error(types.InvalidParams, "Invalid settings params")
+		}
+		settingsScope = settings.Scope(params.Scope)
+	case types.UpdateSetting, types.ResetSetting:
+		var params settingParams
+		if !types.Params(req.Params(), &params) || !validSettingsScope(params.Scope) || params.Key == "" ||
+			(method == types.UpdateSetting && len(params.Value) == 0) || (method == types.ResetSetting && len(params.Value) != 0) {
+			return nil, types.Error(types.InvalidParams, "Invalid setting params")
+		}
+		settingsScope = settings.Scope(params.Scope)
+		settingsArguments = params
+	case types.GetTheme:
+		var params themeParams
+		if !types.Params(req.Params(), &params) || params.ID == "" || !validThemeMode(params.Mode) {
+			return nil, types.Error(types.InvalidParams, "Invalid theme params")
+		}
+		settingsArguments = params
+	case types.SaveTheme:
+		var definition themes.Definition
+		if !types.Params(req.Params(), &definition) || definition.ID == "" || !validThemeMode(string(definition.Mode)) {
+			return nil, types.Error(types.InvalidParams, "Invalid theme definition")
+		}
+		settingsArguments = definition
 	default:
 		return nil, types.Error(types.MethodNotFound, "Method not found")
 	}
@@ -280,6 +340,9 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	}
 	if method == types.UnsubscribeSessions {
 		return server.sync.unsubscribe(subscriptionParams.SubscriptionID)
+	}
+	if isSettingsMethod(method) && server.settings == nil {
+		return nil, types.Error(types.MethodNotFound, "Settings operations are unavailable")
 	}
 	select {
 	case server.slots <- struct{}{}:
@@ -348,8 +411,36 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			result, err = cursor.snapshot(work)
 		case types.NextSessionEvent:
 			result, err = server.sync.next(work, subscriptionParams.SubscriptionID)
+		case types.GetSettings:
+			result, err = server.settings.Snapshot(settingsScope)
+		case types.ListThemes:
+			var snapshot productsettings.Snapshot
+			snapshot, err = server.settings.Snapshot(settingsScope)
+			result = snapshot.Themes
+		case types.UpdateSetting, types.ResetSetting:
+			params := settingsArguments.(settingParams)
+			if method == types.ResetSetting {
+				result, err = server.settings.Reset(settingsScope, params.Key)
+			} else {
+				var value any
+				decoder := json.NewDecoder(strings.NewReader(string(params.Value)))
+				decoder.UseNumber()
+				if err = decoder.Decode(&value); err == nil {
+					result, err = server.settings.Update(settingsScope, params.Key, value)
+				}
+			}
+		case types.GetTheme:
+			params := settingsArguments.(themeParams)
+			result, err = server.settings.GetTheme(params.ID, themes.Mode(params.Mode))
+		case types.SaveTheme:
+			definition := settingsArguments.(themes.Definition)
+			err = server.settings.SaveTheme(definition)
+			result = true
 		case types.StartMessage, types.ContinueMessage, types.SubscribeMessage, types.NextMessageEvent, types.CancelMessage:
 			result, err = server.messageSync.handle(work, method, startParams, operationParams, messageSubscriptionParams)
+		}
+		if err != nil && isSettingsMethod(method) {
+			err = types.SettingsError(err.Error())
 		}
 		finished <- outcome{result, err}
 	}()
@@ -362,6 +453,21 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			cursor.close()
 		}
 		return nil, requestError(work, work.Err())
+	}
+}
+
+func validSettingsScope(scope string) bool {
+	return scope == string(settings.Global) || scope == string(settings.Project)
+}
+func validThemeMode(mode string) bool {
+	return mode == string(themes.Light) || mode == string(themes.Dark)
+}
+func isSettingsMethod(method types.Method) bool {
+	switch method {
+	case types.GetSettings, types.UpdateSetting, types.ResetSetting, types.ListThemes, types.GetTheme, types.SaveTheme:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -14,7 +14,7 @@ import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 const root = resolve(import.meta.dirname, "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const backendEnvironment = await createIsolatedBackendEnvironment();
-const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions", "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message"];
+const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions", "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message", "get_settings", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"];
 async function poll(check: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 6000;
   while (Date.now() < deadline) { if (await check()) return; await delay(20); }

@@ -1,6 +1,6 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from "electron";
 import type { BackendService } from "./backend-service.js";
-import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL, sessionTarget, subscriptionId, bridgeFault, transportFailure, RPCFailure } from "./session-contract.js";
+import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL, SETTINGS_GET_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL, sessionTarget, subscriptionId, bridgeFault, transportFailure, RPCFailure } from "./session-contract.js";
 
 // One trusted session page, one Go subscription. Navigation invalidates pending
 // delivery before a replacement renderer can subscribe; no product work replay.
@@ -17,7 +17,8 @@ export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backen
     const id = current; current = undefined;
     if (id) void release(id);
   };
-  const channels = [SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL];
+  const channels = [SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL,
+    SETTINGS_GET_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL];
   const handle = (channel: string, count: number, operation: (...args: unknown[]) => Promise<object>): void => {
     ipc.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
       if (disposed || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
@@ -58,6 +59,44 @@ export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backen
     const id = ownedId(input); current = undefined; revision++;
     await backend.unsubscribeSessions(id);
     return {};
+  });
+  const settingsHandle = (channel: string, count: number, operation: (...args: unknown[]) => Promise<unknown>): void => {
+    ipc.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      if (disposed || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
+        || event.senderFrame?.url !== trustedURL || args.length !== count) throw new Error("Unauthorized settings request");
+      try {
+        const result = await operation(...args);
+        if (Array.isArray(result)) return { ok: true, themes: result };
+        if (typeof result === "object" && result !== null) return { ok: true, ...result };
+        return { ok: true };
+      } catch (error) { return { ok: false, error: bridgeFault(error) }; }
+    });
+  };
+  const validScope = (scope: unknown): scope is "global" | "project" => scope === "global" || scope === "project";
+  const validKey = (key: unknown): key is string => typeof key === "string" && key.length > 0 && key.trim() === key;
+  settingsHandle(SETTINGS_GET_CHANNEL, 1, async scope => {
+    if (!validScope(scope)) throw new Error("Invalid settings scope");
+    return backend.getSettings(scope);
+  });
+  settingsHandle(SETTINGS_UPDATE_CHANNEL, 3, async (scope, key, value) => {
+    if (!validScope(scope) || !validKey(key)) throw new Error("Invalid setting update");
+    return backend.updateSetting(scope, key, value);
+  });
+  settingsHandle(SETTINGS_RESET_CHANNEL, 2, async (scope, key) => {
+    if (!validScope(scope) || !validKey(key)) throw new Error("Invalid setting reset");
+    return backend.resetSetting(scope, key);
+  });
+  settingsHandle(THEMES_LIST_CHANNEL, 1, async scope => {
+    if (!validScope(scope)) throw new Error("Invalid settings scope");
+    return backend.listThemes(scope);
+  });
+  settingsHandle(THEME_GET_CHANNEL, 2, async (id, mode) => {
+    if (!validKey(id) || (mode !== "light" && mode !== "dark")) throw new Error("Invalid theme request");
+    return backend.getTheme(id, mode);
+  });
+  settingsHandle(THEME_SAVE_CHANNEL, 1, async theme => {
+    if (typeof theme !== "object" || theme === null) throw new Error("Invalid theme definition");
+    await backend.saveTheme(theme as import("../../contracts/ipc/session.js").ThemeDefinition);
   });
   window.webContents.on("did-start-navigation", (_event, _url, _inPlace, mainFrame) => { if (mainFrame) invalidate(); });
   window.webContents.on("render-process-gone", () => invalidate());

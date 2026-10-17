@@ -15,7 +15,7 @@ import * as permissions from '../../scripts/features/permissions.js';
 import { init as bindInterruption } from '../../scripts/components/interruption-panel.js';
 import { init as bindInterruptionFlow } from '../../scripts/flows/composer-interruption.js';
 import { createInterruptionAdapter } from '../adapters/interruption.js';
-import * as settings from '../../scripts/features/settings.js';
+import * as settings from '../../scripts/features/settings.tsx';
 import { createSettingsAdapter, bindSettingSwitch } from '../adapters/settings.js';
 import * as notifications from '../../scripts/features/notifications.js';
 import { bindToast, bindErrorTray } from '../../scripts/components/notification.js';
@@ -172,6 +172,8 @@ window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(docum
   devFlow.init({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), closeDevFlowDetail });
   settings.init({ ...createSettingsAdapter({ switchSettingsTab, closeSettings, selectThemeModeCard,
     previewFontSize, commitFontSize }), boundModules: new Set(), byId: (id: string) => document.getElementById(id) });
+  const disposeSettingsPanes = settings.mountSettingsPanes(document, window.rozsa);
+  window.addEventListener('pagehide', disposeSettingsPanes, { once: true });
   window.RozsaTools = Object.freeze({ ...tools, toolView, activityView });
   bindTools({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), toggleToolCall, toggleTurnDiff });
   window.RozsaPermissions = permissions;

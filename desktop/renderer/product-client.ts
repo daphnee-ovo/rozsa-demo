@@ -1,4 +1,4 @@
-import { sessionReply, historyReply, syncReply, unsubscribeReply, sessionTarget, subscriptionId, messageOperation, messageSubscription, messageEventResult, ProductFailure, transportFailure, type ProductBridge, type SessionListEntry, type SessionTarget, type SessionSnapshot, type SessionSyncReply, type MessageOperation, type MessageSubscription, type MessageEventResult } from "../main/session-contract.js";
+import { sessionReply, historyReply, syncReply, unsubscribeReply, sessionTarget, subscriptionId, messageOperation, messageSubscription, messageEventResult, settingsSnapshot, themeDefinition, themeSummary, ProductFailure, transportFailure, type ProductBridge, type SessionListEntry, type SessionTarget, type SessionSnapshot, type SessionSyncReply, type MessageOperation, type MessageSubscription, type MessageEventResult, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary } from "../main/session-contract.js";
 
 export interface ReceiveOptions { signal?: AbortSignal }
 // Cancels UI delivery only. Neither AbortSignal nor an abort intent crosses IPC.
@@ -55,6 +55,35 @@ export class ProductClient {
     if (!this.bridge.cancelMessage) throw new Error("Message cancellation is unavailable");
     if (typeof input !== "string" || input === "") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid message operation" });
     await this.bridge.cancelMessage(input);
+  }
+  async getSettings(scope: SettingsScope, { signal }: ReceiveOptions = {}): Promise<SettingsSnapshot> {
+    if (!this.bridge.getSettings) throw new Error("Settings are unavailable");
+    const value = await receive(() => this.bridge.getSettings!(scope), signal);
+    return validate(() => settingsSnapshot(value));
+  }
+  async updateSetting(scope: SettingsScope, key: string, value: unknown, { signal }: ReceiveOptions = {}): Promise<SettingsSnapshot> {
+    if (!this.bridge.updateSetting) throw new Error("Settings updates are unavailable");
+    const result = await receive(() => this.bridge.updateSetting!(scope, key, value), signal);
+    return validate(() => settingsSnapshot(result));
+  }
+  async resetSetting(scope: SettingsScope, key: string, { signal }: ReceiveOptions = {}): Promise<SettingsSnapshot> {
+    if (!this.bridge.resetSetting) throw new Error("Settings reset is unavailable");
+    const value = await receive(() => this.bridge.resetSetting!(scope, key), signal);
+    return validate(() => settingsSnapshot(value));
+  }
+  async listThemes(scope: SettingsScope, { signal }: ReceiveOptions = {}): Promise<ThemeSummary[]> {
+    if (!this.bridge.listThemes) throw new Error("Theme catalog is unavailable");
+    const value = await receive(() => this.bridge.listThemes!(scope), signal);
+    return validate(() => { if (!Array.isArray(value)) throw new Error("Invalid theme catalog"); return value.map(themeSummary); });
+  }
+  async getTheme(id: string, mode: "light" | "dark", { signal }: ReceiveOptions = {}): Promise<ThemeDefinition> {
+    if (!this.bridge.getTheme) throw new Error("Theme loading is unavailable");
+    const value = await receive(() => this.bridge.getTheme!(id, mode), signal);
+    return validate(() => themeDefinition(value));
+  }
+  async saveTheme(theme: ThemeDefinition, { signal }: ReceiveOptions = {}): Promise<void> {
+    if (!this.bridge.saveTheme) throw new Error("Theme saving is unavailable");
+    await receive(() => this.bridge.saveTheme!(theme), signal);
   }
   async subscribeMessageEvents(input: string): Promise<MessageSubscription> {
     if (!this.bridge.subscribeMessageEvents) throw new Error("Message events are unavailable");

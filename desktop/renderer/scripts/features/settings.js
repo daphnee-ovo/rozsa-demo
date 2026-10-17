@@ -1,7 +1,7 @@
-export const suspendedSettingsPanes = Object.freeze(['general', 'skills', 'tools', 'keyboard-shortcuts', 'permissions']);
+export const suspendedSettingsPanes = Object.freeze(['skills', 'tools', 'keyboard-shortcuts', 'permissions']);
 
 export function isSettingsPaneAvailable(pane) {
-  return ['appearance', 'extensions', 'dev-flow'].includes(pane);
+  return ['general', 'appearance', 'extensions', 'dev-flow'].includes(pane);
 }
 
 export function configureSettingsSuspensions(root = document) {
