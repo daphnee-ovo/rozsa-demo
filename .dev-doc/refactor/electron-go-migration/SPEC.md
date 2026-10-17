@@ -167,6 +167,8 @@ JSONL 特别要求：lazy materialization 的实际触发条件；header/entry �
 
 跨语言差异必须覆盖 JSON missing/null、空数组/map、整数精度、Unicode/转义、字段别名、时间、浮点、path/case/symlink、UTF-8 分片、shell 引号/分段、regex/glob 方言与进程退出。不能用 Go 默认解析行为替代对契约的确认。随机 ID 和时间通过注入固定值或保持关联的归一化比较；只归一化真正非确定项，不能抹掉事件先后或字段差异。
 
+`model/types` 集中定义公共 `Protocol`：只要求 `API()` 与 `StreamSimple(...)`；公共 `Stream(...)` 将 `StreamOptions` 转成 `SimpleStreamOptions` 后调用该接口。`model` 维护最小 API→实现构造映射，runtime 只在没有显式注入时请求该工厂，不维护协议白名单或直接构造协议实现。显式注入实现由 runtime 直接使用；未登记 API 且无注入实现时，在统一创建入口返回明确错误。`Model.Provider`、endpoint 与认证仍取自实际配置。core agent 可继续消费仅含 `StreamSimple(...)` 的窄接口，模型层不得依赖 core。
+
 模型协议在对应 provider 任务中按需添加 request/stream 小输入；真实远端输出不作为完全相同基准。保留 provider 独有语义，不能以通用 SDK 覆盖所有实现。Bedrock event stream、OAuth、权限 regex、process cancellation 和打包依赖随所属实现验证，不以综合 spike 阻挡独立模块。
 
 ### 5. 单 WebView 的生产接入

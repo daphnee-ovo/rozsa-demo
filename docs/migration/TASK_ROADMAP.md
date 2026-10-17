@@ -310,7 +310,13 @@ refresh error。完整 provider/OAuth/stream 行为和真实授权仍由后续�
 
 #### TASK-T020 当前覆盖与差异
 
-`backend/internal/app/runtime/` 将 session manager、按 API 选择的 provider、credentials resolver 与 `core/agent` 组合；`backend/cmd/rozsa/` 从 settings 与分层 model registry 选择 provider/model 并提供独立 prompt/continue CLI。`Model.API` 是协议，`Model.Provider` 是提供商身份，两者不构成一一映射。T020 完成时仅有 Anthropic adapter；T021 和 T022 分别将 OpenAI Completions 与 Responses adapter 接入同一 runtime。其他尚未实现的 API 明确报 unsupported。自定义 provider 沿用其 API adapter，并使用 registry 配置的 endpoint、凭据与协议适用的 provider 兼容规则。Prompt 先落盘 user JSONL，再从该 manager 的上下文启动 core continue，避免重复提交 user；流式 text delta 写 stdout，配置、provider stream 与 JSONL 写入错误由 CLI stderr/非零退出暴露。Runtime 同时持有 session app service；transport 的 `ServeApplication` 接收 `session.ApplicationService`，server 只负责 RPC delivery/cancellation。完整 CLI 参数、resume/fork、slash 操作、多会话 queue/steering 和真实授权仍分别留在 T044、T037 与 T054。
+`backend/internal/app/runtime/` 将 session manager、模型层工厂创建的 provider、credentials resolver 与 `core/agent` 组合；`backend/cmd/rozsa/` 从 settings 与分层 model registry 选择 provider/model 并提供独立 prompt/continue CLI。`Model.API` 是协议，`Model.Provider` 是提供商身份，两者不构成一一映射。协议公共边界由 `backend/internal/model/types` 持有，最小 API→实现映射由 `backend/internal/model` 持有；runtime 不维护 API 白名单，也不直接依赖各协议实现。显式注入的 agent provider 不经 API 名单过滤；未登记 API 且未注入实现时由模型工厂明确报 unsupported。endpoint、凭据和兼容配置继续来自 registry/实际 model 配置。Prompt 先落盘 user JSONL，再从该 manager 的上下文启动 core continue，避免重复提交 user；流式 text delta 写 stdout，配置、provider stream 与 JSONL 写入错误由 CLI stderr/非零退出暴露。Runtime 同时持有 session app service；transport 的 `ServeApplication` 接收 `session.ApplicationService`，server 只负责 RPC delivery/cancellation。完整 CLI 参数、resume/fork、slash 操作、多会话 queue/steering 和真实授权仍分别留在 T044、T037 与 T054。
+
+#### TASK-T083 模型协议公共边界
+
+`model/types.Protocol` 仅要求 `API()` 与 `StreamSimple(...)`；公共 `types.Stream(...)` 将共享 `StreamOptions` 包装为 `SimpleStreamOptions` 并委托。Anthropic、Completions、Responses 共用该选项适配边界，不各自维护重复 `Stream` 包装。API 到具体实现的最小构造映射只在 `backend/internal/model`；工厂不依赖 core，agent 保持只消费 `StreamSimple(...)` 的窄接口。Runtime 保留显式注入优先，缺省时调用模型工厂并在未知 API 时透明失败。Provider 身份、endpoint 与认证仍由实际配置提供。
+
+验收聚焦共享选项转交、任意 API 配合显式注入实现可走公共 runtime、未知 API 无注入时明确失败；不为每个协议新增持久化或 continue 测试矩阵。
 
 #### TASK-T021 OpenAI Completions provider
 

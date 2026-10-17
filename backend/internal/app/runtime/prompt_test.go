@@ -73,18 +73,19 @@ func TestPromptDrainsProviderAndPersistsAfterOutputWriteFailure(t *testing.T) {
 	}
 }
 
-func TestPromptPersistsResponsesAPIAssistantMessage(t *testing.T) {
+func TestPromptUsesInjectedProviderForUnregisteredAPI(t *testing.T) {
 	provider := &promptProvider{started: make(chan struct{}), ended: make(chan struct{})}
+	customAPI := types.API("custom-api")
 	app, err := New(Config{
 		SessionDir: t.TempDir(),
-		Model:      types.Model{ID: "custom-model", Provider: "custom-responses", API: types.APIOpenAIResponses},
+		Model:      types.Model{ID: "custom-model", Provider: "custom-provider", API: customAPI},
 		Provider:   provider,
 		Output:     io.Discard,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Prompt(context.Background(), "hello Responses"); err != nil {
+	if err := app.Prompt(context.Background(), "hello custom API"); err != nil {
 		t.Fatal(err)
 	}
 	messages := app.session.ContextMessages()
@@ -92,8 +93,18 @@ func TestPromptPersistsResponsesAPIAssistantMessage(t *testing.T) {
 		t.Fatalf("persisted messages = %d, want user and assistant: %#v", len(messages), messages)
 	}
 	assistant, ok := messages[1].(session.AssistantMessage)
-	if !ok || assistant.API != string(types.APIOpenAIResponses) || assistant.Provider != "custom-responses" {
-		t.Fatalf("assistant = %#v, want Responses API with configured provider identity", messages[1])
+	if !ok || assistant.API != string(customAPI) || assistant.Provider != "custom-provider" {
+		t.Fatalf("assistant = %#v, want injected API and configured provider identity", messages[1])
+	}
+}
+
+func TestNewRejectsUnregisteredAPIWithoutInjectedProvider(t *testing.T) {
+	_, err := New(Config{
+		SessionDir: t.TempDir(),
+		Model:      types.Model{ID: "custom-model", Provider: "custom-provider", API: types.API("custom-api")},
+	})
+	if err == nil || err.Error() != `unsupported model API "custom-api"` {
+		t.Fatalf("New() error = %v, want explicit unsupported API diagnostic", err)
 	}
 }
 

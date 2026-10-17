@@ -1,9 +1,22 @@
 package types
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 )
+
+// Protocol is the common model protocol contract. Shared streaming options are
+// converted to the protocol-specific simple form by Stream.
+type Protocol interface {
+	API() API
+	StreamSimple(context.Context, Model, Context, SimpleStreamOptions, func(StreamEvent)) error
+}
+
+// Stream adapts shared options to the protocol's simple streaming contract.
+func Stream(protocol Protocol, ctx context.Context, model Model, input Context, options StreamOptions, emit func(StreamEvent)) error {
+	return protocol.StreamSimple(ctx, model, input, SimpleStreamOptions{Base: options}, emit)
+}
 
 type CacheRetention uint8
 

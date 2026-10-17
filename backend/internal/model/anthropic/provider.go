@@ -32,12 +32,6 @@ func NewProvider(client *http.Client) *Provider {
 
 func (*Provider) API() types.API { return types.APIAnthropicMessages }
 
-// Stream delegates to StreamSimple with reasoning and tool choice unset, as in
-// the Rust ApiProvider implementation. Neither method retries failed requests.
-func (provider *Provider) Stream(ctx context.Context, model types.Model, input types.Context, options types.StreamOptions, emit func(types.StreamEvent)) error {
-	return provider.StreamSimple(ctx, model, input, types.SimpleStreamOptions{Base: options}, emit)
-}
-
 // StreamSimple runs synchronously and emits exactly one terminal event when an
 // emitter is provided. The caller owns scheduling and must keep emit responsive
 // (including after cancellation). Snapshots never share mutable block storage.

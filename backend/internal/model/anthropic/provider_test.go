@@ -216,7 +216,7 @@ func TestRequestAuthHeadersAndEndpoints(t *testing.T) {
 			options := types.StreamOptions{APIKey: test.key, Headers: map[string]string{"X-Custom": "option", test.header: "wrong"}}
 			var events []types.StreamEvent
 			provider := newTestProvider(server.Client())
-			if err := provider.Stream(context.Background(), model, types.Context{}, options, func(event types.StreamEvent) { events = append(events, event) }); err != nil {
+			if err := types.Stream(provider, context.Background(), model, types.Context{}, options, func(event types.StreamEvent) { events = append(events, event) }); err != nil {
 				t.Fatal(err)
 			}
 			if requests.Load() != 1 || len(events) != 2 || provider.API() != types.APIAnthropicMessages {
@@ -352,7 +352,7 @@ func TestFailureStreamsNeverEmitDone(t *testing.T) {
 			model := fixtureModel()
 			model.BaseURL = server.URL
 			var events []types.StreamEvent
-			err := newTestProvider(server.Client()).Stream(context.Background(), model, types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
+			err := types.Stream(newTestProvider(server.Client()), context.Background(), model, types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
 			if err == nil || requests.Load() != 1 {
 				t.Fatal(err, requests.Load())
 			}
@@ -391,7 +391,7 @@ func TestStopReasonsAndUsage(t *testing.T) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(fixture))}, nil
 			})}
 			var events []types.StreamEvent
-			err := newTestProvider(client).Stream(context.Background(), fixtureModel(), types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
+			err := types.Stream(newTestProvider(client), context.Background(), fixtureModel(), types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
 			if want == types.Error {
 				if err == nil {
 					t.Fatal("expected error")
@@ -423,7 +423,7 @@ func TestHTTPFailuresAndNoRetry(t *testing.T) {
 			model := fixtureModel()
 			model.BaseURL = server.URL
 			var events []types.StreamEvent
-			err := newTestProvider(server.Client()).Stream(context.Background(), model, types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
+			err := types.Stream(newTestProvider(server.Client()), context.Background(), model, types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
 			var httpErr *HTTPError
 			if !errors.As(err, &httpErr) || httpErr.StatusCode != status || !strings.Contains(httpErr.Body, "quota/auth failure") || requests.Load() != 1 {
 				t.Fatal(err, requests.Load())
@@ -472,7 +472,7 @@ func TestCancelTimeoutAndDisconnectedBody(t *testing.T) {
 				options.Timeout = 30 * time.Millisecond
 			}
 			var events []types.StreamEvent
-			err := newTestProvider(server.Client()).Stream(ctx, model, types.Context{}, options, func(event types.StreamEvent) {
+			err := types.Stream(newTestProvider(server.Client()), ctx, model, types.Context{}, options, func(event types.StreamEvent) {
 				events = append(events, event)
 				if _, ok := event.(types.TextDelta); ok {
 					cancel()
@@ -495,7 +495,7 @@ func TestCancelTimeoutAndDisconnectedBody(t *testing.T) {
 		return &http.Response{StatusCode: 200, Body: &failedBody{input: strings.NewReader(emptyMessage())}}, nil
 	})}
 	var events []types.StreamEvent
-	err := newTestProvider(client).Stream(context.Background(), fixtureModel(), types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
+	err := types.Stream(newTestProvider(client), context.Background(), fixtureModel(), types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatal(err)
 	}
@@ -550,7 +550,7 @@ func TestEnvironmentResolutionWithoutRealCredentials(t *testing.T) {
 				value, ok := test.env[key]
 				return value, ok
 			}
-			if err := provider.Stream(context.Background(), model, types.Context{SystemPrompt: pointer("system")}, types.StreamOptions{APIKey: test.explicit}, func(types.StreamEvent) {}); err != nil {
+			if err := types.Stream(provider, context.Background(), model, types.Context{SystemPrompt: pointer("system")}, types.StreamOptions{APIKey: test.explicit}, func(types.StreamEvent) {}); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -615,7 +615,7 @@ func TestLongDeltaAndConsumerMutation(t *testing.T) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(fixture))}, nil
 	})}
 	var done types.Done
-	err := newTestProvider(client).Stream(context.Background(), fixtureModel(), types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) {
+	err := types.Stream(newTestProvider(client), context.Background(), fixtureModel(), types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) {
 		switch event := event.(type) {
 		case types.TextDelta:
 			event.Partial.Content[0] = types.TextBlock{Text: "consumer changed"}
@@ -642,11 +642,11 @@ func TestRequestTimeoutOverridesClientWithoutMutation(t *testing.T) {
 	provider := newTestProvider(client)
 	model := fixtureModel()
 	model.BaseURL = server.URL
-	if err := provider.Stream(context.Background(), model, types.Context{}, types.StreamOptions{APIKey: "fake", Timeout: time.Second}, func(types.StreamEvent) {}); err != nil {
+	if err := types.Stream(provider, context.Background(), model, types.Context{}, types.StreamOptions{APIKey: "fake", Timeout: time.Second}, func(types.StreamEvent) {}); err != nil {
 		t.Fatal(err)
 	}
 	var events []types.StreamEvent
-	err := provider.Stream(context.Background(), model, types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
+	err := types.Stream(provider, context.Background(), model, types.Context{}, types.StreamOptions{APIKey: "fake"}, func(event types.StreamEvent) { events = append(events, event) })
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
 	}

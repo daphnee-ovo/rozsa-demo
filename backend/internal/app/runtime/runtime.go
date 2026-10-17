@@ -18,10 +18,8 @@ import (
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
-	"rozsa/backend/internal/model/anthropic"
-	"rozsa/backend/internal/model/completions"
+	modelprotocol "rozsa/backend/internal/model"
 	"rozsa/backend/internal/model/credentials"
-	"rozsa/backend/internal/model/responses"
 	"rozsa/backend/internal/model/types"
 )
 
@@ -55,10 +53,11 @@ func New(config Config) (*Runtime, error) {
 	if config.Model.ID == "" || config.Model.Provider == "" || config.Model.API == "" {
 		return nil, errors.New("runtime requires a configured model, provider and API")
 	}
-	if config.Model.API != types.APIAnthropicMessages && config.Model.API != types.APIOpenAICompletions && config.Model.API != types.APIOpenAIResponses {
-		return nil, fmt.Errorf("unsupported model API %q", config.Model.API)
-	}
 	if config.Provider == nil {
+		provider, err := modelprotocol.NewProtocol(config.Model.API)
+		if err != nil {
+			return nil, err
+		}
 		resolver := credentials.NewResolver()
 		key, err := resolveProviderKey(context.Background(), resolver, config.Model.Provider, config.APIKey, config.AuthPath)
 		if err != nil {
@@ -66,15 +65,6 @@ func New(config Config) (*Runtime, error) {
 		}
 		if key == "" {
 			return nil, fmt.Errorf("No API key for provider: %s", config.Model.Provider)
-		}
-		var provider agent.Provider
-		switch config.Model.API {
-		case types.APIAnthropicMessages:
-			provider = anthropic.NewProvider(nil)
-		case types.APIOpenAICompletions:
-			provider = completions.NewProvider(nil)
-		case types.APIOpenAIResponses:
-			provider = responses.NewProvider(nil)
 		}
 		config.Provider = providerWithKey{Provider: provider, key: key}
 	}

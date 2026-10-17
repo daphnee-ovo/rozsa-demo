@@ -26,10 +26,6 @@ func NewProvider(client *http.Client) *Provider {
 
 func (*Provider) API() types.API { return types.APIOpenAIResponses }
 
-func (provider *Provider) Stream(ctx context.Context, model types.Model, input types.Context, options types.StreamOptions, emit func(types.StreamEvent)) error {
-	return provider.StreamSimple(ctx, model, input, types.SimpleStreamOptions{Base: options}, emit)
-}
-
 // StreamSimple sends one Responses API request and emits normalized events.
 // It intentionally shares the Go model event contract with Completions while
 // keeping request and response semantics protocol-specific.
