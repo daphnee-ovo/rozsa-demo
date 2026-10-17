@@ -325,6 +325,23 @@ session reader 的最新 compaction 边界，只还原有效上下文。`interna
 包提供摘要回调边界；运行中任务中止、provider stream 与 renderer 状态接线留给 runtime
 接入切片，未在此包内实现。
 
+#### TASK-T030 当前覆盖与边界
+
+Go `internal/app/themes` 对照 `rozsa-app/src/themes.rs` 与 `theme_test.rs`，以公开
+`Store`/`Appearance` 接口提供内置主题、global/project 分层读取、列表去重、项目层覆盖、
+global 写入、自定义 JSON 解析与 CSS 变量验证。文件缺省字段从对应内置 light/dark 定义
+继承；`ThemeDefinition` 不持有 `translucentSidebar`，该偏好仍属于 settings appearance。
+`Appearance` 通过窄 `SettingsOwner` 接口与 T015 settings manager 组合；主题选择先验证
+定义，再持久化 scope override，成功后读取完整双主题 snapshot。mode、字号和 sidebar
+透明设置也在持久化成功后返回 snapshot。调用方负责平台原生外观与 renderer 发布；本模块
+不实现 Electron/native 外观，也不负责系统明暗选择。
+
+针对性验证：`go -C backend test ./internal/app/themes/...`。覆盖内置值、主题 list/get/save、
+层级覆盖与全局写入、变量与 CSS 验证、JSON/UTF-8/读写错误、设置更新顺序、失败时不写、
+重开后恢复。Rust 当前将主题文件 mkdir/write 的 I/O 错误也包装为 `ThemeError::Read`；Go
+保留相同错误类别和路径信息。模块没有异步或取消入口，取消行为不适用、未测试。详见
+[M061](evidence/M061.md)。
+
 #### TASK-T020 当前覆盖与差异
 
 `backend/internal/app/runtime/` 将 session manager、模型层工厂创建的 provider、credentials resolver 与 `core/agent` 组合；`backend/cmd/rozsa/` 从 settings 与分层 model registry 选择 provider/model 并提供独立 prompt/continue CLI。`Model.API` 是协议，`Model.Provider` 是提供商身份，两者不构成一一映射。协议公共边界由 `backend/internal/model/types` 持有，最小 API→实现映射由 `backend/internal/model` 持有；runtime 不维护 API 白名单，也不直接依赖各协议实现。显式注入的 agent provider 不经 API 名单过滤；未登记 API 且未注入实现时由模型工厂明确报 unsupported。endpoint、凭据和兼容配置继续来自 registry/实际 model 配置。Prompt 先落盘 user JSONL，再从该 manager 的上下文启动 core continue，避免重复提交 user；流式 text delta 写 stdout，配置、provider stream 与 JSONL 写入错误由 CLI stderr/非零退出暴露。Runtime 同时持有 session app service；transport 的 `ServeApplication` 接收 `session.ApplicationService`，server 只负责 RPC delivery/cancellation。完整 CLI 参数、resume/fork、slash 操作、多会话 queue/steering 和真实授权仍分别留在 T044、T037 与 T054。
@@ -457,7 +474,7 @@ T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T
 | F08 | permission模式/规则/approval/trust/Hint | TASK-T035、TASK-T039、TASK-T050 | 待实现 |
 | F09 | 多题/多选/Other、队列/取消/迟到响应 | TASK-T027、TASK-T086、TASK-T039 | T027 `backend/internal/app/questions` 已实现参数/答案校验、产品 request ID、FIFO presentation、跨 session 保留、取消和迟到响应拒绝；T086 将 Go runtime 的生产 AskUserQuestion tool 接入同一 owner，并以真实 `Tool.Execute` 入口验证回答、取消和迟到处理。Electron question UI/transport 生命周期仍待 T039；本条不代表生产端到端验收。 |
 | F10 | 后台会话、queue/steering/fork/subagent | TASK-T037、TASK-T040、TASK-T049 | 待实现 |
-| F11 | 分层设置、主题、快捷键、capability/skills/resources/extensions | TASK-T015、TASK-T030、TASK-T031、TASK-T036、TASK-T038、TASK-T043、TASK-T047、TASK-T050 | 待实现 |
+| F11 | 分层设置、主题、快捷键、capability/skills/resources/extensions | TASK-T015、TASK-T030、TASK-T031、TASK-T036、TASK-T038、TASK-T043、TASK-T047、TASK-T050 | T030 Go themes 存储及设置 snapshot 契约已通过本模块聚焦检查，见 [M061](evidence/M061.md)；快捷键与 UI 接线等仍待对应任务验收 |
 | F12 | Dev Flow discovery/dashboard/REST/SSE/重连/回收 | TASK-T041、TASK-T048 | 待实现 |
 | F13 | 消息/Markdown/tools/notification与异常 | TASK-T003、TASK-T029、TASK-T045、TASK-T051、TASK-T079、TASK-T080 | T003 提供只读历史与手动重试，见 M003；T029 建立共享 React 消息/Markdown 真源，保留 user/assistant/system/toolResult、thinking、图片、工具卡片、错误、流式与终态；Electron bridge→Go runtime 真实接通 start/continue/replay/subscribe/cancel，runtime 写入后刷新 session 快照再发布 terminal event。2026-10-18 macOS arm64 原生候选、1,200 条历史/32 个 fake-provider delta 单次观测：历史 React 行首次呈现 441 ms、首个流片段 192 ms、DevTools 连续输入 124 ms，最终 1,202 行且中段滚动位置保持；全量测试并发运行观测分别升至 1,336/2,380/390 ms，作为负载敏感样本。独立性能入口 `npm --prefix desktop/tests run test:performance`，测试位于 `desktop/tests/performance/message-performance.test.js`，不纳入普通 `test`/`test:ui` 通配符；T029 的 `npm --prefix desktop/tests test` 曾通过 108/108，`npm --prefix desktop run typecheck` 与 Go session/runtime/RPC 聚焦测试通过。T045/T051 其余消息 UI 与通知异常仍待验收 |
 | F14 | Composer/autocomplete/model/file refs/picker/drop/IME | TASK-T042、TASK-T046、TASK-T049 | 待实现 |
