@@ -7,6 +7,12 @@ import type { SessionMethods } from "../../contracts/ipc/session.js";
 export { RPCFailure } from "./session-contract.js";
 
 export interface BackendOptions { requestTimeoutMs?: number; env?: NodeJS.ProcessEnv }
+function startupMark(stage: string): void {
+  if (process.env.ROZSA_PERF_TRACE === "1") {
+    console.info(`ROZSA_PERF_STARTUP ${JSON.stringify({ stage, epochMs: Date.now() })}`);
+  }
+}
+
 export class BackendService {
   readonly process: ChildProcessWithoutNullStreams;
   private readonly connection: MessageConnection;
@@ -66,7 +72,9 @@ export class BackendService {
     });
     try {
       // vscode-jsonrpc owns IDs, pending correlation, encoding and framing.
-      return await Promise.race([this.connection.sendRequest(method, params), expired]);
+      const result = await Promise.race([this.connection.sendRequest(method, params), expired]);
+      if (method === "initialize") startupMark("backend-initialize-response-received");
+      return result;
     } catch (error) {
       if (this.failure) throw this.failure;
       if (error instanceof ResponseError) {

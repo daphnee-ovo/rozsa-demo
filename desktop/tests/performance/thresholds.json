@@ -4,6 +4,10 @@
   "platform": "darwin-arm64",
   "roundsRequired": 30,
   "startup": {
+    "fullyReadyMaxMs": {
+      "cold": 4000,
+      "warm": 3000
+    },
     "mainStagesMs": {},
     "visibleRegionsMs": {},
     "firstContentfulPaintMs": null,

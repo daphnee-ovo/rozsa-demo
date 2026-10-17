@@ -94,8 +94,20 @@ function markStartupStage(name: string): void {
   if (performanceCapture) performance.mark(`rozsa:${name}`);
 }
 if (performanceCapture) {
-  const perfState = { longTasks: [] as Array<{ startTime: number; duration: number }>, frameGaps: [] as number[], markdownWorkerDurations: [] as number[], longTaskSupported: false };
+  const perfState = {
+    longTasks: [] as Array<{ startTime: number; duration: number }>,
+    frameGaps: [] as number[],
+    markdownWorkerDurations: [] as number[],
+    visibility: [{ at: performance.now(), state: document.visibilityState, focused: document.hasFocus() }],
+    longTaskSupported: false,
+  };
   Object.defineProperty(window, "__ROZSA_PERF__", { configurable: false, value: perfState });
+  const captureVisibility = (): void => {
+    perfState.visibility.push({ at: performance.now(), state: document.visibilityState, focused: document.hasFocus() });
+  };
+  document.addEventListener("visibilitychange", captureVisibility);
+  window.addEventListener("focus", captureVisibility);
+  window.addEventListener("blur", captureVisibility);
   markStartupStage("renderer-entry");
   perfState.longTaskSupported = PerformanceObserver.supportedEntryTypes.includes("longtask");
   if (perfState.longTaskSupported) {

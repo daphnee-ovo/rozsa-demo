@@ -8,18 +8,38 @@ import (
 	"rozsa/backend/internal/transport/types"
 )
 
-type productMessageApplication struct{ app *runtime.Runtime }
+type productMessageApplication struct{ coordinator *runtimeCoordinator }
+
+func (application productMessageApplication) RuntimeStatus() types.RuntimeStatusResult {
+	return application.coordinator.RuntimeStatus()
+}
+
+func (application productMessageApplication) ready(ctx context.Context) (*runtime.Runtime, error) {
+	return application.coordinator.await(ctx)
+}
 
 func (application productMessageApplication) StartMessage(ctx context.Context, text string) (string, error) {
-	return application.app.StartMessage(ctx, text)
+	app, err := application.ready(ctx)
+	if err != nil {
+		return "", err
+	}
+	return app.StartMessage(ctx, text)
 }
 
 func (application productMessageApplication) ContinueMessage(ctx context.Context) (string, error) {
-	return application.app.ContinueMessage(ctx)
+	app, err := application.ready(ctx)
+	if err != nil {
+		return "", err
+	}
+	return app.ContinueMessage(ctx)
 }
 
 func (application productMessageApplication) SubscribeMessageEvents(ctx context.Context, operationID string) (server.MessageEventSubscription, error) {
-	subscription, err := application.app.SubscribeMessageEvents(ctx, operationID)
+	app, err := application.ready(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subscription, err := app.SubscribeMessageEvents(ctx, operationID)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +47,11 @@ func (application productMessageApplication) SubscribeMessageEvents(ctx context.
 }
 
 func (application productMessageApplication) CancelMessage(ctx context.Context, operationID string) error {
-	return application.app.CancelMessage(ctx, operationID)
+	app, err := application.ready(ctx)
+	if err != nil {
+		return err
+	}
+	return app.CancelMessage(ctx, operationID)
 }
 
 type runtimeMessageSubscription struct {

@@ -78,6 +78,8 @@ void app.whenReady().then(async () => {
   if (quitting) return;
   const window = createWindow();
   startupMark("window-created");
+  window.once("focus", () => startupMark("window-focused"));
+  window.once("blur", () => startupMark("window-blurred"));
   installSessionBridge(window, ipcMain, backend, pageURL);
   installMessageBridge(window, ipcMain, backend, pageURL);
   window.show();

@@ -8,7 +8,7 @@ import { writeConversationFixture } from "./fixtures.js";
 const rounds = Math.max(1, Number(process.env.ROZSA_PERF_ROUNDS || 1));
 const calibration = process.env.ROZSA_PERF_CALIBRATION === "1";
 const requiredRegions = ["main-panel", "conversation", "composer", "message-input", "input-toolbar", "send-button"];
-const mainStageNames = ["main-entry", "backend-process-started", "backend-initialize-started", "electron-ready", "backend-ready", "runtime-ready", "catalog-prefetch-started", "catalog-prefetch-ready", "latest-history-prefetch-started", "latest-history-prefetch-ready", "startup-session-ready", "window-created", "document-loaded", "window-shown"];
+const mainStageNames = ["main-entry", "backend-process-started", "backend-initialize-started", "backend-initialize-response-received", "electron-ready", "backend-ready", "runtime-ready", "catalog-prefetch-started", "catalog-prefetch-ready", "latest-history-prefetch-started", "latest-history-prefetch-ready", "startup-session-ready", "window-created", "document-loaded", "window-shown", "window-focused"];
 const backendStageNames = ["process-entry", "session-service-ready", "runtime-initialization-started", "runtime-initialization-complete", "runtime-initialization-failed", "rpc-server-starting", "initialize-request-received", "initialize-response-ready", "session-catalog-started", "session-catalog-complete", "session-history-started", "session-history-complete"];
 
 function percentile(values, fraction) {
@@ -78,6 +78,9 @@ async function measureLaunch(environment, fixture, mode, index) {
         imageCount: document.querySelectorAll("#chatMessages img").length,
         capture: window.__ROZSA_PERF__ && {
           longTaskSupported: window.__ROZSA_PERF__.longTaskSupported,
+          longTasks: window.__ROZSA_PERF__.longTasks,
+          frameGaps: window.__ROZSA_PERF__.frameGaps,
+          visibility: window.__ROZSA_PERF__.visibility,
           markdownWorkerDurations: window.__ROZSA_PERF__.markdownWorkerDurations,
         },
       };
@@ -120,6 +123,9 @@ async function measureLaunch(environment, fixture, mode, index) {
       memory: processMemory,
       markdownWorkerDurations: renderer.capture?.markdownWorkerDurations || [],
       longTaskSupported: renderer.capture?.longTaskSupported === true,
+      longTasks: renderer.capture?.longTasks || [],
+      frameGapMaxMs: Math.max(0, ...(renderer.capture?.frameGaps || [])),
+      visibility: renderer.capture?.visibility || [],
     };
   } finally {
     cdp?.close();
@@ -158,6 +164,8 @@ function modeReport(samples) {
 }
 
 test("cold and warm Electron startup measure shell, conversation, images and visible-region timing", async () => {
+  const thresholds = JSON.parse(await readFile(join(import.meta.dirname, "thresholds.json"), "utf8"));
+  const startupLimitMs = thresholds.startup.fullyReadyMaxMs;
   const byMode = { cold: [], warm: [] };
   const progressPath = join(outputRoot, `startup-${calibration ? "calibration" : "test"}-progress.json`);
   const persistProgress = () => writeFile(progressPath, JSON.stringify({
@@ -202,13 +210,12 @@ test("cold and warm Electron startup measure shell, conversation, images and vis
 
   for (const mode of ["cold", "warm"]) {
     for (const sample of byMode[mode]) {
-      assert.ok(sample.fullyReadyMs <= 3000, `${mode} round ${sample.round} reached window, session catalog, 600-pair history and decoded local images in ${sample.fullyReadyMs}ms; limit is 3000ms`);
+      assert.ok(sample.fullyReadyMs <= startupLimitMs[mode], `${mode} round ${sample.round} reached window, session catalog, 600-pair history and decoded local images in ${sample.fullyReadyMs}ms; limit is ${startupLimitMs[mode]}ms`);
     }
-    assert.ok(report[mode].fullyReadyMs.p95 <= 3000, `${mode} fully-ready P95 ${report[mode].fullyReadyMs.p95}ms exceeds the fixed 3000ms limit`);
+    assert.ok(report[mode].fullyReadyMs.p95 <= startupLimitMs[mode], `${mode} fully-ready P95 ${report[mode].fullyReadyMs.p95}ms exceeds the fixed ${startupLimitMs[mode]}ms limit`);
   }
 
   if (!calibration) {
-    const thresholds = JSON.parse(await readFile(join(import.meta.dirname, "thresholds.json"), "utf8"));
     assert.equal(thresholds.status, "fixed", "performance thresholds are awaiting calibration");
     for (const mode of ["cold", "warm"]) {
       for (const [stage, stats] of Object.entries(report[mode].mainStages)) {

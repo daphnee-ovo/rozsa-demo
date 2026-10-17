@@ -23,6 +23,7 @@ const (
 	NextMessageEvent    Method = "next_message_event"
 	UnsubscribeMessage  Method = "unsubscribe_message_events"
 	CancelMessage       Method = "cancel_message"
+	RuntimeStatus       Method = "runtime_status"
 )
 
 type InitializeParams struct {
@@ -33,6 +34,10 @@ type InitializeResult struct {
 	Capabilities    []string `json:"capabilities"`
 }
 type EmptyParams struct{}
+type RuntimeStatusResult struct {
+	State string `json:"state"`
+	Error string `json:"error,omitempty"`
+}
 type SwitchParams struct {
 	Path      string `json:"path"`
 	CatalogID string `json:"catalogId"`
@@ -77,18 +82,19 @@ type MessageEventResult struct {
 type ErrorKind string
 
 const (
-	InvalidParams  ErrorKind = "invalid_params"
-	MethodNotFound ErrorKind = "method_not_found"
-	NotInitialized ErrorKind = "not_initialized"
-	Catalog        ErrorKind = "catalog"
-	Session        ErrorKind = "session"
-	Closing        ErrorKind = "closing"
-	Canceled       ErrorKind = "canceled"
-	Timeout        ErrorKind = "timeout"
-	Disconnected   ErrorKind = "disconnected"
-	Busy           ErrorKind = "busy"
-	ResyncRequired ErrorKind = "resync_required"
-	Message        ErrorKind = "message"
+	InvalidParams         ErrorKind = "invalid_params"
+	MethodNotFound        ErrorKind = "method_not_found"
+	NotInitialized        ErrorKind = "not_initialized"
+	Catalog               ErrorKind = "catalog"
+	Session               ErrorKind = "session"
+	Closing               ErrorKind = "closing"
+	Canceled              ErrorKind = "canceled"
+	Timeout               ErrorKind = "timeout"
+	Disconnected          ErrorKind = "disconnected"
+	Busy                  ErrorKind = "busy"
+	ResyncRequired        ErrorKind = "resync_required"
+	Message               ErrorKind = "message"
+	RuntimeInitialization ErrorKind = "runtime_initialization"
 )
 
 type ErrorData struct {
@@ -120,6 +126,8 @@ func Error(kind ErrorKind, message string) *jsonrpc2.Error {
 		code = -32007
 	case Message:
 		code = -32008
+	case RuntimeInitialization:
+		code = -32009
 	default:
 		panic("unmapped RPC error kind")
 	}
