@@ -20,7 +20,7 @@ const response = [
   'event: message_stop\ndata: {}\n\n'
 ].join('');
 const server = http.createServer((request, result) => {
-  if (request.url !== '/v1/messages' || request.method !== 'POST') {
+  if (!['/v1/messages', '/v1/chat/completions'].includes(request.url) || request.method !== 'POST') {
     result.writeHead(404).end('not found');
     return;
   }
@@ -28,14 +28,23 @@ const server = http.createServer((request, result) => {
   request.setEncoding('utf8');
   request.on('data', chunk => body += chunk);
   request.on('end', () => {
-    fs.appendFileSync(countFile, `${JSON.stringify({body, xApiKey: request.headers['x-api-key'], authorization: request.headers.authorization})}\n`);
+    fs.appendFileSync(countFile, `${JSON.stringify({url: request.url, body, xApiKey: request.headers['x-api-key'], authorization: request.headers.authorization})}\n`);
     if (body.includes('trigger stream failure')) {
       result.writeHead(503, {'content-type': 'application/json'});
       result.end('{"error":{"message":"fake provider unavailable"}}');
       return;
     }
+    if (request.url === '/v1/chat/completions' && body.includes('trigger completions failure')) {
+      result.writeHead(503, {'content-type': 'application/json', 'retry-after': '0'});
+      result.end('{"error":{"message":"fake completions unavailable"}}');
+      return;
+    }
     result.writeHead(200, {'content-type': 'text/event-stream'});
-    result.end(response);
+    if (request.url === '/v1/chat/completions') {
+      result.end('data: {"id":"chat_fake","choices":[{"delta":{"content":"openai reply"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2}}\n\ndata: [DONE]\n\n');
+    } else {
+      result.end(response);
+    }
   });
 });
 server.listen(0, '127.0.0.1', () => fs.writeFileSync(portFile, String(server.address().port)));
@@ -94,16 +103,42 @@ if rozsa_cli --continue --session-dir "$run_dir/empty-continue" > "$run_dir/empt
 fi
 rg -q 'No previous session found to continue' "$run_dir/empty.stderr"
 [[ -z "$(find "$run_dir/empty-continue" -name '*.jsonl' -print -quit)" ]]
-mkdir -p "$run_dir/unsupported/global/models" "$run_dir/unsupported/project"
-cat > "$run_dir/unsupported/global/settings.json" <<'JSON'
-{"defaultProvider":"custom-openai","defaultModel":"unsupported-model"}
+mkdir -p "$run_dir/completions/global/models" "$run_dir/completions/project"
+cat > "$run_dir/completions/global/settings.json" <<'JSON'
+{"defaultProvider":"custom-openai-compatible","defaultModel":"completions-model"}
 JSON
-cat > "$run_dir/unsupported/global/models/custom.json" <<'JSON'
-{"providers":{"custom-openai":{"api":"openai-completions","baseUrl":"http://127.0.0.1:1","apiKey":"fake","models":[{"id":"unsupported-model"}]}}}
+cat > "$run_dir/completions/global/models/custom.json" <<JSON
+{"providers":{"custom-openai-compatible":{"api":"openai-completions","baseUrl":"http://127.0.0.1:$port/v1","apiKey":"fake","models":[{"id":"completions-model","name":"Custom Completions model"}]}}}
 JSON
-if ROZSA_CONFIG_DIR="$run_dir/unsupported/global" ROZSA_PROJECT_CONFIG_DIR="$run_dir/unsupported/project" go -C "$repo_root/backend" run ./cmd/rozsa --session-dir "$run_dir/unsupported/sessions" "unsupported model" > "$run_dir/unsupported.stdout" 2> "$run_dir/unsupported.stderr"; then
-  echo "unimplemented provider API unexpectedly succeeded" >&2
+ROZSA_CONFIG_DIR="$run_dir/completions/global" ROZSA_PROJECT_CONFIG_DIR="$run_dir/completions/project" go -C "$repo_root/backend" run ./cmd/rozsa --session-dir "$run_dir/completions/sessions" "completions prompt" > "$run_dir/completions.stdout" 2> "$run_dir/completions.stderr"
+[[ "$(cat "$run_dir/completions.stdout")" == "openai reply" ]]
+[[ ! -s "$run_dir/completions.stderr" ]]
+completions_session="$(find "$run_dir/completions/sessions" -name '*.jsonl' -print -quit)"
+[[ -n "$completions_session" ]]
+rg -q 'completions prompt' "$completions_session"
+rg -q 'openai reply' "$completions_session"
+rg -q '"api":"openai-completions"' "$completions_session"
+rg -q '"totalTokens":4' "$completions_session"
+ROZSA_CONFIG_DIR="$run_dir/completions/global" ROZSA_PROJECT_CONFIG_DIR="$run_dir/completions/project" go -C "$repo_root/backend" run ./cmd/rozsa --continue --session-dir "$run_dir/completions/sessions" > "$run_dir/completions-continue.stdout" 2> "$run_dir/completions-continue.stderr"
+[[ ! -s "$run_dir/completions-continue.stderr" ]]
+[[ "$(rg -c '"url":"/v1/chat/completions"' "$count_file")" == "1" ]]
+rg -q '"authorization":"Bearer fake"' "$count_file"
+if ROZSA_CONFIG_DIR="$run_dir/completions/global" ROZSA_PROJECT_CONFIG_DIR="$run_dir/completions/project" go -C "$repo_root/backend" run ./cmd/rozsa --session-dir "$run_dir/completions-failure/sessions" "trigger completions failure" > "$run_dir/completions-failure.stdout" 2> "$run_dir/completions-failure.stderr"; then
+  echo "Completions HTTP failure unexpectedly succeeded" >&2
   exit 1
 fi
-rg -q 'unsupported model API.*openai-completions' "$run_dir/unsupported.stderr"
+rg -q '503' "$run_dir/completions-failure.stderr"
+rg -q 'fake completions unavailable' "$(find "$run_dir/completions-failure/sessions" -name '*.jsonl' -print -quit)"
+mkdir -p "$run_dir/unsupported/global/models" "$run_dir/unsupported/project"
+cat > "$run_dir/unsupported/global/settings.json" <<'JSON'
+{"defaultProvider":"custom-responses","defaultModel":"unsupported-model"}
+JSON
+cat > "$run_dir/unsupported/global/models/custom.json" <<'JSON'
+{"providers":{"custom-responses":{"api":"openai-responses","baseUrl":"http://127.0.0.1:1","apiKey":"fake","models":[{"id":"unsupported-model"}]}}}
+JSON
+if ROZSA_CONFIG_DIR="$run_dir/unsupported/global" ROZSA_PROJECT_CONFIG_DIR="$run_dir/unsupported/project" go -C "$repo_root/backend" run ./cmd/rozsa --session-dir "$run_dir/unsupported/sessions" "unsupported model" > "$run_dir/unsupported.stdout" 2> "$run_dir/unsupported.stderr"; then
+  echo "unimplemented Responses API unexpectedly succeeded" >&2
+  exit 1
+fi
+rg -q 'unsupported model API.*openai-responses' "$run_dir/unsupported.stderr"
 echo "prompt path passed; isolated evidence: $run_dir"

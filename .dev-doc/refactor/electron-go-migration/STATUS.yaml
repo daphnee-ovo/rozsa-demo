@@ -1,0 +1,6 @@
+name: rozsa
+phase: DEV
+mode: quick
+goals_minor: Electron 单 WebView + Go 完整迁移，保持原有功能与处理逻辑等价
+updated: 2026-10-13 14:25
+started: 2026-10-12 20:24

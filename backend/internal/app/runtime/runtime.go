@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
 	"rozsa/backend/internal/model/anthropic"
+	"rozsa/backend/internal/model/completions"
 	"rozsa/backend/internal/model/credentials"
 	"rozsa/backend/internal/model/types"
 )
@@ -52,7 +54,7 @@ func New(config Config) (*Runtime, error) {
 	if config.Model.ID == "" || config.Model.Provider == "" || config.Model.API == "" {
 		return nil, errors.New("runtime requires a configured model, provider and API")
 	}
-	if config.Model.API != types.APIAnthropicMessages {
+	if config.Model.API != types.APIAnthropicMessages && config.Model.API != types.APIOpenAICompletions {
 		return nil, fmt.Errorf("unsupported model API %q", config.Model.API)
 	}
 	if config.Provider == nil {
@@ -64,7 +66,14 @@ func New(config Config) (*Runtime, error) {
 		if key == "" {
 			return nil, fmt.Errorf("No API key for provider: %s", config.Model.Provider)
 		}
-		config.Provider = providerWithKey{Provider: anthropic.NewProvider(nil), key: key}
+		var provider agent.Provider
+		switch config.Model.API {
+		case types.APIAnthropicMessages:
+			provider = anthropic.NewProvider(nil)
+		case types.APIOpenAICompletions:
+			provider = completions.NewProvider(nil)
+		}
+		config.Provider = providerWithKey{Provider: provider, key: key}
 	}
 	if err := os.MkdirAll(config.SessionDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create session directory: %w", err)
@@ -117,8 +126,8 @@ func (runtime *Runtime) Snapshot(ctx context.Context) (session.StateSnapshot, er
 }
 
 type providerWithKey struct {
-	*anthropic.Provider
-	key string
+	Provider agent.Provider
+	key      string
 }
 
 func (provider providerWithKey) StreamSimple(ctx context.Context, model types.Model, input types.Context, options types.SimpleStreamOptions, emit func(types.StreamEvent)) error {
@@ -200,26 +209,42 @@ func (runtime *Runtime) run(ctx context.Context, prompt *string) error {
 	// from restored context without appending the same user turn twice.
 	result := agent.Continue(ctx, input, config)
 	var completed []hooks.Message
+	var outputErr error
 	for event := range result.Events {
 		switch event := event.(type) {
 		case agent.MessageUpdate:
-			if delta, ok := event.StreamEvent.(types.TextDelta); ok {
+			if delta, ok := event.StreamEvent.(types.TextDelta); ok && outputErr == nil {
 				if _, err := io.WriteString(runtime.output, delta.Delta); err != nil {
-					return fmt.Errorf("write CLI output: %w", err)
+					outputErr = fmt.Errorf("write CLI output: %w", err)
 				}
 			}
 		case agent.AgentEnd:
 			completed = event.Messages
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+	ctxErr := ctx.Err()
 	var streamErr error
+	var previousAssistant *session.AssistantMessage
 	for _, message := range completed {
 		persisted, ok := toSessionMessage(message)
 		if !ok {
 			continue
+		}
+		if ctxErr != nil {
+			if assistant, ok := persisted.(session.AssistantMessage); ok {
+				assistant.StopReason = session.Aborted
+				assistant.ErrorMessage = nil
+				persisted = assistant
+			}
+		}
+		if assistant, ok := persisted.(session.AssistantMessage); ok {
+			if previousAssistant != nil && reflect.DeepEqual(*previousAssistant, assistant) {
+				continue
+			}
+			copy := assistant
+			previousAssistant = &copy
+		} else {
+			previousAssistant = nil
 		}
 		if _, err := manager.AppendMessage(persisted); err != nil {
 			return fmt.Errorf("persist agent message: %w", err)
@@ -234,6 +259,12 @@ func (runtime *Runtime) run(ctx context.Context, prompt *string) error {
 	}
 	if len(completed) == 0 && prompt != nil {
 		return errors.New("agent completed without a persistable response")
+	}
+	if ctxErr != nil {
+		return ctxErr
+	}
+	if outputErr != nil {
+		return outputErr
 	}
 	runtime.mu.Lock()
 	runtime.revision++
