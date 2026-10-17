@@ -57,3 +57,18 @@ func TestNewProtocolFailsForUnregisteredAPI(t *testing.T) {
 		t.Fatalf("error = %v, want explicit unsupported API diagnostic", err)
 	}
 }
+
+func TestNewProtocolConstructsBedrockBehindProtocolInterface(t *testing.T) {
+	var protocol types.Protocol
+	protocol, err := NewProtocol(types.APIBedrockConverseStream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if protocol.API() != types.APIBedrockConverseStream {
+		t.Fatalf("API() = %q", protocol.API())
+	}
+	credentialed, ok := protocol.(types.ExternalCredentials)
+	if !ok || !credentialed.UsesExternalCredentials() {
+		t.Fatalf("Bedrock protocol external credentials capability = %#v", protocol)
+	}
+}

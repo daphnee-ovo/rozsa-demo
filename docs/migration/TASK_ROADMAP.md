@@ -424,7 +424,7 @@ T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T
 | 功能族 | 覆盖范围 | 实现 owner | 当前状态 |
 | --- | --- | --- | --- |
 | F01 | 模型配置、registry、thinking/context/quota | TASK-T016、TASK-T028、TASK-T033、TASK-T042、TASK-T048 | 待实现 |
-| F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | [T018](#task-t018-anthropic-provider) Anthropic 请求/流契约已验证；[T021](#task-t021-openai-completions-provider) Completions 协议与 CLI 接线已用本地 fake provider 验证；[T022](#task-t022-openai-responses-provider) Responses 协议、runtime 接线与自定义 provider CLI 链路已用本地 fake provider 验证；Bedrock 与真实 provider 授权仍待对应 owner |
+| F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | [T018](#task-t018-anthropic-provider) Anthropic 请求/流契约已验证；[T021](#task-t021-openai-completions-provider) Completions 协议与 CLI 接线已用本地 fake provider 验证；[T022](#task-t022-openai-responses-provider) Responses 协议、runtime 接线与自定义 provider CLI 链路已用本地 fake provider 验证；T023 Go Bedrock 请求、AWS SDK SigV4/default credential chain/bearer/skip-auth、ConverseStream event 内容与异常已用本地假凭据及二进制 fixtures 验证，model.NewProtocol/runtime 抽象接线已覆盖；真实 AWS 网络授权未执行 |
 | F03 | credentials、PKCE/callback/device、刷新/注销 | TASK-T024、TASK-T032、TASK-T033、TASK-T034、TASK-T054 | 待实现 |
 | F04 | Agent loop、hooks、并行/终止/取消 | TASK-T019、TASK-T020、TASK-T026、TASK-T037、TASK-T038 | T019 Go core loop/tool/hooks 的 fake provider/tool 与 race 用例已验证；app/session owner、权限和产品生命周期/接线待 T020、T026、T037、T038 |
 | F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T010、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；T010 协议见 [M010](evidence/M010.md)；[T017](#task-t017-jsonl-manager) 已补齐 Go manager 写入/重开/分支/rename/delete/cwd；运行会话与产品入口仍待 T037/T044 |

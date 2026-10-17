@@ -59,12 +59,23 @@ func New(config Config) (*Runtime, error) {
 			return nil, err
 		}
 		resolver := credentials.NewResolver()
-		key, err := resolveProviderKey(context.Background(), resolver, config.Model.Provider, config.APIKey, config.AuthPath)
-		if err != nil {
-			return nil, fmt.Errorf("resolve credentials for %s: %w", config.Model.Provider, err)
-		}
-		if key == "" {
-			return nil, fmt.Errorf("No API key for provider: %s", config.Model.Provider)
+		key := ""
+		if config.APIKey != "" {
+			key, err = resolver.ResolveConfigValue(config.APIKey)
+			if err != nil {
+				return nil, fmt.Errorf("resolve credentials for %s: %w", config.Model.Provider, err)
+			}
+		} else if credentialed, ok := provider.(types.ExternalCredentials); ok && credentialed.UsesExternalCredentials() {
+			// The protocol owns credentials from the SDK default chain or a
+			// protocol-specific bearer token provider.
+		} else {
+			key, err = resolveProviderKey(context.Background(), resolver, config.Model.Provider, "", config.AuthPath)
+			if err != nil {
+				return nil, fmt.Errorf("resolve credentials for %s: %w", config.Model.Provider, err)
+			}
+			if key == "" {
+				return nil, fmt.Errorf("No API key for provider: %s", config.Model.Provider)
+			}
 		}
 		config.Provider = providerWithKey{Provider: provider, key: key}
 	}

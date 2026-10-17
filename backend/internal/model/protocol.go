@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"rozsa/backend/internal/model/anthropic"
+	"rozsa/backend/internal/model/bedrock"
 	"rozsa/backend/internal/model/completions"
 	"rozsa/backend/internal/model/responses"
 	"rozsa/backend/internal/model/types"
@@ -20,6 +21,8 @@ func NewProtocol(api types.API) (types.Protocol, error) {
 		return completions.NewProvider(nil), nil
 	case types.APIOpenAIResponses:
 		return responses.NewProvider(nil), nil
+	case types.APIBedrockConverseStream:
+		return bedrock.NewProvider(nil), nil
 	default:
 		return nil, fmt.Errorf("unsupported model API %q", api)
 	}
@@ -28,3 +31,4 @@ func NewProtocol(api types.API) (types.Protocol, error) {
 var _ types.Protocol = (*anthropic.Provider)(nil)
 var _ types.Protocol = (*completions.Provider)(nil)
 var _ types.Protocol = (*responses.Provider)(nil)
+var _ types.Protocol = (*bedrock.Provider)(nil)

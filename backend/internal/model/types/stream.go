@@ -13,6 +13,12 @@ type Protocol interface {
 	StreamSimple(context.Context, Model, Context, SimpleStreamOptions, func(StreamEvent)) error
 }
 
+// ExternalCredentials marks protocols that authenticate through their own
+// credential chain instead of an application-managed API key.
+type ExternalCredentials interface {
+	UsesExternalCredentials() bool
+}
+
 // Stream adapts shared options to the protocol's simple streaming contract.
 func Stream(protocol Protocol, ctx context.Context, model Model, input Context, options StreamOptions, emit func(StreamEvent)) error {
 	return protocol.StreamSimple(ctx, model, input, SimpleStreamOptions{Base: options}, emit)
