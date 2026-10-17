@@ -69,12 +69,18 @@ test('ports preserve errors, cancellation, revisions and subscription disposal',
   assert.equal(lateRemoved, 1);
 });
 
-test('the actual Electron entry and HTTP prototype use the TypeScript source boundary', () => {
+test('the actual Electron entry assembles one window from shared UI sources', () => {
   const electronHtml = readFrontend('index.html');
-  assert(electronHtml.includes('type="module" src="./entry.ts"'));
-  const electronEntry = readFrontend('entry.ts');
-  assert(electronEntry.includes('./product-client.js'));
-  assert(!electronEntry.includes('__TAURI__'));
+  assert(electronHtml.includes('data-application-shell'));
+  assert(electronHtml.includes('id="fallbackSidebarTemplate"'));
+  assert(electronHtml.includes('id="mainContentScene"'));
+  assert(electronHtml.includes('src="./runtime/entries/main.ts"'));
+  assert.match(electronHtml, /src="\.\/runtime\/app\.js"/);
+  assert(!electronHtml.includes('src="./app.js"'));
+  assert(!electronHtml.includes('__TAURI__'));
+  const electronEntry = readFrontend('runtime/entries/main.ts');
+  assert(electronEntry.includes('createElectronAdapter(window.rozsa)'));
+  assert(!electronEntry.includes('createTauriAdapter'));
   const prototypeHtml = readPrototype('index.html');
   assert(prototypeHtml.includes('./scenarios/registry.ts'));
   assert(prototypeHtml.includes('./scripts/core/shell.ts'));
@@ -87,6 +93,10 @@ test('the actual Electron entry and HTTP prototype use the TypeScript source bou
     assert(!source.includes('__TAURI__'));
     assert(!source.includes('prototype/mock'));
   }
+  const hostAdapter = readFrontend('runtime/adapters/electron.ts');
+  assert(hostAdapter.includes('bridge.getSessions()'));
+  assert(hostAdapter.includes('Electron backend does not support'));
+  assert(!hostAdapter.includes('__TAURI__'));
   assert(!electronEntry.includes('prototype/mock'));
 });
 

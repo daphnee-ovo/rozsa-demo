@@ -1,5 +1,5 @@
 import { createUIHost } from "../../scripts/core/renderer.ts";
-import { createTauriAdapter } from "../adapters/tauri.ts";
+import { createElectronAdapter } from "../adapters/electron.ts";
 import { bindNativeViewport } from '../adapters/viewport.js';
 import { mountShell, resolveTemplateRoot } from "../../scripts/core/shell.ts";
 import { init as bindPopover } from "../../scripts/components/popover.js";
@@ -24,7 +24,8 @@ import { loadTemplate } from '../../scripts/core/template-loader.ts';
 import * as devFlow from '../../scripts/features/dev-flow.js';
 import { devFlowSettingsView, devFlowDetailView } from '../adapters/sidebar-dev-flow.js';
 
-window.RozsaUIHost = createUIHost(createTauriAdapter());
+document.body.classList.toggle('macos-host', navigator.platform === 'MacIntel');
+window.RozsaUIHost = createUIHost(createElectronAdapter(window.rozsa));
 window.addEventListener("pagehide", () => window.RozsaUIHost.port.dispose(), { once: true });
 window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(document.getElementById("mainContentScene"))]).then(() => mountShell([
   { url: new URL("composites/popover.html", resolveTemplateRoot()), selector: "[data-template-mount=popover]", children: true },

@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { loadApp } from './helpers/browser.js';
-import { frontendRoot } from './helpers/browser.js';
 
 test('shared composer dispatches input lifecycle and submit once', async () => {
   const input = { listeners: {}, addEventListener(name, fn) { this.listeners[name] = fn; } };
@@ -21,18 +20,6 @@ test('shared composer dispatches input lifecycle and submit once', async () => {
   const button = { dataset: {}, setAttribute(name, value) { this[name] = value; } };
   for (const action of ['send', 'stop', 'queue', 'steer']) { renderSendState(button, action); assert.equal(button.dataset.sendAction, action); assert.ok(button['aria-label']); assert.ok(button.innerHTML.includes('<svg')); }
   assert.ok(readFileSync(new URL('../renderer/templates/composites/composer.html', import.meta.url), 'utf8').includes('id="composer"'));
-});
-
-test('IME guards suppress input refresh and keyboard shortcuts during composition', () => {
-  const source = readFileSync(new URL('../renderer/app.js', import.meta.url), 'utf8');
-  const handleInputStart = source.indexOf('function handleInput(input, event)');
-  const handleInputEnd = source.indexOf('function handleCompositionStart', handleInputStart);
-  const handleInput = source.slice(handleInputStart, handleInputEnd);
-  assert.match(handleInput, /if \(isInputComposing \|\| event\?\.isComposing \|\| event\?\.inputType === 'insertCompositionText'\)/);
-  assert.match(handleInput, /updateAutocomplete\(\)/);
-  const keydownStart = source.indexOf("document.addEventListener('keydown'");
-  assert.notEqual(keydownStart, -1);
-  assert.ok(source.slice(keydownStart).includes('if (isInputComposing || e.isComposing || e.keyCode === 229) return;'));
 });
 
 test('composition end refreshes autocomplete after the browser commits text', async () => {

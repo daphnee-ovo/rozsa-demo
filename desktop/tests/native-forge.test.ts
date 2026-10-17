@@ -41,7 +41,8 @@ try {
   let id = 0;
   const pending = new Map<number, { accept(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   socket.addEventListener("message", event => {
-    const data = JSON.parse(String(event.data)), request = pending.get(data.id); if (!request) return;
+    const data = JSON.parse(String(event.data));
+    const request = pending.get(data.id); if (!request) return;
     pending.delete(data.id); clearTimeout(request.timer);
     if (data.error) request.reject(new Error(JSON.stringify(data.error))); else request.accept(data.result);
   });
@@ -56,29 +57,93 @@ try {
     if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails));
     return response.result.value;
   };
-  await poll(async () => await evaluate("document.querySelector('#status')?.textContent==='1 sessions'") ? true : undefined, "stdio catalog");
+  await poll(async () => await evaluate("document.querySelectorAll('#sessionList .session-item').length===1 && !!document.querySelector('#chatMessages')") ? true : undefined, "full UI and stdio catalog");
   await poll(async () => await evaluate("document.body && getComputedStyle(document.body).getPropertyValue('--font-ui').trim().length > 0") ? true : undefined, "shared tokens in development");
+  if (process.platform === "darwin") {
+    const titlebarLayout = await evaluate(`(() => {
+      const toggle = document.querySelector('body > .sidebar-toggle-button');
+      const header = document.querySelector('[data-od-id="panel-header"]').getBoundingClientRect();
+      const sidebar = document.querySelector('[data-od-id="sidebar"]');
+      const sidebarHeader = sidebar.querySelector('[data-od-id="sidebar-sessions"] > .sidebar-header').getBoundingClientRect();
+      const shadow = getComputedStyle(sidebar).boxShadow;
+      const headerStyle = getComputedStyle(document.querySelector('[data-od-id="panel-header"]'));
+      return {
+        noDuplicateChromeContainer: !document.querySelector('#native-titlebar'),
+        sidebarToggleVisible: !!toggle && getComputedStyle(toggle).display !== 'none',
+        sidebarToggleSharesMainHeaderRow: !!toggle && toggle.getBoundingClientRect().top === header.top,
+        sidebarHeaderStartsWithWindow: sidebarHeader.top === 0,
+        sidebarHasSoftCastShadow: !shadow.includes('inset') && shadow.includes('px'),
+        mainHeaderKeepsGlassTreatment: headerStyle.backdropFilter !== 'none' && headerStyle.boxShadow !== 'none',
+      };
+    })()`);
+    assert.deepEqual(titlebarLayout, {
+      noDuplicateChromeContainer: true,
+      sidebarToggleVisible: true,
+      sidebarToggleSharesMainHeaderRow: true,
+      sidebarHeaderStartsWithWindow: true,
+      sidebarHasSoftCastShadow: true,
+      mainHeaderKeepsGlassTreatment: true,
+    });
+    const sidebarToggleRoundTrip = await evaluate(`(() => {
+      const button = document.querySelector('body > .sidebar-toggle-button');
+      const initiallyCollapsed = document.body.classList.contains('sidebar-collapsed');
+      button.click();
+      const collapsedAfterFirstClick = document.body.classList.contains('sidebar-collapsed');
+      const firstLabel = button.getAttribute('aria-label');
+      button.click();
+      return {
+        initiallyCollapsed,
+        collapsedAfterFirstClick,
+        restoredAfterSecondClick: document.body.classList.contains('sidebar-collapsed') === initiallyCollapsed,
+        restoredLabel: button.getAttribute('aria-label') === (initiallyCollapsed ? 'Show sidebar' : 'Hide sidebar'),
+        firstLabel,
+      };
+    })()`);
+    assert.equal(sidebarToggleRoundTrip.collapsedAfterFirstClick, !sidebarToggleRoundTrip.initiallyCollapsed);
+    assert.equal(sidebarToggleRoundTrip.restoredAfterSecondClick, true);
+    assert.equal(sidebarToggleRoundTrip.restoredLabel, true);
+    const surfaces = await evaluate(`(() => {
+      document.documentElement.setAttribute('data-theme-translucent-sidebar', 'true');
+      return {
+      enabled: document.documentElement.getAttribute('data-theme-translucent-sidebar'),
+      host: document.body.className,
+      sidebar: getComputedStyle(document.querySelector('[data-od-id="sidebar"]')).backgroundColor,
+      main: getComputedStyle(document.querySelector('[data-od-id="main-panel"]')).backgroundColor,
+      sidebarFilter: getComputedStyle(document.querySelector('[data-od-id="sidebar"]')).backdropFilter,
+      };
+    })()`);
+    assert.equal(surfaces.enabled, "true");
+    assert.match(surfaces.host, /macos-host/);
+    assert.match(surfaces.sidebar, /rgba?\(0, 0, 0, 0\)/);
+    assert.doesNotMatch(surfaces.main, /rgba?\(0, 0, 0, 0\)/);
+    assert.equal(surfaces.sidebarFilter, "none");
+    const opaque = await evaluate(`(() => {
+      document.documentElement.setAttribute('data-theme-translucent-sidebar', 'false');
+      return {
+        sidebar: getComputedStyle(document.querySelector('[data-od-id="sidebar"]')).backgroundColor,
+      };
+    })()`);
+    assert.doesNotMatch(opaque.sidebar, /rgba?\(0, 0, 0, 0\)/);
+  }
   assert.deepEqual(await evaluate("({node:typeof window.require,bridge:Object.keys(window.rozsa)})"), { node: "undefined", bridge: ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"] });
-  await evaluate("document.querySelector('#sessions button').click()");
-  await poll(async () => await evaluate("document.querySelector('#history')?.textContent.includes('Forge stdio history')") ? true : undefined, "history");
+  await evaluate("document.querySelector('#sessionList .session-item').click()");
+  await poll(async () => await evaluate("document.querySelector('#chatMessages')?.textContent.includes('Forge stdio history')") ? true : undefined, "conversation history");
   const backendPID = Number(/Backend started: (\d+)/.exec(logs)?.[1]); assert.ok(backendPID > 0);
   const shot = async (name: string) => { const image = await send("Page.captureScreenshot", {}, sessionId); await writeFile(join(output, name), Buffer.from(image.data, "base64")); };
   await shot("before.png");
   await evaluate("window.__hmrIdentity='retained'");
-  const css = join(fixture, "desktop/renderer/styles/features/sidebar.css");
+  const css = join(fixture, "desktop/renderer/styles/legacy/main.css");
   await writeFile(css + ".save", (await readFile(css, "utf8")) + "\nbody { background-color: rgb(12, 34, 56) !important; }\n"); await rename(css + ".save", css);
   await poll(async () => await evaluate("getComputedStyle(document.body).backgroundColor==='rgb(12, 34, 56)'") ? true : undefined, "shared CSS HMR");
   assert.equal(await evaluate("window.__hmrIdentity"), "retained"); // CSS updated without a renderer reload.
-  assert.match(await evaluate("document.querySelector('#history').textContent"), /Forge stdio history/);
-  const ts = join(fixture, "desktop/renderer/entry.ts");
-  await writeFile(ts + ".save", (await readFile(ts, "utf8")) + "\ndocument.querySelector('h1')!.textContent = 'Forge TS hot update';\n"); await rename(ts + ".save", ts);
-  await poll(async () => await evaluate("document.querySelector('h1')?.textContent==='Forge TS hot update'") ? true : undefined, "TS automatic update");
-  await poll(async () => await evaluate("document.querySelector('#status')?.textContent==='1 sessions'") ? true : undefined, "catalog after TS update");
+  assert.match(await evaluate("document.querySelector('#chatMessages').textContent"), /Forge stdio history/);
+  const ts = join(fixture, "desktop/renderer/runtime/entries/main.ts");
+  await writeFile(ts + ".save", (await readFile(ts, "utf8")) + "\ndocument.body.dataset.forgeTsUpdate = 'updated';\n"); await rename(ts + ".save", ts);
+  await poll(async () => await evaluate("document.body?.dataset.forgeTsUpdate==='updated'") ? true : undefined, "runtime TS automatic update");
+  await poll(async () => await evaluate("document.querySelectorAll('#sessionList .session-item').length===1") ? true : undefined, "catalog after TS update");
   const html = join(fixture, "desktop/renderer/index.html");
-  // Restoring the active snapshot owns the heading text; use a static attribute
-  // to observe the HTML reload without competing with session rendering.
-  await writeFile(html + ".save", (await readFile(html, "utf8")).replace('id="history-title"', 'id="history-title" data-forge-refresh="updated"')); await rename(html + ".save", html);
-  await poll(async () => await evaluate("document.querySelector('#history-title')?.dataset.forgeRefresh==='updated'") ? true : undefined, "HTML automatic update");
+  await writeFile(html + ".save", (await readFile(html, "utf8")).replace('id="mainContentScene"', 'id="mainContentScene" data-forge-refresh="updated"')); await rename(html + ".save", html);
+  await poll(async () => await evaluate("document.querySelector('#mainContentScene')?.dataset.forgeRefresh==='updated'") ? true : undefined, "assembled HTML automatic update");
   await shot("after.png");
   const trustedURL = await evaluate("location.href");
   await evaluate("location.href='/untrusted-navigation'");

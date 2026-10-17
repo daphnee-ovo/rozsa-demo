@@ -19,11 +19,13 @@ test('Electron bundles from its own source tree without the Rust GUI or prototyp
   await build({ configFile: join(fixture, 'desktop/vite.renderer.config.mjs'), logLevel: 'error' });
   const output = join(fixture, 'desktop/.vite/renderer/sessions');
   const files = await readdir(output);
-  assert.ok(files.includes('index.html'));
-  for (const retired of ['tauri.html', 'sidebar.html', 'app.js', 'sidebar.js', 'gui_shared.js']) {
+  for (const required of ['index.html', 'gui_shared.js', 'runtime']) assert.ok(files.includes(required), `Electron product asset missing: ${required}`);
+  assert.ok((await readdir(join(output, 'runtime'))).includes('app.js'), 'classic app entry missing');
+  for (const retired of ['tauri.html', 'sidebar.html', 'sidebar.js']) {
     assert.ok(!files.includes(retired), `Electron package must not build the retired host entry: ${retired}`);
   }
   const html = await readFile(join(output, 'index.html'), 'utf8');
+  assert.match(html, /src="\.\/runtime\/app\.js"/);
   for (const [, reference] of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
     assert.ok(reference.startsWith('./'), `package asset must be relative: ${reference}`);
     await readFile(resolve(output, reference));

@@ -12,7 +12,5 @@ export async function readWindowWidth(api) {
 }
 
 export function bindNativeViewport(view = window) {
-  return view.RozsaGuiShared.isNativeSplitPlatform()
-    ? bindViewport(view, () => readWindowWidth(view.__TAURI__))
-    : bindViewport(view);
+  return bindViewport(view);
 }

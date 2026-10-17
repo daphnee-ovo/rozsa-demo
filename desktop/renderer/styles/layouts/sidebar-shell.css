@@ -10,7 +10,7 @@
   background: var(--bg);
   border: 0;
   box-shadow: var(--shadow-sidebar);
-  transition: transform 180ms ease, visibility 180ms ease, background-color 180ms ease;
+  transition: transform 180ms ease, visibility 180ms ease;
 }
 
 /* 780px 以下 sidebar 退为 drawer；规则紧邻基础 position，避免被基础 owner 覆盖。 */

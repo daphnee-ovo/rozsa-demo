@@ -15,7 +15,28 @@ export function createDOM(html = '<!doctype html><html><body></body></html>', ur
 // Run the complete classic entry, preserving browser global lexical bindings.
 // Unit tests trigger events explicitly; native startup belongs to native tests.
 export function loadApp({ html, globals = {} } = {}) {
-  return loadClassic('app.js', { html, globals });
+  const dom = createDOM(html);
+  const { window } = dom;
+  Object.assign(window, globals);
+  const addWindowListener = window.addEventListener.bind(window);
+  window.addEventListener = (name, callback, options) => {
+    if (name !== 'DOMContentLoaded') addWindowListener(name, callback, options);
+  };
+  const context = dom.getInternalVMContext();
+  new Script(readFrontend('gui_shared.js'), { filename: 'gui_shared.js' }).runInContext(context);
+  const index = readFrontend('index.html');
+  if (!index.includes('<script src="./runtime/app.js"></script>')) throw new Error('Renderer index.html has no classic app entry');
+  const appModules = readFrontend('runtime/app/order.txt').trim().split('\n');
+  let appSource = '';
+  for (const path of appModules) {
+    const source = readFrontend(`runtime/app/${path}`);
+    appSource += `${source}\n`;
+  }
+  new Script(appSource, { filename: 'runtime/app.js' }).runInContext(context);
+  return { dom, window, document: window.document,
+    evaluate: source => new Script(source, { filename: 'test-action.js' }).runInContext(context),
+    close: () => window.close(),
+  };
 }
 
 export function loadClassic(path, { html, globals = {} } = {}) {

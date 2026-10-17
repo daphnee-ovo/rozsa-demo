@@ -34,3 +34,50 @@
 @import url("../composites/permission-question.css");
 @import url("../foundations/motion.css");
 @import url("./native-host.css");
+
+/* The historical 1100px rule assumed a separate native sidebar WebView.
+   Electron keeps the existing sidebar and conversation side by side in one window. */
+:root { --native-titlebar-offset: 0px; }
+body.macos-host { --native-titlebar-offset: 32px; }
+body.macos-host [data-od-id="app-body"] { padding-top: 0; }
+body.macos-host [data-od-id="sidebar"] {
+  box-shadow: 8px 0 28px -8px color-mix(in oklch, var(--fg) 18%, transparent);
+}
+body > .sidebar-toggle-button { display: none; }
+body.macos-host > .sidebar-toggle-button {
+  display: inline-flex;
+  position: fixed;
+  z-index: 200;
+  top: 0;
+  left: 76px;
+  height: 32px;
+  -webkit-app-region: no-drag;
+}
+/* The existing conversation header continues behind the native window controls. */
+body.macos-host [data-od-id="panel-header"] {
+  top: 0;
+  -webkit-app-region: drag;
+}
+body.macos-host [data-od-id="panel-header"] button,
+body.macos-host [data-od-id="panel-header"] a { -webkit-app-region: no-drag; }
+body.macos-host [data-od-id="sidebar"] > [data-od-id="sidebar-sessions"] > .sidebar-header {
+  height: 76px;
+  padding-top: 32px;
+  padding-bottom: 0;
+}
+body.macos-host > .sidebar-toggle-button {
+  width: 30px;
+  margin-left: 5px;
+  height: 32px;
+  padding: 3px;
+}
+@media (min-width: 781px) and (max-width: 1100px) {
+  [data-od-id="app-body"] { grid-template-columns: var(--main-sidebar-width) minmax(0, 1fr); }
+  [data-od-id="app-body"] > [data-od-id="sidebar"] {
+    position: relative;
+    inset: auto;
+    width: auto;
+    transform: none;
+    visibility: visible;
+  }
+}

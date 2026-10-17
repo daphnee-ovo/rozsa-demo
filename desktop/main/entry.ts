@@ -50,6 +50,11 @@ void app.whenReady().then(async () => {
   const window = createWindow();
   installSessionBridge(window, ipcMain, backend, pageURL);
   await window.loadURL(pageURL);
+  if (quitting) return;
+  // loadURL resolves after the document finishes loading. Do not gate native
+  // visibility on renderer feature initialization; a renderer-side failure
+  // should remain visible and diagnosable rather than leaving a hidden app.
+  window.show();
 }).catch(error => {
   console.error("Rózsa could not start:", error);
   if (quitting) return;

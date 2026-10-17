@@ -1,6 +1,6 @@
 "use strict";
 
-// Persistent sidebar WebView.
+// Sidebar behavior for the single renderer window.
 // Structure: initialization, revisioned scene switching, session/status rendering.
 // It owns only MainSidebar and SettingsSidebar; stateful chat and settings-form
 // roots remain in the main WebView.
@@ -33,13 +33,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     renderSidebarError('Shared Settings UI failed to load: ' + String(error));
     return;
   }
-  let retries = 0;
-  while (!window.__TAURI__ && retries < 30) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-    retries++;
-  }
-  if (!window.__TAURI__) {
-    renderSidebarError('Tauri API not loaded');
+  if (!window.RozsaUIHost) {
+    renderSidebarError('Electron UI host not loaded');
     return;
   }
 

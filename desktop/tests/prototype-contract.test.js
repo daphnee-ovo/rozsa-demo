@@ -6,7 +6,9 @@ import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const read = path => readFileSync(resolve(root, path), 'utf8');
+const read = path => path === 'desktop/renderer/app.js'
+  ? read('desktop/renderer/runtime/app/order.txt').trim().split('\n').map(name => read(`desktop/renderer/runtime/app/${name}`)).join('\n')
+  : readFileSync(resolve(root, path), 'utf8');
 const json = path => JSON.parse(read(path));
 const ui = path => read('desktop/renderer/' + path);
 const sorted = values => [...new Set(values)].sort();
@@ -37,7 +39,12 @@ test('prototype coverage inventory stays bidirectional with scenes, events and d
     }
     for (const reference of [...item.runtime_entry, ...item.prototype_entry]) {
       const path = reference.split('#')[0];
-      if (/^(desktop|prototype|docs)\//.test(path)) assert.ok(existsSync(resolve(root, path)), path);
+      if (/^(desktop|prototype|docs)\//.test(path)) {
+        const exists = path === 'desktop/renderer/app.js'
+          ? existsSync(resolve(root, 'desktop/renderer/runtime/app/order.txt'))
+          : existsSync(resolve(root, path));
+        assert.ok(exists, path);
+      }
     }
   }
   const prototype = manifest.prototype_inventory;
@@ -57,7 +64,10 @@ test('prototype coverage inventory stays bidirectional with scenes, events and d
   }
   const runtimeText = manifest.items.flatMap(item => [...item.runtime_entry, ...item.behavior]).join('\n');
   for (const path of [...manifest.runtime_inventory.entries, ...manifest.runtime_inventory.scripts]) {
-    assert.ok(existsSync(resolve(root, path)), path); assert.ok(runtimeText.includes(basename(path)), path);
+    const exists = path === 'desktop/renderer/app.js'
+      ? existsSync(resolve(root, 'desktop/renderer/runtime/app/order.txt'))
+      : existsSync(resolve(root, path));
+    assert.ok(exists, path); assert.ok(runtimeText.includes(basename(path)), path);
   }
   const itemEvents = manifest.items.flatMap(item => item.runtime_events || []);
   for (const [path, expected] of Object.entries(manifest.runtime_inventory.visible_events)) {

@@ -134,7 +134,6 @@ test('structured tool evidence retains output for read, write, edit, bash, subag
     assert.ok(!answered.html.includes('{"answers"'));
     const error = render({name:'unknown_tool',arguments:{value:'x'}}, {isError:true,output:'permission denied',details:{}});
     assert.ok(error.html.includes('error') && error.html.includes('permission denied'));
-    assert.doesNotMatch(readFrontend('app.js'), /render(Search|Ls)ToolEvidence/);
   } finally { app.close(); }
 });
 

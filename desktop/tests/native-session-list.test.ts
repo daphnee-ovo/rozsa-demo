@@ -1,5 +1,4 @@
-// Focused native acceptance for T001. Uses only this test's Electron instance,
-// synthetic directories and the instance's ephemeral DevTools socket.
+// Native Electron acceptance for the assembled legacy UI and real session catalog.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, writeFile, readFile, stat, rename } from "node:fs/promises";
@@ -62,7 +61,8 @@ try {
   });
   const target = await poll(async () => {
     const result = await send("Target.getTargets");
-    return result.targetInfos.find((item: { type: string; url: string }) => item.type === "page" && item.url.endsWith("/sessions/index.html"));
+    return result.targetInfos.find((item: { type: string; url: string }) =>
+      item.type === "page" && (item.url.endsWith("/index.html") || /^http:\/\/127\.0\.0\.1:\d+\/$/.test(item.url)));
   }, "renderer target");
   const attached = await send("Target.attachToTarget", { targetId: target.targetId, flatten: true });
   const evaluate = async (expression: string): Promise<any> => {
@@ -71,36 +71,36 @@ try {
     return result.result.value;
   };
   const snapshot = await poll(async () => {
-    const value = await evaluate(`({status:document.querySelector('#status')?.textContent, rows:[...document.querySelectorAll('#sessions li')].map(row=>({id:row.dataset.sessionId,name:row.querySelector('.session-name').textContent})), node:typeof window.require,bridge:Object.keys(window.rozsa||{}),windows:window.frames.length})`);
-    return value.status === "2 sessions" ? value : undefined;
-  }, "catalog rendering");
-  assert.deepEqual(snapshot.rows, [{ id: "recent", name: "Review session catalog" }, { id: "shared", name: "Project session · 玫瑰🌹" }]);
+    const value = await evaluate(`({rows:[...document.querySelectorAll('#sessionList .session-item')].map(row=>row.querySelector('.session-name')?.textContent.trim()),sidebar:(()=>{const el=document.querySelector('#sidebar');if(!el)return {exists:false};const style=getComputedStyle(el),rect=el.getBoundingClientRect();return {exists:true,display:style.display,visibility:style.visibility,width:rect.width,x:rect.x}})(),sidebarToggle:(()=>{const el=document.querySelector('body > .sidebar-toggle-button');return {exists:!!el,visible:!!el&&getComputedStyle(el).display!=='none'}})(),viewport:innerWidth,breakpoints:document.documentElement?.dataset.uiMaxWidth,bodyClass:document.body?.className,main:!!document.querySelector('#mainContentScene'),conversation:!!document.querySelector('#chatMessages'),node:typeof window.require,bridge:Object.keys(window.rozsa||{}),windows:window.frames.length})`);
+    return value.rows.length === 2 && value.conversation ? value : undefined;
+  }, "full UI and catalog rendering");
+  assert.deepEqual(snapshot.rows, ["Review session catalog", "Project session · 玫瑰🌹"]);
+  assert.equal(snapshot.sidebar.exists, true); assert.equal(snapshot.sidebar.display, "flex"); assert.equal(snapshot.sidebar.visibility, "visible", JSON.stringify(snapshot)); assert.ok(snapshot.sidebar.width > 0);
+  assert.deepEqual(snapshot.sidebarToggle, { exists: true, visible: process.platform === "darwin" });
+  assert.equal(snapshot.main, true); assert.equal(snapshot.conversation, true);
+  if (process.platform === "darwin") {
+    const collapsedBoundary = await evaluate(`document.querySelector('body > .sidebar-toggle-button').click(); getComputedStyle(document.documentElement).getPropertyValue('--chrome-sidebar-boundary').trim()`);
+    assert.equal(collapsedBoundary, "0px");
+    const edgeVisibleBoundary = await evaluate(`setSidebarEdgeVisible(true); getComputedStyle(document.documentElement).getPropertyValue('--chrome-sidebar-boundary').trim()`);
+    assert.equal(edgeVisibleBoundary, `${snapshot.sidebar.width}px`);
+    const edgeHiddenBoundary = await evaluate(`setSidebarEdgeVisible(false); getComputedStyle(document.documentElement).getPropertyValue('--chrome-sidebar-boundary').trim()`);
+    assert.equal(edgeHiddenBoundary, "0px");
+    const restoredBoundary = await evaluate(`document.querySelector('body > .sidebar-toggle-button').click(); getComputedStyle(document.documentElement).getPropertyValue('--chrome-sidebar-boundary').trim()`);
+    assert.equal(restoredBoundary, `${snapshot.sidebar.width}px`);
+  }
   assert.equal(snapshot.node, "undefined"); assert.deepEqual(snapshot.bridge, ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions"]); assert.equal(snapshot.windows, 0);
   assert.equal(await evaluate(`window.rozsa.getSessions('/forbidden').then(()=>false,error=>error.message)`), "getSessions accepts no arguments");
+  assert.equal(await evaluate(`window.RozsaUIHost.port.request('get_sessions').then(value=>value.length)`), 2);
+  await evaluate(`document.querySelector('#sessionList .session-item').click()`);
+  const switched = await poll(async () => {
+    const state = await evaluate(`({name:document.querySelector('#currentSessionName')?.textContent,chat:document.querySelector('#chatMessages')?.textContent})`);
+    return state.name === "Review session catalog" && state.chat.includes("Review session catalog") ? state : undefined;
+  }, "real session switch into the conversation view");
+  assert.match(switched.chat, /Review session catalog/);
   const screenshot = await send("Page.captureScreenshot", {}, attached.sessionId);
-  await writeFile(join(output, "sessions.png"), Buffer.from(screenshot.data, "base64"));
-  await evaluate(`document.querySelector('#refresh').click()`);
-  await poll(async () => await evaluate(`document.querySelector('#status').textContent==='2 sessions' && !document.querySelector('#refresh').disabled`) ? true : undefined, "refresh");
+  await writeFile(join(output, "full-ui.png"), Buffer.from(screenshot.data, "base64"));
   assert.equal(await readFile(fixture, "utf8"), fixtureText); assert.equal((await stat(fixture)).mtimeMs, before.mtimeMs);
-  assert.match(logs, /Session window shown/);
-  // Change only this run's synthetic paths to exercise the real error/empty UI.
-  await rename(project, join(output, "project-saved"));
-  await writeFile(project, "not a directory");
-  await evaluate(`document.querySelector('#refresh').click()`);
-  const errorState = await poll(async () => {
-    const state = await evaluate(`({text:document.querySelector('#status').textContent,role:document.querySelector('#status').getAttribute('role'),rows:document.querySelectorAll('#sessions li').length})`);
-    return state.role === "alert" ? state : undefined;
-  }, "directory error UI");
-  assert.equal(errorState.text, `Could not load sessions: Failed to read session dir: ${project}`);
-  assert.equal(errorState.rows, 0);
-  const errorShot = await send("Page.captureScreenshot", {}, attached.sessionId);
-  await writeFile(join(output, "error.png"), Buffer.from(errorShot.data, "base64"));
-  await rename(project, join(output, "project-error.txt")); await mkdir(project);
-  await rename(global, join(output, "global-saved")); await mkdir(global);
-  await evaluate(`document.querySelector('#refresh').click()`);
-  const emptyState = await poll(async () => await evaluate(`document.querySelector('#status').textContent`) === "No sessions yet." ? "No sessions yet." : undefined, "empty list UI");
-  const emptyShot = await send("Page.captureScreenshot", {}, attached.sessionId);
-  await writeFile(join(output, "empty.png"), Buffer.from(emptyShot.data, "base64"));
+  await poll(async () => /Session window shown/.test(logs) ? true : undefined, "native Electron window shown");
   // Normal window close travels through window-all-closed and backend shutdown.
   socket.send(JSON.stringify({ id: ++id, method: "Runtime.evaluate", params: { expression: "window.close()" }, sessionId: attached.sessionId }));
   const exitCode = await Promise.race([exited, new Promise<never>((_, reject) => { const timer = setTimeout(() => reject(new Error("Electron close timed out")), 10000); timer.unref(); })]);
@@ -109,7 +109,7 @@ try {
   assert.ok(backendPID > 0); assert.match(logs, new RegExp(`Backend stopped: ${backendPID} \\(0\\)`));
   assert.throws(() => process.kill(backendPID, 0), /ESRCH/);
   closedNormally = true;
-  await writeFile(join(output, "result.json"), JSON.stringify({ platform: process.platform, snapshot, errorState, emptyState, windowShown: true, electronExitCode: exitCode, backendPID, backendAbsent: true, fixtureUnchanged: true, screenshot: join(output, "sessions.png") }, null, 2));
+  await writeFile(join(output, "result.json"), JSON.stringify({ platform: process.platform, snapshot, windowShown: true, electronExitCode: exitCode, backendPID, backendAbsent: true, fixtureUnchanged: true, screenshot: join(output, "full-ui.png") }, null, 2));
   console.log(`Native session-list PASS: ${output}`);
 } finally {
   socket?.close();

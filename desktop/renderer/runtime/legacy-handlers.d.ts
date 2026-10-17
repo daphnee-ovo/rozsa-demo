@@ -1,11 +1,10 @@
 import type { createUIHost } from '../scripts/core/renderer.ts';
-import type { TauriAPI } from './adapters/tauri.ts';
+import type { ProductBridge } from '../main/session-contract.js';
 
-// These bindings are owned by the unchanged classic app.js/sidebar.js scripts.
-// The entries consume their browser-global API without importing/reinitializing it.
+// The split TypeScript app sources are combined into one classic runtime entry.
 declare global {
   interface Window {
-    __TAURI__: TauriAPI;
+    rozsa: ProductBridge;
     RozsaUIHost: ReturnType<typeof createUIHost>;
     RozsaUIReady: Promise<void>;
     RozsaSidebarEmit: (event: string, payload?: unknown) => Promise<void>;

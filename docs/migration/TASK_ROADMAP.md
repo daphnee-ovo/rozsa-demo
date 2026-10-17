@@ -287,7 +287,11 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 
 落盘保持 Rust 的 pretty JSON、写入换行差异（字段更新有换行，`save_global` 无额外换行）及进程 umask 控制的目录/文件权限。Go 用 `map[string]any` 暴露可复用的设置视图；Rust 原实现的公开配置类型仍是强类型结构。平台 fixture 是宿主内的路径规则验证，不代表 Linux/Windows 实机验证。针对性命令：`go -C backend test ./internal/app/settings/... ./internal/platform/configpaths/...`。
 
-### 对应界面的设计审阅（仅阻断受影响 UI）
+### 对应界面的设计审阅（仅覆盖新增或改变设计的部分）
+
+已存在的 DOM、CSS、组件和 flow 直接接入 Electron，不依赖 T004–T008 整套审批；
+原型覆盖不足本身不代表该功能不存在。只有新场景或需改变现有视觉/交互的部分，才由
+对应任务提出方案并等待批准。
 
 | 任务 | 具体产出 | 前置任务 |
 | --- | --- | --- |
@@ -299,28 +303,38 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 
 ### TS UI 与原生交互切片
 
+T013 和 T079 已完成。TASK-T080 将原双 WebView UI 的 DOM 整合进 Electron `index.html`，
+使 sidebar 与 main 同处一个 WebView；沿用既有组件和 flow，renderer 源码按职责拆在
+`desktop/renderer/runtime/app/*.ts`，构建时按稳定顺序合并为 classic `runtime/app.js`，以 Electron adapter
+对接已实现的真实会话 bridge；未实现的 Go 方法透明报错。T029、T052、T053 按各自职责
+在 T080 后继续。T080 的 macOS 单窗口用 Electron 原生 Sidebar vibrancy 作为窗口材质，
+只让 sidebar 与标题栏对应区域透出系统材质，main panel 保持不透明；不以 CSS blur 冒充。
+T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T080 不代表全部业务
+或完整 UI 状态已经验收。
+
 | 任务 | 具体产出 | 前置任务 |
 | --- | --- | --- |
-| TASK-T029 | 转换消息/Markdown TS 真源并恢复全部内容状态 | TASK-T004、TASK-T013、TASK-T003、TASK-T020、TASK-T079 |
+| TASK-T029 | 转换消息/Markdown TS 真源并恢复全部内容状态 | TASK-T013、TASK-T003、TASK-T020、TASK-T079、TASK-T080 |
 | TASK-T079 | 转换现有会话消息组件与 flow 为 TypeScript | TASK-T013 |
-| TASK-T036 | 转换 settings/appearance TS 与恢复 General | TASK-T007、TASK-T013、TASK-T015、TASK-T016、TASK-T024、TASK-T030 |
-| TASK-T039 | 恢复权限/Hint/trust 与多问题多选 TS 交互 | TASK-T006、TASK-T013、TASK-T012、TASK-T035、TASK-T027 |
-| TASK-T042 | 转换 Composer/autocomplete/model picker TS 与输入行为 | TASK-T005、TASK-T013、TASK-T012、TASK-T016、TASK-T038 |
-| TASK-T043 | 恢复 Skills/Tools capability scope 与 inherited/reset TS UI | TASK-T007、TASK-T038、TASK-T036 |
-| TASK-T045 | 转换工具/evidence/diff TS 并恢复完整生命周期 | TASK-T004、TASK-T013、TASK-T012、TASK-T025、TASK-T026、TASK-T027、TASK-T040 |
-| TASK-T046 | 恢复附件/文件引用与三平台 native picker/drop | TASK-T005、TASK-T012、TASK-T042 |
-| TASK-T047 | 恢复快捷键列表/搜索/capture/冲突/reset TS 流程 | TASK-T007、TASK-T012、TASK-T043、TASK-T031 |
-| TASK-T048 | 转换 sidebar/Dev Flow TS、恢复 quota 与详情/空列表 | TASK-T008、TASK-T013、TASK-T012、TASK-T016、TASK-T041、TASK-T036 |
-| TASK-T049 | 恢复运行中 queue/steering/fork/subagent TS 跨组件流程 | TASK-T005、TASK-T013、TASK-T037、TASK-T040、TASK-T042、TASK-T046 |
-| TASK-T050 | 恢复权限 settings/rule editor 全状态与 TS 真源 | TASK-T007、TASK-T035、TASK-T047 |
-| TASK-T051 | 转换 notification/popover TS 并逐组件恢复异常出口 | TASK-T008、TASK-T012、TASK-T029、TASK-T045、TASK-T042、TASK-T046、TASK-T049、TASK-T039、TASK-T036、TASK-T043、TASK-T047、TASK-T050、TASK-T048 |
-| TASK-T052 | 完成单 WebView native shell/scene/state 与原生窗口接管 | TASK-T012、TASK-T046、TASK-T049、TASK-T047、TASK-T048、TASK-T051 |
+| TASK-T080 | 接入既有完整 UI 到 Electron 单 WebView 产品入口 | TASK-T003、TASK-T009、TASK-T013、TASK-T079 |
+| TASK-T036 | 转换 settings/appearance TS 与恢复 General | TASK-T013、TASK-T015、TASK-T016、TASK-T024、TASK-T030 |
+| TASK-T039 | 恢复权限/Hint/trust 与多问题多选 TS 交互 | TASK-T013、TASK-T012、TASK-T035、TASK-T027 |
+| TASK-T042 | 转换 Composer/autocomplete/model picker TS 与输入行为 | TASK-T013、TASK-T012、TASK-T016、TASK-T038 |
+| TASK-T043 | 恢复 Skills/Tools capability scope 与 inherited/reset TS UI | TASK-T038、TASK-T036 |
+| TASK-T045 | 转换工具/evidence/diff TS 并恢复完整生命周期 | TASK-T013、TASK-T012、TASK-T025、TASK-T026、TASK-T027、TASK-T040 |
+| TASK-T046 | 恢复附件/文件引用与三平台 native picker/drop | TASK-T012、TASK-T042 |
+| TASK-T047 | 恢复快捷键列表/搜索/capture/冲突/reset TS 流程 | TASK-T012、TASK-T043、TASK-T031 |
+| TASK-T048 | 转换 sidebar/Dev Flow TS、恢复 quota 与详情/空列表 | TASK-T013、TASK-T012、TASK-T016、TASK-T041、TASK-T036 |
+| TASK-T049 | 恢复运行中 queue/steering/fork/subagent TS 跨组件流程 | TASK-T013、TASK-T037、TASK-T040、TASK-T042、TASK-T046 |
+| TASK-T050 | 恢复权限 settings/rule editor 全状态与 TS 真源 | TASK-T035、TASK-T047 |
+| TASK-T051 | 转换 notification/popover TS 并逐组件恢复异常出口 | TASK-T012、TASK-T029、TASK-T045、TASK-T042、TASK-T046、TASK-T049、TASK-T039、TASK-T036、TASK-T043、TASK-T047、TASK-T050、TASK-T048 |
+| TASK-T052 | 完成单 WebView native shell/scene/state 与原生窗口接管 | TASK-T012、TASK-T046、TASK-T049、TASK-T047、TASK-T048、TASK-T051、TASK-T080 |
 
 ### 最终汇接、完整功能与真实验收
 
 | 任务 | 具体产出 | 前置任务 |
 | --- | --- | --- |
-| TASK-T053 | 完成全部 runtime/原型 TS 与生产 adapter 汇接收口 | TASK-T003、TASK-T044、TASK-T029、TASK-T045、TASK-T042、TASK-T046、TASK-T049、TASK-T039、TASK-T036、TASK-T043、TASK-T047、TASK-T050、TASK-T048、TASK-T051、TASK-T052 |
+| TASK-T053 | 完成全部 runtime/原型 TS 与生产 adapter 汇接收口 | TASK-T003、TASK-T044、TASK-T029、TASK-T045、TASK-T042、TASK-T046、TASK-T049、TASK-T039、TASK-T036、TASK-T043、TASK-T047、TASK-T050、TASK-T048、TASK-T051、TASK-T052、TASK-T080 |
 | TASK-T054 | 真实 provider/OAuth 授权与远端错误/取消 smoke | TASK-T044、TASK-T053 |
 | TASK-T055 | 整链路故障/重启/进程清理与完整等价矩阵收口 | TASK-T044、TASK-T053 |
 | TASK-T056 | macos 实际安装包、CLI、原生 GUI 与系统能力验收 | TASK-T014、TASK-T054、TASK-T055 |
@@ -353,9 +367,9 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 | F10 | 后台会话、queue/steering/fork/subagent | TASK-T037、TASK-T040、TASK-T049 | 待实现 |
 | F11 | 分层设置、主题、快捷键、capability/skills/resources/extensions | TASK-T015、TASK-T030、TASK-T031、TASK-T036、TASK-T038、TASK-T043、TASK-T047、TASK-T050 | 待实现 |
 | F12 | Dev Flow discovery/dashboard/REST/SSE/重连/回收 | TASK-T041、TASK-T048 | 待实现 |
-| F13 | 消息/Markdown/tools/notification与异常 | TASK-T003、TASK-T029、TASK-T045、TASK-T051、TASK-T079 | T003 仅文本历史与读取错误/重试，见 M003；T079 仅转换既有消息/Markdown组件与 flow 并验证装载；完整内容状态与真实产品接线仍由 T029/T045 实现和验收 |
+| F13 | 消息/Markdown/tools/notification与异常 | TASK-T003、TASK-T029、TASK-T045、TASK-T051、TASK-T079、TASK-T080 | T003 仅文本历史与读取错误/重试，见 M003；T079 转换既有消息组件与 flow；T080 接入现有完整 UI 与会话 bridge；完整内容状态及尚未实现业务仍由 T029/T045/T051 实现和验收 |
 | F14 | Composer/autocomplete/model/file refs/picker/drop/IME | TASK-T042、TASK-T046、TASK-T049 | 待实现 |
-| F15 | 单窗口材质/split/scene/root与焦点草稿滚动 | TASK-T003、TASK-T012、TASK-T052、TASK-T056、TASK-T057、TASK-T058 | T003 只读历史滚动/Thinking 展开按 session 保存，见 M003；其余 shell/Composer 状态待实现 |
+| F15 | 单窗口材质/split/scene/root与焦点草稿滚动 | TASK-T003、TASK-T012、TASK-T052、TASK-T056、TASK-T057、TASK-T058、TASK-T080 | T080 接入 Sidebar vibrancy 并装配单 WebView 的既有 sidebar/main；其余原生窗口、焦点/草稿/scene 状态由 T052 和真实平台验收任务负责 |
 | F16 | 全部CLI参数/text/json/continue/resume/slash/session | TASK-T020、TASK-T044 | 待实现 |
 | F17 | PATH/config/版本/开发构建/安装包/发行 | TASK-T001、TASK-T009、TASK-T014、TASK-T015、TASK-T033、TASK-T044、TASK-T056、TASK-T057、TASK-T058、TASK-T060、TASK-T061、TASK-T062 | 待实现 |
 
@@ -363,7 +377,7 @@ TASK-T015 切片覆盖 `backend/internal/app/settings/` 与 `backend/internal/pl
 
 ## 设计缺口 owner
 
-具体方案在迁移到对应界面时审阅。T004–T008只有对应 UI 的批准依赖，不阻断独立 backend。未批准不修改 prototype，未恢复不移除暂停守卫。
+T004–T008 记录需要新增或改变设计时的提案 owner，不作为既有 UI 迁用或接线的依赖；只有修改 prototype 的新增/改变设计范围需先取得批准。独立 backend 不受其阻断；未批准的设计不得修改 prototype，未恢复功能不移除暂停守卫。
 
 | 缺口 | 设计审阅 | 恢复实现 |
 | --- | --- | --- |

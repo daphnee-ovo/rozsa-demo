@@ -8,8 +8,9 @@ export async function checkResourceLoading(outDir: string) {
   const paths = (tag: string, attribute: string) => [...text.matchAll(new RegExp(`<${tag}\\b[^>]*${attribute}="([^"]+)"`, "g"))].map(m => resolve(dirname(html), m[1]));
   const styles = paths("link", "href").filter(p => p.endsWith(".css"));
   const scripts = paths("script", "src");
-  assert.ok(styles.length > 0); assert.equal(scripts.length, 1);
-  assert.match(text, /connect-src 'none'/); assert.doesNotMatch(text, /entry\.ts|@vite\/client/);
+  assert.ok(styles.length > 0);
+  assert.ok(scripts.some(path => path.endsWith('/runtime/app.js')), 'combined app runtime resource is referenced');
+  assert.match(text, /connect-src 'self'/); assert.doesNotMatch(text, /entry\.ts|@vite\/client/);
   for (const path of [...styles, ...scripts]) assert.ok((await readFile(path)).length > 0, path);
   const css = (await Promise.all(styles.map(path => readFile(path, "utf8")))).join("\n");
   assert.match(css, /--font-ui/); assert.match(css, /session-item/);
