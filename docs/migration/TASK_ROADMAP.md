@@ -431,7 +431,7 @@ T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T
 | F06 | compaction、有效上下文与会话配置 overlay | TASK-T002、TASK-T028 | T002 已恢复持久化有效上下文，见 M002；实际压缩与配置 overlay 待 T028 |
 | F07 | Read/Write/Edit/Bash、锁、diff/evidence与进程树 | TASK-T025、TASK-T026、TASK-T045 | T025 Go Read/Write/Edit、进程内路径锁、file delta/turn evidence 与 tracked/untracked Git diff 已通过 backend 专用 race 测试；真实文件错误、CRLF/BOM/fuzzy、歧义匹配、symlink 与取消均有覆盖。T026 Go Bash 已覆盖 PATH/cwd/quote/UTF-8、stdout/stderr、退出码、超时、取消、输出上限和后代清理；当前宿主为 macOS，Linux/Windows 仅完成适配器构建/fixture 检查，尚无实机运行证据。权限失败、原子 rename 失败及 T025 极限截断仍待覆盖 |
 | F08 | permission模式/规则/approval/trust/Hint | TASK-T035、TASK-T039、TASK-T050 | 待实现 |
-| F09 | 多题/多选/Other、队列/取消/迟到响应 | TASK-T027、TASK-T039 | T027 `backend/internal/app/questions` 已实现 Rust 契约的参数与答案校验、产品 request ID、全局 FIFO presentation、跨 session 保留、定向取消和迟到响应拒绝；模块专用 race 测试覆盖多题、多选、自定义答案、失败/取消、重复 transport ID 与队列恢复。当前 Go agent tool/runtime 尚未接入该 owner，Electron question UI/transport 生命周期仍待 T039/T037；本条不代表生产端到端验收。 |
+| F09 | 多题/多选/Other、队列/取消/迟到响应 | TASK-T027、TASK-T086、TASK-T039 | T027 `backend/internal/app/questions` 已实现参数/答案校验、产品 request ID、FIFO presentation、跨 session 保留、取消和迟到响应拒绝；T086 将 Go runtime 的生产 AskUserQuestion tool 接入同一 owner，并以真实 `Tool.Execute` 入口验证回答、取消和迟到处理。Electron question UI/transport 生命周期仍待 T039；本条不代表生产端到端验收。 |
 | F10 | 后台会话、queue/steering/fork/subagent | TASK-T037、TASK-T040、TASK-T049 | 待实现 |
 | F11 | 分层设置、主题、快捷键、capability/skills/resources/extensions | TASK-T015、TASK-T030、TASK-T031、TASK-T036、TASK-T038、TASK-T043、TASK-T047、TASK-T050 | 待实现 |
 | F12 | Dev Flow discovery/dashboard/REST/SSE/重连/回收 | TASK-T041、TASK-T048 | 待实现 |

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"rozsa/backend/internal/app/questions"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
@@ -34,16 +35,17 @@ type Config struct {
 
 // Runtime owns the active session and serializes prompts against it.
 type Runtime struct {
-	mu       sync.Mutex
-	session  *session.Manager
-	service  *session.Service
-	model    types.Model
-	provider agent.Provider
-	output   io.Writer
-	pending  []hooks.Message
-	queue    []string
-	revision uint64
-	running  bool
+	mu        sync.Mutex
+	session   *session.Manager
+	service   *session.Service
+	model     types.Model
+	provider  agent.Provider
+	questions *questions.Owner
+	output    io.Writer
+	pending   []hooks.Message
+	queue     []string
+	revision  uint64
+	running   bool
 }
 
 func New(config Config) (*Runtime, error) {
@@ -89,7 +91,7 @@ func New(config Config) (*Runtime, error) {
 	if config.Output == nil {
 		config.Output = io.Discard
 	}
-	return &Runtime{session: manager, service: session.NewService(session.Catalog{Directories: []string{config.SessionDir}}), model: config.Model, provider: config.Provider, output: config.Output}, nil
+	return &Runtime{session: manager, service: session.NewService(session.Catalog{Directories: []string{config.SessionDir}}), model: config.Model, provider: config.Provider, output: config.Output, questions: questions.NewOwner()}, nil
 }
 
 func resolveProviderKey(ctx context.Context, resolver credentials.Resolver, provider, configured, authPath string) (string, error) {
@@ -124,6 +126,11 @@ func (runtime *Runtime) Switch(ctx context.Context, path, catalogID string) (ses
 }
 
 func (runtime *Runtime) Subscribe() session.EventSubscription { return runtime.service.Subscribe() }
+
+// QuestionOwner exposes the runtime-owned question queue to the app transport.
+// Agent tool executions use this same owner, so responses resolve the request
+// created by the production tool call.
+func (runtime *Runtime) QuestionOwner() *questions.Owner { return runtime.questions }
 
 func (runtime *Runtime) Snapshot(ctx context.Context) (session.StateSnapshot, error) {
 	return runtime.service.Snapshot(ctx)
@@ -208,7 +215,8 @@ func (runtime *Runtime) run(ctx context.Context, prompt *string) error {
 	input := hooks.AgentContext{Messages: toHookMessages(contextMessages)}
 	config := agent.Config{Model: runtime.model, Provider: runtime.provider,
 		StreamOptions: types.SimpleStreamOptions{Base: types.StreamOptions{SessionID: stringPointer(manager.SessionID()), Headers: runtime.model.Headers}},
-		ConvertToLLM:  func(messages []hooks.Message) []types.Message { return toModelMessages(messages) }}
+		ConvertToLLM:  func(messages []hooks.Message) []types.Message { return toModelMessages(messages) },
+		Tools:         runtime.applicationTools(manager.SessionID())}
 	// The manager already includes a newly persisted prompt. Continue runs it
 	// from restored context without appending the same user turn twice.
 	result := agent.Continue(ctx, input, config)
