@@ -171,6 +171,40 @@ func (o *Owner) Mark(identity Identity, status RequestStatus) error {
 	return nil
 }
 
+// CloseSession marks every nonterminal request for a closed session cancelled
+// and returns its identities so the runtime can resolve waiting tool calls.
+func (o *Owner) CloseSession(sessionID string) []Identity {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	closed := []Identity{}
+	for identity, request := range o.requests {
+		if identity.SessionID != sessionID || request.Status == Cancelled || request.Status == Stale {
+			continue
+		}
+		request.Status = Cancelled
+		request.Response = &Response{Kind: Deny}
+		closed = append(closed, identity)
+	}
+	delete(o.queues, sessionID)
+	return closed
+}
+
+func (o *Owner) CloseAll() []Identity {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	closed := []Identity{}
+	for identity, request := range o.requests {
+		if request.Status == Cancelled || request.Status == Stale {
+			continue
+		}
+		request.Status = Cancelled
+		request.Response = &Response{Kind: Deny}
+		closed = append(closed, identity)
+	}
+	o.queues = make(map[string][]Identity)
+	return closed
+}
+
 // SplitShellSegments separates shell control operators outside quoted strings.
 func SplitShellSegments(command string) []string {
 	segments := make([]string, 0, 1)

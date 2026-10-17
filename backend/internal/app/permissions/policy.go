@@ -3,9 +3,11 @@ package permissions
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 type Mode string
@@ -96,40 +98,155 @@ type Policy struct {
 	Mode          Mode
 	WorkspaceRoot string
 	Rules         Rules
-	SessionTrust  map[string]map[string]struct{}
+	mu            sync.RWMutex
+	sessionTrust  map[string]map[string]struct{}
 }
 
-func (p Policy) Evaluate(sessionID, tool string, args map[string]any) Verdict {
+// ProjectRuleStore persists an approved trust scope in the project settings.
+type ProjectRuleStore interface {
+	AddProjectPermissionAllow(rule string) error
+}
+
+func NewPolicy(mode Mode, workspaceRoot string, rules Rules) (*Policy, error) {
+	if _, err := ParseMode(string(mode)); err != nil {
+		return nil, err
+	}
+	if workspaceRoot == "" {
+		current, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve permission workspace: %w", err)
+		}
+		workspaceRoot = current
+	}
+	return &Policy{Mode: mode, WorkspaceRoot: workspaceRoot, Rules: cloneRules(rules), sessionTrust: make(map[string]map[string]struct{})}, nil
+}
+
+func (p *Policy) Update(mode Mode, workspaceRoot string, rules Rules) error {
+	if _, err := ParseMode(string(mode)); err != nil {
+		return err
+	}
+	if workspaceRoot == "" {
+		current, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("resolve permission workspace: %w", err)
+		}
+		workspaceRoot = current
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Mode, p.WorkspaceRoot, p.Rules = mode, workspaceRoot, cloneRules(rules)
+	return nil
+}
+
+func cloneRules(rules Rules) Rules {
+	return Rules{Deny: append([]string(nil), rules.Deny...), Ask: append([]string(nil), rules.Ask...), Allow: append([]string(nil), rules.Allow...)}
+}
+
+func (p *Policy) RecordSessionApproval(sessionID, trustKey string) error {
+	if sessionID == "" || trustKey == "" {
+		return fmt.Errorf("session approval requires session and trust identity")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.sessionTrust == nil {
+		p.sessionTrust = make(map[string]map[string]struct{})
+	}
+	if p.sessionTrust[sessionID] == nil {
+		p.sessionTrust[sessionID] = make(map[string]struct{})
+	}
+	p.sessionTrust[sessionID][trustKey] = struct{}{}
+	return nil
+}
+
+func (p *Policy) ApplyResponse(sessionID string, response Response) error {
+	switch response.Kind {
+	case AllowOnce, Deny, DenyWithHint:
+		return nil
+	case AllowSession:
+		return p.RecordSessionApproval(sessionID, response.TrustKey)
+	default:
+		return fmt.Errorf("unsupported permission response kind: %d", response.Kind)
+	}
+}
+
+func (p *Policy) RecordProjectApproval(trustKey string, store ProjectRuleStore) error {
+	if store == nil {
+		return fmt.Errorf("project permission store is required")
+	}
+	rule, err := ProjectRuleForTrustKey(trustKey)
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	if !containsRule(p.Rules.Allow, rule) {
+		p.Rules.Allow = append(p.Rules.Allow, rule)
+	}
+	p.mu.Unlock()
+	if err := store.AddProjectPermissionAllow(rule); err != nil {
+		return fmt.Errorf("persist project permission rule: %w", err)
+	}
+	return nil
+}
+
+func containsRule(rules []string, wanted string) bool {
+	for _, rule := range rules {
+		if rule == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Policy) Evaluate(sessionID, tool string, args map[string]any) Verdict {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	command, _ := args["command"].(string)
 	if isShell(tool) {
+		if reason := blockedCommandDeep(command); reason != "" {
+			return Verdict{Kind: Block, Reason: reason}
+		}
 		for _, segment := range SplitShellSegments(command) {
 			if reason := blockedCommand(segment); reason != "" {
 				return Verdict{Kind: Block, Reason: reason}
 			}
 		}
 	}
-	targets := requestTargets(tool, args)
-	if matchesAny(p.Rules.Deny, tool, targets) {
+	targets := requestTargets(tool, args, p.WorkspaceRoot)
+	if matchesAny(p.Rules.Deny, tool, targets, p.WorkspaceRoot) {
 		return Verdict{Kind: Block, Reason: "blocked by permission.deny rule"}
 	}
-	if matchesAny(p.Rules.Ask, tool, targets) {
-		return p.approval(tool, args, targets)
+	if matchesAny(p.Rules.Ask, tool, targets, p.WorkspaceRoot) {
+		return p.approval(sessionID, tool, args, targets)
 	}
-	if p.Mode == Yolo || matchesAll(p.Rules.Allow, tool, targets) || p.inSessionTrust(sessionID, tool, targets) || safeRead(tool, args, p.WorkspaceRoot) || safeReadOnlyBash(tool, args, p.WorkspaceRoot) {
+	if p.Mode == Yolo || matchesAllAllow(p.Rules.Allow, tool, targets, p.WorkspaceRoot, args) || p.inSessionTrust(sessionID, tool, targets) || safeRead(tool, args, p.WorkspaceRoot) {
 		return Verdict{Kind: Allow}
 	}
-	return p.approval(tool, args, targets)
+	return p.approval(sessionID, tool, args, targets)
 }
 
-func (p Policy) inSessionTrust(sessionID, tool string, targets []string) bool {
-	grants := p.SessionTrust[sessionID]
+func DefaultAllowRules() []string {
+	rules := []string{"subagent(*)", "askUserQuestion(*)"}
+	return append(rules, DefaultReadOnlyBashRules()...)
+}
+
+func DefaultReadOnlyBashRules() []string {
+	rules := []string{}
+	for _, command := range []string{"head", "tail", "cat", "grep", "sort", "pwd", "ls", "basename", "dirname", "realpath", "readlink", "stat", "file", "wc", "diff", "cmp", "comm", "cut", "tr", "uniq", "strings", "od", "xxd"} {
+		rules = append(rules, "Bash("+command+"*)")
+	}
+	return rules
+}
+
+func (p *Policy) inSessionTrust(sessionID, tool string, targets []string) bool {
+	grants := p.sessionTrust[sessionID]
 	if len(targets) == 0 || len(grants) == 0 {
 		return false
 	}
 	for _, target := range targets {
 		matched := false
 		for key := range grants {
-			if strings.HasPrefix(key, tool+":") && commandTrustMatches(strings.TrimPrefix(key, tool+":"), target) {
+			grant, ok := strings.CutPrefix(key, tool+":")
+			if ok && trustScopeMatches(tool, grant, target) {
 				matched = true
 				break
 			}
@@ -141,12 +258,17 @@ func (p Policy) inSessionTrust(sessionID, tool string, targets []string) bool {
 	return true
 }
 
-func (p Policy) approval(tool string, args map[string]any, targets []string) Verdict {
+func (p *Policy) approval(sessionID, tool string, args map[string]any, targets []string) Verdict {
 	var summary string
 	if isShell(tool) {
 		summary, _ = args["command"].(string)
+		if summary == "" {
+			summary = "(no command)"
+		}
 	} else if len(targets) != 0 {
 		summary = targets[0]
+	} else if isPathTool(tool) {
+		summary = "(unknown)"
 	} else {
 		summary = fmt.Sprint(args)
 	}
@@ -182,24 +304,90 @@ func (p Policy) approval(tool string, args map[string]any, targets []string) Ver
 		}
 	}
 	levels := []TrustLevel{{Label: summary, Key: key}}
+	groups := []TrustGroup{}
 	if isShell(tool) {
 		segments := SplitShellSegments(summary)
 		levels = nil
 		for _, segment := range segments {
-			levels = append(levels, TrustLevel{Label: segment, Key: tool + ":" + segment})
-			words := strings.Fields(segment)
-			for len(words) > 1 {
-				words = words[:len(words)-1]
-				prefix := strings.Join(words, " ")
-				levels = append(levels, TrustLevel{Label: prefix, Key: tool + ":" + prefix})
+			if p.inSessionTrust(sessionID, tool, []string{segment}) || matchesAnyAllow(p.Rules.Allow, tool, segment, p.WorkspaceRoot, args) {
+				continue
 			}
+			segmentLevels := commandTrustLevels(tool, segment)
+			groups = append(groups, TrustGroup{Target: segment, Levels: segmentLevels})
+			levels = append(levels, segmentLevels...)
+		}
+	} else if isPathTool(tool) {
+		path, _ := args["file_path"].(string)
+		if path == "" {
+			path, _ = args["path"].(string)
+		}
+		canonical := canonicalPath(path, p.WorkspaceRoot)
+		if !p.inSessionTrust(sessionID, tool, []string{canonical}) && !matchesAnyAllow(p.Rules.Allow, tool, canonical, p.WorkspaceRoot, args) {
+			levels = fileTrustLevels(tool, path, p.WorkspaceRoot)
+			groups = []TrustGroup{{Target: canonical, Levels: levels}}
+		} else {
+			levels = nil
 		}
 	}
-	if len(summary) > 80 {
-		summary = summary[:80]
+	if len(groups) == 0 {
+		groups = []TrustGroup{{Target: summary, Levels: levels}}
 	}
-	info := &ApprovalInfo{ToolName: tool, ArgsSummary: summary, Risk: risk, TrustKey: key, TrustLevels: levels, TrustGroups: []TrustGroup{{Target: summary, Levels: levels}}}
+	summary = truncateRunes(summary, 80)
+	if len(levels) > 0 {
+		key = levels[0].Key
+	}
+	info := &ApprovalInfo{ToolName: tool, ArgsSummary: summary, Risk: risk, TrustKey: key, TrustLevels: levels, TrustGroups: groups}
 	return Verdict{Kind: NeedApproval, Info: info}
+}
+
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) > limit {
+		return string(runes[:limit])
+	}
+	return value
+}
+
+func commandTrustLevels(tool, command string) []TrustLevel {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return nil
+	}
+	levels := []TrustLevel{{Label: command, Key: tool + ":" + command}}
+	words := strings.Fields(command)
+	for count := len(words) - 1; count > 0; count-- {
+		prefix := strings.Join(words[:count], " ")
+		levels = append(levels, TrustLevel{Label: prefix + " *", Key: tool + ":" + prefix})
+	}
+	return levels
+}
+
+func fileTrustLevels(tool, path, root string) []TrustLevel {
+	absolute := canonicalPath(path, root)
+	workspace := canonicalPath(root, root)
+	if absolute != workspace && !withinRoot(absolute, workspace) {
+		return []TrustLevel{{Label: absolute, Key: tool + ":" + absolute}}
+	}
+	levels := []TrustLevel{{Label: absolute, Key: tool + ":" + absolute}}
+	directory := filepath.Dir(absolute)
+	if extension := filepath.Ext(absolute); extension != "" {
+		scope := filepath.ToSlash(filepath.Join(directory, "*"+extension))
+		levels = append(levels, TrustLevel{Label: scope, Key: tool + ":" + scope})
+	}
+	levels = append(levels, TrustLevel{Label: filepath.ToSlash(filepath.Join(directory, "*")), Key: tool + ":" + filepath.ToSlash(filepath.Join(directory, "*"))})
+	projectScope := filepath.ToSlash(filepath.Join(workspace, "*"))
+	if levels[len(levels)-1].Label != projectScope {
+		levels = append(levels, TrustLevel{Label: projectScope, Key: tool + ":" + projectScope})
+	}
+	return levels
+}
+
+func isPathTool(tool string) bool {
+	switch strings.ToLower(tool) {
+	case "read", "write", "edit":
+		return true
+	}
+	return false
 }
 
 func SaferAlternativeHint(tool string, args map[string]any) string {
@@ -235,27 +423,31 @@ func ProjectRuleForTrustKey(trustKey string) (string, error) {
 	return tool + "(" + target + ")", nil
 }
 
-func requestTargets(tool string, args map[string]any) []string {
+func requestTargets(tool string, args map[string]any, root string) []string {
 	if isShell(tool) {
 		command, _ := args["command"].(string)
 		return SplitShellSegments(command)
 	}
 	for _, key := range []string{"file_path", "path"} {
 		if path, ok := args[key].(string); ok && path != "" {
-			return []string{filepath.Clean(path)}
+			return []string{canonicalPath(path, root)}
 		}
 	}
 	return []string{fmt.Sprint(args)}
 }
 
-func matchesAny(rules []string, tool string, targets []string) bool {
+func matchesAny(rules []string, tool string, targets []string, root string) bool {
 	for _, rule := range rules {
 		ruleTool, pattern, ok := parseRule(rule)
 		if !ok || (ruleTool != "*" && !strings.EqualFold(ruleTool, tool)) {
 			continue
 		}
 		for _, target := range targets {
-			if patternMatches(pattern, target) {
+			matched := patternMatches(pattern, target)
+			if isPathTool(tool) {
+				matched = pathPatternMatches(pattern, target, root)
+			}
+			if matched {
 				return true
 			}
 		}
@@ -263,16 +455,57 @@ func matchesAny(rules []string, tool string, targets []string) bool {
 	return false
 }
 
-func matchesAll(rules []string, tool string, targets []string) bool {
+func matchesAll(rules []string, tool string, targets []string, root string) bool {
 	if len(targets) == 0 {
 		return false
 	}
 	for _, target := range targets {
-		if !matchesAny(rules, tool, []string{target}) {
+		if !matchesAny(rules, tool, []string{target}, root) {
 			return false
 		}
 	}
 	return true
+}
+
+func matchesAllAllow(rules []string, tool string, targets []string, root string, args map[string]any) bool {
+	if len(targets) == 0 {
+		return false
+	}
+	for _, target := range targets {
+		if !matchesAnyAllow(rules, tool, target, root, args) {
+			return false
+		}
+	}
+	return true
+}
+
+func matchesAnyAllow(rules []string, tool, target, root string, args map[string]any) bool {
+	for _, rule := range rules {
+		ruleTool, pattern, ok := parseRule(rule)
+		if !ok || (ruleTool != "*" && !strings.EqualFold(ruleTool, tool)) {
+			continue
+		}
+		if isShell(tool) && isDefaultReadonlyRule(rule) && !safeReadOnlyBash(tool, args, root) {
+			continue
+		}
+		if patternMatches(pattern, target) || (isPathTool(tool) && pathPatternMatches(pattern, target, root)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isDefaultReadonlyRule(rule string) bool {
+	tool, pattern, ok := parseRule(rule)
+	if !ok || !strings.EqualFold(tool, "Bash") {
+		return false
+	}
+	for _, command := range []string{"head", "tail", "cat", "grep", "sort", "pwd", "ls", "basename", "dirname", "realpath", "readlink", "stat", "file", "wc", "diff", "cmp", "comm", "cut", "tr", "uniq", "strings", "od", "xxd"} {
+		if pattern == command+"*" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseRule(rule string) (string, string, bool) {
@@ -282,6 +515,47 @@ func parseRule(rule string) (string, string, bool) {
 	}
 	tool, pattern := strings.TrimSpace(rule[:open]), strings.TrimSpace(rule[open+1:len(rule)-1])
 	return tool, pattern, tool != "" && pattern != ""
+}
+
+func ValidateRule(rule string) error {
+	tool, pattern, ok := parseRule(rule)
+	if !ok {
+		return fmt.Errorf("permission rule must use Tool(pattern) syntax")
+	}
+	if tool == "*" && pattern == "*" {
+		return fmt.Errorf("*(*) is not allowed; use yolo mode to allow every tool")
+	}
+	regexPattern := strings.TrimPrefix(pattern, "$HOME/")
+	if expression, exists := strings.CutPrefix(regexPattern, "regex:"); exists {
+		if expression == "" {
+			return fmt.Errorf("regular expression cannot be empty")
+		}
+		if _, err := regexp.Compile("^(?:" + expression + ")$"); err != nil {
+			return fmt.Errorf("invalid permission rule regular expression: %w", err)
+		}
+	}
+	return nil
+}
+
+func ValidateRuleForScope(rule string, global bool) error {
+	if err := ValidateRule(rule); err != nil {
+		return err
+	}
+	tool, pattern, _ := parseRule(rule)
+	if global && (isPathTool(tool) || tool == "*") && !strings.HasPrefix(pattern, "$HOME/") {
+		return fmt.Errorf("global path rules must start with $HOME/")
+	}
+	if homeRelative, ok := strings.CutPrefix(pattern, "$HOME/"); ok {
+		if !global {
+			return fmt.Errorf("$HOME/ path rules are only valid in global settings")
+		}
+		for _, component := range strings.Split(filepath.ToSlash(homeRelative), "/") {
+			if component == ".." {
+				return fmt.Errorf("global path rules cannot escape $HOME/ with '..'")
+			}
+		}
+	}
+	return nil
 }
 
 func patternMatches(pattern, target string) bool {
@@ -320,9 +594,7 @@ func safeRead(tool string, args map[string]any, root string) bool {
 		if root == "" || path == "" {
 			return false
 		}
-		absolute, err := filepath.Abs(filepath.Join(root, path))
-		base, baseErr := filepath.Abs(root)
-		return err == nil && baseErr == nil && (absolute == base || strings.HasPrefix(absolute, base+string(filepath.Separator)))
+		return withinRoot(path, root)
 	}
 	return false
 }
@@ -365,28 +637,71 @@ func safeReadOnlyBash(tool string, args map[string]any, root string) bool {
 				}
 			}
 		}
-		if root != "" {
-			for _, field := range fields[1:] {
-				if strings.HasPrefix(field, "-") || field == "-" {
-					continue
-				}
-				if !withinRoot(field, root) {
-					return false
-				}
-			}
+		if !readonlyArgumentsWithinRoot(fields[0], fields[1:], root) {
+			return false
 		}
 	}
 	return true
 }
 
 func withinRoot(path, root string) bool {
-	base, baseErr := filepath.Abs(root)
-	candidate := path
-	if !filepath.IsAbs(candidate) {
-		candidate = filepath.Join(root, candidate)
+	base := canonicalPath(root, root)
+	candidate := canonicalPath(path, root)
+	return candidate == base || strings.HasPrefix(candidate, strings.TrimSuffix(base, "/")+"/")
+}
+
+func readonlyArgumentsWithinRoot(executable string, arguments []string, root string) bool {
+	if root == "" {
+		return true
 	}
-	abs, pathErr := filepath.Abs(candidate)
-	return baseErr == nil && pathErr == nil && (abs == base || strings.HasPrefix(abs, base+string(filepath.Separator)))
+	positional := []string{}
+	optionValue := false
+	for _, token := range arguments {
+		if optionValue {
+			if token != "-" && !withinRoot(token, root) {
+				return false
+			}
+			optionValue = false
+			continue
+		}
+		if token == "--" {
+			continue
+		}
+		if strings.HasPrefix(token, "-") {
+			if executable == "grep" && (token == "-f" || token == "--file") {
+				optionValue = true
+				continue
+			}
+			for _, option := range []string{"--from-file=", "--to-file=", "--relative-to=", "--relative-base=", "--file-list=", "--files-from="} {
+				if strings.HasPrefix(token, option) {
+					path := strings.TrimPrefix(token, option)
+					if path != "-" && !withinRoot(path, root) {
+						return false
+					}
+				}
+			}
+			if executable == "grep" && strings.HasPrefix(token, "--file=") {
+				path := strings.TrimPrefix(token, "--file=")
+				if path != "-" && !withinRoot(path, root) {
+					return false
+				}
+			}
+			continue
+		}
+		positional = append(positional, token)
+	}
+	if optionValue {
+		return false
+	}
+	if executable == "grep" && len(positional) > 0 {
+		positional = positional[1:]
+	}
+	for _, path := range positional {
+		if path != "-" && !withinRoot(path, root) {
+			return false
+		}
+	}
+	return true
 }
 
 func blockedCommand(command string) string {
@@ -399,6 +714,7 @@ func blockedCommand(command string) string {
 		{`\bgit\s+push\b[^\n;]*(--force|-f)\b`, "destructive: force push"},
 		{`\bdd\b`, "destructive: dd disk utility"},
 		{`\bmkfs\b`, "destructive: filesystem format"},
+		{`\bdiskutil\s+erase\b`, "destructive: diskutil erase"},
 	}
 	for _, item := range patterns {
 		if regexp.MustCompile(item.expression).MatchString(strings.TrimSpace(command)) {
@@ -406,4 +722,72 @@ func blockedCommand(command string) string {
 		}
 	}
 	return ""
+}
+
+func blockedCommandDeep(command string) string {
+	if reason := blockedCommand(command); reason != "" {
+		return reason
+	}
+	for _, nested := range commandSubstitutions(command) {
+		if reason := blockedCommand(nested); reason != "" {
+			return reason
+		}
+	}
+	variables := []string{"AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "GH_TOKEN", "GOOGLE_API_KEY", "API_KEY", "API_SECRET", "SECRET_KEY", "PRIVATE_KEY", "DATABASE_URL", "DB_PASSWORD", "NPM_TOKEN", "PYPI_TOKEN"}
+	leakContexts := []string{"echo", "printf", "curl", "wget", "cat", "tee"}
+	for _, name := range variables {
+		if !strings.Contains(command, "$"+name) && !strings.Contains(command, "${"+name+"}") {
+			continue
+		}
+		for _, context := range leakContexts {
+			if strings.Contains(command, context) {
+				return "blocked: potential sensitive environment variable leak"
+			}
+		}
+	}
+	return ""
+}
+
+func commandSubstitutions(command string) []string {
+	result := []string{}
+	for index := 0; index+1 < len(command); {
+		if command[index] == '$' && command[index+1] == '(' {
+			start, depth := index+2, 1
+			index += 2
+			for index < len(command) && depth > 0 {
+				if command[index] == '(' {
+					depth++
+				}
+				if command[index] == ')' {
+					depth--
+				}
+				if depth > 0 {
+					index++
+				}
+			}
+			if start < index {
+				result = append(result, command[start:index])
+			}
+			if index < len(command) {
+				index++
+			}
+			continue
+		}
+		if command[index] == '`' {
+			start := index + 1
+			index = start
+			for index < len(command) && command[index] != '`' {
+				index++
+			}
+			if start < index {
+				result = append(result, command[start:index])
+			}
+			if index < len(command) {
+				index++
+			}
+			continue
+		}
+		index++
+	}
+	return result
 }
