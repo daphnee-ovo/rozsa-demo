@@ -60,7 +60,7 @@ type testPeer struct {
 	ended  chan error
 }
 
-func startPeer(t *testing.T, app sessionApp, timeout time.Duration) *testPeer {
+func startPeer(t *testing.T, app session.ApplicationService, timeout time.Duration) *testPeer {
 	t.Helper()
 	client, backend := net.Pipe()
 	client.SetDeadline(time.Now().Add(8 * time.Second))

@@ -308,6 +308,14 @@ refresh error。完整 provider/OAuth/stream 行为和真实授权仍由后续�
 | TASK-T041 | 移植 Dev Flow discovery/dashboard/REST/SSE 重连回收 | TASK-T015、TASK-T026、TASK-T037 |
 | TASK-T044 | 完成 CLI 全参数、GUI 启动与所有 slash/session 操作 | TASK-T009、TASK-T017、TASK-T020、TASK-T021、TASK-T022、TASK-T023、TASK-T032、TASK-T033、TASK-T034、TASK-T025、TASK-T026、TASK-T035、TASK-T027、TASK-T028、TASK-T037、TASK-T040、TASK-T038、TASK-T041、TASK-T030、TASK-T031 |
 
+#### TASK-T020 当前覆盖与差异
+
+`backend/internal/app/runtime/` 将 session manager、按 API 选择的 provider、credentials resolver 与 `core/agent` 组合；`backend/cmd/rozsa/` 从 settings 与分层 model registry 选择 provider/model 并提供独立 prompt/continue CLI。`Model.API` 是协议，`Model.Provider` 是提供商身份，两者不构成一一映射；当前仅 `anthropic-messages` 有适配器，自定义 provider 沿用该协议适配器并使用自己的 endpoint、model registry 凭据、auth.json identity 和 provider 认证规则，其他 API 明确报 unsupported。Prompt 先落盘 user JSONL，再从该 manager 的上下文启动 core continue，避免重复提交 user；流式 text delta 写 stdout，配置、provider stream 与 JSONL 写入错误由 CLI stderr/非零退出暴露。Runtime 同时持有 session app service；transport 的 `ServeApplication` 接收 `session.ApplicationService`，server 只负责 RPC delivery/cancellation。完整 CLI 参数、resume/fork、slash 操作、多会话 queue/steering 和真实授权仍分别留在 T044、T037 与 T054。
+
+针对性验证：`bash devtools/test-prompt-path.sh`。该脚本以真实 `go run ./cmd/rozsa` 分别启动 prompt 与 `--continue` 进程，对本地 fake Anthropic SSE provider 发出一次请求；核对 stdout、同一 session JSONL 中 user/assistant、重启后继续读取且不重复写入；同时验证 `$NAME` 凭据缺失和 provider HTTP 503 都导致非零退出及 stderr 诊断。证据目录由脚本输出，位于 `tmp/test-prompt-path-<pid>/`。未读取真实凭据、未请求真实 provider、未完成真实 OAuth 授权，未验证 Linux/Windows 实机。
+
+本切片 continue 遵循 Go core 行为：若恢复后的最后一条上下文消息已经是 assistant，continue 成功无操作；若上次留下 user/tool result，则由 agent core 发起后续 stream。会话选择仅取显式 `--session-dir` 中最近修改的 JSONL 文件；多层 session 目录、resume/fork 和完整参数仍未覆盖。
+
 #### TASK-T024 当前覆盖与差异
 
 Go `model/credentials` 按已配置模型 key → provider 环境变量 → OAuth `auth.json`

@@ -31,6 +31,15 @@ type EventSubscription interface {
 	Close()
 }
 
+// ApplicationService is the typed session boundary consumed by transport.
+// Implementations own catalog reads, loaded-session state and event revisions.
+type ApplicationService interface {
+	GetSessions(context.Context) ([]ListEntry, error)
+	Switch(context.Context, string, string) (LoadedSnapshot, error)
+	Subscribe() EventSubscription
+	Snapshot(context.Context) (StateSnapshot, error)
+}
+
 // A bounded inbox is sufficient for the current Loaded-session slice. Overflow
 // invalidates the whole inbox, including already queued events; it is never a
 // successful delivery or a silent selective drop of an event category.

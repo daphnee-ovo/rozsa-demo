@@ -44,10 +44,11 @@ type Registry struct {
 	models     []modeltypes.Model
 	configured map[string]bool
 	sources    map[string]string
+	apiKeys    map[string]string
 }
 
 func Empty() *Registry {
-	return &Registry{models: []modeltypes.Model{}, configured: map[string]bool{}, sources: map[string]string{}}
+	return &Registry{models: []modeltypes.Model{}, configured: map[string]bool{}, sources: map[string]string{}, apiKeys: map[string]string{}}
 }
 func FromGeneratedJSON(data []byte) (*Registry, error) {
 	var providers map[string]map[string]modeltypes.Model
@@ -87,6 +88,10 @@ func (registry *Registry) IsConfigured(provider, id string) bool {
 func (registry *Registry) Source(provider, id string) (string, bool) {
 	source, exists := registry.sources[key(provider, id)]
 	return source, exists
+}
+func (registry *Registry) APIKey(provider string) (string, bool) {
+	value, exists := registry.apiKeys[provider]
+	return value, exists
 }
 func key(provider, id string) string { return provider + "\x00" + id }
 
@@ -186,6 +191,9 @@ func (registry *Registry) apply(path string, data []byte) error {
 		return &ConfigError{Path: path, Err: fmt.Errorf("parse models.json: %w", err)}
 	}
 	for provider, providerConfig := range parsedConfig.Providers {
+		if providerConfig.APIKey != nil {
+			registry.apiKeys[provider] = *providerConfig.APIKey
+		}
 		for i := range registry.models {
 			model := &registry.models[i]
 			if model.Provider != provider {

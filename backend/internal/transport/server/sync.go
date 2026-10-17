@@ -23,7 +23,7 @@ type sessionUpdate struct {
 }
 
 type sessionSync struct {
-	app     sessionApp
+	app     session.ApplicationService
 	mu      sync.Mutex
 	serial  uint64
 	current *sessionCursor
@@ -74,7 +74,7 @@ func (syncer *sessionSync) close() {
 }
 
 type sessionCursor struct {
-	app  sessionApp
+	app  session.ApplicationService
 	id   string
 	gate chan struct{}
 	// Separate from the gate so close never waits for a blocked Next. Delivery

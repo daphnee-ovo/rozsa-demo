@@ -580,3 +580,16 @@ async fn main() -> anyhow::Result<()> {
 6. ✅ 根据模式启动 GUI 或执行单次 prompt
 
 所有核心逻辑下沉到 `rozsa-app`、`rozsa-core`、`rozsa-model`，`rozsa-cli` 只负责**组装**与**启动**。
+
+## Go app/CLI slice (TASK-T020)
+
+迁移候选的 Go runtime 组合当前 session JSONL manager、Anthropic provider、credentials resolver 和 agent core。此切片提供独立 CLI 的单次 prompt 与 session continue：
+
+```bash
+go -C backend run ./cmd/rozsa --session-dir /absolute/session-dir "prompt text"
+go -C backend run ./cmd/rozsa --continue --session-dir /absolute/session-dir
+```
+
+CLI 按 `settings.json` 的 `defaultProvider`/`defaultModel` 和分层 `models.json` 选择模型；`--provider`、`--model`、`--api-key`、`--base-url` 是对应的显式覆盖。`Model.API` 表示协议，`Model.Provider` 表示提供商身份，两者不是一一对应关系：当前按 `anthropic-messages` 选择 Anthropic Messages 适配器，同一协议下的自定义 provider 使用自己的 endpoint、配置凭据和 provider 认证规则；尚未实现的 API 会明确返回 `unsupported model API`。Prompt 输出只写 stdout，错误写 stderr 并返回非零状态。每次启动会打开指定目录中最近修改的 JSONL 会话；continue 对已经以 assistant 结束的会话遵循 core continue 语义，不会额外请求 provider。完整参数、resume/fork、slash 操作和 GUI 启动仍由 TASK-T044 覆盖。
+
+`bash devtools/test-prompt-path.sh` 使用本地 fake Anthropic HTTP/SSE 服务验证真实 CLI 的 prompt、流式 stdout、JSONL 持久化及独立进程重启 continue，并检查缺失凭据配置和 provider HTTP failure 的非零退出。它不访问真实凭据或 provider，也不代表真实授权验收。

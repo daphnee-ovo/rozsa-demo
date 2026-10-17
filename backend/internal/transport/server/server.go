@@ -50,23 +50,20 @@ func (ownedIO ownedIO) Write(data []byte) (int, error) {
 	return bytesWritten, err
 }
 
-// Only the current read-only session slice. App owns state, event identity and
-// watermarks. Runtime methods will add their own typed boundaries.
-type sessionApp interface {
-	GetSessions(context.Context) ([]session.ListEntry, error)
-	Switch(context.Context, string, string) (session.LoadedSnapshot, error)
-	Subscribe() session.EventSubscription
-	Snapshot(context.Context) (session.StateSnapshot, error)
-}
-
 const maxConcurrentRequests = 8
 const requestTimeout = 30 * time.Second
 
 func Serve(input io.Reader, output io.Writer, catalog session.Catalog) error {
-	return serve(input, output, session.NewService(catalog), requestTimeout)
+	return ServeApplication(input, output, session.NewService(catalog))
 }
 
-func serve(input io.Reader, output io.Writer, app sessionApp, timeout time.Duration) error {
+// ServeApplication routes RPCs through the app-owned session service. The
+// transport owns delivery and cancellation, not session business state.
+func ServeApplication(input io.Reader, output io.Writer, app session.ApplicationService) error {
+	return serve(input, output, app, requestTimeout)
+}
+
+func serve(input io.Reader, output io.Writer, app session.ApplicationService, timeout time.Duration) error {
 	lifetime, stop := context.WithCancelCause(context.Background())
 	defer stop(types.Error(types.Disconnected, "Connection ended"))
 	server := newServer(app, lifetime, timeout)
@@ -95,7 +92,7 @@ func serve(input io.Reader, output io.Writer, app sessionApp, timeout time.Durat
 }
 
 type rpcServer struct {
-	app        sessionApp
+	app        session.ApplicationService
 	lifetime   context.Context
 	timeout    time.Duration
 	slots      chan struct{}
@@ -108,7 +105,7 @@ type rpcServer struct {
 	sync           sessionSync
 }
 
-func newServer(app sessionApp, lifetime context.Context, timeout time.Duration) *rpcServer {
+func newServer(app session.ApplicationService, lifetime context.Context, timeout time.Duration) *rpcServer {
 	return &rpcServer{app: app, lifetime: lifetime, timeout: timeout,
 		slots: make(chan struct{}, maxConcurrentRequests), pending: make(map[jsonrpc2.ID]context.CancelCauseFunc),
 		sync: sessionSync{app: app}}
