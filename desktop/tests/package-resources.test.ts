@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cp, mkdtemp, rename, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, mkdtemp, readlink, rename, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listPackage } from "@electron/asar";
@@ -31,9 +30,14 @@ if (process.platform !== "win32") assert.ok((await stat(backend)).mode & 0o111, 
 
 // A damaged copy exercises the actual packaged entry's startup diagnostic without
 // changing the maker output or the user's installed application.
-const scratch = await mkdtemp(join(tmpdir(), "rozsa-package-"));
+const scratch = await mkdtemp(join(root, "tmp/migration/install-tmp/rozsa-package-"));
 const damagedApp = join(scratch, `${product}.app`);
-await cp(appBundle, damagedApp, { recursive: true });
+await cp(appBundle, damagedApp, { recursive: true, verbatimSymlinks: true });
+if (process.platform === "darwin") {
+  const electronFramework = join(damagedApp, "Contents/Frameworks/Electron Framework.framework");
+  assert.equal(await readlink(join(electronFramework, "Resources")), "Versions/Current/Resources");
+  assert.equal(await readlink(join(electronFramework, "Versions/Current")), "A");
+}
 const damagedBackend = process.platform === "darwin"
   ? join(damagedApp, "Contents/Resources", backendName)
   : join(damagedApp, "resources", backendName);
@@ -41,7 +45,7 @@ await rename(damagedBackend, `${damagedBackend}.missing`);
 const damagedExecutable = process.platform === "darwin"
   ? join(damagedApp, "Contents/MacOS/rozsa")
   : join(damagedApp, process.platform === "win32" ? "rozsa.exe" : "rozsa");
-const child = spawn(damagedExecutable, [`--user-data-dir=${join(scratch, "profile")}`], {
+const child = spawn(damagedExecutable, ["--enable-logging=stderr", `--user-data-dir=${join(scratch, "profile")}`], {
   cwd: scratch,
   stdio: ["ignore", "pipe", "pipe"],
 });
