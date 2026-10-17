@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const page = join(__dirname, `../renderer/${SESSIONS_VITE_NAME}/index.html`);
-export const pageURL = SESSIONS_VITE_DEV_SERVER_URL ? new URL("/", SESSIONS_VITE_DEV_SERVER_URL).href : pathToFileURL(page).href;
+const basePageURL = SESSIONS_VITE_DEV_SERVER_URL ? new URL("/", SESSIONS_VITE_DEV_SERVER_URL).href : pathToFileURL(page).href;
+const performancePage = new URL(basePageURL);
+performancePage.searchParams.set("rozsa_perf", "1");
+export const pageURL = process.env.ROZSA_PERF_TRACE === "1" ? performancePage.href : basePageURL;
 export function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 920, height: 680, minWidth: 560, minHeight: 400,

@@ -114,16 +114,17 @@ try {
   await evaluate(`window.RozsaUIHost.port.request('switch_session',{path:${JSON.stringify(join(sessions, "history.jsonl"))}})`);
   const loadedHistory = await evaluate("window.RozsaUIHost.port.request('get_state').then(state=>({sessionId:state.sessionId,messages:state.messages.length}))");
   assert.equal(loadedHistory.messages, 1200, `Go history snapshot: ${JSON.stringify(loadedHistory)}`);
-  await poll(async () => await evaluate("document.querySelectorAll('#chatMessages .msg').length >= 1200") ? true : undefined, `long history React render (${JSON.stringify(await evaluate("document.querySelectorAll('#chatMessages .msg').length"))} rows)`);
+  await poll(async () => await evaluate("Number(document.querySelector('#chatMessages [data-virtualized=true]')?.dataset.historyEntryCount) === 1200") ? true : undefined, `long history virtual data (${JSON.stringify(await evaluate("document.querySelector('#chatMessages [data-virtualized=true]')?.dataset.historyEntryCount"))} entries)`);
   const historyRenderMs = Date.now() - historyStartedAt;
-  const historyMetrics = await evaluate(`(() => { const chat=document.querySelector('#chatMessages'); const rows=chat.querySelectorAll('.msg').length; chat.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true})); chat.scrollTop=Math.floor(chat.scrollHeight*0.45); return {rows,scrollTop:chat.scrollTop,scrollHeight:chat.scrollHeight,clientHeight:chat.clientHeight}; })()`);
-  assert.ok(historyMetrics.rows >= 1200, JSON.stringify(historyMetrics));
+  const historyMetrics = await evaluate(`(async () => { const chat=document.querySelector('#chatMessages'); const rows=chat.querySelectorAll('.msg').length; const historyEntries=Number(chat.querySelector('[data-virtualized=true]')?.dataset.historyEntryCount); chat.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true})); chat.scrollTop=Math.floor(chat.scrollHeight*0.45); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))); const bounds=chat.getBoundingClientRect(); const anchor=[...chat.querySelectorAll('.conversation-virtual-row')].find(row=>row.getBoundingClientRect().bottom>bounds.top); return {rows,historyEntries,scrollTop:chat.scrollTop,scrollHeight:chat.scrollHeight,clientHeight:chat.clientHeight,anchorId:anchor?.querySelector('.msg')?.dataset.odId,anchorOffset:anchor?.getBoundingClientRect().top-bounds.top}; })()`);
+  assert.equal(historyMetrics.historyEntries, 1200, JSON.stringify(historyMetrics));
+  assert.ok(historyMetrics.rows > 0 && historyMetrics.rows < historyMetrics.historyEntries, JSON.stringify(historyMetrics));
   const startedAt = Date.now();
   await evaluate("window.RozsaUIHost.port.request('send_message',{message:'Run the measured stream'})");
   let firstDeltaAt;
   try {
     firstDeltaAt = await poll(async () => {
-      const value = await evaluate(`([...document.querySelectorAll('#chatMessages .msg-assistant .msg-content')].slice(-1)[0]?.textContent) || ''`);
+      const value = await evaluate("window.RozsaUIHost.port.request('get_state').then(state=>state.messages.at(-1)?.message?.content?.map(block=>block.text||'').join(' ')||'')");
       return value.includes("stream-00") ? Date.now() : undefined;
     }, "first streamed delta", 10000);
   } catch (error) {
@@ -137,10 +138,13 @@ try {
   const typingMs = Date.now() - inputStarted;
   const inputText = await evaluate("document.querySelector('#msgInput').textContent");
   assert.equal(inputText, "Measure responsive input while Go streams 32 updates. ");
-  await poll(async () => (await evaluate(`([...document.querySelectorAll('#chatMessages .msg-assistant .msg-content')].slice(-1)[0]?.textContent) || ''`)).includes("stream-31"), "stream completion", 15000);
-  const finalMetrics = await evaluate(`(() => ({rows:document.querySelectorAll('#chatMessages .msg').length,scrollTop:document.querySelector('#chatMessages').scrollTop,scrollHeight:document.querySelector('#chatMessages').scrollHeight,input:document.querySelector('#msgInput').textContent}))()`);
-  assert.ok(Math.abs(finalMetrics.scrollTop - historyMetrics.scrollTop) <= 8, JSON.stringify({ historyMetrics, finalMetrics }));
-  assert.equal(finalMetrics.rows, historyMetrics.rows + 2);
+  await poll(async () => (await evaluate("window.RozsaUIHost.port.request('get_state').then(state=>state.messages.at(-1)?.message?.content?.map(block=>block.text||'').join(' ')||'')")).includes("stream-31"), "stream completion", 15000);
+  const finalMetrics = await evaluate(`(() => { const chat=document.querySelector('#chatMessages'); const bounds=chat.getBoundingClientRect(); const anchor=[...chat.querySelectorAll('.conversation-virtual-row')].find(row=>row.querySelector('.msg')?.dataset.odId===${JSON.stringify(historyMetrics.anchorId)}); return {rows:chat.querySelectorAll('.msg').length,historyEntries:Number(chat.querySelector('[data-virtualized=true]')?.dataset.historyEntryCount),scrollTop:chat.scrollTop,scrollHeight:chat.scrollHeight,input:document.querySelector('#msgInput').textContent,anchorOffset:anchor?.getBoundingClientRect().top-bounds.top}; })()`);
+  assert.ok(Number.isFinite(finalMetrics.anchorOffset), JSON.stringify({ historyMetrics, finalMetrics }));
+  assert.ok(Math.abs(finalMetrics.anchorOffset - historyMetrics.anchorOffset) <= 8, JSON.stringify({ historyMetrics, finalMetrics }));
+  assert.ok(finalMetrics.rows < finalMetrics.historyEntries, JSON.stringify(finalMetrics));
+  assert.equal(finalMetrics.historyEntries, historyMetrics.historyEntries + 2);
+  assert.ok(finalMetrics.rows < finalMetrics.historyEntries, JSON.stringify(finalMetrics));
   assert.equal(finalMetrics.input, inputText);
   assert.equal(modelRequests, 1);
   await writeFile(join(output, "result.json"), JSON.stringify({ platform: process.platform, history: { ...historyMetrics, renderMs: historyRenderMs }, typingMs, firstDeltaMs, completedRows: finalMetrics.rows, scrollPreserved: true, providerRequests: modelRequests }, null, 2));

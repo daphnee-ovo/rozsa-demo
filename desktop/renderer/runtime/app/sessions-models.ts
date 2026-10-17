@@ -39,6 +39,10 @@ function formatSessionDate(dateStr) {
 async function doSwitchSession(idx) {
   const s = sessions[idx];
   if (!s) return;
+  const switchTrace = new URLSearchParams(location.search).get('rozsa_perf') === '1'
+    ? { sessionId: s.id, startedAt: performance.now(), preparationCompletedAt: 0, rpcCompletedAt: 0, renderCommittedAt: 0 }
+    : null;
+  if (switchTrace) window.__ROZSA_SESSION_SWITCH_TRACE__ = switchTrace;
   const chat = document.getElementById('chatMessages');
   if (chat && renderedMessageSessionId) {
     persistSessionViewState(renderedMessageSessionId, chat);
@@ -46,13 +50,14 @@ async function doSwitchSession(idx) {
   if (activeSessionId) captureSessionDraft(activeSessionId);
   if (activeSessionId) capturePermissionUiState(activeSessionId);
   activeSessionIdx = idx;
-  document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
   const items = document.querySelectorAll('.session-item');
-  if (items[idx]) items[idx].classList.add('active');
+  items.forEach((item, index) => item.classList.toggle('active', index === idx));
+  if (switchTrace) switchTrace.preparationCompletedAt = performance.now();
   try {
     await invoke('switch_session', { path: s.path });
-    const state = await invoke('get_state');
-    renderState(state);
+    if (switchTrace) switchTrace.rpcCompletedAt = performance.now();
+    // switch_session publishes the selected snapshot through ui-state. Fetching
+    // get_state here repeated the full history mapping and React render.
   } catch (e) { showError(String(e)); }
   // 切换后检查该 session 是否有 pending 权限请求
   displayPermPanelIfNeeded();

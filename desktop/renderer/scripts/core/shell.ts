@@ -12,8 +12,9 @@ export function resolveTemplateRoot(): URL {
 // Hosts choose covered regions; shared owners define their stable DOM.
 // Persistent scene roots are retained when mounting their initial children.
 export async function mountShell(mounts: TemplateMount[]): Promise<void> {
-  for (const { url, selector, children = false } of mounts) {
-    const fragment = await loadTemplate(url);
+	const fragments = await Promise.all(mounts.map(({ url }) => loadTemplate(url)));
+	for (const [index, { selector, children = false }] of mounts.entries()) {
+		const fragment = fragments[index];
     if (children) mountTemplateChildren(fragment, selector);
     else mountTemplate(fragment, selector);
   }

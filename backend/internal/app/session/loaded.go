@@ -62,6 +62,7 @@ type LoadedSnapshot struct {
 type loadedTab struct {
 	reader   *Reader
 	snapshot LoadedSnapshot
+	manager  *Manager
 }
 
 // Mirrors switch_session's path-keyed Loaded tabs. No agent is started; the
@@ -101,6 +102,39 @@ func (loadedSessions *LoadedSessions) Switch(path, catalogID string) (LoadedSnap
 	if reader.Header().ID != catalogID {
 		return LoadedSnapshot{}, fmt.Errorf("Session identity changed")
 	}
+	result, err := loadedSnapshot(path, catalogID, reader)
+	if err != nil {
+		return LoadedSnapshot{}, err
+	}
+	if loadedSessions.tabs == nil {
+		loadedSessions.tabs = make(map[string]loadedTab)
+	}
+	loadedSessions.tabs[path] = loadedTab{reader: reader, snapshot: result}
+	loadedSessions.activePath = path
+	return result, nil
+}
+
+func (loadedSessions *LoadedSessions) AdoptManager(manager *Manager) error {
+	manager.mu.Lock()
+	reader := manager.reader
+	path := reader.path
+	materialized := manager.materialized
+	manager.mu.Unlock()
+	if !materialized {
+		return nil
+	}
+	snapshot, err := loadedSnapshot(path, reader.header.ID, reader)
+	if err != nil {
+		return err
+	}
+	if loadedSessions.tabs == nil {
+		loadedSessions.tabs = make(map[string]loadedTab)
+	}
+	loadedSessions.tabs[path] = loadedTab{reader: reader, snapshot: snapshot, manager: manager}
+	return nil
+}
+
+func loadedSnapshot(path, catalogID string, reader *Reader) (LoadedSnapshot, error) {
 	stem := filepath.Base(path)
 	// Rust file_stem treats a leading dot as part of a dotfile's name.
 	if dot := strings.LastIndex(stem, "."); dot > 0 {
@@ -116,11 +150,6 @@ func (loadedSessions *LoadedSessions) Switch(path, catalogID string) (LoadedSnap
 			result.Messages = append(result.Messages, view)
 		}
 	}
-	if loadedSessions.tabs == nil {
-		loadedSessions.tabs = make(map[string]loadedTab)
-	}
-	loadedSessions.tabs[path] = loadedTab{reader, result}
-	loadedSessions.activePath = path
 	return result, nil
 }
 

@@ -290,6 +290,25 @@ const LOCAL_COMMANDS = new Set([
 
 // =============== Initialization ===============
 
+window.addEventListener('DOMContentLoaded', () => {
+  if (!nativeSplitMode) {
+    void Promise.all([window.RozsaSidebarReady, window.RozsaSessionCatalogReady]).then(([, catalog]) => {
+      sessions = catalog;
+      materializeFallbackTemplate('fallbackSidebarTemplate', 'fallbackSidebarMount');
+      const sessionList = document.getElementById('sessionList');
+      if (sessionList) {
+        sessionList.inert = true;
+        sessionList.setAttribute('aria-busy', 'true');
+      }
+      renderSessionList();
+      if (new URLSearchParams(location.search).get('rozsa_perf') === '1'
+        && performance.getEntriesByName('rozsa:session-catalog-rendered').length === 0) {
+        performance.mark('rozsa:session-catalog-rendered');
+      }
+    }).catch(error => console.error('Early session catalog render failed:', error));
+  }
+});
+
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     if (!window.RozsaUIReady) throw new Error('Shared UI entry not loaded');
@@ -301,6 +320,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   restoreConversationState();
   nativeSplitMode = false;
   preparePlatformSceneDom();
+  const sessionList = document.getElementById('sessionList');
+  if (sessionList) {
+    sessionList.inert = false;
+    sessionList.removeAttribute('aria-busy');
+  }
   setupChatScrollLock();
   if (!nativeSplitMode) {
     syncMainSidebarViewport();
@@ -314,6 +338,19 @@ window.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   invoke = window.RozsaUIHost.port.request;
+  const sessionCatalogReady = !nativeSplitMode
+    ? Promise.resolve(window.RozsaSessionCatalogReady || invoke('get_sessions')).then(value => {
+      sessions = value;
+      renderSessionList();
+    }).catch(error => showSidebarError('sessionList', 'get_sessions failed: ' + String(error)))
+    : Promise.resolve();
+  const initialStateReady = Promise.resolve(window.RozsaInitialStateReady || invoke('get_state')).then(s => {
+    if (new URLSearchParams(location.search).get('rozsa_perf') === '1') performance.mark('rozsa:session-history-received');
+    renderState(s);
+    if (new URLSearchParams(location.search).get('rozsa_perf') === '1') {
+      requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('rozsa:initial-history-rendered')));
+    }
+  }).catch(e => showError('get_state failed: ' + String(e)));
   listen = async (event, receive) => {
     try {
       return await window.RozsaUIHost.port.subscribe(event, payload => receive({ payload }));
@@ -399,14 +436,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  try { const s = await invoke('get_state'); renderState(s); } catch (e) { showError('get_state failed: ' + String(e)); }
-  if (!nativeSplitMode) {
-    try { sessions = await invoke('get_sessions'); renderSessionList(); } catch (e) { showSidebarError('sessionList', 'get_sessions failed: ' + String(e)); }
-  }
+  await sessionCatalogReady;
   try { models = await invoke('list_models'); renderModelSelector(); } catch (e) { console.warn('Electron model registry is unavailable:', e); }
   loadSettings().catch(error => console.warn('Electron settings are unavailable:', error));
   loadKeyBindings().catch(error => console.warn('Electron key bindings are unavailable:', error));
   refreshRateLimits(false);
+  void initialStateReady;
 });
 
 window.addEventListener('resize', syncMainSidebarViewport);

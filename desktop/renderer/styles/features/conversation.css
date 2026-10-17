@@ -23,6 +23,10 @@
 [data-od-id="chat-messages"] > .tool-call,
 [data-od-id="chat-messages"] > .changes-card,
 [data-od-id="chat-messages"] > .typing-indicator { align-self: center; }
+.conversation-virtual-list { position: relative; flex: 0 0 auto; align-self: stretch; width: 100%; }
+.conversation-virtual-row { position: absolute; inset: 0 0 auto; display: flow-root; width: 100%; }
+.conversation-virtual-row > .msg { margin-inline: auto; }
+.conversation-virtual-row > .msg-user { margin-left: 0; margin-right: auto; }
 .chat-empty { width: min(100%, 620px); margin: auto; padding: clamp(24px, calc(4 * var(--ui-vw)), 54px) 0; text-align: left; }
 .chat-empty-icon { width: clamp(56px, calc(6 * var(--ui-vw)), 72px); height: clamp(56px, calc(6 * var(--ui-vw)), 72px); display: grid; place-items: center; border-radius: var(--radius-control); background: var(--accent-soft); box-shadow: var(--shadow-1); color: var(--accent); font: 500 clamp(26px, calc(3 * var(--ui-vw)), 34px)/1 var(--font-display); }
 .chat-empty-title { max-width: 13ch; margin-top: 24px; color: var(--fg); font: 500 clamp(32px, calc(4.5 * var(--ui-vw)), 58px)/1.02 var(--font-display); letter-spacing: -.04em; }

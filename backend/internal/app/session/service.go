@@ -66,6 +66,26 @@ func (service *Service) GetSessions(ctx context.Context) ([]ListEntry, error) {
 	return service.catalog.GetSessions()
 }
 
+func (service *Service) AdoptManager(manager *Manager) error {
+	service.loadedMu.Lock()
+	defer service.loadedMu.Unlock()
+	return service.loaded.AdoptManager(manager)
+}
+
+func (service *Service) WritableManager(path, catalogID string) (*Manager, error) {
+	service.loadedMu.Lock()
+	defer service.loadedMu.Unlock()
+	tab, ok := service.loaded.tabs[path]
+	if !ok || tab.snapshot.CatalogID != catalogID {
+		return nil, errors.New("session is not loaded")
+	}
+	if tab.manager == nil {
+		tab.manager = managerFromReader(tab.reader)
+		service.loaded.tabs[path] = tab
+	}
+	return tab.manager, nil
+}
+
 func (service *Service) Switch(ctx context.Context, path, catalogID string) (LoadedSnapshot, error) {
 	service.loadedMu.Lock()
 	defer service.loadedMu.Unlock()

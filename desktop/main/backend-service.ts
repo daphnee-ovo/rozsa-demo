@@ -10,6 +10,9 @@ export class BackendService {
   readonly process: ChildProcessWithoutNullStreams;
   private readonly connection: MessageConnection;
   private failure: ProductFailure | undefined;
+  private initialization: Promise<void> | undefined;
+  private prefetchedSessions: Promise<SessionListEntry[]> | undefined;
+  private prefetchedStartupSession: { target: SessionTarget; snapshot: Promise<SessionSnapshot> } | undefined;
   private stopping = false;
   private stopPromise: Promise<void> | undefined;
   private readonly closed: Promise<void>;
@@ -48,6 +51,10 @@ export class BackendService {
     void this.stop().catch(error => console.error("Backend cleanup:", error));
   }
   private async request<M extends keyof SessionMethods>(method: M, params: SessionMethods[M]["params"], timeoutMs = this.timeoutMs): Promise<unknown> {
+    if (method !== "initialize") {
+      if (!this.initialization) throw transportFailure("protocol", "Backend initialize has not started");
+      await this.initialization;
+    }
     if (this.failure) throw this.failure;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<never>((_, reject) => {
@@ -66,7 +73,8 @@ export class BackendService {
           const fault = remoteFault(error.code, error.message, error.data);
           if ((fault.kind === "catalog" && method !== "get_sessions")
             || (fault.kind === "session" && !["switch_session", "subscribe_sessions", "next_session_event"].includes(method))
-            || (fault.kind === "message" && !["start_message", "continue_message", "subscribe_message_events", "next_message_event", "cancel_message"].includes(method))) throw new Error("Backend error owner mismatch");
+            || (fault.kind === "message" && !["start_message", "continue_message", "subscribe_message_events", "next_message_event", "cancel_message"].includes(method))
+            || (fault.kind === "runtime_initialization" && method !== "runtime_status")) throw new Error("Backend error owner mismatch");
           throw new RPCFailure(fault);
         } catch (fault) {
           if (fault instanceof RPCFailure) throw fault;
@@ -82,7 +90,12 @@ export class BackendService {
     if (this.failure) throw this.failure;
     if (this.stopping) throw transportFailure("closed", "Backend is closing");
   }
-  async initialize(): Promise<void> {
+  initialize(): Promise<void> {
+    if (this.initialization) return this.initialization;
+    this.initialization = this.initializeHandshake();
+    return this.initialization;
+  }
+  private async initializeHandshake(): Promise<void> {
     try {
       this.requireRunning();
       const value = await this.request("initialize", { protocolVersion: 1 });
@@ -90,13 +103,47 @@ export class BackendService {
       if (!record(value) || value.protocolVersion !== 1 || !Array.isArray(capabilities)
         || !capabilities.every(item => typeof item === "string")
         || !["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions",
-          "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message"].every(method => capabilities.includes(method))) {
+          "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message"].every(method => capabilities.includes(method))) {
         throw transportFailure("protocol", "Incompatible backend handshake");
       }
     } catch (error) { this.fail(error instanceof ProductFailure ? error : transportFailure("io", asError(error).message, error)); throw error; }
   }
+  async waitForRuntime(): Promise<void> {
+    this.requireRunning();
+    for (;;) {
+      const value = await this.request("runtime_status", {});
+      if (!record(value) || !["initializing", "ready"].includes(value.state as string)) {
+        const failure = transportFailure("protocol", "Invalid runtime status response"); this.fail(failure); throw failure;
+      }
+      if (value.state === "ready") return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
   async getSessions(): Promise<SessionListEntry[]> {
     this.requireRunning();
+    if (this.prefetchedSessions) {
+      const prefetched = this.prefetchedSessions;
+      this.prefetchedSessions = undefined;
+      return prefetched;
+    }
+    return this.readSessions();
+  }
+  async prefetchSessions(): Promise<SessionListEntry[]> {
+    this.requireRunning();
+    if (!this.prefetchedSessions) this.prefetchedSessions = this.readSessions();
+    return this.prefetchedSessions;
+  }
+  async prefetchLatestSession(entries: SessionListEntry[]): Promise<void> {
+    this.requireRunning();
+    const latest = entries[0];
+    if (!latest) return;
+    const target = sessionTarget({ path: latest.path, catalogId: latest.id });
+    if (!this.prefetchedStartupSession) {
+      this.prefetchedStartupSession = { target, snapshot: this.readSessionSnapshot(target) };
+    }
+    await this.prefetchedStartupSession.snapshot;
+  }
+  private async readSessions(): Promise<SessionListEntry[]> {
     const value = await this.request("get_sessions", {});
     try { return sessionEntries(value); }
     catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
@@ -104,6 +151,14 @@ export class BackendService {
   async switchSession(input: SessionTarget): Promise<SessionSnapshot> {
     this.requireRunning();
     const target = sessionTarget(input);
+    const prefetched = this.prefetchedStartupSession;
+    if (prefetched && prefetched.target.path === target.path && prefetched.target.catalogId === target.catalogId) {
+      this.prefetchedStartupSession = undefined;
+      return prefetched.snapshot;
+    }
+    return this.readSessionSnapshot(target);
+  }
+  private async readSessionSnapshot(target: SessionTarget): Promise<SessionSnapshot> {
     const value = await this.request("switch_session", target);
     try { return sessionSnapshot(value, target); }
     catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }

@@ -14,7 +14,7 @@ import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 const root = resolve(import.meta.dirname, "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const backendEnvironment = await createIsolatedBackendEnvironment();
-const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message"];
+const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions", "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message"];
 async function poll(check: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 6000;
   while (Date.now() < deadline) { if (await check()) return; await delay(20); }
@@ -33,6 +33,7 @@ async function endpoint(body: string) {
     `const {appendFileSync}=require('node:fs'); const calls=${JSON.stringify(calls)};`,
     "const conn=createMessageConnection(process.stdin,process.stdout);",
     `conn.onRequest('initialize',()=>({protocolVersion:1,capabilities:${JSON.stringify(capabilities)}}));`,
+    "conn.onRequest('runtime_status',()=>({state:'ready'}));",
     "conn.onRequest('shutdown',()=>{appendFileSync(calls,JSON.stringify('shutdown')+'\\n');setTimeout(()=>process.exit(0),30);return true;});",
     body, "conn.listen();", "",
   ].join("\n"));
@@ -46,6 +47,37 @@ test("fatal handshake mismatch reaps its live owned process without waiting for 
   try {
     await assert.rejects(backend.initialize(), /Incompatible backend handshake/);
     await poll(() => absent(backend.process.pid!));
+  } finally { await backend.stop(); }
+});
+
+test("product catalog calls wait for the initialize handshake and run afterward", { skip: process.platform === "win32" }, async () => {
+  const fake = await endpoint([
+    `conn.onRequest('initialize',()=>{appendFileSync(calls,JSON.stringify('initialize')+'\\n');return new Promise(resolve=>setTimeout(()=>resolve({protocolVersion:1,capabilities:${JSON.stringify(capabilities)}}),250));});`,
+    "conn.onRequest('get_sessions',()=>{appendFileSync(calls,JSON.stringify('get_sessions')+'\\n');return [];});",
+  ].join("\n"));
+  const backend = new BackendService(fake.executable, []);
+  try {
+    const initialized = backend.initialize();
+    const catalog = backend.getSessions();
+    assert.deepEqual(await catalog, []);
+    await initialized;
+    assert.equal(await readFile(fake.calls, "utf8"), '"initialize"\n"get_sessions"\n');
+  } finally { await backend.stop(); }
+});
+
+test("runtime initialization failure is reported before any message is sent while catalog stays usable", { skip: process.platform === "win32" }, async () => {
+  const fake = await endpoint([
+    "let statusReads=0;",
+    "conn.onRequest('runtime_status',()=>{statusReads++;if(statusReads===1)return {state:'initializing'};throw new ResponseError(-32009,'model credentials are missing',{kind:'runtime_initialization'});});",
+    "conn.onRequest('get_sessions',()=>[]);",
+    "conn.onRequest('start_message',()=>{appendFileSync(calls,JSON.stringify('start_message')+'\\n');return {operationId:'unexpected'};});",
+  ].join("\n"));
+  const backend = new BackendService(fake.executable, []);
+  try {
+    await backend.initialize();
+    assert.deepEqual(await backend.getSessions(), []);
+    await assert.rejects(backend.waitForRuntime(), error => error instanceof RPCFailure && error.remote.kind === "runtime_initialization" && error.message === "model credentials are missing");
+    assert.equal(await readFile(fake.calls, "utf8").catch(() => ""), "");
   } finally { await backend.stop(); }
 });
 

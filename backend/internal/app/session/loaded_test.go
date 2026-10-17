@@ -71,6 +71,28 @@ func TestLoadedHistoryContextAndIdentity(t *testing.T) {
 	}
 }
 
+func TestAdoptedWritableManagerSeedsSessionReadCache(t *testing.T) {
+	dir := fixtureDir(t)
+	path := write(t, dir, "adopted.jsonl", sessionHeader("adopted")+
+		`{"type":"message","id":"user","parentId":null,"timestamp":"1","message":{"role":"user","content":"keep this history"}}`+"\n")
+	manager, err := OpenManager(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Catalog{Directories: []string{dir}})
+	if err := service.AdoptManager(manager); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := service.Switch(t.Context(), path, "adopted")
+	if err != nil || len(snapshot.Messages) != 1 || snapshot.Messages[0].EntryID != "user" {
+		t.Fatalf("adopted snapshot = %+v, %v", snapshot, err)
+	}
+	writable, err := service.WritableManager(path, "adopted")
+	if err != nil || writable != manager {
+		t.Fatalf("writable manager = %p, want adopted manager %p; error %v", writable, manager, err)
+	}
+}
+
 func TestLoadedFailureRetryAndEmpty(t *testing.T) {
 	dir := fixtureDir(t)
 	path := write(t, dir, "empty.jsonl", sessionHeader("empty"))

@@ -5,7 +5,8 @@
   "scripts": {
     "test": "tsx --test *.test.js session-list.test.ts session-history.test.ts session-contract.test.ts bridge.test.ts lifecycle.test.ts",
     "test:ui": "tsx --test *.test.js",
-    "test:performance": "node --test performance/message-performance.test.js",
+    "test:performance": "node --test --test-concurrency=1 performance/message-performance.test.js performance/startup.test.js performance/stress.test.js",
+    "test:performance:calibrate": "ROZSA_PERF_CALIBRATION=1 ROZSA_PERF_ROUNDS=30 node --test --test-concurrency=1 performance/message-performance.test.js performance/startup.test.js performance/stress.test.js",
     "test:sessions": "tsx run-session-tests.ts",
     "test:native": "tsx native-session-list.test.ts",
     "test:session-list": "tsx session-list.test.ts",

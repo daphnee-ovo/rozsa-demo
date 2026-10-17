@@ -134,6 +134,7 @@ func buildMeta(path string) (Meta, error) {
 	var headerValue *header
 	metadata := Meta{Path: path}
 	var activity, nameTimestamp *string
+	var allMessagesText strings.Builder
 	for {
 		line, readErr := reader.ReadBytes('\n') // No Scanner token limit: Rust lines are unbounded.
 		if readErr != nil && readErr != io.EOF {
@@ -164,10 +165,10 @@ func buildMeta(path string) (Meta, error) {
 							if metadata.FirstMessage == "" && entry.role == "user" {
 								metadata.FirstMessage = entry.text
 							}
-							if metadata.AllMessagesText != "" {
-								metadata.AllMessagesText += " "
+							if allMessagesText.Len() != 0 {
+								allMessagesText.WriteByte(' ')
 							}
-							metadata.AllMessagesText += entry.text
+							_, _ = allMessagesText.WriteString(entry.text)
 						}
 					}
 				}
@@ -180,6 +181,7 @@ func buildMeta(path string) (Meta, error) {
 	if headerValue == nil {
 		return Meta{}, fmt.Errorf("No session header in %s", path)
 	}
+	metadata.AllMessagesText = allMessagesText.String()
 	metadata.ID, metadata.Cwd, metadata.Created, metadata.ParentSessionPath = *headerValue.ID, *headerValue.Cwd, *headerValue.Timestamp, headerValue.ParentSession
 	if metadata.Name != nil && strings.TrimSpace(*metadata.Name) == "" {
 		metadata.Name = nil

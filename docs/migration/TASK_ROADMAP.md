@@ -427,6 +427,13 @@ T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T
 | TASK-T058 | windows 实际安装包、CLI、原生 GUI 与系统能力验收 | TASK-T014、TASK-T054、TASK-T055 |
 | TASK-T059 | 完整功能验收与维护收益最终判定 | TASK-T054、TASK-T055、TASK-T056、TASK-T057、TASK-T058 |
 
+### 启动与运行中会话性能基线
+
+| 任务 | 具体产出 | 前置任务 |
+| --- | --- | --- |
+| TASK-T088 | 独立性能入口覆盖冷/热启动分阶段首绘、全量 1200 条历史的最新首屏、至少 6000 条扩展压力、滚动可达性、会话切换、展开、卡顿和内存；macOS arm64 多轮固定阈值，端到端首屏 P95 不超过 3000ms 且任一轮超限即失败。多会话污染及并发负载测试随 T037/T049 等多会话实现后分发。 | TASK-T029、TASK-T087 |
+| TASK-T089 | 将 Read/Write/Bash 接入生产 Go runtime；本地假 provider 由显式合成 prompt 触发，以固定 seed 持续循环生成 thinking、文本和工具调用，Bash 只运行临时目录内的合成 CLI。按 1200/2400/3600/6000 条增长检查点记录工具耗时、backend/renderer 与 JS heap/RSS、DOM、帧间隔、长任务、输入和会话切换延迟，分析增长斜率、波动和峰值。普通单元/UI 套件不触发循环负载。 | TASK-T019、TASK-T025、TASK-T026、TASK-T035、TASK-T045 |
+
 ### 完整验收后的默认入口切换与退役
 
 | 任务 | 具体产出 | 前置任务 |

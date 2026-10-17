@@ -6,6 +6,13 @@ import { createWindow, pageURL } from "./window.js";
 import { installSessionBridge } from "./session-bridge.js";
 import { installMessageBridge } from "./message-bridge.js";
 
+function startupMark(stage: string): void {
+  if (process.env.ROZSA_PERF_TRACE === "1") {
+    console.info(`ROZSA_PERF_STARTUP ${JSON.stringify({ stage, epochMs: Date.now() })}`);
+  }
+}
+
+startupMark("main-entry");
 // Development runtime storage is isolated as well as the catalog inputs.
 app.setName("Rózsa");
 const profile = resolve(app.commandLine.getSwitchValue("user-data-dir") || (app.isPackaged ? app.getPath("userData") : join(app.getAppPath(), "../tmp/migration/electron-profile")));
@@ -43,20 +50,45 @@ app.on("before-quit", event => {
 app.on("window-all-closed", () => app.quit());
 // Forge main hot restart sends SIGTERM. Reuse the normal owned-backend shutdown.
 process.once("SIGTERM", () => app.quit());
+backend = new BackendService(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "../dist"), process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"), directories(process.argv));
+startupMark("backend-process-started");
+startupMark("backend-initialize-started");
+const backendReady = backend.initialize().then(() => startupMark("backend-ready"));
+void backendReady.catch(() => {});
+void backendReady.then(async () => {
+  await backend!.waitForRuntime();
+  startupMark("runtime-ready");
+}).catch(async error => {
+  await app.whenReady();
+  if (!quitting) dialog.showErrorBox("Agent runtime initialization failed", error instanceof Error ? error.message : String(error));
+});
+void backendReady.then(async () => {
+  startupMark("catalog-prefetch-started");
+  const catalog = await backend!.prefetchSessions();
+  startupMark("catalog-prefetch-ready");
+  startupMark("latest-history-prefetch-started");
+  await backend!.prefetchLatestSession(catalog);
+  startupMark("latest-history-prefetch-ready");
+  startupMark("startup-session-ready");
+})
+  .catch(error => console.error("Initial session catalog prefetch:", error));
 void app.whenReady().then(async () => {
+  startupMark("electron-ready");
   app.setName("Rózsa");
-  backend = new BackendService(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "../dist"), process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"), directories(process.argv));
-  await backend.initialize();
   if (quitting) return;
   const window = createWindow();
+  startupMark("window-created");
   installSessionBridge(window, ipcMain, backend, pageURL);
   installMessageBridge(window, ipcMain, backend, pageURL);
-  await window.loadURL(pageURL);
-  if (quitting) return;
-  // loadURL resolves after the document finishes loading. Do not gate native
-  // visibility on renderer feature initialization; a renderer-side failure
-  // should remain visible and diagnosable rather than leaving a hidden app.
   window.show();
+  startupMark("window-shown");
+  const pageReady = window.loadURL(pageURL);
+  await pageReady;
+  startupMark("document-loaded");
+  if (quitting) return;
+  // Renderer boot and Go initialization overlap. BackendService queues product
+  // requests until this handshake resolves, so early catalog reads stay safe.
+  await backendReady;
 }).catch(error => {
   console.error("Rózsa could not start:", error);
   if (quitting) return;

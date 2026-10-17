@@ -25,13 +25,14 @@ import (
 )
 
 type Config struct {
-	SessionDir  string
-	SessionDirs []string
-	Model       types.Model
-	APIKey      string
-	AuthPath    string
-	Provider    agent.Provider
-	Output      io.Writer
+	SessionDir     string
+	SessionDirs    []string
+	SessionService *session.Service
+	Model          types.Model
+	APIKey         string
+	AuthPath       string
+	Provider       agent.Provider
+	Output         io.Writer
 }
 
 // Runtime owns the active session and serializes prompts against it.
@@ -97,7 +98,14 @@ func New(config Config) (*Runtime, error) {
 	if len(catalogDirectories) == 0 {
 		catalogDirectories = []string{config.SessionDir}
 	}
-	return &Runtime{session: manager, service: session.NewService(session.Catalog{Directories: catalogDirectories}), model: config.Model, provider: config.Provider, output: config.Output, questions: questions.NewOwner(), messages: newMessageOperations()}, nil
+	service := config.SessionService
+	if service == nil {
+		service = session.NewService(session.Catalog{Directories: catalogDirectories})
+	}
+	if err := service.AdoptManager(manager); err != nil {
+		return nil, fmt.Errorf("prepare active session snapshot: %w", err)
+	}
+	return &Runtime{session: manager, service: service, model: config.Model, provider: config.Provider, output: config.Output, questions: questions.NewOwner(), messages: newMessageOperations()}, nil
 }
 
 func resolveProviderKey(ctx context.Context, resolver credentials.Resolver, provider, configured, authPath string) (string, error) {
@@ -137,9 +145,9 @@ func (runtime *Runtime) Switch(ctx context.Context, path, catalogID string) (ses
 	if err != nil {
 		return session.LoadedSnapshot{}, err
 	}
-	manager, err := session.OpenManager(snapshot.Path)
+	manager, err := runtime.service.WritableManager(snapshot.Path, snapshot.CatalogID)
 	if err != nil {
-		return session.LoadedSnapshot{}, fmt.Errorf("open selected session for writing: %w", err)
+		return session.LoadedSnapshot{}, fmt.Errorf("resolve selected session for writing: %w", err)
 	}
 	runtime.session = manager
 	return snapshot, nil

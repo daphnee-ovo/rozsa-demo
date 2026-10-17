@@ -10,6 +10,7 @@ export type SessionUpdate = { subscriptionId: string } & (
 
 export interface SessionMethods {
   initialize: { params: { protocolVersion: 1 }; result: { protocolVersion: 1; capabilities: string[] } };
+  runtime_status: { params: Record<string, never> | null | undefined; result: { state: "initializing" | "ready" } };
   get_sessions: { params: Record<string, never> | null | undefined; result: SessionListEntry[] };
   switch_session: { params: SessionTarget; result: SessionSnapshot };
   shutdown: { params: Record<string, never> | null | undefined; result: true };
@@ -37,6 +38,7 @@ export type RemoteFault =
   | { kind: "internal"; code: -32603; message: string }
   | { kind: "catalog" | "session"; code: -32001; message: string }
   | { kind: "message"; code: -32008; message: string }
+  | { kind: "runtime_initialization"; code: -32009; message: string }
   | { kind: "not_initialized"; code: -32002; message: string }
   | { kind: "closing"; code: -32003; message: string }
   | { kind: "canceled"; code: -32800; message: string }
@@ -90,6 +92,7 @@ export function remoteFault(code: unknown, message: unknown, data?: unknown): Re
       if (!object(data) || (data.kind !== "catalog" && data.kind !== "session")) throw new Error("Invalid backend error kind");
       kind = data.kind; break;
     case -32008: kind = "message"; break;
+    case -32009: kind = "runtime_initialization"; break;
     default: throw new Error("Unknown backend error code");
   }
   if (object(data) && data.kind !== kind) throw new Error("Backend error code/kind mismatch");

@@ -18,6 +18,7 @@ type MessageEvent = Awaited<ReturnType<ProductClient["nextMessageEvent"]>>["even
 export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
   const client = new ProductClient(bridge);
   let sessions: SessionListEntry[] = [];
+  let sessionsLoading: Promise<SessionListEntry[]> | null = null;
   let active: SessionSnapshot | null = null;
   let activeOperationId: string | null = null;
   let pendingUserText = "";
@@ -61,8 +62,12 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
   }
 
   async function reloadSessions(): Promise<SessionListEntry[]> {
-    sessions = await client.getSessions();
-    return sessions;
+    if (sessionsLoading) return sessionsLoading;
+    sessionsLoading = client.getSessions().then(entries => {
+      sessions = entries;
+      return sessions;
+    }).finally(() => { sessionsLoading = null; });
+    return sessionsLoading;
   }
 
   async function restoreLatestSession(): Promise<void> {

@@ -263,7 +263,10 @@ function toggleThinking(header) {
   const message = block.closest('.msg');
   const container = document.getElementById('chatMessages');
   if (message && container && activeSessionId) {
-    expandedThinkingBySession[thinkingStateKey(activeSessionId, [...container.children].indexOf(message))] = expanded;
+    const messageIndex = Number(message.dataset.odId?.replace(/^message-/, ''));
+    if (Number.isInteger(messageIndex) && messageIndex >= 0) {
+      expandedThinkingBySession[thinkingStateKey(activeSessionId, messageIndex)] = expanded;
+    }
   }
 }
 

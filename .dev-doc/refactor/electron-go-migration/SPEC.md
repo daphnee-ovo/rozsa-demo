@@ -175,6 +175,8 @@ JSONL 特别要求：lazy materialization 的实际触发条件；header/entry �
 
 模型协议在对应 provider 任务中按需添加 request/stream 小输入；真实远端输出不作为完全相同基准。保留 provider 独有语义，不能以通用 SDK 覆盖所有实现。Bedrock event stream、OAuth、权限 regex、process cancellation 和打包依赖随所属实现验证，不以综合 spike 阻挡独立模块。
 
+Electron+Go 启动先创建会话服务并完成 RPC 握手；模型、凭据与 agent runtime 在 Go goroutine 中初始化，不阻塞会话目录和历史读取。`runtime_status` 在完成后返回 ready，初始化失败则返回带诊断的 `runtime_initialization` 错误；Electron 主进程主动等待并显示该错误，不依赖用户发送消息。runtime 初始化期间的 session 切换必须在首次消息启动前同步到 runtime。
+
 ### 5. 单 WebView 的生产接入
 
 采用窗口级 Sidebar vibrancy + 不透明 Main，侧栏浮层需要相应裁切/几何处理。保留透明开关、主题与窗口激活状态的效果；不以 CSS blur 代替窗口背后的系统材质。
@@ -220,7 +222,8 @@ TASK_ROADMAP 的功能覆盖随实现维护；未做功能保持待实现。最�
 - SPEC-AC-011: Go 与 JS/TS 单元/特性测试各归模块；跨语言 shell 集成；新增 bug 修复有先失败后通过的回归证据；TEST 阶段仅按用户显式请求进入。
 - SPEC-AC-012: 首条 smoke、局部迁移或平台 skipped 不算完成；功能矩阵、设计缺口和必需未验证项均归零才交付。
 - SPEC-AC-013: 最终安装包/默认开发入口运行 Electron+Go；不依赖 Rust/Tauri；原型、README、AGENTS、CONTRIBUTING、架构/测试/版本脚本及 backlinks 同步。
-- SPEC-AC-014: 候选就绪后对开发启动、修改到验证、构建、安装包/内存作相同场景的新旧记录，注明可用旧产品或 Git 历史参照与条件差异；维护收益有 owner/重复实现减少的依据，不预先声称性能提升。无可用比较明确缺测；阈值经用户确认，未确认只报告数值。测量不阻塞具体功能开工。
+- SPEC-AC-014: 候选就绪后对开发启动、修改到验证、构建、安装包/内存作相同场景的新旧记录，注明可用旧产品或 Git 历史参照与条件差异；维护收益有 owner/重复实现减少的依据，不预先声称性能提升。无可用比较明确缺测；性能阈值由用户确认后固定，当前 Electron 冷/热启动到完整窗口、会话列表及全量 1200 条会话的最新首屏（含可见本地图片解码）端到端 P95 必须不超过 3000ms，任一轮超过即不通过。全量历史数据始终可用，视口外旧消息可滚动后再挂载；至少 6000 条作为扩展压力档，不纳入 1200 条首屏基线口径。测量不阻塞具体功能开工。
+- SPEC-AC-016: 性能测试独立运行，不进入普通单元/UI 测试入口；启动分阶段首绘、全量历史快照/传输与虚拟视口挂载、长历史滚动访问、会话切换、展开、卡顿和内存占用均有多轮样本与固定门槛。无保存位置的新会话定位最新消息，切回会话恢复其手动滚动位置。
 - SPEC-AC-015: 共享 UI、runtime/原型脚本与 Electron main/preload 完成 TypeScript 迁移；严格类型检查和原有运行行为测试分别通过；新 Electron 产品与其原型读取同源生成资源，无手写 JS/TS 双真源，生产不携带 mock。
 
 ## Risks

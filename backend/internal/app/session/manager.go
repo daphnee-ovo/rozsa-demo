@@ -44,9 +44,13 @@ func OpenManager(path string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	manager := CreateLazy(path, reader.header.ID, reader.header.Cwd, reader.header.ParentSession)
+	return managerFromReader(reader), nil
+}
+
+func managerFromReader(reader *Reader) *Manager {
+	manager := CreateLazy(reader.path, reader.header.ID, reader.header.Cwd, reader.header.ParentSession)
 	manager.reader, manager.materialized = reader, true
-	return manager, nil
+	return manager
 }
 
 func (manager *Manager) ensureMaterialized() error {

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "status": "calibrating",
+  "platform": "darwin-arm64",
+  "roundsRequired": 30,
+  "startup": {
+    "mainStagesMs": {},
+    "visibleRegionsMs": {},
+    "firstContentfulPaintMs": null,
+    "loadedHistoryReadyMs": null,
+    "visibleElementSpreadMs": null,
+    "memoryPeakMB": null
+  },
+  "stress": {
+    "historyRows": 0,
+    "renderMs": null,
+    "interactionP95Ms": null,
+    "longTaskP95Ms": null,
+    "frameGapP95Ms": null,
+    "memoryPeakMB": null
+  }
+}

@@ -13,14 +13,9 @@ Development and synchronization tools live in `devtools/`.
 
 The ChatGPT models endpoint filters its response using Codex CLI version semantics. Rózsa therefore keeps a dedicated `CODEX_MODELS_CLIENT_VERSION`; do not replace it with the Rózsa workspace version.
 
-Synchronize the compatibility version directly from the newest valid `rust-v*` tag in the `openai/codex` GitHub repository:
-
 ```bash
 ./devtools/sync-codex-model-client-version.sh
 ```
-
-The tool uses `git ls-remote` and does not require a local Codex checkout. Use `--check` in CI or review workflows to verify that the checked-in constant is already current. Prerelease suffixes such as `-alpha.30` and `-beta.2` are intentionally removed because the endpoint expects the whole `major.minor.patch` client version used by Codex's models manager. `--repo-url` exists for mirrors and automated tests; normal development should use the default GitHub repository.
-
 
 ## Code Style
 
@@ -33,7 +28,7 @@ JavaScript tests in the corresponding module's `js-tests/` directory; do not
 wrap Node tests in Rust or Cargo subprocesses. All Electron JS/TS tests—main,
 preload, bridge, renderer and native host—live in `desktop/tests/`. The retained
 Rust/Tauri GUI owns a separate JS behavior suite and lockfile:
-
+<!--前端测试全部放进 `desktop/tests/`, 然后再按用途分类。这里需要调整，不分 js-tests 和 tests-->
 ```bash
 npm ci --prefix crates/rozsa-gui/js-tests
 bash devtools/test-gui.sh
@@ -96,8 +91,9 @@ process. Session rows select Go-owned Loaded tabs via controlled `switch_session
 the renderer shows active-branch display history, separately from effective
 model context, and retains scroll/Thinking expansion on re-entry. The Go session
 module provides read-only `Open`, `Entries`, and `ContextMessages`, plus a writable
-`Manager` for internal JSONL persistence; desktop RPC remains read-only and agent
-startup is not connected yet. History is a text projection;
+`Manager` for internal JSONL persistence. Electron+Go exposes the session service
+before model/credential/runtime initialization completes; runtime readiness errors
+are reported proactively by the main process. History is a text projection;
 full Markdown, image/tool content and running sessions remain later slices.
 See [M003](docs/migration/evidence/M003.md) for identity, errors and coverage.
 
@@ -194,8 +190,16 @@ Generated bundles/maps live in desktop/.vite/; Forge packages in desktop/out/.
 `npm --prefix desktop run build:renderer` builds the production renderer for
 resource inspection; `npm --prefix desktop/tests run test:ui` includes the
 shared host-contract and HTTP prototype resource checks.
-The Electron+Go message performance sample is isolated from both wildcard UI
-suites and runs independently with `npm --prefix desktop/tests run test:performance`.
+Electron+Go startup, session-rendering and interaction performance checks are
+isolated from both wildcard UI suites and run independently with
+`npm --prefix desktop/tests run test:performance`. Cold and warm end-to-end
+startup to a fully rendered latest viewport over the complete 1200-message
+history (including decoded images visible in that viewport) each have a hard
+3000ms limit per measured round; any sample above 3000ms fails, and the report
+also records P50/P95 after at least 30 rounds per mode. A separate 6000-message
+stress scenario measures scroll reachability, bounded DOM, expansion, switching,
+input, frame stalls and memory without requiring every historical row in the
+initial viewport DOM.
 Main/preload follow Forge's main.cjs/preload.cjs convention. Preload is a single
 sandbox bundle with Electron as the only external runtime require. Strict
 Bundler-resolution TS configs keep Node globals out of renderer and DOM out of

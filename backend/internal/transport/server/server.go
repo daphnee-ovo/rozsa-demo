@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +72,10 @@ type MessageApplication interface {
 	ContinueMessage(context.Context) (string, error)
 	SubscribeMessageEvents(context.Context, string) (MessageEventSubscription, error)
 	CancelMessage(context.Context, string) error
+}
+
+type RuntimeStatusApplication interface {
+	RuntimeStatus() types.RuntimeStatusResult
 }
 
 type MessageEventSubscription interface {
@@ -190,13 +196,18 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	var messageSubscriptionParams types.MessageSubscriptionParams
 	switch method {
 	case types.Initialize:
+		traceRPCStartup("initialize-request-received")
 		var params types.InitializeParams
 		if !types.Params(req.Params(), &params) || params.ProtocolVersion != 1 {
 			return nil, types.Error(types.InvalidParams, "Unsupported protocol version or invalid params")
 		}
 		server.ready = true
+		traceRPCStartup("initialize-response-ready")
 		capabilities := []string{string(types.GetSessions), string(types.SwitchSession), string(types.SubscribeSessions), string(types.NextSessionEvent), string(types.UnsubscribeSessions)}
 		if server.messages != nil {
+			if _, ok := server.messages.(RuntimeStatusApplication); ok {
+				capabilities = append(capabilities, string(types.RuntimeStatus))
+			}
 			capabilities = append(capabilities, string(types.StartMessage), string(types.ContinueMessage), string(types.SubscribeMessage), string(types.NextMessageEvent), string(types.UnsubscribeMessage), string(types.CancelMessage))
 		}
 		return types.InitializeResult{ProtocolVersion: 1, Capabilities: capabilities}, nil
@@ -245,6 +256,19 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 		if !types.Params(req.Params(), &operationParams) || operationParams.OperationID == "" {
 			return nil, types.Error(types.InvalidParams, "Invalid params")
 		}
+	case types.RuntimeStatus:
+		if !types.Params(req.Params(), &types.EmptyParams{}) {
+			return nil, types.Error(types.InvalidParams, "Invalid params")
+		}
+		status, ok := server.messages.(RuntimeStatusApplication)
+		if !ok {
+			return nil, types.Error(types.MethodNotFound, "Runtime status is unavailable")
+		}
+		result := status.RuntimeStatus()
+		if result.State == "failed" {
+			return nil, types.Error(types.RuntimeInitialization, result.Error)
+		}
+		return result, nil
 	default:
 		return nil, types.Error(types.MethodNotFound, "Method not found")
 	}
@@ -338,6 +362,12 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			cursor.close()
 		}
 		return nil, requestError(work, work.Err())
+	}
+}
+
+func traceRPCStartup(stage string) {
+	if os.Getenv("ROZSA_PERF_TRACE") == "1" {
+		fmt.Fprintf(os.Stderr, "ROZSA_PERF_BACKEND %s %d\n", stage, time.Now().UnixMilli())
 	}
 }
 

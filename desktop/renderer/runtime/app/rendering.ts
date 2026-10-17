@@ -221,9 +221,13 @@ function updateAbortButton() {
 
 // =============== Message Rendering ===============
 
+let conversationRenderGeneration = 0;
+
 function renderMessages(messages, streaming, sessionId = null, turnActivity = null, turnSummaries = []) {
+  const generation = ++conversationRenderGeneration;
   const container = document.getElementById('chatMessages');
   if (!container) return;
+  container.dataset.sessionId = sessionId || '';
   const sessionChanged = renderedMessageSessionId !== sessionId;
   if (sessionChanged && renderedMessageSessionId) {
     persistSessionViewState(renderedMessageSessionId, container);
@@ -239,34 +243,44 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
     (sessionChanged ? !savedView : isChatNearBottom(container));
 
   const allMessages = Array.isArray(messages) ? messages : [];
-  const toolResultMap = Object.create(null);
+  const rawToolResultMap = Object.create(null);
   for (const raw of allMessages) {
     if (raw.kind !== 'standard' || !raw.message || raw.message.role !== 'toolResult') continue;
     const message = raw.message;
     const id = message.toolCallId;
     if (!id) continue;
-    const resultKey = String(sessionId || '') + ':' + id;
-    const previous = messageToolResultCache.get(resultKey);
-    if (previous?.raw === raw) toolResultMap[id] = previous.value;
-    else {
+    rawToolResultMap[id] = raw;
+  }
+  const toolResultMap = new Proxy(rawToolResultMap, {
+    get(target, id) {
+      if (typeof id !== 'string') return Reflect.get(target, id);
+      const raw = target[id];
+      if (!raw) return undefined;
+      const message = raw.message;
+      const resultKey = String(sessionId || '') + ':' + id;
+      const previous = messageToolResultCache.get(resultKey);
+      if (previous?.raw === raw) return previous.value;
       const text = (message.content || []).filter(block => block.type === 'text').map(block => block.text).join('\n');
       const value = { output: text, isError: !!message.isError, toolName: message.toolName || '', details: message.details || {} };
       messageToolResultCache.set(resultKey, { raw, value });
-      toolResultMap[id] = value;
-    }
-  }
+      return value;
+    },
+  });
   const visibleMessages = allMessages.filter(raw => !(raw.kind === 'standard' && raw.message && raw.message.role === 'toolResult'));
+  const rawIndexByMessage = new Map(allMessages.map((raw, index) => [raw, index]));
   const lastAssistantIndex = streaming ? -1 : visibleMessages.reduce((last, raw, index) =>
     raw.kind === 'standard' && raw.message && raw.message.role === 'assistant' ? index : last, -1);
   const summariesByRawIndex = new Map((Array.isArray(turnSummaries) ? turnSummaries : [])
     .map(summary => [summary.assistantMessageIndex, summary.activity]));
   const activityForVisibleIndex = index => {
-    const rawIndex = allMessages.indexOf(visibleMessages[index]);
+    const rawIndex = rawIndexByMessage.get(visibleMessages[index]);
     return summariesByRawIndex.get(rawIndex) || (index === lastAssistantIndex ? turnActivity : null);
   };
   const activeStreamIndex = activeStreamMessageIndex(allMessages, visibleMessages, streaming);
-  const thinkingDurationForIndex = updateThinkingTimings(allMessages, visibleMessages, activeStreamIndex, sessionId);
-  const entries = visibleMessages.map((raw, index) => {
+  const thinkingDurationForIndex = updateThinkingTimings(allMessages, visibleMessages, activeStreamIndex, sessionId, rawIndexByMessage);
+  const entryAt = index => {
+    const raw = visibleMessages[index];
+    if (!raw) return undefined;
     const activity = activityForVisibleIndex(index);
     const expanded = isThinkingExpanded(sessionId, index);
     const showIdentity = assistantMessageGroupPosition(visibleMessages, index) !== 'continuation';
@@ -284,20 +298,55 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
     const entry = createConversationEntry(raw, toolResultMap, active, activity, duration, expanded, showIdentity, index, sessionId);
     conversationEntryCache.set(cacheKey, { raw, activity, expanded, showIdentity, active, duration, resultRefs, entry });
     return entry;
+  };
+  const entryIds = visibleMessages.map((raw, index) => {
+    const messageIdentity = raw.entryId || raw.message?.timestamp || 'message';
+    return String(sessionId || '') + ':' + String(messageIdentity);
   });
 
   toolCounts = countTools(visibleMessages);
   renderToolChips();
   if (!window.RozsaConversation?.renderView) throw new Error('React conversation renderer is unavailable');
-  window.RozsaConversation.renderView({ entries, markdown: renderMarkdown, empty: entries.length === 0 });
   renderedMessageSessionId = sessionId;
   renderedRawMessageCount = allMessages.length;
-  if (restoringScroll || shouldStickToBottom) {
-    requestAnimationFrame(() => {
-      if (restoringScroll) restoreSessionViewState(sessionId, container, savedView);
-      else scrollChatToBottom(container);
-    });
+  const commit = (preparedMarkdown, preserveScroll = true) => {
+    if (generation !== conversationRenderGeneration) return;
+    const followEnd = preserveScroll ? shouldStickToBottom : !chatAutoScrollPaused && isChatNearBottom(container);
+    window.RozsaConversation.renderView({ entryCount: visibleMessages.length, entryIds, entryAt,
+      markdown: renderMarkdown, preparedMarkdown, empty: visibleMessages.length === 0, sessionId, followEnd,
+      initialScrollTop: restoringScroll ? savedView.scrollTop : null });
+    if (preserveScroll && (restoringScroll || followEnd)) {
+      requestAnimationFrame(() => {
+        if (restoringScroll) restoreSessionViewState(sessionId, container, savedView);
+        else scrollChatToBottom(container);
+      });
+    }
+  };
+  if (!streaming && visibleMessages.length >= 50) {
+    const jobs = [];
+    const firstPreparedIndex = Math.max(0, visibleMessages.length - 40);
+    for (let index = firstPreparedIndex; index < visibleMessages.length; index++) {
+      const entry = entryAt(index);
+      if (entry.kind !== 'standard' || !entry.message || !Array.isArray(entry.message.content)) continue;
+      const content = entry.message.content;
+      for (const type of ['text', 'thinking']) {
+        const source = content.filter(block => block.type === type && typeof block.text === 'string').map(block => block.text).join('\n');
+        if (source) jobs.push({ key: entry.id + ':' + type, source });
+      }
+    }
+    if (jobs.length) {
+      const started = performance.now();
+      commit(undefined);
+      window.RozsaMarkdownWorker.prepare(jobs).then(preparedMarkdown => {
+        if (window.__ROZSA_PERF__?.markdownWorkerDurations) window.__ROZSA_PERF__.markdownWorkerDurations.push(performance.now() - started);
+        commit(preparedMarkdown, false);
+      }).catch(error => {
+        if (generation === conversationRenderGeneration) showError('Markdown worker failed: ' + String(error));
+      });
+      return;
+    }
   }
+  commit(undefined);
 }
 
 function bashPresentationRenderKey(raw, toolResultMap) {

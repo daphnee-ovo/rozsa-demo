@@ -291,7 +291,7 @@ function isThinkingExpanded(sessionId, index) {
 }
 
 function patchStreamingThinking(container, index, raw, thinkingDurationMs) {
-  const messageEl = container.children[index];
+  const messageEl = container.querySelector(`[data-od-id="message-${index}"]`);
   const block = messageEl && messageEl.querySelector('.thinking-block');
   const message = raw && raw.message;
   if (!block || !message || message.role !== 'assistant') return false;
@@ -358,12 +358,12 @@ function lastVisibleTextNode(target) {
   return last;
 }
 
-function updateThinkingTimings(messages, visibleMessages, activeStreamIndex, sessionId) {
+function updateThinkingTimings(messages, visibleMessages, activeStreamIndex, sessionId, rawIndexByMessage = new Map(messages.map((message, index) => [message, index]))) {
   const durationsByIndex = new Map();
   visibleMessages.forEach((raw, index) => {
     const msg = raw && raw.message;
     if (!msg || msg.role !== 'assistant' || !extractThinking(msg.content || [])) return;
-    const rawIndex = messages.indexOf(raw);
+    const rawIndex = rawIndexByMessage.get(raw);
     const key = String(sessionId || '') + ':' + rawIndex + ':' + String(msg.timestamp || 0);
     const content = msg.content || [];
     const latest = content.length ? content[content.length - 1].type : '';
