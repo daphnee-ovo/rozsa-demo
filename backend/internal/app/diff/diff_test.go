@@ -9,52 +9,52 @@ import (
 )
 
 func TestBuildFileDeltaStatusesAndTurnMerge(t *testing.T) {
-	old, newValue := "old\n", "new\n"
-	d := BuildFileDelta("a.txt", &old, &newValue)
-	if d == nil || d.Status != "modified" || d.Added != 1 || d.Deleted != 1 || !strings.Contains(d.Patch, "-old\n+new") {
-		t.Fatalf("delta: %#v", d)
+	oldContent, newContent := "old\n", "new\n"
+	fileDelta := BuildFileDelta("a.txt", &oldContent, &newContent)
+	if fileDelta == nil || fileDelta.Status != "modified" || fileDelta.Added != 1 || fileDelta.Deleted != 1 || !strings.Contains(fileDelta.Patch, "-old\n+new") {
+		t.Fatalf("delta: %#v", fileDelta)
 	}
-	added := BuildFileDelta("new", nil, &newValue)
-	if added == nil || added.Status != "added" {
-		t.Fatalf("added delta: %#v", added)
+	addedDelta := BuildFileDelta("new", nil, &newContent)
+	if addedDelta == nil || addedDelta.Status != "added" {
+		t.Fatalf("added delta: %#v", addedDelta)
 	}
 	activity, err := MergeResults([]map[string]any{
-		{"details": map[string]any{"file_deltas": []any{map[string]any{"path": "a.txt", "before": old, "after": "middle\n"}}, "capture_complete": true}},
-		{"details": map[string]any{"file_deltas": []any{map[string]any{"path": "a.txt", "before": "middle\n", "after": newValue}}, "capture_complete": false, "capture_limitation": "later read failed"}},
+		{"details": map[string]any{"file_deltas": []any{map[string]any{"path": "a.txt", "before": oldContent, "after": "middle\n"}}, "capture_complete": true}},
+		{"details": map[string]any{"file_deltas": []any{map[string]any{"path": "a.txt", "before": "middle\n", "after": newContent}}, "capture_complete": false, "capture_limitation": "later read failed"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if activity.CaptureComplete || activity.CaptureLimitation != "later read failed" || len(activity.FileChanges) != 1 || *activity.FileChanges[0].Before != old || *activity.FileChanges[0].After != newValue {
+	if activity.CaptureComplete || activity.CaptureLimitation != "later read failed" || len(activity.FileChanges) != 1 || *activity.FileChanges[0].Before != oldContent || *activity.FileChanges[0].After != newContent {
 		t.Fatalf("merged activity: %#v", activity)
 	}
 }
 
 func TestReadWorkspaceDiffTrackedAndUntrackedAndPathValidation(t *testing.T) {
-	root := t.TempDir()
-	runGitTest(t, root, "init", "-q")
-	runGitTest(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "initial")
-	tracked := filepath.Join(root, "tracked.txt")
-	if err := os.WriteFile(tracked, []byte("base\n"), 0600); err != nil {
+	workspace := t.TempDir()
+	runGitTest(t, workspace, "init", "-q")
+	runGitTest(t, workspace, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "initial")
+	trackedFile := filepath.Join(workspace, "tracked.txt")
+	if err := os.WriteFile(trackedFile, []byte("base\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	runGitTest(t, root, "add", "tracked.txt")
-	runGitTest(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "tracked")
-	if err := os.WriteFile(tracked, []byte("changed\n"), 0600); err != nil {
+	runGitTest(t, workspace, "add", "tracked.txt")
+	runGitTest(t, workspace, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "tracked")
+	if err := os.WriteFile(trackedFile, []byte("changed\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	d, err := ReadWorkspaceDiff(root, "tracked.txt")
-	if err != nil || !strings.Contains(d.Patch, "-base") || !strings.Contains(d.Patch, "+changed") {
-		t.Fatalf("tracked diff %#v err %v", d, err)
+	trackedDiff, err := ReadWorkspaceDiff(workspace, "tracked.txt")
+	if err != nil || !strings.Contains(trackedDiff.Patch, "-base") || !strings.Contains(trackedDiff.Patch, "+changed") {
+		t.Fatalf("tracked diff %#v err %v", trackedDiff, err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("new\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, "new.txt"), []byte("new\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	d, err = ReadWorkspaceDiff(root, "new.txt")
-	if err != nil || !strings.Contains(d.Patch, "+new") {
-		t.Fatalf("untracked diff %#v err %v", d, err)
+	untrackedDiff, err := ReadWorkspaceDiff(workspace, "new.txt")
+	if err != nil || !strings.Contains(untrackedDiff.Patch, "+new") {
+		t.Fatalf("untracked diff %#v err %v", untrackedDiff, err)
 	}
-	if _, err = ReadWorkspaceDiff(root, "../outside"); err == nil || !strings.Contains(err.Error(), "stay within") {
+	if _, err = ReadWorkspaceDiff(workspace, "../outside"); err == nil || !strings.Contains(err.Error(), "stay within") {
 		t.Fatalf("path traversal error: %v", err)
 	}
 	if _, err = ReadWorkspaceDiff(t.TempDir(), "file"); err == nil || !strings.Contains(err.Error(), "not a Git repository") {
@@ -62,10 +62,11 @@ func TestReadWorkspaceDiffTrackedAndUntrackedAndPathValidation(t *testing.T) {
 	}
 }
 
-func runGitTest(t *testing.T, dir string, args ...string) {
+func runGitTest(t *testing.T, dir string, gitArguments ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
+	gitCommand := exec.Command("git", append([]string{"-C", dir}, gitArguments...)...)
+	commandOutput, err := gitCommand.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", gitArguments, err, commandOutput)
 	}
 }

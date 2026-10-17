@@ -36,33 +36,37 @@ type Truncation struct {
 
 var locks sync.Map // map[original path]chan struct{}
 
-func withLock(ctx context.Context, path string, fn func() error) error {
-	if err := ctx.Err(); err != nil {
+func withLock(requestContext context.Context, path string, operation func() error) error {
+	if err := requestContext.Err(); err != nil {
 		return err
 	}
-	value, _ := locks.LoadOrStore(path, func() chan struct{} { c := make(chan struct{}, 1); c <- struct{}{}; return c }())
-	lock := value.(chan struct{})
+	lockValue, _ := locks.LoadOrStore(path, func() chan struct{} {
+		lockChannel := make(chan struct{}, 1)
+		lockChannel <- struct{}{}
+		return lockChannel
+	}())
+	lock := lockValue.(chan struct{})
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-requestContext.Done():
+		return requestContext.Err()
 	case <-lock:
 	}
 	defer func() { lock <- struct{}{} }()
-	if err := ctx.Err(); err != nil {
+	if err := requestContext.Err(); err != nil {
 		return err
 	}
-	return fn()
+	return operation()
 }
 
 func Read(path string, offset, limit *int) (Result, error) {
-	info, err := os.Stat(path)
+	fileInfo, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return Result{}, fmt.Errorf("File not found: %s", path)
 	}
 	if err != nil {
 		return Result{}, readError(path, err)
 	}
-	if !info.Mode().IsRegular() {
+	if !fileInfo.Mode().IsRegular() {
 		return Result{}, fmt.Errorf("Not a file: %s", path)
 	}
 	data, err := os.ReadFile(path)
@@ -80,86 +84,86 @@ func Read(path string, offset, limit *int) (Result, error) {
 	} else if strings.HasSuffix(lineContent, "\n") {
 		lines = lines[:len(lines)-1]
 	}
-	start := 0
+	startLine := 0
 	if offset != nil && *offset > 1 {
-		start = *offset - 1
+		startLine = *offset - 1
 	}
-	if start >= len(lines) && len(lines) > 0 {
-		return Result{}, fmt.Errorf("Offset %d is beyond end of file (%d lines total)", value(offset, 1), len(lines))
+	if startLine >= len(lines) && len(lines) > 0 {
+		return Result{}, fmt.Errorf("Offset %d is beyond end of file (%d lines total)", intOrDefault(offset, 1), len(lines))
 	}
-	end := len(lines)
-	if limit != nil && *limit >= 0 && start+*limit < end {
-		end = start + *limit
+	endLine := len(lines)
+	if limit != nil && *limit >= 0 && startLine+*limit < endLine {
+		endLine = startLine + *limit
 	}
-	selected := lines[start:end]
-	out := make([]string, 0, len(selected))
-	used := 0
-	var by *string
-	firstTooLarge := len(selected) > 0 && len(selected[0]) > maxBytes
-	if firstTooLarge {
-		return Result{}, fmt.Errorf("[Line %d is %s, exceeds %s limit. Use bash: sed -n '%dp' %s | head -c %d]", start+1, formatSize(len(selected[0])), formatSize(maxBytes), start+1, path, maxBytes)
+	selected := lines[startLine:endLine]
+	outputLines := make([]string, 0, len(selected))
+	usedBytes := 0
+	var truncationReason *string
+	isFirstLineTooLarge := len(selected) > 0 && len(selected[0]) > maxBytes
+	if isFirstLineTooLarge {
+		return Result{}, fmt.Errorf("[Line %d is %s, exceeds %s limit. Use bash: sed -n '%dp' %s | head -c %d]", startLine+1, formatSize(len(selected[0])), formatSize(maxBytes), startLine+1, path, maxBytes)
 	}
 	for i, line := range selected {
 		if i >= maxLines {
-			value := "lines"
-			by = &value
+			truncationKind := "lines"
+			truncationReason = &truncationKind
 			break
 		}
-		n := len(line)
+		lineBytes := len(line)
 		if i > 0 {
-			n++
+			lineBytes++
 		}
-		if used+n > maxBytes {
-			value := "bytes"
-			by = &value
+		if usedBytes+lineBytes > maxBytes {
+			truncationKind := "bytes"
+			truncationReason = &truncationKind
 			break
 		}
-		out = append(out, fmt.Sprintf("%6d\t%s", start+i+1, line))
-		used += n
+		outputLines = append(outputLines, fmt.Sprintf("%6d\t%s", startLine+i+1, line))
+		usedBytes += lineBytes
 	}
-	truncated := len(out) < len(selected)
-	text := strings.Join(out, "\n")
+	truncated := len(outputLines) < len(selected)
+	text := strings.Join(outputLines, "\n")
 	if truncated {
-		if by != nil && *by == "lines" {
-			text += fmt.Sprintf("\n\n[Showing lines %d-%d of %d. Use offset=%d to continue.]", start+1, start+len(out), len(lines), start+len(out)+1)
+		if truncationReason != nil && *truncationReason == "lines" {
+			text += fmt.Sprintf("\n\n[Showing lines %d-%d of %d. Use offset=%d to continue.]", startLine+1, startLine+len(outputLines), len(lines), startLine+len(outputLines)+1)
 		} else {
-			text += fmt.Sprintf("\n\n[Showing lines %d-%d of %d (%s limit). Use offset=%d to continue.]", start+1, start+len(out), len(lines), formatSize(maxBytes), start+len(out)+1)
+			text += fmt.Sprintf("\n\n[Showing lines %d-%d of %d (%s limit). Use offset=%d to continue.]", startLine+1, startLine+len(outputLines), len(lines), formatSize(maxBytes), startLine+len(outputLines)+1)
 		}
-	} else if limit != nil && start+len(out) < len(lines) {
-		text += fmt.Sprintf("\n\n[%d more lines in file. Use offset=%d to continue.]", len(lines)-start-len(out), start+len(out)+1)
+	} else if limit != nil && startLine+len(outputLines) < len(lines) {
+		text += fmt.Sprintf("\n\n[%d more lines in file. Use offset=%d to continue.]", len(lines)-startLine-len(outputLines), startLine+len(outputLines)+1)
 	}
-	return Result{Text: text, Details: Truncation{truncated, by, len(lines), len(out), firstTooLarge, maxLines, maxBytes}}, nil
+	return Result{Text: text, Details: Truncation{truncated, truncationReason, len(lines), len(outputLines), isFirstLineTooLarge, maxLines, maxBytes}}, nil
 }
 
-func Write(ctx context.Context, path, content string) (Result, error) {
+func Write(requestContext context.Context, path, content string) (Result, error) {
 	var result Result
 	before, captureErr := readBefore(path)
 	if captureErr != nil {
 		return Result{}, fmt.Errorf("Failed to capture file evidence before write: %w", captureErr)
 	}
-	err := withLock(ctx, path, func() error {
-		parent := filepath.Dir(path)
-		if parent != "." {
-			if e := os.MkdirAll(parent, 0755); e != nil {
-				if errors.Is(e, os.ErrPermission) {
+	operationErr := withLock(requestContext, path, func() error {
+		parentDirectory := filepath.Dir(path)
+		if parentDirectory != "." {
+			if createDirectoryErr := os.MkdirAll(parentDirectory, 0755); createDirectoryErr != nil {
+				if errors.Is(createDirectoryErr, os.ErrPermission) {
 					return fmt.Errorf("Permission denied: cannot create parent directory for %s", path)
 				}
-				return fmt.Errorf("Failed to create parent directory: %w", e)
+				return fmt.Errorf("Failed to create parent directory: %w", createDirectoryErr)
 			}
 		}
-		tmp := temporaryPath(path)
-		if e := os.WriteFile(tmp, []byte(content), 0666); e != nil {
-			if errors.Is(e, os.ErrPermission) {
+		temporaryFilePath := temporaryPath(path)
+		if writeErr := os.WriteFile(temporaryFilePath, []byte(content), 0666); writeErr != nil {
+			if errors.Is(writeErr, os.ErrPermission) {
 				return fmt.Errorf("Permission denied: %s", path)
 			}
-			return fmt.Errorf("Failed to write file: %w", e)
+			return fmt.Errorf("Failed to write file: %w", writeErr)
 		}
-		if e := os.Rename(tmp, path); e != nil {
-			_ = os.Remove(tmp)
-			if errors.Is(e, os.ErrPermission) {
+		if renameErr := os.Rename(temporaryFilePath, path); renameErr != nil {
+			_ = os.Remove(temporaryFilePath)
+			if errors.Is(renameErr, os.ErrPermission) {
 				return fmt.Errorf("Permission denied: cannot rename temporary file to %s", path)
 			}
-			return fmt.Errorf("Failed to rename temporary file: %w", e)
+			return fmt.Errorf("Failed to rename temporary file: %w", renameErr)
 		}
 		lineCount := lineCount(content)
 		result.Text = fmt.Sprintf("Successfully wrote %s to %s (%d lines)", formatSize(len(content)), path, lineCount)
@@ -167,154 +171,154 @@ func Write(ctx context.Context, path, content string) (Result, error) {
 		result.Details = map[string]any{"file_path": path, "changed_files": []string{path}, "success": true, "bytes_written": len(content), "line_count": lineCount, "file_deltas": deltas(path, before, &after), "capture_complete": true}
 		return nil
 	})
-	return result, err
+	return result, operationErr
 }
 
-func Edit(ctx context.Context, path, oldText, newText string, replaceAll bool) (Result, error) {
+func Edit(requestContext context.Context, path, oldText, newText string, replaceAll bool) (Result, error) {
 	var result Result
 	before, captureErr := readBefore(path)
 	if captureErr != nil {
 		return Result{}, fmt.Errorf("Failed to capture file evidence before edit: %w", captureErr)
 	}
-	err := withLock(ctx, path, func() error {
-		info, e := os.Stat(path)
-		if errors.Is(e, os.ErrNotExist) {
+	operationErr := withLock(requestContext, path, func() error {
+		fileInfo, statErr := os.Stat(path)
+		if errors.Is(statErr, os.ErrNotExist) {
 			return fmt.Errorf("File not found: %s", path)
 		}
-		if e != nil {
-			return readError(path, e)
+		if statErr != nil {
+			return readError(path, statErr)
 		}
-		if !info.Mode().IsRegular() {
+		if !fileInfo.Mode().IsRegular() {
 			return fmt.Errorf("Not a file: %s", path)
 		}
-		bytes, e := os.ReadFile(path)
-		if e != nil {
-			return readError(path, e)
+		fileContents, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readError(path, readErr)
 		}
-		if !utf8Valid(bytes) {
+		if !utf8Valid(fileContents) {
 			return fmt.Errorf("Binary file or invalid UTF-8: %s", path)
 		}
-		content := string(bytes)
-		bom := strings.HasPrefix(content, "\uFEFF")
-		if bom {
+		content := string(fileContents)
+		hasBOM := strings.HasPrefix(content, "\uFEFF")
+		if hasBOM {
 			content = strings.TrimLeft(content, "\uFEFF")
 		}
-		crlf := strings.Contains(content, "\r\n")
-		if crlf {
+		hasCRLF := strings.Contains(content, "\r\n")
+		if hasCRLF {
 			content = strings.ReplaceAll(content, "\r\n", "\n")
 			oldText = strings.ReplaceAll(oldText, "\r\n", "\n")
 		}
 		strategy := "exact"
-		working, needle := content, oldText
-		if !strings.Contains(working, needle) {
+		workingContent, searchText := content, oldText
+		if !strings.Contains(workingContent, searchText) {
 			strategy = "whitespace-normalized"
-			working = normalize(content)
-			needle = normalize(oldText)
-			if !strings.Contains(working, needle) {
+			workingContent = normalize(content)
+			searchText = normalize(oldText)
+			if !strings.Contains(workingContent, searchText) {
 				return fmt.Errorf("Could not find old_string in %s. The text must match exactly including all whitespace and newlines.", path)
 			}
 		}
-		count := strings.Count(working, needle)
-		if !replaceAll && count > 1 {
-			return fmt.Errorf("Found %d occurrences of old_string in %s. The text must be unique or use replace_all=true.", count, path)
+		matchCount := strings.Count(workingContent, searchText)
+		if !replaceAll && matchCount > 1 {
+			return fmt.Errorf("Found %d occurrences of old_string in %s. The text must be unique or use replace_all=true.", matchCount, path)
 		}
-		updated := working
+		updated := workingContent
 		if replaceAll {
-			updated = strings.ReplaceAll(working, needle, newText)
+			updated = strings.ReplaceAll(workingContent, searchText, newText)
 		} else {
-			updated = strings.Replace(working, needle, newText, 1)
+			updated = strings.Replace(workingContent, searchText, newText, 1)
 		}
-		if updated == working {
+		if updated == workingContent {
 			return fmt.Errorf("No changes made to %s. The replacement produced identical content.", path)
 		}
-		if crlf {
+		if hasCRLF {
 			updated = strings.ReplaceAll(updated, "\n", "\r\n")
 		}
-		if bom {
+		if hasBOM {
 			updated = "\uFEFF" + updated
 		}
-		tmp := temporaryPath(path)
-		if e = os.WriteFile(tmp, []byte(updated), 0666); e != nil {
-			if errors.Is(e, os.ErrPermission) {
+		temporaryFilePath := temporaryPath(path)
+		if writeErr := os.WriteFile(temporaryFilePath, []byte(updated), 0666); writeErr != nil {
+			if errors.Is(writeErr, os.ErrPermission) {
 				return fmt.Errorf("Permission denied: %s", path)
 			}
-			return fmt.Errorf("Failed to write file: %w", e)
+			return fmt.Errorf("Failed to write file: %w", writeErr)
 		}
-		if e = os.Rename(tmp, path); e != nil {
-			_ = os.Remove(tmp)
-			if errors.Is(e, os.ErrPermission) {
+		if renameErr := os.Rename(temporaryFilePath, path); renameErr != nil {
+			_ = os.Remove(temporaryFilePath)
+			if errors.Is(renameErr, os.ErrPermission) {
 				return fmt.Errorf("Permission denied: cannot rename temporary file to %s", path)
 			}
-			return fmt.Errorf("Failed to rename temporary file: %w", e)
+			return fmt.Errorf("Failed to rename temporary file: %w", renameErr)
 		}
-		msg := fmt.Sprintf("Successfully replaced %d occurrence(s) in %s", count, path)
+		successMessage := fmt.Sprintf("Successfully replaced %d occurrence(s) in %s", matchCount, path)
 		if strategy != "exact" {
-			msg += fmt.Sprintf(" (using %s match)", strategy)
+			successMessage += fmt.Sprintf(" (using %s match)", strategy)
 		}
-		result.Text = msg
+		result.Text = successMessage
 		after := updated
-		result.Details = map[string]any{"file_path": path, "changed_files": []string{path}, "success": true, "replacements": count, "file_deltas": deltas(path, before, &after), "capture_complete": true}
+		result.Details = map[string]any{"file_path": path, "changed_files": []string{path}, "success": true, "replacements": matchCount, "file_deltas": deltas(path, before, &after), "capture_complete": true}
 		return nil
 	})
-	return result, err
+	return result, operationErr
 }
 
-func normalize(s string) string {
-	lines := strings.Split(s, "\n")
+func normalize(text string) string {
+	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		lines[i] = strings.Join(strings.Fields(line), " ")
 	}
 	return strings.Join(lines, "\n")
 }
-func temporaryPath(path string) string {
-	base := filepath.Base(path)
-	ext := filepath.Ext(path)
-	if strings.HasPrefix(base, ".") && strings.Count(base, ".") == 1 {
-		ext = ""
+func temporaryPath(filePath string) string {
+	baseName := filepath.Base(filePath)
+	fileExtension := filepath.Ext(filePath)
+	if strings.HasPrefix(baseName, ".") && strings.Count(baseName, ".") == 1 {
+		fileExtension = ""
 	}
-	return strings.TrimSuffix(path, ext) + ".tmp"
+	return strings.TrimSuffix(filePath, fileExtension) + ".tmp"
 }
-func lineCount(s string) int {
-	if s == "" {
+func lineCount(content string) int {
+	if content == "" {
 		return 0
 	}
-	return len(strings.Split(strings.TrimSuffix(s, "\n"), "\n"))
+	return len(strings.Split(strings.TrimSuffix(content, "\n"), "\n"))
 }
-func formatSize(n int) string {
-	if n < 1024 {
-		return fmt.Sprintf("%dB", n)
+func formatSize(byteCount int) string {
+	if byteCount < 1024 {
+		return fmt.Sprintf("%dB", byteCount)
 	}
-	if n < 1024*1024 {
-		return fmt.Sprintf("%.1fKB", float64(n)/1024)
+	if byteCount < 1024*1024 {
+		return fmt.Sprintf("%.1fKB", float64(byteCount)/1024)
 	}
-	return fmt.Sprintf("%.1fMB", float64(n)/(1024*1024))
+	return fmt.Sprintf("%.1fMB", float64(byteCount)/(1024*1024))
 }
-func value(v *int, fallback int) int {
-	if v == nil {
+func intOrDefault(providedValue *int, fallback int) int {
+	if providedValue == nil {
 		return fallback
 	}
-	return *v
+	return *providedValue
 }
-func readError(path string, e error) error {
-	if errors.Is(e, os.ErrPermission) {
+func readError(path string, readErr error) error {
+	if errors.Is(readErr, os.ErrPermission) {
 		return fmt.Errorf("Permission denied: %s", path)
 	}
-	return fmt.Errorf("Failed to read file: %w", e)
+	return fmt.Errorf("Failed to read file: %w", readErr)
 }
-func utf8Valid(b []byte) bool { return utf8.Valid(b) }
+func utf8Valid(contentBytes []byte) bool { return utf8.Valid(contentBytes) }
 func readBefore(path string) (*string, error) {
-	b, err := os.ReadFile(path)
+	fileContents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if !utf8.Valid(b) {
+	if !utf8.Valid(fileContents) {
 		return nil, fmt.Errorf("file is not valid UTF-8")
 	}
-	s := string(b)
-	return &s, nil
+	content := string(fileContents)
+	return &content, nil
 }
 func deltas(path string, before, after *string) []diff.FileDelta {
 	delta := diff.BuildFileDelta(path, before, after)

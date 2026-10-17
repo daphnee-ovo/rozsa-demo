@@ -10,45 +10,45 @@ import (
 )
 
 func TestReadWriteEditRealFileAndEvidenceMetadata(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "nested", "note.txt")
-	w, err := Write(context.Background(), path, "a\r\n  b  c\r\n")
+	tempDirectory := t.TempDir()
+	path := filepath.Join(tempDirectory, "nested", "note.txt")
+	writeResult, err := Write(context.Background(), path, "a\r\n  b  c\r\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(w.Text, "Successfully wrote") {
-		t.Fatalf("write result: %q", w.Text)
+	if !strings.Contains(writeResult.Text, "Successfully wrote") {
+		t.Fatalf("write result: %q", writeResult.Text)
 	}
-	data, err := os.ReadFile(path)
+	fileBytes, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "a\r\n  b  c\r\n" {
-		t.Fatalf("write bytes: %q", data)
+	if string(fileBytes) != "a\r\n  b  c\r\n" {
+		t.Fatalf("write bytes: %q", fileBytes)
 	}
-	e, err := Edit(context.Background(), path, "b c", "changed", false)
+	editResult, err := Edit(context.Background(), path, "b c", "changed", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err = os.ReadFile(path)
+	fileBytes, err = os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "a\r\nchanged\r\n" {
-		t.Fatalf("edit bytes: %q", data)
+	if string(fileBytes) != "a\r\nchanged\r\n" {
+		t.Fatalf("edit bytes: %q", fileBytes)
 	}
-	if !strings.Contains(e.Text, "whitespace-normalized") {
-		t.Fatalf("edit result: %q", e.Text)
+	if !strings.Contains(editResult.Text, "whitespace-normalized") {
+		t.Fatalf("edit result: %q", editResult.Text)
 	}
-	r, err := Read(path, nil, nil)
+	readResult, err := Read(path, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r.Text, "changed") {
-		t.Fatalf("read output: %q", r.Text)
+	if !strings.Contains(readResult.Text, "changed") {
+		t.Fatalf("read output: %q", readResult.Text)
 	}
-	if d := w.Details.(map[string]any); d["capture_complete"] != true || d["bytes_written"] != len("a\r\n  b  c\r\n") {
-		t.Fatalf("write details: %#v", d)
+	if writeDetails := writeResult.Details.(map[string]any); writeDetails["capture_complete"] != true || writeDetails["bytes_written"] != len("a\r\n  b  c\r\n") {
+		t.Fatalf("write details: %#v", writeDetails)
 	}
 }
 
@@ -66,40 +66,40 @@ func TestEditAmbiguousMissingAndBOM(t *testing.T) {
 	if _, err := Edit(context.Background(), path, "repeat", "x", true); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(path)
+	fileContents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(b) != "\uFEFFx x" {
-		t.Fatalf("BOM/replacement: %q", b)
+	if string(fileContents) != "\uFEFFx x" {
+		t.Fatalf("BOM/replacement: %q", fileContents)
 	}
 }
 
 func TestPathErrorsSymlinkAndCancellation(t *testing.T) {
-	root := t.TempDir()
-	if _, err := Read(filepath.Join(root, "missing"), nil, nil); err == nil || err.Error() != "File not found: "+filepath.Join(root, "missing") {
+	tempDirectory := t.TempDir()
+	if _, err := Read(filepath.Join(tempDirectory, "missing"), nil, nil); err == nil || err.Error() != "File not found: "+filepath.Join(tempDirectory, "missing") {
 		t.Fatalf("missing path error: %v", err)
 	}
-	target := filepath.Join(root, "target")
+	target := filepath.Join(tempDirectory, "target")
 	if err := os.WriteFile(target, []byte("ok"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(root, "link")
+	link := filepath.Join(tempDirectory, "link")
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	r, err := Read(link, nil, nil)
-	if err != nil || !strings.Contains(r.Text, "ok") {
-		t.Fatalf("read symlink: %#v %v", r, err)
+	readResult, err := Read(link, nil, nil)
+	if err != nil || !strings.Contains(readResult.Text, "ok") {
+		t.Fatalf("read symlink: %#v %v", readResult, err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	requestContext, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := Write(ctx, target, "new"); err == nil {
+	if _, err := Write(requestContext, target, "new"); err == nil {
 		t.Fatal("cancelled write succeeded")
 	}
-	b, _ := os.ReadFile(target)
-	if string(b) != "ok" {
-		t.Fatalf("cancelled write changed file: %q", b)
+	fileContents, _ := os.ReadFile(target)
+	if string(fileContents) != "ok" {
+		t.Fatalf("cancelled write changed file: %q", fileContents)
 	}
 }
 
@@ -116,11 +116,11 @@ func TestPathLockSerializesWrites(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	b, err := os.ReadFile(path)
+	fileContents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(b) < 1 || len(b) > 12 {
-		t.Fatalf("unexpected final size: %d", len(b))
+	if len(fileContents) < 1 || len(fileContents) > 12 {
+		t.Fatalf("unexpected final size: %d", len(fileContents))
 	}
 }

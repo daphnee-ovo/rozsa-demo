@@ -41,10 +41,10 @@ type accumulator struct {
 }
 type gitResult struct {
 	Stdout, Stderr []byte
-	code           int
+	exitCode       int
 }
 
-func (r gitResult) ExitCode() int { return r.code }
+func (result gitResult) ExitCode() int { return result.exitCode }
 
 func BuildFileDelta(path string, before, after *string) *FileDelta {
 	if equal(before, after) {
@@ -66,7 +66,7 @@ func BuildFileDelta(path string, before, after *string) *FileDelta {
 
 // ReadWorkspaceDiff mirrors the Rust helper: tracked files use git diff; visible
 // untracked files use diff --no-index against the platform null device.
-func ReadWorkspaceDiff(cwd, path string) (FileDiff, error) {
+func ReadWorkspaceDiff(workingDirectory, path string) (FileDiff, error) {
 	if filepath.IsAbs(path) {
 		return FileDiff{}, fmt.Errorf("Diff path must stay within the workspace")
 	}
@@ -75,33 +75,33 @@ func ReadWorkspaceDiff(cwd, path string) (FileDiff, error) {
 			return FileDiff{}, fmt.Errorf("Diff path must stay within the workspace")
 		}
 	}
-	inside, err := git(cwd, "rev-parse", "--is-inside-work-tree")
+	repositoryCheck, err := git(workingDirectory, "rev-parse", "--is-inside-work-tree")
 	if err != nil {
 		return FileDiff{}, err
 	}
-	if inside.ExitCode() != 0 {
+	if repositoryCheck.ExitCode() != 0 {
 		return FileDiff{}, fmt.Errorf("Workspace is not a Git repository")
 	}
-	tracked, _ := git(cwd, "ls-files", "--error-unmatch", "--", path)
+	trackedFileCheck, _ := git(workingDirectory, "ls-files", "--error-unmatch", "--", path)
 	var data []byte
-	if tracked.ExitCode() == 0 {
-		out, e := checked(cwd, "diff", "--no-textconv", "--no-ext-diff", "--", path)
-		if e != nil {
-			return FileDiff{}, e
+	if trackedFileCheck.ExitCode() == 0 {
+		diffBytes, diffErr := checked(workingDirectory, "diff", "--no-textconv", "--no-ext-diff", "--", path)
+		if diffErr != nil {
+			return FileDiff{}, diffErr
 		}
-		data = out
+		data = diffBytes
 	} else {
-		untracked, e := git(cwd, "ls-files", "--others", "--exclude-standard", "--", path)
-		if e != nil {
-			return FileDiff{}, e
+		untrackedFiles, gitErr := git(workingDirectory, "ls-files", "--others", "--exclude-standard", "--", path)
+		if gitErr != nil {
+			return FileDiff{}, gitErr
 		}
-		if untracked.ExitCode() == 0 && len(untracked.Stdout) > 0 {
-			null := "/dev/null"
-			out, e := checked(cwd, "diff", "--no-textconv", "--no-ext-diff", "--no-index", "--", null, path)
-			if e != nil {
-				return FileDiff{}, e
+		if untrackedFiles.ExitCode() == 0 && len(untrackedFiles.Stdout) > 0 {
+			nullDevice := "/dev/null"
+			diffBytes, diffErr := checked(workingDirectory, "diff", "--no-textconv", "--no-ext-diff", "--no-index", "--", nullDevice, path)
+			if diffErr != nil {
+				return FileDiff{}, diffErr
 			}
-			data = out
+			data = diffBytes
 		}
 	}
 	truncated := len(data) > maxPatchBytes
@@ -114,167 +114,169 @@ func ReadWorkspaceDiff(cwd, path string) (FileDiff, error) {
 // MergeResults combines ordered tool results into a turn-level summary.
 // Input must be a decoded JSON object; malformed file delta entries are errors.
 func MergeResults(results []map[string]any) (Activity, error) {
-	a := accumulator{files: map[string][2]*string{}, opaque: map[string]bool{}, complete: true}
-	for _, result := range results {
-		details, _ := result["details"].(map[string]any)
+	turnEvidence := accumulator{files: map[string][2]*string{}, opaque: map[string]bool{}, complete: true}
+	for _, toolResult := range results {
+		details, _ := toolResult["details"].(map[string]any)
 		if details == nil {
 			continue
 		}
 		if complete, ok := details["capture_complete"].(bool); ok && !complete {
-			a.complete = false
-			if lim, ok := details["capture_limitation"].(string); ok && a.limitation == "" {
-				a.limitation = lim
+			turnEvidence.complete = false
+			if limitation, ok := details["capture_limitation"].(string); ok && turnEvidence.limitation == "" {
+				turnEvidence.limitation = limitation
 			}
 		}
-		if raw, ok := details["file_deltas"].([]any); ok {
-			for _, item := range raw {
-				m, ok := item.(map[string]any)
+		if rawDeltas, ok := details["file_deltas"].([]any); ok {
+			for _, deltaEntry := range rawDeltas {
+				deltaData, ok := deltaEntry.(map[string]any)
 				if !ok {
 					return Activity{}, fmt.Errorf("invalid file delta entry")
 				}
-				path, ok := m["path"].(string)
+				filePath, ok := deltaData["path"].(string)
 				if !ok {
 					return Activity{}, fmt.Errorf("file delta missing path")
 				}
-				after := stringPtr(m["after"])
-				before := stringPtr(m["before"])
-				if prior, ok := a.files[path]; ok {
-					before = prior[0]
+				fileAfter := stringPtr(deltaData["after"])
+				fileBefore := stringPtr(deltaData["before"])
+				if priorDelta, ok := turnEvidence.files[filePath]; ok {
+					fileBefore = priorDelta[0]
 				}
-				a.files[path] = [2]*string{before, after}
-				delete(a.opaque, path)
+				turnEvidence.files[filePath] = [2]*string{fileBefore, fileAfter}
+				delete(turnEvidence.opaque, filePath)
 			}
 		}
-		if raw, ok := details["changed_files"].([]any); ok {
-			for _, item := range raw {
-				if path, ok := item.(string); ok {
-					if _, has := a.files[path]; !has {
-						a.opaque[path] = true
+		if changedFileEntries, ok := details["changed_files"].([]any); ok {
+			for _, changedFileEntry := range changedFileEntries {
+				if filePath, ok := changedFileEntry.(string); ok {
+					if _, hasDelta := turnEvidence.files[filePath]; !hasDelta {
+						turnEvidence.opaque[filePath] = true
 					}
 				}
 			}
 		}
 	}
-	paths := make([]string, 0, len(a.files))
-	for path := range a.files {
-		paths = append(paths, path)
+	filePaths := make([]string, 0, len(turnEvidence.files))
+	for filePath := range turnEvidence.files {
+		filePaths = append(filePaths, filePath)
 	}
-	sort.Strings(paths)
-	out := Activity{CaptureComplete: a.complete, CaptureLimitation: a.limitation}
-	for _, path := range paths {
-		pair := a.files[path]
-		delta := BuildFileDelta(path, pair[0], pair[1])
+	sort.Strings(filePaths)
+	activity := Activity{CaptureComplete: turnEvidence.complete, CaptureLimitation: turnEvidence.limitation}
+	for _, filePath := range filePaths {
+		fileState := turnEvidence.files[filePath]
+		delta := BuildFileDelta(filePath, fileState[0], fileState[1])
 		if delta != nil {
-			out.FileChanges = append(out.FileChanges, *delta)
-			out.ChangedFiles = append(out.ChangedFiles, path)
+			activity.FileChanges = append(activity.FileChanges, *delta)
+			activity.ChangedFiles = append(activity.ChangedFiles, filePath)
 		}
 	}
-	for path := range a.opaque {
-		out.ChangedFiles = append(out.ChangedFiles, path)
+	for filePath := range turnEvidence.opaque {
+		activity.ChangedFiles = append(activity.ChangedFiles, filePath)
 	}
-	sort.Strings(out.ChangedFiles)
-	return out, nil
+	sort.Strings(activity.ChangedFiles)
+	return activity, nil
 }
 
 func render(path string, before, after *string) (string, uint64, uint64) {
-	left, right := "/dev/null", "/dev/null"
+	oldFilePath, newFilePath := "/dev/null", "/dev/null"
 	if before != nil {
-		left = "a/" + path
+		oldFilePath = "a/" + path
 	}
 	if after != nil {
-		right = "b/" + path
+		newFilePath = "b/" + path
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "--- %s\n+++ %s\n", left, right)
-	var old, new []string
+	var patch strings.Builder
+	fmt.Fprintf(&patch, "--- %s\n+++ %s\n", oldFilePath, newFilePath)
+	var oldLines, newLines []string
 	if before != nil {
-		old = strings.Split(strings.TrimSuffix(*before, "\n"), "\n")
+		oldLines = strings.Split(strings.TrimSuffix(*before, "\n"), "\n")
 	}
 	if after != nil {
-		new = strings.Split(strings.TrimSuffix(*after, "\n"), "\n")
+		newLines = strings.Split(strings.TrimSuffix(*after, "\n"), "\n")
 	}
 	if before != nil && *before == "" {
-		old = nil
+		oldLines = nil
 	}
 	if after != nil && *after == "" {
-		new = nil
+		newLines = nil
 	}
-	prefix := 0
-	for prefix < len(old) && prefix < len(new) && old[prefix] == new[prefix] {
-		prefix++
+	sharedPrefixLines := 0
+	for sharedPrefixLines < len(oldLines) && sharedPrefixLines < len(newLines) && oldLines[sharedPrefixLines] == newLines[sharedPrefixLines] {
+		sharedPrefixLines++
 	}
-	suffix := 0
-	for suffix < len(old)-prefix && suffix < len(new)-prefix && old[len(old)-1-suffix] == new[len(new)-1-suffix] {
-		suffix++
+	sharedSuffixLines := 0
+	for sharedSuffixLines < len(oldLines)-sharedPrefixLines && sharedSuffixLines < len(newLines)-sharedPrefixLines && oldLines[len(oldLines)-1-sharedSuffixLines] == newLines[len(newLines)-1-sharedSuffixLines] {
+		sharedSuffixLines++
 	}
-	deleted := old[prefix : len(old)-suffix]
-	added := new[prefix : len(new)-suffix]
-	fmt.Fprintf(&b, "@@ -%d,%d +%d,%d @@\n", prefix+1, len(deleted), prefix+1, len(added))
-	for _, line := range deleted {
-		b.WriteByte('-')
-		b.WriteString(line)
-		b.WriteByte('\n')
+	deletedLines := oldLines[sharedPrefixLines : len(oldLines)-sharedSuffixLines]
+	addedLines := newLines[sharedPrefixLines : len(newLines)-sharedSuffixLines]
+	fmt.Fprintf(&patch, "@@ -%d,%d +%d,%d @@\n", sharedPrefixLines+1, len(deletedLines), sharedPrefixLines+1, len(addedLines))
+	for _, line := range deletedLines {
+		patch.WriteByte('-')
+		patch.WriteString(line)
+		patch.WriteByte('\n')
 	}
-	for _, line := range added {
-		b.WriteByte('+')
-		b.WriteString(line)
-		b.WriteByte('\n')
+	for _, line := range addedLines {
+		patch.WriteByte('+')
+		patch.WriteString(line)
+		patch.WriteByte('\n')
 	}
-	return b.String(), uint64(len(added)), uint64(len(deleted))
+	return patch.String(), uint64(len(addedLines)), uint64(len(deletedLines))
 }
-func checked(cwd string, args ...string) ([]byte, error) {
-	out, err := git(cwd, args...)
+func checked(workingDirectory string, gitArguments ...string) ([]byte, error) {
+	gitOutput, err := git(workingDirectory, gitArguments...)
 	if err != nil {
 		return nil, err
 	}
-	if out.ExitCode() != 0 && out.ExitCode() != 1 {
-		message := strings.TrimSpace(string(out.Stderr))
+	if gitOutput.ExitCode() != 0 && gitOutput.ExitCode() != 1 {
+		message := strings.TrimSpace(string(gitOutput.Stderr))
 		if message == "" {
-			message = fmt.Sprintf("git %v failed", args)
+			message = fmt.Sprintf("git %v failed", gitArguments)
 		}
 		return nil, fmt.Errorf("%s", message)
 	}
-	return out.Stdout, nil
+	return gitOutput.Stdout, nil
 }
-func git(cwd string, args ...string) (gitResult, error) {
-	cmdArgs := append([]string{"-c", "core.hooksPath=/dev/null", "-C", cwd}, args...)
-	cmd := exec.Command("git", cmdArgs...)
+func git(workingDirectory string, gitArguments ...string) (gitResult, error) {
+	commandArguments := append([]string{"-c", "core.hooksPath=/dev/null", "-C", workingDirectory}, gitArguments...)
+	gitCommand := exec.Command("git", commandArguments...)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	gitCommand.Stdout = &stdout
+	gitCommand.Stderr = &stderr
+	err := gitCommand.Run()
 	if err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			return gitResult{stdout.Bytes(), stderr.Bytes(), exit.ExitCode()}, nil
+		if processExitError, ok := err.(*exec.ExitError); ok {
+			return gitResult{stdout.Bytes(), stderr.Bytes(), processExitError.ExitCode()}, nil
 		}
 		return gitResult{}, fmt.Errorf("Failed to run git: %w", err)
 	}
 	return gitResult{stdout.Bytes(), stderr.Bytes(), 0}, nil
 }
-func equal(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
-func truncate(s *string, max int) *string {
-	if s == nil {
+func equal(first, second *string) bool {
+	return first == nil && second == nil || first != nil && second != nil && *first == *second
+}
+func truncate(text *string, maxBytes int) *string {
+	if text == nil {
 		return nil
 	}
-	v := *s
-	if len(v) > max {
-		v = v[:safeBoundary(v, max)]
+	truncatedText := *text
+	if len(truncatedText) > maxBytes {
+		truncatedText = truncatedText[:safeBoundary(truncatedText, maxBytes)]
 	}
-	return &v
+	return &truncatedText
 }
-func safeBoundary(s string, max int) int {
-	n := min(len(s), max)
-	for n > 0 && !bytes.Equal([]byte(s[:n]), []byte(string([]rune(s[:n])))) {
-		n--
+func safeBoundary(text string, maxBytes int) int {
+	boundary := min(len(text), maxBytes)
+	for boundary > 0 && !bytes.Equal([]byte(text[:boundary]), []byte(string([]rune(text[:boundary])))) {
+		boundary--
 	}
-	return n
+	return boundary
 }
-func stringPtr(v any) *string {
-	if v == nil {
+func stringPtr(value any) *string {
+	if value == nil {
 		return nil
 	}
-	if s, ok := v.(string); ok {
-		return &s
+	if text, ok := value.(string); ok {
+		return &text
 	}
 	return nil
 }
