@@ -308,6 +308,24 @@ refresh error。完整 provider/OAuth/stream 行为和真实授权仍由后续�
 | TASK-T041 | 移植 Dev Flow discovery/dashboard/REST/SSE 重连回收 | TASK-T015、TASK-T026、TASK-T037 |
 | TASK-T044 | 完成 CLI 全参数、GUI 启动与所有 slash/session 操作 | TASK-T009、TASK-T017、TASK-T020、TASK-T021、TASK-T022、TASK-T023、TASK-T032、TASK-T033、TASK-T034、TASK-T025、TASK-T026、TASK-T035、TASK-T027、TASK-T028、TASK-T037、TASK-T040、TASK-T038、TASK-T041、TASK-T030、TASK-T031 |
 
+#### TASK-T028 当前覆盖与边界
+
+Go `internal/app/compaction` 对照 `rozsa-app/src/compaction/mod.rs`、
+`agent_session.rs` 与 `context_window_test.rs`，提供阈值/目标比例校验与 token
+limits、serialized-entry 估算、provider context usage 优先触发、tool-call/result
+安全边界、图片数据摘要脱敏，以及可取消的摘要执行。摘要失败、取消或 append
+失败时不写 compaction entry；成功时以 `AppendCompaction` 追加 `firstKeptEntryID`
+作为持久化提交点，不改写旧历史。恢复后的 `Manager.ContextMessages()` 沿用
+session reader 的最新 compaction 边界，只还原有效上下文。`internal/app/sessionconfig`
+按活动分支顺序重放 model/thinking overlay；切换先写 session entry 再返回新状态，
+模型变化按 Rust 合同向下规范化 thinking effort，无法支持时落到 Off。各会话状态独立。
+
+针对性验证：`go -C backend test ./internal/app/compaction/... ./internal/app/sessionconfig/...`。
+覆盖比例与非法 context、provider usage、tool 配对、历史保留/重开恢复、摘要失败与
+取消不推进 leaf、overlay 顺序与重开、会话隔离及 unsupported effort 降级。Go compaction
+包提供摘要回调边界；运行中任务中止、provider stream 与 renderer 状态接线留给 runtime
+接入切片，未在此包内实现。
+
 #### TASK-T020 当前覆盖与差异
 
 `backend/internal/app/runtime/` 将 session manager、模型层工厂创建的 provider、credentials resolver 与 `core/agent` 组合；`backend/cmd/rozsa/` 从 settings 与分层 model registry 选择 provider/model 并提供独立 prompt/continue CLI。`Model.API` 是协议，`Model.Provider` 是提供商身份，两者不构成一一映射。协议公共边界由 `backend/internal/model/types` 持有，最小 API→实现映射由 `backend/internal/model` 持有；runtime 不维护 API 白名单，也不直接依赖各协议实现。显式注入的 agent provider 不经 API 名单过滤；未登记 API 且未注入实现时由模型工厂明确报 unsupported。endpoint、凭据和兼容配置继续来自 registry/实际 model 配置。Prompt 先落盘 user JSONL，再从该 manager 的上下文启动 core continue，避免重复提交 user；流式 text delta 写 stdout，配置、provider stream 与 JSONL 写入错误由 CLI stderr/非零退出暴露。Runtime 同时持有 session app service；transport 的 `ServeApplication` 接收 `session.ApplicationService`，server 只负责 RPC delivery/cancellation。完整 CLI 参数、resume/fork、slash 操作、多会话 queue/steering 和真实授权仍分别留在 T044、T037 与 T054。
