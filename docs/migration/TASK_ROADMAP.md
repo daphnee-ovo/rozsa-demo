@@ -429,7 +429,7 @@ T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T
 | F04 | Agent loop、hooks、并行/终止/取消 | TASK-T019、TASK-T020、TASK-T026、TASK-T037、TASK-T038 | T019 Go core loop/tool/hooks 的 fake provider/tool 与 race 用例已验证；app/session owner、权限和产品生命周期/接线待 T020、T026、T037、T038 |
 | F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T010、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；T010 协议见 [M010](evidence/M010.md)；[T017](#task-t017-jsonl-manager) 已补齐 Go manager 写入/重开/分支/rename/delete/cwd；运行会话与产品入口仍待 T037/T044 |
 | F06 | compaction、有效上下文与会话配置 overlay | TASK-T002、TASK-T028 | T002 已恢复持久化有效上下文，见 M002；实际压缩与配置 overlay 待 T028 |
-| F07 | Read/Write/Edit/Bash、锁、diff/evidence与进程树 | TASK-T025、TASK-T026、TASK-T045 | 待实现 |
+| F07 | Read/Write/Edit/Bash、锁、diff/evidence与进程树 | TASK-T025、TASK-T026、TASK-T045 | T025 Go Read/Write/Edit、进程内路径锁、文件 delta/turn evidence 与 tracked/untracked Git diff 已通过 backend 专用 race 测试；真实文件错误、CRLF/BOM/fuzzy、歧义匹配、symlink 与取消均有覆盖。权限失败、原子 rename 失败、极限截断及 Linux/Windows 实机行为尚未动态验证；Bash 与进程树由 T026 负责 |
 | F08 | permission模式/规则/approval/trust/Hint | TASK-T035、TASK-T039、TASK-T050 | 待实现 |
 | F09 | 多题/多选/Other、队列/取消/迟到响应 | TASK-T027、TASK-T039 | 待实现 |
 | F10 | 后台会话、queue/steering/fork/subagent | TASK-T037、TASK-T040、TASK-T049 | 待实现 |
