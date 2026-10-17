@@ -21,6 +21,7 @@ import (
 	"rozsa/backend/internal/model/anthropic"
 	"rozsa/backend/internal/model/completions"
 	"rozsa/backend/internal/model/credentials"
+	"rozsa/backend/internal/model/responses"
 	"rozsa/backend/internal/model/types"
 )
 
@@ -54,7 +55,7 @@ func New(config Config) (*Runtime, error) {
 	if config.Model.ID == "" || config.Model.Provider == "" || config.Model.API == "" {
 		return nil, errors.New("runtime requires a configured model, provider and API")
 	}
-	if config.Model.API != types.APIAnthropicMessages && config.Model.API != types.APIOpenAICompletions {
+	if config.Model.API != types.APIAnthropicMessages && config.Model.API != types.APIOpenAICompletions && config.Model.API != types.APIOpenAIResponses {
 		return nil, fmt.Errorf("unsupported model API %q", config.Model.API)
 	}
 	if config.Provider == nil {
@@ -72,6 +73,8 @@ func New(config Config) (*Runtime, error) {
 			provider = anthropic.NewProvider(nil)
 		case types.APIOpenAICompletions:
 			provider = completions.NewProvider(nil)
+		case types.APIOpenAIResponses:
+			provider = responses.NewProvider(nil)
 		}
 		config.Provider = providerWithKey{Provider: provider, key: key}
 	}

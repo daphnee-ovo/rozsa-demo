@@ -19,8 +19,13 @@ const response = [
   'event: message_delta\ndata: {"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}\n\n',
   'event: message_stop\ndata: {}\n\n'
 ].join('');
+const responses = [
+  'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_fake"}}\n\n',
+  'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"responses reply"}\n\n',
+  'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_fake","usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n'
+];
 const server = http.createServer((request, result) => {
-  if (!['/v1/messages', '/v1/chat/completions'].includes(request.url) || request.method !== 'POST') {
+  if (!['/v1/messages', '/v1/chat/completions', '/v1/responses'].includes(request.url) || request.method !== 'POST') {
     result.writeHead(404).end('not found');
     return;
   }
@@ -28,7 +33,7 @@ const server = http.createServer((request, result) => {
   request.setEncoding('utf8');
   request.on('data', chunk => body += chunk);
   request.on('end', () => {
-    fs.appendFileSync(countFile, `${JSON.stringify({url: request.url, body, xApiKey: request.headers['x-api-key'], authorization: request.headers.authorization})}\n`);
+    fs.appendFileSync(countFile, `${JSON.stringify({url: request.url, body: JSON.parse(body), xApiKey: request.headers['x-api-key'], authorization: request.headers.authorization})}\n`);
     if (body.includes('trigger stream failure')) {
       result.writeHead(503, {'content-type': 'application/json'});
       result.end('{"error":{"message":"fake provider unavailable"}}');
@@ -42,6 +47,14 @@ const server = http.createServer((request, result) => {
     result.writeHead(200, {'content-type': 'text/event-stream'});
     if (request.url === '/v1/chat/completions') {
       result.end('data: {"id":"chat_fake","choices":[{"delta":{"content":"openai reply"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2}}\n\ndata: [DONE]\n\n');
+    } else if (request.url === '/v1/responses') {
+      result.flushHeaders();
+      for (const frame of responses) {
+        for (let offset = 0; offset < frame.length; offset += 13) {
+          result.write(frame.slice(offset, offset + 13));
+        }
+      }
+      result.end();
     } else {
       result.end(response);
     }
@@ -129,16 +142,31 @@ if ROZSA_CONFIG_DIR="$run_dir/completions/global" ROZSA_PROJECT_CONFIG_DIR="$run
 fi
 rg -q '503' "$run_dir/completions-failure.stderr"
 rg -q 'fake completions unavailable' "$(find "$run_dir/completions-failure/sessions" -name '*.jsonl' -print -quit)"
-mkdir -p "$run_dir/unsupported/global/models" "$run_dir/unsupported/project"
-cat > "$run_dir/unsupported/global/settings.json" <<'JSON'
-{"defaultProvider":"custom-responses","defaultModel":"unsupported-model"}
+mkdir -p "$run_dir/responses/global/models" "$run_dir/responses/project"
+cat > "$run_dir/responses/global/settings.json" <<'JSON'
+{"defaultProvider":"custom-responses","defaultModel":"responses-model"}
 JSON
-cat > "$run_dir/unsupported/global/models/custom.json" <<'JSON'
-{"providers":{"custom-responses":{"api":"openai-responses","baseUrl":"http://127.0.0.1:1","apiKey":"fake","models":[{"id":"unsupported-model"}]}}}
+cat > "$run_dir/responses/global/models/custom.json" <<JSON
+{"providers":{"custom-responses":{"api":"openai-responses","baseUrl":"http://127.0.0.1:$port/v1","apiKey":"fake","models":[{"id":"responses-model","name":"Custom Responses model"}]}}}
 JSON
-if ROZSA_CONFIG_DIR="$run_dir/unsupported/global" ROZSA_PROJECT_CONFIG_DIR="$run_dir/unsupported/project" go -C "$repo_root/backend" run ./cmd/rozsa --session-dir "$run_dir/unsupported/sessions" "unsupported model" > "$run_dir/unsupported.stdout" 2> "$run_dir/unsupported.stderr"; then
-  echo "unimplemented Responses API unexpectedly succeeded" >&2
-  exit 1
-fi
-rg -q 'unsupported model API.*openai-responses' "$run_dir/unsupported.stderr"
+ROZSA_CONFIG_DIR="$run_dir/responses/global" ROZSA_PROJECT_CONFIG_DIR="$run_dir/responses/project" go -C "$repo_root/backend" run ./cmd/rozsa --session-dir "$run_dir/responses/sessions" "responses prompt" > "$run_dir/responses.stdout" 2> "$run_dir/responses.stderr"
+[[ "$(cat "$run_dir/responses.stdout")" == "responses reply" ]]
+[[ ! -s "$run_dir/responses.stderr" ]]
+responses_session="$(find "$run_dir/responses/sessions" -name '*.jsonl' -print -quit)"
+[[ -n "$responses_session" ]]
+before="$(wc -c < "$responses_session" | tr -d ' ')"
+ROZSA_CONFIG_DIR="$run_dir/responses/global" ROZSA_PROJECT_CONFIG_DIR="$run_dir/responses/project" go -C "$repo_root/backend" run ./cmd/rozsa --continue --session-dir "$run_dir/responses/sessions" > "$run_dir/responses-continue.stdout" 2> "$run_dir/responses-continue.stderr"
+[[ ! -s "$run_dir/responses-continue.stderr" ]]
+after="$(wc -c < "$responses_session" | tr -d ' ')"
+[[ "$before" == "$after" ]]
+[[ "$(rg -c '"url":"/v1/responses"' "$count_file")" == "1" ]]
+rg -q '"authorization":"Bearer fake"' "$count_file"
+rg -q '"model":"responses-model"' "$count_file"
+rg -q '"stream":true' "$count_file"
+rg -q 'responses prompt' "$count_file"
+rg -q '"api":"openai-responses"' "$responses_session"
+rg -q '"responseId":"resp_fake"' "$responses_session"
+rg -q '"totalTokens":5' "$responses_session"
+rg -q 'responses prompt' "$responses_session"
+rg -q 'responses reply' "$responses_session"
 echo "prompt path passed; isolated evidence: $run_dir"

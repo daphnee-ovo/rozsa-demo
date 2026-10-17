@@ -3,7 +3,7 @@ source: test
 nums: 1
 ---
 
-- [ ] ISSUE-I002：Test TASK-T013 fail:running 3 tests
+- [x] ISSUE-I002：Test TASK-T013 fail:running 3 tests
   - severity: P1
   - location：crates/rozsa-gui/tests/prototype_stylesheet_extraction_test.rs
   - description：running 3 tests
@@ -35,5 +35,6 @@ nums: 1
     error: test failed, to rerun pass `--test prototype_stylesheet_extraction_test`
   - reproduce：cargo test --manifest-path '/Users/xinyue/ballad/rozsa-demo/crates/rozsa-gui/Cargo.toml' --test 'prototype_stylesheet_extraction_test'
     project_root: /Users/xinyue/ballad/rozsa-demo
-  - fix：
+  - fix：原 TASK-T013 基于旧原型路径和拆分契约的 NotFound 记录已被共享 UI 路线替代；当前测试按根目录 prototype 与共享 owner 验证。2026-10-12 当前主线 prototype_stylesheet_extraction_test 三项通过，覆盖 owner、scene CSS 边界及外部 stylesheet 入口。按用户确认关闭历史记录，不将新契约测试描述为旧字节级断言的重跑。
   - files_modify: [crates/rozsa-gui/tests/prototype_stylesheet_extraction_test.rs]
+  - files_create: []

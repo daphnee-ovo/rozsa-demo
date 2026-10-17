@@ -310,17 +310,23 @@ refresh error。完整 provider/OAuth/stream 行为和真实授权仍由后续�
 
 #### TASK-T020 当前覆盖与差异
 
-`backend/internal/app/runtime/` 将 session manager、按 API 选择的 provider、credentials resolver 与 `core/agent` 组合；`backend/cmd/rozsa/` 从 settings 与分层 model registry 选择 provider/model 并提供独立 prompt/continue CLI。`Model.API` 是协议，`Model.Provider` 是提供商身份，两者不构成一一映射。T020 完成时仅有 Anthropic adapter；T021 将 OpenAI Completions adapter 接入同一 runtime，其他尚未实现的 API 明确报 unsupported。自定义 provider 沿用其 API adapter，并使用 registry 配置的 endpoint、凭据与 provider 兼容规则。Prompt 先落盘 user JSONL，再从该 manager 的上下文启动 core continue，避免重复提交 user；流式 text delta 写 stdout，配置、provider stream 与 JSONL 写入错误由 CLI stderr/非零退出暴露。Runtime 同时持有 session app service；transport 的 `ServeApplication` 接收 `session.ApplicationService`，server 只负责 RPC delivery/cancellation。完整 CLI 参数、resume/fork、slash 操作、多会话 queue/steering 和真实授权仍分别留在 T044、T037 与 T054。
+`backend/internal/app/runtime/` 将 session manager、按 API 选择的 provider、credentials resolver 与 `core/agent` 组合；`backend/cmd/rozsa/` 从 settings 与分层 model registry 选择 provider/model 并提供独立 prompt/continue CLI。`Model.API` 是协议，`Model.Provider` 是提供商身份，两者不构成一一映射。T020 完成时仅有 Anthropic adapter；T021 和 T022 分别将 OpenAI Completions 与 Responses adapter 接入同一 runtime。其他尚未实现的 API 明确报 unsupported。自定义 provider 沿用其 API adapter，并使用 registry 配置的 endpoint、凭据与协议适用的 provider 兼容规则。Prompt 先落盘 user JSONL，再从该 manager 的上下文启动 core continue，避免重复提交 user；流式 text delta 写 stdout，配置、provider stream 与 JSONL 写入错误由 CLI stderr/非零退出暴露。Runtime 同时持有 session app service；transport 的 `ServeApplication` 接收 `session.ApplicationService`，server 只负责 RPC delivery/cancellation。完整 CLI 参数、resume/fork、slash 操作、多会话 queue/steering 和真实授权仍分别留在 T044、T037 与 T054。
 
 #### TASK-T021 OpenAI Completions provider
 
 `backend/internal/model/completions/` 对照 Rust `providers/openai_completions.rs`、`payload.rs`、`sse.rs` 实现 `/chat/completions` 请求、compat 驱动 payload、merge headers、自定义 endpoint、session affinity、Cloudflare Gateway 与 Copilot headers、SSE/UTF-8 分片、text/reasoning/tool-call delta、finish reason、usage/cache/cost 与 typed stream error。Provider 身份由 model 配置提供；它不要求品牌为 OpenAI。Retry 沿用旧适配器对 408/409/429/5xx 与连接/超时的最多两次重试及 Retry-After 数值延迟。
 
-Runtime 按 `Model.API` 选择 Anthropic 或 Completions adapter，API key wrapper 面向 provider interface 组合，不再嵌入 Anthropic 实现。`bash devtools/test-prompt-path.sh` 以本地 fake HTTP 服务实际运行 CLI：自定义 `openai-completions` provider 请求成功、assistant text 与 usage 写入 JSONL，continue 不重复发送请求，provider HTTP 错误以非零退出和错误消息入 JSONL；同一脚本继续覆盖 Anthropic prompt/JSONL/continue 及 503 错误。Go provider tests 覆盖 request/header/compat、tool arguments 拼接、response metadata、usage/cost、HTTP/SSE/finish error 和取消。验证仅为本机 fake service；未请求真实 provider，也未验证平台特有服务兼容矩阵。
+Runtime 按 `Model.API` 选择 Anthropic、Completions 或 Responses adapter，API key wrapper 面向 provider interface 组合，不再嵌入特定 provider 实现。`bash devtools/test-prompt-path.sh` 以本地 fake HTTP 服务实际运行 CLI：自定义 `openai-completions` provider 请求成功、assistant text 与 usage 写入 JSONL，continue 不重复发送请求，provider HTTP 错误以非零退出和错误消息入 JSONL；同一脚本覆盖 Anthropic prompt/JSONL/continue 及 503 错误。Go provider tests 覆盖 request/header/compat、tool arguments 拼接、response metadata、usage/cost、HTTP/SSE/finish error 和取消。验证仅为本机 fake service；未请求真实 provider，也未验证平台特有服务兼容矩阵。
 
 针对性验证：`bash devtools/test-prompt-path.sh`。该脚本以真实 `go run ./cmd/rozsa` 分别启动 prompt 与 `--continue` 进程，对本地 fake Anthropic SSE provider 发出一次请求；核对 stdout、同一 session JSONL 中 user/assistant、重启后继续读取且不重复写入；同时验证 `$NAME` 凭据缺失和 provider HTTP 503 都导致非零退出及 stderr 诊断。证据目录由脚本输出，位于 `tmp/test-prompt-path-<pid>/`。未读取真实凭据、未请求真实 provider、未完成真实 OAuth 授权，未验证 Linux/Windows 实机。
 
 本切片 continue 遵循 Go core 行为：若恢复后的最后一条上下文消息已经是 assistant，continue 成功无操作；若上次留下 user/tool result，则由 agent core 发起后续 stream。会话选择仅取显式 `--session-dir` 中最近修改的 JSONL 文件；多层 session 目录、resume/fork 和完整参数仍未覆盖。
+
+#### TASK-T022 OpenAI Responses provider
+
+`backend/internal/model/responses/` 对照 Rust `providers/openai_responses/{provider,types,convert,sse}.rs` 实现独立的 Responses 请求与事件协议。运行时由 `Model.API == openai-responses` 选择 adapter；`Model.Provider` 继续提供服务商身份，endpoint、凭据和兼容配置仍来自 registry，故自定义 provider 可使用 Responses，而不会被错误地路由到 Completions。请求转换保留 item-oriented history、tools、reasoning、session affinity 和 account ID header。SSE normalizer 覆盖 UTF-8/任意分片、thinking/text/tool events、usage/cost，以及 completed、failed、incomplete、取消、malformed/unsupported、缺失终态和迟到 event；无效工具参数和 tool result 序列化错误会显式返回。`response.incomplete` 以 `Length` 完成，`response.failed` 以错误终态返回，二者与 Completions 保持独立协议处理。
+
+验证通过：`go -C backend test ./internal/model/responses/... ./internal/app/runtime/...`、`go -C backend test -race ./internal/model/responses/...`、`bash devtools/test-prompt-path.sh`。模块测试覆盖 typed request/history、thinking/tool delta 与终态、cached usage/cost、Unicode 分段、malformed/unsupported/迟到 event、缺失终态及 cancellation。fake HTTP CLI 验收确认自定义 Responses provider 的 `/v1/responses` 请求、model/key/stream/input、流式文本、JSONL assistant/provider/API/response ID/usage 持久化，以及新进程 `--continue` 不重复请求且不改写已完成会话；同一入口中的 Anthropic 与 Completions 成功、错误和续接场景也通过。证据目录：`tmp/test-prompt-path-93763/`。验收仅使用本机 fake service，不代表真实服务商兼容、真实授权或 Linux/Windows 实机验证。
 
 #### TASK-T024 当前覆盖与差异
 
@@ -412,7 +418,7 @@ T052 继续负责其余 native shell/scene/state 与真实平台完整验收，T
 | 功能族 | 覆盖范围 | 实现 owner | 当前状态 |
 | --- | --- | --- | --- |
 | F01 | 模型配置、registry、thinking/context/quota | TASK-T016、TASK-T028、TASK-T033、TASK-T042、TASK-T048 | 待实现 |
-| F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | [T018](#task-t018-anthropic-provider) Anthropic 请求/流契约已验证；[T021](#task-t021-openai-completions-provider) Completions 协议与 CLI 接线已用本地 fake provider 验证；Responses、Bedrock、真实 provider 授权仍待对应 owner |
+| F02 | Anthropic、Completions、Responses、Bedrock | TASK-T018、TASK-T021、TASK-T022、TASK-T023 | [T018](#task-t018-anthropic-provider) Anthropic 请求/流契约已验证；[T021](#task-t021-openai-completions-provider) Completions 协议与 CLI 接线已用本地 fake provider 验证；[T022](#task-t022-openai-responses-provider) Responses 协议、runtime 接线与自定义 provider CLI 链路已用本地 fake provider 验证；Bedrock 与真实 provider 授权仍待对应 owner |
 | F03 | credentials、PKCE/callback/device、刷新/注销 | TASK-T024、TASK-T032、TASK-T033、TASK-T034、TASK-T054 | 待实现 |
 | F04 | Agent loop、hooks、并行/终止/取消 | TASK-T019、TASK-T020、TASK-T026、TASK-T037、TASK-T038 | T019 Go core loop/tool/hooks 的 fake provider/tool 与 race 用例已验证；app/session owner、权限和产品生命周期/接线待 T020、T026、T037、T038 |
 | F05 | 会话列表/读取/JSONL写入、分支/恢复/重命名/删除/cwd | TASK-T001、TASK-T002、TASK-T003、TASK-T010、TASK-T017、TASK-T037、TASK-T044 | T001 列表、T002 只读树恢复、T003 Electron 切换/历史已实现，见 M001/M002/[M003](evidence/M003.md)；T010 协议见 [M010](evidence/M010.md)；[T017](#task-t017-jsonl-manager) 已补齐 Go manager 写入/重开/分支/rename/delete/cwd；运行会话与产品入口仍待 T037/T044 |

@@ -73,6 +73,30 @@ func TestPromptDrainsProviderAndPersistsAfterOutputWriteFailure(t *testing.T) {
 	}
 }
 
+func TestPromptPersistsResponsesAPIAssistantMessage(t *testing.T) {
+	provider := &promptProvider{started: make(chan struct{}), ended: make(chan struct{})}
+	app, err := New(Config{
+		SessionDir: t.TempDir(),
+		Model:      types.Model{ID: "custom-model", Provider: "custom-responses", API: types.APIOpenAIResponses},
+		Provider:   provider,
+		Output:     io.Discard,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Prompt(context.Background(), "hello Responses"); err != nil {
+		t.Fatal(err)
+	}
+	messages := app.session.ContextMessages()
+	if len(messages) != 2 {
+		t.Fatalf("persisted messages = %d, want user and assistant: %#v", len(messages), messages)
+	}
+	assistant, ok := messages[1].(session.AssistantMessage)
+	if !ok || assistant.API != string(types.APIOpenAIResponses) || assistant.Provider != "custom-responses" {
+		t.Fatalf("assistant = %#v, want Responses API with configured provider identity", messages[1])
+	}
+}
+
 func TestPromptCancellationWaitsForProviderAndPersistsAbortedAssistant(t *testing.T) {
 	provider := &promptProvider{started: make(chan struct{}), ended: make(chan struct{}), block: true}
 	app := newTestRuntime(t, provider, io.Discard)
