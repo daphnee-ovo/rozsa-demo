@@ -18,6 +18,7 @@ import (
 	"rozsa/backend/internal/app/productsettings"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
 	"rozsa/backend/internal/model/credentials"
@@ -79,6 +80,8 @@ func main() {
 	if err != nil {
 		fail(err.Error())
 	}
+	resolveRoots := func(projectDir string) (configpaths.Roots, error) { return configpaths.Discover(projectDir) }
+	skillApplication := skills.NewApplication(settingsManager, resolveRoots)
 	modelDirectories := roots.ModelDirs()
 	authSource := modelcatalog.NewAuth(roots.AuthPath(), nil)
 	discovery := modelsendpoint.NewClient(&http.Client{Timeout: 20 * time.Second})
@@ -92,7 +95,7 @@ func main() {
 	}
 	themeDirectories := roots.ThemeDirs()
 	coordinator := newRuntimeCoordinator(sessions)
-	productSettings := productsettings.NewWithModelCatalog(settingsManager, themes.NewStore(themeDirectories[0], themeDirectories[1]), registry, coordinator)
+	productSettings := productsettings.NewWithModelCatalogAndSkills(settingsManager, themes.NewStore(themeDirectories[0], themeDirectories[1]), registry, coordinator, skillApplication, cwd)
 	anthropicAuth, err := auth.NewAnthropic(roots.AuthPath(), anthropic.NewClient(nil), func(ctx context.Context, provider string) error { return registry.Refresh(ctx, provider, false) })
 	if err != nil {
 		fail(err.Error())
@@ -137,6 +140,7 @@ func main() {
 			SessionDir: writeDirectory, SessionDirs: catalogDirectories,
 			SessionService: sessions, ModelRegistry: registry, Credentials: authSource,
 			Model: model, ThinkingEffort: modeltypes.ThinkingEffort(thinkingEffort), ResolvedSettings: settingsManager.Resolved, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
+			Skills: skillApplication, ResolveRoots: resolveRoots,
 		})
 		if initErr != nil {
 			backendStartupMark("runtime-initialization-failed")

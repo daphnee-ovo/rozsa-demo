@@ -9,8 +9,10 @@ import (
 
 	"rozsa/backend/internal/app/modelcatalog"
 	"rozsa/backend/internal/app/modelregistry"
+	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
+	"rozsa/backend/internal/platform/configpaths"
 	"rozsa/backend/internal/model/credentials"
 	modeltypes "rozsa/backend/internal/model/types"
 )
@@ -92,6 +94,85 @@ func TestSSETransportPersistsAcrossScopesAndRejectsWebSocket(t *testing.T) {
 	current, err := service.Snapshot(Global)
 	if err != nil || current.Settings["transport"] != "sse" {
 		t.Fatalf("failed update changed transport: %#v, %v", current.Settings, err)
+	}
+}
+
+func TestSkillCatalogUpdateAndResetUseLayeredSettings(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	globalRoot := filepath.Join(root, "global")
+	cwd := filepath.Join(root, "workspace")
+	projectRoot := filepath.Join(cwd, ".rozsa")
+	writeSkillFixture(t, filepath.Join(globalRoot, "skills", "shared"), "---\nname: shared\ndescription: Global shared\n---\nGlobal body")
+	writeSkillFixture(t, filepath.Join(home, ".agents", "skills", "agent-only"), "---\ndescription: Agents skill\n---\nAgents body")
+	writeSkillFixture(t, filepath.Join(projectRoot, "skills", "shared"), "---\nname: shared\ndescription: Project shared\n---\nProject body")
+	writeSkillFixture(t, filepath.Join(projectRoot, "skills", "project-only"), "---\ndescription: Project only\n---\nProject-only body")
+	globalSettings := filepath.Join(globalRoot, "settings.json")
+	projectSettings := filepath.Join(projectRoot, "settings.json")
+	if err := os.MkdirAll(filepath.Dir(globalSettings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(globalSettings, []byte(`{"skills":{"shared":false,"agent-only":false}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := settings.Load(globalSettings, &projectSettings, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolveRoots := func(projectDir string) (configpaths.Roots, error) {
+		return configpaths.Resolve(projectDir, &globalRoot, nil, &home, "darwin")
+	}
+	skillApplication := skills.NewApplication(manager, resolveRoots)
+	service := NewWithModelCatalogAndSkills(manager, themes.NewStore(filepath.Join(globalRoot, "themes"), filepath.Join(projectRoot, "themes")), nil, nil, skillApplication, cwd)
+
+	initial, err := service.Snapshot(Global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(initial.SkillCatalog.GlobalSkills) != 2 || len(initial.SkillCatalog.ProjectSkills) != 2 {
+		t.Fatalf("skill scopes missing: %#v", initial.SkillCatalog)
+	}
+	for _, item := range initial.SkillCatalog.GlobalSkills {
+		if item.Name == "shared" && item.Effective {
+			t.Fatal("global skill override should start disabled")
+		}
+	}
+
+	updated, err := service.Update(Project, "skills.shared", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Settings["skills"].(map[string]any)["shared"] != true {
+		t.Fatalf("project enablement was not persisted: %#v", updated.Settings["skills"])
+	}
+	for _, item := range updated.SkillCatalog.ProjectSkills {
+		if item.Name == "shared" && !item.Effective {
+			t.Fatal("project override did not enable the skill")
+		}
+	}
+
+	reset, err := service.Reset(Project, "skills.shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset.Settings["skills"].(map[string]any)["shared"] != false {
+		t.Fatalf("reset did not inherit global disablement: %#v", reset.Settings["skills"])
+	}
+	if _, err := service.Update(Project, "skills.missing", true); err == nil {
+		t.Fatal("unknown skill update accepted")
+	}
+	if _, err := service.Update(Project, "skills.project-only", "yes"); err == nil {
+		t.Fatal("non-boolean skill setting accepted")
+	}
+}
+
+func writeSkillFixture(t *testing.T, directory, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

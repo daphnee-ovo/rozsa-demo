@@ -2,6 +2,7 @@
 package resources
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,6 +34,13 @@ type Result struct {
 	Resources   []Resource
 	Diagnostics []Diagnostic
 }
+
+// DefaultSystemPrompt is embedded in the Go binary, matching the Rust app's
+// compile-time system prompt asset.
+//go:embed system-prompt.md
+var defaultSystemPrompt string
+
+func DefaultSystemPrompt() string { return defaultSystemPrompt }
 
 // Load applies config-directory override semantics, then appends one context
 // file per ancestor directory from the filesystem root to cwd.

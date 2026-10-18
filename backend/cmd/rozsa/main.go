@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +10,9 @@ import (
 
 	"rozsa/backend/internal/app/bootstrap"
 	"rozsa/backend/internal/app/runtime"
+	"rozsa/backend/internal/app/settings"
+	"rozsa/backend/internal/app/skills"
+	"rozsa/backend/internal/platform/configpaths"
 )
 
 func main() {
@@ -32,6 +34,22 @@ func main() {
 	if continueSession == (flag.NArg() == 1) {
 		fail("provide a prompt or --continue, but not both", 2)
 	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		fail(err.Error(), 1)
+	}
+	roots, err := configpaths.Discover(cwd)
+	if err != nil {
+		fail(err.Error(), 1)
+	}
+	settingsPaths := roots.SettingsPaths()
+	projectSettingsPath := settingsPaths[1]
+	settingsManager, err := settings.Load(settingsPaths[0], &projectSettingsPath, nil)
+	if err != nil {
+		fail(err.Error(), 1)
+	}
+	resolveRoots := func(projectDir string) (configpaths.Roots, error) { return configpaths.Discover(projectDir) }
+	skillApplication := skills.NewApplication(settingsManager, resolveRoots)
 	model, configuredKey, authPath, err := bootstrap.ConfiguredModel(providerID, modelID)
 	if err != nil {
 		fail(err.Error(), 1)
@@ -42,7 +60,10 @@ func main() {
 	if apiKey == "" {
 		apiKey = configuredKey
 	}
-	app, err := runtime.New(runtime.Config{SessionDir: sessionDir, Model: model, APIKey: apiKey, AuthPath: authPath, Output: os.Stdout})
+	app, err := runtime.New(runtime.Config{
+		SessionDir: sessionDir, Model: model, APIKey: apiKey, AuthPath: authPath, Output: os.Stdout,
+		ResolvedSettings: settingsManager.Resolved, Skills: skillApplication, ResolveRoots: resolveRoots,
+	})
 	if err != nil {
 		fail(err.Error(), 1)
 	}

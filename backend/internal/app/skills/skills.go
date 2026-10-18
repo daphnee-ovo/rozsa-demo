@@ -9,6 +9,10 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"rozsa/backend/internal/app/capabilities"
+	"rozsa/backend/internal/app/settings"
+	"rozsa/backend/internal/platform/configpaths"
 )
 
 type Scope uint8
@@ -40,6 +44,198 @@ type Diagnostic struct {
 type LoadResult struct {
 	Skills      []Skill
 	Diagnostics []Diagnostic
+}
+
+type CatalogItem struct {
+	Name            string  `json:"name"`
+	Label           string  `json:"label"`
+	Description     string  `json:"description"`
+	Effective       bool    `json:"effective"`
+	GlobalOverride  *bool   `json:"globalOverride"`
+	ProjectOverride *bool   `json:"projectOverride"`
+}
+
+type CatalogSnapshot struct {
+	GlobalSkills  []CatalogItem `json:"globalSkills"`
+	ProjectSkills []CatalogItem `json:"projectSkills"`
+	Diagnostics   []Diagnostic `json:"diagnostics"`
+}
+
+type SettingsOwner interface {
+	Resolved() map[string]any
+	Overrides(settings.Scope) (map[string]any, error)
+	SetMany(settings.Scope, map[string]any) error
+}
+
+type RootsResolver func(string) (configpaths.Roots, error)
+
+// Application is the shared app boundary used by runtime prompt construction
+// and the product settings API. Its implementation owns directory discovery
+// and the settings persistence details.
+type Application interface {
+	Enabled(cwd string, resolved map[string]any) (LoadResult, error)
+	Catalog(cwd string) (CatalogSnapshot, error)
+	SetEnabled(cwd string, scope settings.Scope, name string, enabled *bool) (CatalogSnapshot, error)
+}
+
+type skillApplication struct {
+	settings SettingsOwner
+	roots    RootsResolver
+}
+
+func NewApplication(settingsOwner SettingsOwner, roots RootsResolver) Application {
+	return skillApplication{settings: settingsOwner, roots: roots}
+}
+
+func (application skillApplication) Enabled(cwd string, resolved map[string]any) (LoadResult, error) {
+	if application.roots == nil {
+		return LoadResult{}, fmt.Errorf("skill roots resolver is unavailable")
+	}
+	roots, err := application.roots(cwd)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	return Load(skillSources(roots), boolSettings(resolved["skills"])), nil
+}
+
+func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error) {
+	if application.roots == nil || application.settings == nil {
+		return CatalogSnapshot{}, fmt.Errorf("skill catalog dependencies are unavailable")
+	}
+	roots, err := application.roots(cwd)
+	if err != nil {
+		return CatalogSnapshot{}, err
+	}
+	globalOverrides, err := capabilityOverrides(application.settings, settings.Global)
+	if err != nil {
+		return CatalogSnapshot{}, err
+	}
+	projectOverrides, err := capabilityOverrides(application.settings, settings.Project)
+	if err != nil {
+		return CatalogSnapshot{}, err
+	}
+	resolved := application.settings.Resolved()
+	effective := boolSettings(resolved["skills"])
+	globalSources, projectSources := scopedSources(roots)
+	global := Load(globalSources, nil)
+	project := Load(projectSources, nil)
+	snapshot := CatalogSnapshot{
+		GlobalSkills:  catalogItems(Resolve(global, nil).Skills, effective, globalOverrides, projectOverrides),
+		ProjectSkills: catalogItems(Resolve(project, nil).Skills, effective, globalOverrides, projectOverrides),
+		Diagnostics:   append(global.Diagnostics, project.Diagnostics...),
+	}
+	return snapshot, nil
+}
+
+func (application skillApplication) SetEnabled(cwd string, scope settings.Scope, name string, enabled *bool) (CatalogSnapshot, error) {
+	if application.settings == nil {
+		return CatalogSnapshot{}, fmt.Errorf("skill settings are unavailable")
+	}
+	if scope != settings.Global && scope != settings.Project {
+		return CatalogSnapshot{}, fmt.Errorf("unsupported skill settings scope %q", scope)
+	}
+	if err := capabilities.ValidateName(name); err != nil {
+		return CatalogSnapshot{}, err
+	}
+	current, err := application.Catalog(cwd)
+	if err != nil {
+		return CatalogSnapshot{}, err
+	}
+	known := current.GlobalSkills
+	if scope == settings.Project {
+		known = current.ProjectSkills
+	}
+	found := false
+	for _, item := range known {
+		if item.Name == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return CatalogSnapshot{}, fmt.Errorf("unknown skill %q in %s scope", name, scope)
+	}
+
+	layer, err := application.settings.Overrides(scope)
+	if err != nil {
+		return CatalogSnapshot{}, err
+	}
+	configured := map[string]any{}
+	if existing, ok := layer["skills"].(map[string]any); ok {
+		for existingName, value := range existing {
+			configured[existingName] = value
+		}
+	}
+	if enabled == nil {
+		delete(configured, name)
+	} else {
+		configured[name] = *enabled
+	}
+	var settingValue any = configured
+	if len(configured) == 0 {
+		settingValue = nil
+	}
+	if err := application.settings.SetMany(scope, map[string]any{"skills": settingValue}); err != nil {
+		return CatalogSnapshot{}, err
+	}
+	return application.Catalog(cwd)
+}
+
+func skillSources(roots configpaths.Roots) []Source {
+	global, project := scopedSources(roots)
+	return append(global, project...)
+}
+
+func scopedSources(roots configpaths.Roots) ([]Source, []Source) {
+	directories := roots.SkillDirs()
+	global := []Source{{Directory: directories[0], Scope: User}}
+	if agents, exists := roots.AgentsSkills(); exists {
+		global = append(global, Source{Directory: agents, Scope: Agents})
+	}
+	return global, []Source{{Directory: directories[1], Scope: Project}}
+}
+
+func capabilityOverrides(owner SettingsOwner, scope settings.Scope) (map[string]bool, error) {
+	layer, err := owner.Overrides(scope)
+	if err != nil {
+		return nil, err
+	}
+	return boolSettings(layer["skills"]), nil
+}
+
+func boolSettings(value any) map[string]bool {
+	result := make(map[string]bool)
+	entries, ok := value.(map[string]any)
+	if !ok {
+		return result
+	}
+	for name, value := range entries {
+		if enabled, ok := value.(bool); ok {
+			result[name] = enabled
+		}
+	}
+	return result
+}
+
+func catalogItems(skills []Skill, effective, globalOverrides, projectOverrides map[string]bool) []CatalogItem {
+	items := make([]CatalogItem, 0, len(skills))
+	for _, skill := range skills {
+		globalOverride, hasGlobal := globalOverrides[skill.Name]
+		projectOverride, hasProject := projectOverrides[skill.Name]
+		effectivelyEnabled, hasEffectiveValue := effective[skill.Name]
+		item := CatalogItem{
+			Name: skill.Name, Label: skill.Name, Description: skill.Description,
+			Effective: !hasEffectiveValue || effectivelyEnabled,
+		}
+		if hasGlobal {
+			item.GlobalOverride = &globalOverride
+		}
+		if hasProject {
+			item.ProjectOverride = &projectOverride
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 // Load reads skills in source order. Invalid skill files become diagnostics;

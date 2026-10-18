@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,12 +23,15 @@ import (
 	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/questions"
+	"rozsa/backend/internal/app/resources"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/sessions"
+	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/subagent"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
 	"rozsa/backend/internal/model/types"
+	"rozsa/backend/internal/platform/configpaths"
 )
 
 type Config struct {
@@ -39,6 +43,8 @@ type Config struct {
 	Model            types.Model
 	ThinkingEffort   types.ThinkingEffort
 	ResolvedSettings func() map[string]any
+	Skills           skills.Application
+	ResolveRoots     func(string) (configpaths.Roots, error)
 	APIKey           string
 	AuthPath         string
 	Provider         agent.Provider
@@ -56,6 +62,8 @@ type Runtime struct {
 	model            types.Model
 	thinkingEffort   types.ThinkingEffort
 	resolvedSettings func() map[string]any
+	skills           skills.Application
+	resolveRoots     func(string) (configpaths.Roots, error)
 	provider         agent.Provider
 	authPath         string
 	questions        *questions.Owner
@@ -90,6 +98,9 @@ func New(config Config) (*Runtime, error) {
 		}
 		config.Provider = provider
 	}
+	if (config.Skills == nil) != (config.ResolveRoots == nil) {
+		return nil, errors.New("runtime prompt resources require both skills and config root services")
+	}
 	if err := os.MkdirAll(config.SessionDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create session directory: %w", err)
 	}
@@ -115,7 +126,7 @@ func New(config Config) (*Runtime, error) {
 	if effort == "" || !config.Model.SupportsThinking(effort) {
 		effort = types.ThinkingOff
 	}
-	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, modelRegistry: config.ModelRegistry, credentialSource: config.Credentials, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), messages: newMessageOperations()}
+	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, modelRegistry: config.ModelRegistry, credentialSource: config.Credentials, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, skills: config.Skills, resolveRoots: config.ResolveRoots, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), messages: newMessageOperations()}
 	lifecycleHooks := config.LifecycleHooks
 	rejectApprovals, cancelQuestions := lifecycleHooks.RejectApprovals, lifecycleHooks.CancelQuestions
 	lifecycleHooks.RejectApprovals = func(id string) error {
@@ -328,6 +339,16 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 		settings = runtime.resolvedSettings()
 	}
 	nameCandidate := prompt != nil && boolSetting(settings["autoSessionNaming"]) && manager.CurrentName() == nil && !hasUserMessage(conversation.contextMessages())
+	var systemPrompt *string
+	var loadedSkills skills.LoadResult
+	if runtime.skills != nil {
+		builtPrompt, result, err := runtime.buildSystemPrompt(manager.Cwd(), settings)
+		if err != nil {
+			return fmt.Errorf("build agent prompt for session %s: %w", manager.SessionID(), err)
+		}
+		systemPrompt = &builtPrompt
+		loadedSkills = result
+	}
 	defer func() {
 		if err := runtime.service.AdoptManager(manager); err != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("adopt written session: %w", err))
@@ -338,7 +359,15 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 	}()
 
 	if prompt != nil {
-		user := session.UserMessage{Content: session.UserText(*prompt), Timestamp: time.Now().UnixMilli()}
+		content := *prompt
+		var displayText *string
+		if runtime.skills != nil {
+			if expanded, original, changed := skills.ExpandCommands(content, loadedSkills.Skills); changed {
+				content = expanded
+				displayText = &original
+			}
+		}
+		user := session.UserMessage{Content: session.UserText(content), DisplayText: displayText, Timestamp: time.Now().UnixMilli()}
 		if _, err := manager.AppendMessage(user); err != nil {
 			return fmt.Errorf("persist user message: %w", err)
 		}
@@ -348,7 +377,7 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 	if prompt == nil && len(contextMessages) == 0 {
 		return errors.New("No previous session found to continue")
 	}
-	input := hooks.AgentContext{Messages: toHookMessages(contextMessages)}
+	input := hooks.AgentContext{SystemPrompt: systemPrompt, Messages: toHookMessages(contextMessages)}
 	if enabled, _ := settings["blockImages"].(bool); enabled {
 		input.Messages = withoutImages(input.Messages)
 	}
@@ -472,6 +501,30 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 		}
 	}
 	return operationErr
+}
+
+func (runtime *Runtime) buildSystemPrompt(cwd string, settings map[string]any) (string, skills.LoadResult, error) {
+	roots, err := runtime.resolveRoots(cwd)
+	if err != nil {
+		return "", skills.LoadResult{}, err
+	}
+	resourceDirectories := roots.ResourceDirs()
+	loadedResources := resources.Load(cwd, resourceDirectories[:])
+	for _, diagnostic := range loadedResources.Diagnostics {
+		log.Printf("resource load diagnostic path=%s message=%s", diagnostic.Path, diagnostic.Message)
+	}
+	loadedSkills, err := runtime.skills.Enabled(cwd, settings)
+	if err != nil {
+		return "", skills.LoadResult{}, err
+	}
+	for _, diagnostic := range loadedSkills.Diagnostics {
+		log.Printf("skill load diagnostic path=%s message=%s", diagnostic.Path, diagnostic.Message)
+	}
+	systemPrompt := resources.NewSystemPrompt(resources.DefaultSystemPrompt()).Format(loadedResources.Resources)
+	if skillFragment := loadedSkills.PromptFragment(); skillFragment != "" {
+		systemPrompt += "\n\n" + skillFragment
+	}
+	return systemPrompt, loadedSkills, nil
 }
 
 func (runtime *Runtime) compactIfNeeded(ctx context.Context, manager *session.Manager, conversation *conversation, model types.Model, provider agent.Provider, settings map[string]any) error {

@@ -50,7 +50,9 @@ rozsa-app/src/
 
 Electron+Go 迁移中的对应模块按产品职责位于 `backend/internal/app/settings/` 与 `backend/internal/platform/configpaths/`。`settings.Load` 按 defaults → global → project → local 合并；嵌套对象逐字段继承，`tools`/`skills` 按名称覆盖，重置通过删除指定层的字段恢复继承。`devFlow` 只取 global 层。读取会区分缺失文件、读取、JSON 解析及 schema 校验错误；设置更新保留未知同级字段，校验通过后才落盘。
 
-`configpaths.Discover` 使用 `ROZSA_CONFIG_DIR` 和 `ROZSA_PROJECT_CONFIG_DIR` 覆盖全局与项目根；默认根分别为 `$HOME/.rozsa` 和 `<project>/.rozsa`。用户级 `.agents/skills` 路径单独暴露。模块专用行为验证命令：`go -C backend test ./internal/app/settings/... ./internal/platform/configpaths/...`。这些 Go 包服务于迁移模块复用；当前 Rust/Tauri 产品结构仍以本文上方 crate 模块为准。
+`configpaths.Discover` 使用 `ROZSA_CONFIG_DIR` 和 `ROZSA_PROJECT_CONFIG_DIR` 覆盖全局与项目根；默认根分别为 `$HOME/.rozsa` 和 `<project>/.rozsa`。用户级 `.agents/skills` 路径单独暴露。Go 的 Electron backend 与 CLI 共享 `backend/internal/app/runtime`：每轮从活动 session 的 CWD 解析 global/project resources 和祖先目录 context；skill 按 global → `~/.agents/skills` → project 顺序解析，重复名称由较具体来源覆盖。`/skill:name` 将正文注入本轮 user message，并保留原始展示文本；`productsettings.Service` 提供同一 skill catalog、enable 与 reset 入口。当前 Rust/Tauri 产品结构仍以本文上方 crate 模块为准。
+
+配置与生产 prompt 接线的 focused 验证：`go -C backend test ./internal/app/settings/... ./internal/platform/configpaths/... ./internal/app/runtime ./internal/app/resources ./internal/app/skills ./internal/app/productsettings`。
 
 ## 核心类型
 

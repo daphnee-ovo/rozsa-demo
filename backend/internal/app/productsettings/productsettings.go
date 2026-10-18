@@ -14,6 +14,7 @@ import (
 
 	"rozsa/backend/internal/app/modelcatalog"
 	"rozsa/backend/internal/app/modelregistry"
+	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
 	"rozsa/backend/internal/model/types"
@@ -32,6 +33,7 @@ type ThemeSummary = themes.Summary
 type Snapshot struct {
 	Scope            Scope                     `json:"scope"`
 	Settings         map[string]any            `json:"settings"`
+	SkillCatalog     skills.CatalogSnapshot    `json:"skillCatalog"`
 	Appearance       themes.AppearanceSnapshot `json:"appearance"`
 	Themes           []themes.Summary          `json:"themes"`
 	Models           []ModelOption             `json:"models"`
@@ -78,6 +80,8 @@ type service struct {
 	registry   modelregistry.Reader
 	catalog    modelcatalog.Service
 	selector   ModelSelector
+	skills     skills.Application
+	skillCWD   string
 }
 
 func New(manager SettingsOwner, themeStore themes.Store) Service {
@@ -86,6 +90,10 @@ func New(manager SettingsOwner, themeStore themes.Store) Service {
 
 func NewWithModelCatalog(manager SettingsOwner, themeStore themes.Store, catalog modelcatalog.Service, selector ModelSelector) Service {
 	return &service{settings: manager, themeStore: themeStore, appearance: themes.NewAppearance(themeStore, manager), registry: catalog, catalog: catalog, selector: selector}
+}
+
+func NewWithModelCatalogAndSkills(manager SettingsOwner, themeStore themes.Store, catalog modelcatalog.Service, selector ModelSelector, skillApplication skills.Application, cwd string) Service {
+	return &service{settings: manager, themeStore: themeStore, appearance: themes.NewAppearance(themeStore, manager), registry: catalog, catalog: catalog, selector: selector, skills: skillApplication, skillCWD: cwd}
 }
 
 func (service *service) Snapshot(scope Scope) (Snapshot, error) {
@@ -117,7 +125,14 @@ func (service *service) snapshot(scope Scope, ctx context.Context) (Snapshot, er
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{Scope: scope, Settings: service.settings.Resolved(), Appearance: appearance, Themes: available, Models: update.Models, ModelDiagnostics: update.Diagnostics}, nil
+	var skillCatalog skills.CatalogSnapshot
+	if service.skills != nil {
+		skillCatalog, err = service.skills.Catalog(service.skillCWD)
+		if err != nil {
+			return Snapshot{}, err
+		}
+	}
+	return Snapshot{Scope: scope, Settings: service.settings.Resolved(), SkillCatalog: skillCatalog, Appearance: appearance, Themes: available, Models: update.Models, ModelDiagnostics: update.Diagnostics}, nil
 }
 
 type ModelUpdate struct {
@@ -154,6 +169,19 @@ func (service *service) Update(scope Scope, key string, value any) (Snapshot, er
 	defer service.mu.Unlock()
 	if key == "" || strings.TrimSpace(key) != key {
 		return Snapshot{}, errors.New("setting key must be non-empty and trimmed")
+	}
+	if skillName, ok := skillNameForSetting(key); ok {
+		enabled, valid := value.(bool)
+		if !valid {
+			return Snapshot{}, errors.New("skill enabled setting must be a boolean")
+		}
+		if service.skills == nil {
+			return Snapshot{}, errors.New("skill settings are unavailable")
+		}
+		if _, err := service.skills.SetEnabled(service.skillCWD, scope, skillName, &enabled); err != nil {
+			return Snapshot{}, err
+		}
+		return service.snapshot(scope, context.Background())
 	}
 	if key == "model" {
 		return service.selectModel(scope, value)
@@ -315,6 +343,15 @@ func (service *service) selectModel(scope Scope, value any) (Snapshot, error) {
 func (service *service) Reset(scope Scope, key string) (Snapshot, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	if skillName, ok := skillNameForSetting(key); ok {
+		if service.skills == nil {
+			return Snapshot{}, errors.New("skill settings are unavailable")
+		}
+		if _, err := service.skills.SetEnabled(service.skillCWD, scope, skillName, nil); err != nil {
+			return Snapshot{}, err
+		}
+		return service.snapshot(scope, context.Background())
+	}
 	path, valid := settingPath(key)
 	if strings.HasPrefix(key, "appearance_") {
 		field := map[string]string{
@@ -335,6 +372,11 @@ func (service *service) Reset(scope Scope, key string) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	return service.snapshot(scope, context.Background())
+}
+
+func skillNameForSetting(key string) (string, bool) {
+	name, found := strings.CutPrefix(key, "skills.")
+	return name, found && name != ""
 }
 
 func (service *service) GetTheme(id string, mode themes.Mode) (themes.Definition, error) {
