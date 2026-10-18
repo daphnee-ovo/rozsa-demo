@@ -1,4 +1,4 @@
-import type { ProductBridge, SessionListEntry, SessionSnapshot, SettingsSnapshot, ThemeDefinition } from "../../../main/session-contract.js";
+import type { ProductBridge, SessionListEntry, SessionSnapshot, SessionTarget, SettingsSnapshot, ThemeDefinition } from "../../../main/session-contract.js";
 import { ProductClient } from "../../product-client.js";
 import type { Disposer, RequestOptions, UIAdapter } from "../../scripts/core/ports.ts";
 
@@ -14,19 +14,28 @@ type LegacyMessage = { kind: "standard"; entryId: string; message: {
 type LegacyState = { sessionId: string; sessionName: string; cwd: string; messages: LegacyMessage[]; isStreaming: boolean; [key: string]: unknown };
 type UIReceiver = (payload: unknown) => void;
 type MessageEvent = Awaited<ReturnType<ProductClient["nextMessageEvent"]>>["event"];
+type OperationState = {
+  operationId: string;
+  target: SessionTarget;
+  userText: string;
+  baseEntryIds: Set<string>;
+  streamText: string;
+  error: string;
+  sequence: number;
+  status: "running" | "completed" | "failed" | "canceled";
+  errorDelivered: boolean;
+};
 
 export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
   const client = new ProductClient(bridge);
   let sessions: SessionListEntry[] = [];
   let sessionsLoading: Promise<SessionListEntry[]> | null = null;
   let active: SessionSnapshot | null = null;
-  let activeOperationId: string | null = null;
-  let pendingUserText = "";
-  let streamText = "";
-  let streamError = "";
-  let messageSequence = 0;
-  let pumpController: AbortController | null = null;
-  let eventPump: Promise<void> | null = null;
+  const operations = new Map<string, OperationState>();
+  const operationIdsBySession = new Map<string, Set<string>>();
+  const runningBySession = new Map<string, string>();
+  const eventPumps = new Map<string, Promise<void>>();
+  let selectionQueue: Promise<void> = Promise.resolve();
   const receivers = new Map<string, Set<UIReceiver>>();
 
   const publish = (): void => deliver("ui-state", currentState());
@@ -38,27 +47,82 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
     const selectedName = active ? sessions.find(item => item.path === active?.path)?.name : undefined;
     const state = active
       ? legacyState(active, selectedName)
-      : { sessionId: activeOperationId || "", sessionName: "Rózsa", cwd: "", messages: [], isStreaming: false };
+      : { sessionId: "", sessionName: "Rózsa", cwd: "", messages: [], isStreaming: false };
     const messages: LegacyMessage[] = state.messages.slice();
-    if (activeOperationId) {
+    const sessionOperations = active ? operationsForSession(active.path) : [];
+    for (const operation of sessionOperations) {
       const lastUser = [...messages].reverse().find(item => item.message.role === "user");
       const lastText = lastUser?.message.content?.filter(block => block.type === "text").map(block => block.text).join("\n");
-      if (pendingUserText && lastText !== pendingUserText) {
-        messages.push({ kind: "standard", entryId: `pending-user:${activeOperationId}`, message: {
-          role: "user", content: [{ type: "text", text: pendingUserText }], toolCallId: undefined,
+      if (operation.status === "running" && operation.userText && lastText !== operation.userText) {
+        messages.push({ kind: "standard", entryId: `pending-user:${operation.operationId}`, message: {
+          role: "user", content: [{ type: "text", text: operation.userText }], toolCallId: undefined,
           toolName: undefined, isError: false, errorMessage: undefined,
         } });
       }
-      messages.push({ kind: "standard", entryId: `stream:${activeOperationId}`, message: {
-        role: "assistant",
-        content: streamText ? [{ type: "text", text: streamText }] : [],
-        errorMessage: streamError || undefined,
-        toolCallId: undefined, toolName: undefined, isError: false,
-      } });
-      state.isStreaming = true;
+      if (operation.status === "running" || operation.streamText || operation.error || operation.status === "canceled") {
+        messages.push({ kind: "standard", entryId: `stream:${operation.operationId}`, message: {
+          role: "assistant",
+          content: operation.streamText ? [{ type: "text", text: operation.streamText }] : [],
+          errorMessage: operation.error || undefined,
+          toolCallId: undefined, toolName: undefined, isError: operation.status === "failed",
+        } });
+      }
     }
     state.messages = messages;
+    state.isStreaming = sessionOperations.some(operation => operation.status === "running");
     return state;
+  }
+
+  function operationsForSession(path: string): OperationState[] {
+    return [...(operationIdsBySession.get(path) || [])]
+      .map(operationId => operations.get(operationId))
+      .filter((operation): operation is OperationState => operation !== undefined);
+  }
+
+  function enqueueSelection<T>(action: () => Promise<T>): Promise<T> {
+    const result = selectionQueue.then(action);
+    selectionQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  function registerOperation(operationId: string, snapshot: SessionSnapshot, userText: string): OperationState {
+    const operation: OperationState = {
+      operationId,
+      target: { path: snapshot.path, catalogId: snapshot.catalogId },
+      userText,
+      baseEntryIds: new Set(snapshot.messages.map(message => message.entryId)),
+      streamText: "",
+      error: "",
+      sequence: 0,
+      status: "running",
+      errorDelivered: false,
+    };
+    operations.set(operationId, operation);
+    const operationIds = operationIdsBySession.get(snapshot.path) || new Set<string>();
+    operationIds.add(operationId);
+    operationIdsBySession.set(snapshot.path, operationIds);
+    runningBySession.set(snapshot.path, operationId);
+    return operation;
+  }
+
+  function reconcilePersistedOperations(snapshot: SessionSnapshot): void {
+    for (const operation of operationsForSession(snapshot.path)) {
+      if (operation.status === "running") continue;
+      const appended = snapshot.messages.filter(message => !operation.baseEntryIds.has(message.entryId));
+      const hasPrompt = !operation.userText || appended.some(message => message.role === "user"
+        && historyMessageText(message) === operation.userText);
+      const hasTerminal = appended.some(message => message.role === "assistant"
+        && (operation.status === "failed" ? message.errorMessage === operation.error : true));
+      if (hasPrompt && hasTerminal) removeOperation(operation);
+    }
+  }
+
+  function removeOperation(operation: OperationState): void {
+    operations.delete(operation.operationId);
+    const operationIds = operationIdsBySession.get(operation.target.path);
+    operationIds?.delete(operation.operationId);
+    if (!operationIds?.size) operationIdsBySession.delete(operation.target.path);
+    if (runningBySession.get(operation.target.path) === operation.operationId) runningBySession.delete(operation.target.path);
   }
 
   async function reloadSessions(): Promise<SessionListEntry[]> {
@@ -75,84 +139,87 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
     const entries = await reloadSessions();
     if (!entries.length) return;
     const latest = entries[0];
-    active = await client.switchSession({ path: latest.path, catalogId: latest.id });
+    await enqueueSelection(async () => {
+      if (active) return;
+      active = await client.switchSession({ path: latest.path, catalogId: latest.id });
+      reconcilePersistedOperations(active);
+    });
   }
 
-  async function refreshActiveSession(): Promise<void> {
-    const entries = await reloadSessions();
-    const selected = active && entries.find(item => item.path === active?.path);
-    const latest = selected || entries[0];
-    if (latest) active = await client.switchSession({ path: latest.path, catalogId: latest.id });
-  }
-
-  async function applyMessageEvent(event: MessageEvent, operationId: string): Promise<boolean> {
-    if (event.sequence !== messageSequence + 1) throw new Error(`Message event sequence gap: expected ${messageSequence + 1}, received ${event.sequence}`);
-    messageSequence = event.sequence;
-    if (event.kind === "text_delta") {
-      streamText += event.delta;
+  async function refreshOperationSession(operation: OperationState): Promise<void> {
+    await enqueueSelection(async () => {
+      if (active?.path !== operation.target.path) return;
+      const snapshot = await client.switchSession(operation.target);
+      if (active?.path !== operation.target.path) return;
+      active = snapshot;
+      reconcilePersistedOperations(snapshot);
       publish();
+    });
+  }
+
+  async function applyMessageEvent(operation: OperationState, event: MessageEvent): Promise<boolean> {
+    if (event.sequence !== operation.sequence + 1) throw new Error(`Message event sequence gap: expected ${operation.sequence + 1}, received ${event.sequence}`);
+    operation.sequence = event.sequence;
+    if (event.kind === "text_delta") {
+      operation.streamText += event.delta;
+      if (active?.path === operation.target.path) publish();
       return false;
     }
-    if (event.kind === "error") streamError = event.error;
-    try { await refreshActiveSession(); }
-    catch (error) {
-      if (event.kind !== "error") streamError = error instanceof Error ? error.message : String(error);
-      deliver("error", streamError);
+    operation.status = event.kind === "completed" ? "completed" : event.kind === "error" ? "failed" : "canceled";
+    if (event.kind === "error") operation.error = event.error;
+    if (runningBySession.get(operation.target.path) === operation.operationId) runningBySession.delete(operation.target.path);
+    if (active?.path === operation.target.path) {
+      if (operation.error) {
+        operation.errorDelivered = true;
+        deliver("error", operation.error);
+      }
+      try { await refreshOperationSession(operation); }
+      catch (error) {
+        if (!operation.error) {
+          operation.error = error instanceof Error ? error.message : String(error);
+          deliver("error", operation.error);
+        }
+        publish();
+      }
     }
-    if (activeOperationId === operationId) activeOperationId = null;
-    pendingUserText = "";
-    streamText = "";
-    if (event.kind === "error") deliver("error", event.error);
-    publish();
     return true;
   }
 
-  async function pumpMessages(signal: AbortSignal): Promise<void> {
+  async function pumpMessages(operation: OperationState): Promise<void> {
     let subscriptionId: string | undefined;
     try {
-      const activeMessage = activeOperationId ? { operationId: activeOperationId } : await client.getActiveMessage();
-      if (!activeMessage || signal.aborted) return;
-      const operationId = activeMessage.operationId;
-      activeOperationId = operationId;
-      messageSequence = 0;
-      const subscription = await client.subscribeMessageEvents(operationId);
+      const subscription = await client.subscribeMessageEvents(operation.operationId);
       subscriptionId = subscription.subscriptionId;
-      publish();
-      while (!signal.aborted && activeOperationId === operationId) {
-        const update = await client.nextMessageEvent(subscriptionId, { signal });
-        if (update.operationId !== operationId || update.subscriptionId !== subscriptionId) {
+      if (active?.path === operation.target.path) publish();
+      while (operation.status === "running") {
+        const update = await client.nextMessageEvent(subscriptionId);
+        if (update.operationId !== operation.operationId || update.subscriptionId !== subscriptionId) {
           throw new Error("Message event identity changed during subscription");
         }
-        if (await applyMessageEvent(update.event, operationId)) break;
+        if (await applyMessageEvent(operation, update.event)) break;
       }
     } catch (error) {
-      if (!signal.aborted) {
-        streamError = error instanceof Error ? error.message : String(error);
-        deliver("error", streamError);
+      if (operation.status === "running") {
+        operation.error = error instanceof Error ? error.message : String(error);
+        if (active?.path === operation.target.path) deliver("error", operation.error);
         publish();
       }
     } finally {
       if (subscriptionId) {
         try { await client.unsubscribeMessageEvents(subscriptionId); }
-        catch (error) { if (!signal.aborted) deliver("error", error instanceof Error ? error.message : String(error)); }
+        catch (error) {
+          if (active?.path === operation.target.path) deliver("error", error instanceof Error ? error.message : String(error));
+        }
       }
     }
   }
 
-  function ensureMessagePump(): void {
-    if (eventPump) return;
-    const controller = new AbortController();
-    pumpController = controller;
-    eventPump = pumpMessages(controller.signal).finally(() => {
-      if (pumpController === controller) pumpController = null;
-      eventPump = null;
-      if (activeOperationId && receivers.get("ui-state")?.size) ensureMessagePump();
+  function ensureMessagePump(operation: OperationState): void {
+    if (operation.status !== "running" || eventPumps.has(operation.operationId)) return;
+    const pump = pumpMessages(operation).finally(() => {
+      if (eventPumps.get(operation.operationId) === pump) eventPumps.delete(operation.operationId);
     });
-  }
-
-  function stopMessagePump(): void {
-    pumpController?.abort("Message UI subscription disposed");
-    pumpController = null;
+    eventPumps.set(operation.operationId, pump);
   }
 
   async function request(intent: string, data?: unknown, { signal }: RequestOptions = {}): Promise<unknown> {
@@ -167,18 +234,33 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
         const path = isRecord(data) ? data.path : undefined;
         const entry = sessions.find(session => session.path === path);
         if (!entry) throw new Error("Session is not in the current catalog; refresh the session list first");
-        active = await client.switchSession({ path: entry.path, catalogId: entry.id });
+        await enqueueSelection(async () => {
+          const snapshot = await client.switchSession({ path: entry.path, catalogId: entry.id });
+          active = snapshot;
+          reconcilePersistedOperations(snapshot);
+          for (const operation of operationsForSession(snapshot.path)) {
+            if (operation.status === "running") ensureMessagePump(operation);
+            else if (operation.error && !operation.errorDelivered) {
+              operation.errorDelivered = true;
+              deliver("error", operation.error);
+            }
+          }
+          publish();
+        });
         signal?.throwIfAborted();
-        publish();
         return true;
       }
       case "get_state": {
         await restoreLatestSession();
-        const running = activeOperationId ? { operationId: activeOperationId } : await client.getActiveMessage();
-        if (running) {
-          activeOperationId = running.operationId;
-          ensureMessagePump();
-        }
+        await enqueueSelection(async () => {
+          if (!active) return;
+          const snapshot = active;
+          const knownOperationId = runningBySession.get(snapshot.path);
+          const running = knownOperationId ? { operationId: knownOperationId } : await client.getActiveMessage();
+          if (running && !operations.has(running.operationId)) registerOperation(running.operationId, snapshot, "");
+          const operation = running && operations.get(running.operationId);
+          if (operation) ensureMessagePump(operation);
+        });
         signal?.throwIfAborted();
         return currentState();
       }
@@ -206,21 +288,24 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
         if (!isRecord(data) || typeof data.message !== "string") throw new TypeError("Invalid message request");
         const text = data.message.trim();
         if (!text) return;
-        if (activeOperationId) throw new Error("A message is already running");
-        pendingUserText = text;
-        streamText = "";
-        streamError = "";
-        messageSequence = 0;
-        const operation = await client.startMessage(text);
-        activeOperationId = operation.operationId;
-        publish();
-        ensureMessagePump();
-        return operation;
+        await restoreLatestSession();
+        return enqueueSelection(async () => {
+          const selected = active;
+          if (!selected) throw new Error("Select a session before sending a message");
+          if (runningBySession.has(selected.path)) throw new Error("A message is already running in this session");
+          const operation = await client.startMessage(text);
+          const state = registerOperation(operation.operationId, selected, text);
+          publish();
+          ensureMessagePump(state);
+          return operation;
+        });
       }
       case "abort": {
-        if (!activeOperationId) throw new Error("There is no active message to cancel");
-        await client.cancelMessage(activeOperationId);
-        return;
+        return enqueueSelection(async () => {
+          const operationId = active && runningBySession.get(active.path);
+          if (!operationId) throw new Error("There is no active message to cancel in this session");
+          await client.cancelMessage(operationId);
+        });
       }
       default:
         throw new Error(`Electron backend does not support ${intent} yet`);
@@ -234,14 +319,15 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
       const listeners = receivers.get(event) || new Set<UIReceiver>();
       listeners.add(receive);
       receivers.set(event, listeners);
-      if (event === "ui-state") ensureMessagePump();
+      if (event === "ui-state") {
+        for (const operation of operations.values()) ensureMessagePump(operation);
+      }
       let active = true;
       return () => {
         if (!active) return;
         active = false;
         listeners.delete(receive);
         if (!listeners.size) receivers.delete(event);
-        if (!receivers.get("ui-state")?.size) stopMessagePump();
       };
     },
     emit(event: string): Promise<void> {
@@ -277,6 +363,10 @@ function legacyState(snapshot: SessionSnapshot, sessionName?: string): LegacySta
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function historyMessageText(message: SessionSnapshot["messages"][number]): string {
+  return message.content.flatMap(block => block.type === "text" || block.type === "thinking" ? [block.text] : []).join("\n");
 }
 
 function legacySettings(snapshot: SettingsSnapshot): Record<string, unknown> {
