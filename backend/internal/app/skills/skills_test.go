@@ -32,7 +32,8 @@ func TestLoadLayerPriorityDiagnosticsAndSlashNames(t *testing.T) {
 	writeSkill(t, user, "deploy", "---\nname: deploy\ndescription: user deploy\n---\nuser body")
 	writeSkill(t, agents, "deploy", "---\nname: deploy\ndescription: agents deploy\n---\nagents body")
 	writeSkill(t, project, "deploy", "---\nname: deploy\ndescription: project deploy\n---\nproject body")
-	writeSkill(t, project, "nested/lint", "---\ndescription: |\n  First line\n  second line\n---\nbody")
+	writeSkill(t, project, "lint", "---\ndescription: direct skill\n---\nbody")
+	writeSkill(t, project, "nested/lint", "---\ndescription: nested skill\n---\nbody")
 	writeSkill(t, project, "invalid", "---\nname: invalid\n---\nmissing description")
 	failedSource := filepath.Join(root, "unreadable-source")
 	if err := os.WriteFile(failedSource, []byte("not a directory"), 0o600); err != nil {
@@ -52,6 +53,11 @@ func TestLoadLayerPriorityDiagnosticsAndSlashNames(t *testing.T) {
 	if deploy.Scope != Project || deploy.Description != "project deploy" {
 		t.Fatalf("project scope did not win duplicate: %#v", deploy)
 	}
+	for _, skill := range result.Skills {
+		if skill.Name == "lint" && skill.Description != "direct skill" {
+			t.Fatalf("nested skill was loaded instead of the direct child: %#v", skill)
+		}
+	}
 	if names := result.SlashCommandNames(); !reflect.DeepEqual(names, []string{"deploy", "lint"}) {
 		t.Fatalf("slash names = %#v", names)
 	}
@@ -64,13 +70,13 @@ func TestLoadDiscoversBuiltinDirectoryAndLetsRegularSkillsOverrideIt(t *testing.
 	global := t.TempDir()
 	writeSkill(t, global, ".builtin/rozsa-docs", "---\nname: rozsa-docs\ndescription: built-in docs\n---\nbuiltin body")
 	writeSkill(t, global, ".builtin/not-in-compiled-list", "---\nname: not-in-compiled-list\ndescription: unrelated\n---\nbody")
-	loaded := Load([]Source{{Directory: global, Scope: User}}, nil)
+	loaded := loadWithBuiltins([]Source{{Directory: global, Scope: User}}, filepath.Join(global, ".builtin"), []string{"rozsa-docs"}, nil)
 	if len(loaded.Skills) != 1 || loaded.Skills[0].Scope != Builtin || loaded.Skills[0].VariablePath() != "$USER_SKILLS/.builtin/rozsa-docs/SKILL.md" {
 		t.Fatalf("built-in skill was not discovered with its virtual path: %#v", loaded.Skills)
 	}
 
 	writeSkill(t, global, "rozsa-docs", "---\nname: rozsa-docs\ndescription: user docs\n---\nuser body")
-	loaded = Load([]Source{{Directory: global, Scope: User}}, nil)
+	loaded = loadWithBuiltins([]Source{{Directory: global, Scope: User}}, filepath.Join(global, ".builtin"), []string{"rozsa-docs"}, nil)
 	if len(loaded.Skills) != 1 || loaded.Skills[0].Scope != User || loaded.Skills[0].Description != "user docs" {
 		t.Fatalf("regular global skill did not override its built-in duplicate: %#v", loaded.Skills)
 	}

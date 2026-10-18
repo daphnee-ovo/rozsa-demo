@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -107,8 +106,9 @@ func (application skillApplication) Enabled(cwd string, resolved map[string]any)
 	if err != nil {
 		return LoadResult{}, err
 	}
-	builtinErr := application.ensureBuiltinSkills(roots)
-	loadResult := Load(skillSources(roots), boolSettings(resolved["skills"]))
+	config, builtinErr := application.ensureBuiltinSkills(roots)
+	directories := roots.SkillDirs()
+	loadResult := loadWithBuiltins(skillSources(roots), filepath.Join(directories[0], ".builtin"), config.BuiltinSkills, boolSettings(resolved["skills"]))
 	if builtinErr != nil {
 		loadResult.Diagnostics = append(loadResult.Diagnostics, Diagnostic{
 			Path: filepath.Join(roots.SkillDirs()[0], ".builtin"), Message: builtinErr.Error(),
@@ -125,7 +125,7 @@ func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error)
 	if err != nil {
 		return CatalogSnapshot{}, err
 	}
-	builtinErr := application.ensureBuiltinSkills(roots)
+	config, builtinErr := application.ensureBuiltinSkills(roots)
 	globalOverrides, err := capabilityOverrides(application.settings, settings.Global)
 	if err != nil {
 		return CatalogSnapshot{}, err
@@ -137,11 +137,12 @@ func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error)
 	resolved := application.settings.Resolved()
 	effective := boolSettings(resolved["skills"])
 	globalSources, projectSources := scopedSources(roots)
-	global := Load(globalSources, nil)
+	directories := roots.SkillDirs()
+	global := loadWithBuiltins(globalSources, filepath.Join(directories[0], ".builtin"), config.BuiltinSkills, nil)
 	project := Load(projectSources, nil)
 	snapshot := CatalogSnapshot{
-		GlobalSkills:  catalogItems(Resolve(global, nil).Skills, effective, globalOverrides, projectOverrides),
-		ProjectSkills: catalogItems(Resolve(project, nil).Skills, effective, globalOverrides, projectOverrides),
+		GlobalSkills:  catalogItems(global.Skills, effective, globalOverrides, projectOverrides),
+		ProjectSkills: catalogItems(project.Skills, effective, globalOverrides, projectOverrides),
 		Diagnostics:   append(global.Diagnostics, project.Diagnostics...),
 	}
 	if builtinErr != nil {
@@ -160,16 +161,16 @@ func (application skillApplication) resolveRoots(cwd string) (configpaths.Roots,
 	return roots, application.notifyBuiltinError(err)
 }
 
-func (application skillApplication) ensureBuiltinSkills(roots configpaths.Roots) error {
+func (application skillApplication) ensureBuiltinSkills(roots configpaths.Roots) (builtinConfig, error) {
 	config, err := readBuiltinConfig()
 	if err != nil {
-		return application.notifyBuiltinError(err)
+		return builtinConfig{}, application.notifyBuiltinError(err)
 	}
 	source := application.builtinSource
 	if source == nil {
 		baseURL, err := builtinSkillsURL(config.BuiltinSkillsURL)
 		if err != nil {
-			return application.notifyBuiltinError(err)
+			return config, application.notifyBuiltinError(err)
 		}
 		source = &builtinSource{baseURL: baseURL, client: &http.Client{Timeout: builtinRequestTimeout}}
 	}
@@ -183,7 +184,7 @@ func (application skillApplication) ensureBuiltinSkills(roots configpaths.Roots)
 		defer cancel()
 		downloadErr = downloadBuiltinSkills(ctx, skillDirectories[0], missingSkills, *source)
 	}
-	return application.notifyBuiltinError(errors.Join(checkErr, downloadErr))
+	return config, application.notifyBuiltinError(errors.Join(checkErr, downloadErr))
 }
 
 func (application skillApplication) notifyBuiltinError(err error) error {
@@ -304,9 +305,21 @@ func catalogItems(skills []Skill, effective, globalOverrides, projectOverrides m
 	return items
 }
 
-// Load reads skills in source order. Invalid skill files become diagnostics;
-// unreadable source directories are skipped to match the Rust loader.
+// Load reads direct child skill directories in source order. Invalid skill
+// files become diagnostics; unreadable source directories are skipped.
 func Load(sources []Source, enabled map[string]bool) LoadResult {
+	return Resolve(loadSources(sources), enabled)
+}
+
+func loadWithBuiltins(sources []Source, builtinDirectory string, builtinNames []string, enabled map[string]bool) LoadResult {
+	result := loadSources(sources)
+	builtins := loadBuiltinSkills(builtinDirectory, builtinNames)
+	result.Skills = append(result.Skills, builtins.Skills...)
+	result.Diagnostics = append(result.Diagnostics, builtins.Diagnostics...)
+	return Resolve(result, enabled)
+}
+
+func loadSources(sources []Source) LoadResult {
 	var result LoadResult
 	for _, source := range sources {
 		entries, err := readDirectory(source.Directory)
@@ -316,12 +329,52 @@ func Load(sources []Source, enabled map[string]bool) LoadResult {
 			}
 			continue
 		}
-		scan(source.Directory, source.Scope, entries, &result, true)
+		if source.Scope == User {
+			userEntries := entries[:0]
+			for _, entry := range entries {
+				if entry.Name() != ".builtin" {
+					userEntries = append(userEntries, entry)
+				}
+			}
+			entries = userEntries
+		}
+		scan(source.Directory, source.Scope, entries, &result)
 	}
-	return Resolve(result, enabled)
+	return result
 }
 
-func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResult, sourceRoot bool) {
+func loadBuiltinSkills(builtinDirectory string, names []string) LoadResult {
+	var result LoadResult
+	for _, name := range names {
+		if !safeBuiltinName(name) {
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: builtinDirectory, Message: fmt.Sprintf("unsafe built-in skill name %q", name)})
+			continue
+		}
+		skillDirectory := filepath.Join(builtinDirectory, name)
+		skillPath := filepath.Join(skillDirectory, "SKILL.md")
+		info, err := os.Lstat(skillPath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: skillPath, Message: "failed to inspect: " + err.Error()})
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: skillPath, Message: "SKILL.md is not a regular file"})
+			continue
+		}
+		skill, diagnostic := parseFile(skillPath, skillDirectory, Builtin)
+		if diagnostic != nil {
+			result.Diagnostics = append(result.Diagnostics, *diagnostic)
+		} else {
+			result.Skills = append(result.Skills, skill)
+		}
+	}
+	return result
+}
+
+func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResult) {
 	for _, entry := range entries {
 		path := filepath.Join(directory, entry.Name())
 		info, err := os.Stat(path)
@@ -332,28 +385,6 @@ func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResu
 			continue
 		}
 		if !info.IsDir() {
-			continue
-		}
-		if sourceRoot && scope == User && entry.Name() == ".builtin" {
-			builtinEntries, err := readDirectory(path)
-			if err != nil {
-				if !os.IsNotExist(err) {
-					result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: path, Message: "failed to scan: " + err.Error()})
-				}
-				continue
-			}
-			config, err := readBuiltinConfig()
-			if err != nil {
-				result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: path, Message: err.Error()})
-				continue
-			}
-			filtered := make([]fs.DirEntry, 0, len(builtinEntries))
-			for _, builtinEntry := range builtinEntries {
-				if slices.Contains(config.BuiltinSkills, builtinEntry.Name()) {
-					filtered = append(filtered, builtinEntry)
-				}
-			}
-			scan(path, Builtin, filtered, result, true)
 			continue
 		}
 		filePath := filepath.Join(path, "SKILL.md")
@@ -367,21 +398,9 @@ func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResu
 			}
 			continue
 		}
-		if sourceRoot && scope == Builtin {
-			continue
-		}
 		if err != nil && !os.IsNotExist(err) {
 			result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: filePath, Message: "failed to inspect: " + err.Error()})
-			continue
 		}
-		nestedEntries, err := readDirectory(path)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: path, Message: "failed to scan: " + err.Error()})
-			}
-			continue
-		}
-		scan(path, scope, nestedEntries, result, false)
 	}
 }
 
