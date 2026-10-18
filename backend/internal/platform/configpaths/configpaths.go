@@ -106,6 +106,7 @@ func (roots Roots) SettingsPaths() [2]string {
 func (roots Roots) ModelDirs() [2]string {
 	return [2]string{roots.join(roots.global, "models"), roots.join(roots.project, "models")}
 }
+func (roots Roots) AuthPath() string { return roots.join(roots.global, "models", "auth.json") }
 func (roots Roots) ThemeDirs() [2]string {
 	return [2]string{roots.join(roots.global, "themes"), roots.join(roots.project, "themes")}
 }

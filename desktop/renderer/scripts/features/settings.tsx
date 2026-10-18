@@ -1,9 +1,9 @@
-import React, { useEffect, useState, type ReactNode } from "react";
+import React, { useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ProductClient } from "../../product-client.js";
 import type { ModelOption, ProductBridge, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../../main/session-contract.js";
 
-type Props = { client: ProductClient; pane: "general" | "appearance" };
+type Props = { client: ProductClient; pane: "general" | "appearance"; report?: (message: string) => void };
 type Settings = Record<string, unknown>;
 type SettingsRuntimeApi = {
   boundModules: Set<string>;
@@ -56,20 +56,20 @@ export function init(api: SettingsRuntimeApi): void {
   });
 }
 
-export function mountSettingsPanes(documentRoot: ParentNode, bridge: ProductBridge): () => void {
+export function mountSettingsPanes(documentRoot: ParentNode, bridge: ProductBridge, report?: (message: string) => void): () => void {
   const roots: Root[] = [];
   const client = new ProductClient(bridge);
   for (const pane of ["general", "appearance"] as const) {
     const target = documentRoot.querySelector<HTMLElement>(`#pane-${pane}`);
     if (!target) throw new Error(`Settings pane is missing: ${pane}`);
     const root = createRoot(target);
-    root.render(<SettingsPane client={client} pane={pane} />);
+    root.render(<SettingsPane client={client} pane={pane} report={report} />);
     roots.push(root);
   }
   return () => roots.forEach(root => root.unmount());
 }
 
-function SettingsPane({ client, pane }: Props) {
+function SettingsPane({ client, pane, report }: Props) {
   const [scope, setScope] = useState<SettingsScope>("global");
   const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null);
   const [themes, setThemes] = useState(initialThemes);
@@ -77,6 +77,19 @@ function SettingsPane({ client, pane }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [validation, setValidation] = useState("");
+  const reported = useRef(new Set<string>());
+  useEffect(() => {
+    if (pane !== "general") return;
+    return client.onModelsChanged(update => {
+      setSnapshot(current => current ? { ...current, models: update.models, modelDiagnostics: update.diagnostics } : current);
+    });
+  }, [client, pane]);
+  useEffect(() => {
+    if (pane !== "general") return;
+    const current = new Set((snapshot?.modelDiagnostics ?? []).map(item => `${item.provider}: ${item.message}`));
+    for (const message of current) if (!reported.current.has(message)) report?.(message);
+    reported.current = current;
+  }, [snapshot, pane, report]);
 
   useEffect(() => {
     let active = true;
@@ -86,7 +99,7 @@ function SettingsPane({ client, pane }: Props) {
       setSnapshot(value);
       setThemes(value.themes);
       if (pane === "appearance") applyAppearance(value);
-    }).catch(reason => { if (active) setError(errorText(reason)); })
+    }).catch(reason => { if (active) { setError(errorText(reason)); if (pane === "general") report?.(errorText(reason)); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [client, pane, scope]);
@@ -110,7 +123,7 @@ function SettingsPane({ client, pane }: Props) {
       const next = await client.updateSetting(scope, key, value);
       setSnapshot(next); setThemes(next.themes);
       if (pane === "appearance") applyAppearance(next);
-    } catch (reason) { setError(errorText(reason)); }
+    } catch (reason) { setError(errorText(reason)); report?.(errorText(reason)); }
     finally { setSaving(false); }
   }
 
@@ -121,7 +134,7 @@ function SettingsPane({ client, pane }: Props) {
       const next = await client.resetSetting(scope, key);
       setSnapshot(next); setThemes(next.themes);
       if (pane === "appearance") applyAppearance(next);
-    } catch (reason) { setError(errorText(reason)); }
+    } catch (reason) { setError(errorText(reason)); report?.(errorText(reason)); }
     finally { setSaving(false); }
   }
 
@@ -160,6 +173,7 @@ function SettingsPane({ client, pane }: Props) {
       </select></label>
     </header>
     {error && <p className="settings-error" role="alert">{error}</p>}
+    {pane === "general" && snapshot.modelDiagnostics?.map(item => <p className="settings-error" role="alert" key={`${item.provider}:${item.message}`}>{item.provider}: {item.message}</p>)}
     {validation && <p className="settings-error" role="alert">{validation}</p>}
     {pane === "general" ? <General settings={settings} models={snapshot.models} saving={saving} update={update} reset={reset} /> :
       <Appearance snapshot={snapshot} themes={themes} saving={saving} update={update} reset={reset} saveTheme={saveTheme} />}

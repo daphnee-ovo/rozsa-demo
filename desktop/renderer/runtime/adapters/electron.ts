@@ -1,6 +1,7 @@
 import type { ProductBridge, SessionListEntry, SessionSnapshot, SessionTarget, SettingsSnapshot, ThemeDefinition } from "../../../main/session-contract.js";
 import { ProductClient } from "../../product-client.js";
 import type { Disposer, RequestOptions, UIAdapter } from "../../scripts/core/ports.ts";
+import { oauthProvider, ProductFailure } from "../../../main/session-contract.js";
 
 type LegacySession = SessionListEntry & { first_message: string; last_modified: string };
 type LegacyContent = { type: "text"; text: string }
@@ -37,11 +38,29 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
   const eventPumps = new Map<string, Promise<void>>();
   let selectionQueue: Promise<void> = Promise.resolve();
   const receivers = new Map<string, Set<UIReceiver>>();
+  let authOperation: string | undefined;
 
   const publish = (): void => deliver("ui-state", currentState());
   const deliver = (event: string, payload: unknown): void => {
     for (const receive of receivers.get(event) || []) receive(payload);
   };
+
+  async function login(provider: import("../../../../contracts/ipc/session.js").OAuthProvider): Promise<void> {
+    if (!bridge.startAuth || !bridge.nextAuthEvent) throw new Error("OAuth login is unavailable");
+    const operation = await bridge.startAuth(provider);
+    authOperation = operation.operationId;
+    void (async () => {
+      for (;;) {
+        let event: import("../../../../contracts/ipc/session.js").AuthEvent;
+        try { event = await bridge.nextAuthEvent!(operation.operationId); }
+        catch (error) { if (error instanceof ProductFailure && error.failure.kind === "timeout") continue; throw error; }
+        if (event.kind === "error") throw new Error(event.message || "OAuth login failed");
+        if (event.message || event.url) deliver("notification", [event.message, event.userCode, event.url].filter(Boolean).join("\n"));
+        if (event.kind === "complete") { deliver("models-updated", {}); deliver("notification", `${provider} login successful`); return; }
+      }
+    })().catch(error => deliver("error", error instanceof Error ? error.message : String(error)))
+      .finally(() => { if (authOperation === operation.operationId) authOperation = undefined; });
+  }
 
   function currentState() {
     const selectedName = active ? sessions.find(item => item.path === active?.path)?.name : undefined;
@@ -225,6 +244,25 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
   async function request(intent: string, data?: unknown, { signal }: RequestOptions = {}): Promise<unknown> {
     signal?.throwIfAborted();
     switch (intent) {
+      case "dispatch_slash_command": {
+        if (!isRecord(data) || typeof data.text !== "string") throw new Error("Invalid slash command");
+        const [command, ...args] = data.text.trim().split(/\s+/);
+        if (command === "/login") {
+          const value = args.join(" ");
+          if (authOperation && value && !["anthropic", "codex-oauth", "github-copilot"].includes(value)) {
+            if (!bridge.submitAuth) throw new Error("OAuth input is unavailable");
+            await bridge.submitAuth(authOperation, value);
+          } else await login(oauthProvider(value || "codex-oauth"));
+          return { handled: true };
+        }
+        if (command === "/logout") {
+          if (!bridge.logoutAuth) throw new Error("OAuth logout is unavailable");
+          await bridge.logoutAuth(oauthProvider(args[0] || "codex-oauth"));
+          deliver("models-updated", {});
+          return { handled: true };
+        }
+        throw new Error(`Electron backend command ${command} is not implemented yet`);
+      }
       case "get_sessions": {
         const entries = await reloadSessions();
         signal?.throwIfAborted();
@@ -268,6 +306,8 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
         const snapshot = await client.getSettings("global", { signal });
         return legacySettings(snapshot);
       }
+      case "list_models":
+        return (await client.getSettings("global", { signal })).models;
       case "list_themes":
         return client.listThemes("global", { signal });
       case "update_setting": {
@@ -315,10 +355,11 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
   return Object.freeze({
     request,
     subscribe(event: string, receive: UIReceiver): Disposer {
-      if (event !== "ui-state" && event !== "error") throw new Error(`Electron backend event ${event} is not implemented yet`);
+      if (!["ui-state", "error", "models-updated", "app-notification", "notification"].includes(event)) throw new Error(`Electron backend event ${event} is not implemented yet`);
       const listeners = receivers.get(event) || new Set<UIReceiver>();
       listeners.add(receive);
       receivers.set(event, listeners);
+      const detachModels = event === "models-updated" ? bridge.onModelsChanged?.(() => deliver("models-updated", {})) : undefined;
       if (event === "ui-state") {
         for (const operation of operations.values()) ensureMessagePump(operation);
       }
@@ -326,6 +367,7 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
       return () => {
         if (!active) return;
         active = false;
+        detachModels?.();
         listeners.delete(receive);
         if (!listeners.size) receivers.delete(event);
       };

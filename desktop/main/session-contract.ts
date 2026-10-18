@@ -1,5 +1,5 @@
 import { validatedBridgeFault, ProductFailure, type BridgeFault, type ModelOption, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary } from "../../contracts/ipc/session.js";
-export type { ModelOption, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../contracts/ipc/session.js";
+export type { ModelOption, ModelUpdate, ModelDiagnostic, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../contracts/ipc/session.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { MessageEvent } from "../../contracts/ipc/session.js";
 export { ProductFailure, RPCFailure, bridgeFault, remoteFault, transportFailure } from "../../contracts/ipc/session.js";
@@ -33,6 +33,11 @@ export interface MessageEventResult extends MessageSubscription { event: Message
 export type SessionHistoryReply = { ok: true; snapshot: SessionSnapshot }
   | { ok: false; error: BridgeFault };
 export interface ProductBridge {
+  startAuth?(provider: import("../../contracts/ipc/session.js").OAuthProvider): Promise<MessageOperation>;
+  submitAuth?(operationId: string, value: string): Promise<void>;
+  nextAuthEvent?(operationId: string): Promise<import("../../contracts/ipc/session.js").AuthEvent>;
+  cancelAuth?(operationId: string): Promise<void>;
+  logoutAuth?(provider: import("../../contracts/ipc/session.js").OAuthProvider): Promise<void>;
   getSessions(): Promise<SessionListReply>;
   switchSession(target: SessionTarget): Promise<SessionHistoryReply>;
   subscribeSessions(): Promise<SessionSyncReply>;
@@ -51,6 +56,24 @@ export interface ProductBridge {
   listThemes(scope: SettingsScope): Promise<ThemeSummary[]>;
   getTheme(id: string, mode: "light" | "dark"): Promise<ThemeDefinition>;
   saveTheme(theme: ThemeDefinition): Promise<void>;
+  onModelsChanged?(receive: (update: import("../../contracts/ipc/session.js").ModelUpdate) => void): () => void;
+}
+export const MODELS_CHANGED_CHANNEL = "product:models-changed";
+export const AUTH_LOGIN_CHANNEL = "product:auth-login";
+export const AUTH_INPUT_CHANNEL = "product:auth-input";
+export const AUTH_NEXT_CHANNEL = "product:auth-next";
+export const AUTH_CANCEL_CHANNEL = "product:auth-cancel";
+export const AUTH_LOGOUT_CHANNEL = "product:auth-logout";
+export function oauthProvider(value: unknown): import("../../contracts/ipc/session.js").OAuthProvider {
+  if (value !== "anthropic" && value !== "codex-oauth" && value !== "github-copilot") throw new Error("Unsupported OAuth provider");
+  return value;
+}
+export function authEvent(value: unknown, operationId: string): import("../../contracts/ipc/session.js").AuthEvent {
+  if (!record(value) || value.operationId !== operationId || !["authorization_url", "input_required", "progress", "complete", "error"].includes(value.kind as string)
+    || [value.url, value.message, value.userCode].some(item => item !== undefined && typeof item !== "string")
+    || (value.kind === "authorization_url" && (typeof value.url !== "string" || !value.url))) throw new Error("Invalid OAuth event");
+  oauthProvider(value.provider);
+  return value as unknown as import("../../contracts/ipc/session.js").AuthEvent;
 }
 export const SESSION_LIST_CHANNEL = "product:get-sessions";
 export const SESSION_HISTORY_CHANNEL = "product:switch-session";
@@ -159,6 +182,7 @@ export function settingsSnapshot(value: unknown): SettingsSnapshot {
   if (!record(value.appearance)) throw new Error("Invalid appearance response");
   if (!Array.isArray(value.themes)) throw new Error("Invalid theme catalog response");
   if (!Array.isArray(value.models)) throw new Error("Invalid model catalog response");
+  modelUpdate({ models: value.models, diagnostics: value.modelDiagnostics ?? [] });
   const appearance = value.appearance;
   if (!["system", "light", "dark"].includes(appearance.themeMode as string) || !Number.isInteger(appearance.fontSize)
     || typeof appearance.translucentSidebar !== "boolean") throw new Error("Invalid appearance response");
@@ -169,6 +193,15 @@ export function settingsSnapshot(value: unknown): SettingsSnapshot {
     && typeof model.name === "string" && typeof model.provider === "string" && typeof model.reasoning === "boolean"
     && Number.isSafeInteger(model.contextWindow) && (model.contextWindow as number) > 0)) throw new Error("Invalid model catalog response");
   return value as unknown as SettingsSnapshot;
+}
+
+export function modelUpdate(value: unknown): import("../../contracts/ipc/session.js").ModelUpdate {
+  if (!record(value) || !Array.isArray(value.models) || !Array.isArray(value.diagnostics)
+    || !value.models.every(model => record(model) && typeof model.id === "string" && model.id.length > 0
+      && typeof model.name === "string" && typeof model.provider === "string" && typeof model.reasoning === "boolean"
+      && Number.isSafeInteger(model.contextWindow) && (model.contextWindow as number) > 0)
+    || !value.diagnostics.every(item => record(item) && typeof item.provider === "string" && typeof item.message === "string")) throw new Error("Invalid model catalog update");
+  return value as unknown as import("../../contracts/ipc/session.js").ModelUpdate;
 }
 
 export function messageSuccess(value: unknown): unknown {

@@ -3,14 +3,23 @@ package main
 import (
 	"context"
 
+	"rozsa/backend/internal/app/auth"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/transport/server"
 	"rozsa/backend/internal/transport/types"
 )
 
-type productMessageApplication struct{ coordinator *runtimeCoordinator }
+type productMessageApplication struct {
+	coordinator *runtimeCoordinator
+	auth        auth.Service
+}
+
+func (application productMessageApplication) AuthService() auth.Service { return application.auth }
 
 func (application productMessageApplication) Shutdown(ctx context.Context) error {
+	if application.auth != nil {
+		application.auth.Close()
+	}
 	return application.coordinator.Shutdown(ctx)
 }
 

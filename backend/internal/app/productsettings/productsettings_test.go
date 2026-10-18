@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"rozsa/backend/internal/app/modelcatalog"
 	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
+	"rozsa/backend/internal/model/credentials"
 	modeltypes "rozsa/backend/internal/model/types"
 )
 
@@ -140,7 +142,7 @@ func TestModelCatalogSelectionPersistsProviderAndModelAndRollsBackOnSetterFailur
 	if err := os.WriteFile(filepath.Join(modelDir, "models.json"), []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	registry, diagnostics, err := modelregistry.Load([]byte("{}"), modelDir)
+	_, diagnostics, err := modelregistry.Load([]byte("{}"), modelDir)
 	if err != nil || len(diagnostics) != 0 {
 		t.Fatalf("load test model registry: diagnostics=%#v err=%v", diagnostics, err)
 	}
@@ -151,7 +153,14 @@ func TestModelCatalogSelectionPersistsProviderAndModelAndRollsBackOnSetterFailur
 		t.Fatal(err)
 	}
 	selector := &modelSelectorFixture{}
-	service := NewWithModelCatalog(manager, themes.NewStore(filepath.Join(root, "global", "themes"), filepath.Join(root, "project", "themes")), registry, selector)
+	if err := os.WriteFile(filepath.Join(modelDir, "auth.json"), []byte(`{"anthropic":{"type":"api_key","key":"test-key"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := modelcatalog.New(modelcatalog.Options{Directories: [2]string{modelDir, filepath.Join(root, "project", "models")}, Auth: &modelcatalog.Auth{Path: filepath.Join(modelDir, "auth.json"), Resolver: credentials.NewResolver()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewWithModelCatalog(manager, themes.NewStore(filepath.Join(root, "global", "themes"), filepath.Join(root, "project", "themes")), catalog, selector)
 
 	initial, err := service.Snapshot(Global)
 	if err != nil || len(initial.Models) != 1 || initial.Models[0].ContextWindow != 64000 {

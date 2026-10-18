@@ -1,12 +1,18 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from "electron";
 import type { BackendService } from "./backend-service.js";
 import { applySidebarVibrancy } from "./native-appearance.js";
+import { MODELS_CHANGED_CHANNEL } from "./session-contract.js";
+import { AUTH_LOGIN_CHANNEL, AUTH_INPUT_CHANNEL, AUTH_NEXT_CHANNEL, AUTH_CANCEL_CHANNEL, AUTH_LOGOUT_CHANNEL, oauthProvider } from "./session-contract.js";
 import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL, SETTINGS_GET_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL, sessionTarget, subscriptionId, bridgeFault, transportFailure, RPCFailure } from "./session-contract.js";
 
 // One trusted session page, one Go subscription. Navigation invalidates pending
 // delivery before a replacement renderer can subscribe; no product work replay.
-export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backend: BackendService, trustedURL: string): void {
+export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backend: BackendService, trustedURL: string, openBrowser?: (url: string) => Promise<void>): void {
   let generation = 0, revision = 0, current: string | undefined, disposed = false;
+  const authOperations = new Set<string>();
+  const detachModels = backend.onModelsChanged?.(update => {
+    if (!disposed && !window.isDestroyed() && window.webContents.mainFrame.url === trustedURL) window.webContents.send(MODELS_CHANGED_CHANNEL, update);
+  });
   const release = async (id: string): Promise<void> => {
     try { await backend.unsubscribeSessions(id); }
     catch (error) {
@@ -15,11 +21,14 @@ export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backen
   };
   const invalidate = (): void => {
     generation++; revision++;
+    for (const id of authOperations) void backend.cancelAuth(id).catch(error => console.error("OAuth cancellation:", error));
+    authOperations.clear();
     const id = current; current = undefined;
     if (id) void release(id);
   };
   const channels = [SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL,
-    SETTINGS_GET_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL];
+    SETTINGS_GET_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL,
+    AUTH_LOGIN_CHANNEL, AUTH_INPUT_CHANNEL, AUTH_NEXT_CHANNEL, AUTH_CANCEL_CHANNEL, AUTH_LOGOUT_CHANNEL];
   const handle = (channel: string, count: number, operation: (...args: unknown[]) => Promise<object>): void => {
     ipc.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
       if (disposed || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
@@ -75,6 +84,35 @@ export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backen
   };
   const validScope = (scope: unknown): scope is "global" | "project" => scope === "global" || scope === "project";
   const validKey = (key: unknown): key is string => typeof key === "string" && key.length > 0 && key.trim() === key;
+  settingsHandle(AUTH_LOGIN_CHANNEL, 1, async provider => {
+    const started = generation;
+    const operation = await backend.startAuth(oauthProvider(provider));
+    if (started !== generation) { await backend.cancelAuth(operation.operationId); throw transportFailure("closed", "OAuth page was replaced"); }
+    authOperations.add(operation.operationId);
+    return operation;
+  });
+  settingsHandle(AUTH_INPUT_CHANNEL, 2, async (id, value) => {
+    if (!validKey(id) || !validKey(value)) throw new Error("Invalid OAuth input");
+    await backend.submitAuth(id, value);
+  });
+  settingsHandle(AUTH_NEXT_CHANNEL, 1, async id => {
+    if (!validKey(id)) throw new Error("Invalid OAuth operation");
+    const started = generation;
+    const event = await backend.nextAuthEvent(id);
+    if (started !== generation) throw transportFailure("closed", "OAuth page was replaced");
+    if (event.kind === "complete" || event.kind === "error") authOperations.delete(id);
+    if (event.kind === "authorization_url" && openBrowser) {
+      const url = new URL(event.url!);
+      const hosts = event.provider === "anthropic" ? ["claude.ai", "console.anthropic.com", "platform.claude.com"] : event.provider === "codex-oauth" ? ["auth.openai.com"] : ["github.com"];
+      try {
+        if (url.protocol !== "https:" || url.username || url.password || !hosts.includes(url.hostname)) throw new Error("OAuth authorization URL is not trusted");
+        await openBrowser(url.href);
+      } catch (error) { await backend.cancelAuth(id); authOperations.delete(id); throw error; }
+    }
+    return event;
+  });
+  settingsHandle(AUTH_CANCEL_CHANNEL, 1, async id => { if (!validKey(id)) throw new Error("Invalid OAuth operation"); await backend.cancelAuth(id); authOperations.delete(id); });
+  settingsHandle(AUTH_LOGOUT_CHANNEL, 1, async provider => { await backend.logoutAuth(oauthProvider(provider)); });
   settingsHandle(SETTINGS_GET_CHANNEL, 1, async scope => {
     if (!validScope(scope)) throw new Error("Invalid settings scope");
     const snapshot = await backend.getSettings(scope);
@@ -108,6 +146,7 @@ export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backen
   window.webContents.on("did-start-navigation", (_event, _url, _inPlace, mainFrame) => { if (mainFrame) invalidate(); });
   window.webContents.on("render-process-gone", () => invalidate());
   window.once("closed", () => {
+    detachModels?.();
     disposed = true; invalidate();
     for (const channel of channels) ipc.removeHandler(channel);
   });

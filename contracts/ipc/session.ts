@@ -9,6 +9,12 @@ export type SessionUpdate = { subscriptionId: string } & (
 );
 
 export interface SessionMethods {
+  auth_login: { params: { provider: OAuthProvider }; result: { operationId: string } };
+  auth_input: { params: { operationId: string; value: string }; result: true };
+  auth_next: { params: { operationId: string }; result: AuthEvent };
+  auth_cancel: { params: { operationId: string }; result: true };
+  auth_logout: { params: { provider: OAuthProvider }; result: true };
+  watch_models: { params: Record<string, never>; result: true };
   initialize: { params: { protocolVersion: 1 }; result: { protocolVersion: 1; capabilities: string[] } };
   runtime_status: { params: Record<string, never> | null | undefined; result: { state: "initializing" | "ready" } };
   get_sessions: { params: Record<string, never> | null | undefined; result: SessionListEntry[] };
@@ -37,12 +43,17 @@ export interface ThemeDefinition {
 }
 export interface ThemeSummary { id: string; name: string; mode: "light" | "dark" }
 export interface ModelOption { id: string; name: string; provider: string; reasoning: boolean; contextWindow: number }
+export interface ModelDiagnostic { provider: string; message: string }
+export type OAuthProvider = "anthropic" | "codex-oauth" | "github-copilot";
+export interface AuthEvent { operationId: string; provider: OAuthProvider; kind: "authorization_url" | "input_required" | "progress" | "complete" | "error"; url?: string; message?: string; userCode?: string }
+export interface ModelUpdate { models: ModelOption[]; diagnostics: ModelDiagnostic[] }
 export interface SettingsSnapshot {
   scope: SettingsScope;
   settings: Record<string, unknown>;
   appearance: { themeMode: "system" | "light" | "dark"; fontSize: number; translucentSidebar: boolean; lightTheme: ThemeDefinition; darkTheme: ThemeDefinition };
   themes: ThemeSummary[];
   models: ModelOption[];
+  modelDiagnostics?: ModelDiagnostic[];
 }
 export type MessageEvent =
   | { sequence: number; kind: "text_delta"; delta: string; error?: never }
@@ -60,6 +71,7 @@ export type RemoteFault =
   | { kind: "message"; code: -32008; message: string }
   | { kind: "runtime_initialization"; code: -32009; message: string }
   | { kind: "settings"; code: -32010; message: string }
+  | { kind: "auth"; code: -32011; message: string }
   | { kind: "not_initialized"; code: -32002; message: string }
   | { kind: "closing"; code: -32003; message: string }
   | { kind: "canceled"; code: -32800; message: string }
@@ -115,6 +127,7 @@ export function remoteFault(code: unknown, message: unknown, data?: unknown): Re
     case -32008: kind = "message"; break;
     case -32009: kind = "runtime_initialization"; break;
     case -32010: kind = "settings"; break;
+    case -32011: kind = "auth"; break;
     default: throw new Error("Unknown backend error code");
   }
   if (object(data) && data.kind !== kind) throw new Error("Backend error code/kind mismatch");

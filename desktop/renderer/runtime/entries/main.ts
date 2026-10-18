@@ -184,7 +184,7 @@ window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(docum
   devFlow.init({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), closeDevFlowDetail });
   settings.init({ ...createSettingsAdapter({ switchSettingsTab, closeSettings, selectThemeModeCard,
     previewFontSize, commitFontSize }), boundModules: new Set(), byId: (id: string) => document.getElementById(id) });
-  const disposeSettingsPanes = settings.mountSettingsPanes(document, window.rozsa);
+  const disposeSettingsPanes = settings.mountSettingsPanes(document, window.rozsa, showError);
   window.addEventListener('pagehide', disposeSettingsPanes, { once: true });
   window.RozsaTools = Object.freeze({ ...tools, toolView, activityView });
   bindTools({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), toggleToolCall, toggleTurnDiff });

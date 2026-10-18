@@ -10,6 +10,7 @@ import { createIsolatedBackendEnvironment } from './helpers/backend-config.ts';
 import { installSessionBridge } from '../main/session-bridge.ts';
 import { EventEmitter } from 'node:events';
 import { join, resolve } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 
 const root = resolve(import.meta.dirname, '../..');
 const backendBinary = join(root, 'dist', process.platform === 'win32' ? 'rozsa-backend.exe' : 'rozsa-backend');
@@ -36,7 +37,7 @@ function snapshot(scope = 'global', models = [
     models,
   };
 }
-function harness({ failUpdate = false, loading } = {}) {
+function harness({ failUpdate = false, loading, report } = {}) {
   const dom = new JSDOM('<main id="settings"><div id="pane-general" class="settings-pane active"></div><div id="pane-appearance" class="settings-pane"></div></main>', { url: 'http://localhost/' });
   dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   const globals = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
@@ -49,8 +50,10 @@ function harness({ failUpdate = false, loading } = {}) {
   };
   for (const [key, value] of Object.entries(replacements)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   const calls = [];
+  const modelListeners = new Set();
   const state = { global: snapshot('global'), project: snapshot('project') };
   const bridge = {
+    onModelsChanged(receive) { modelListeners.add(receive); return () => modelListeners.delete(receive); },
     getSettings(scope) { calls.push(['get', scope]); return loading || Promise.resolve(state[scope]); },
     async updateSetting(scope, key, value) {
       calls.push(['update', scope, key, value]);
@@ -73,7 +76,8 @@ function harness({ failUpdate = false, loading } = {}) {
   let dispose;
   return {
     dom, calls, bridge,
-    async mount() { await act(async () => { dispose = mountSettingsPanes(document, bridge); await Promise.resolve(); }); },
+    emitModels(update) { for (const receive of modelListeners) receive(update); },
+    async mount() { await act(async () => { dispose = mountSettingsPanes(document, bridge, report); await Promise.resolve(); }); },
     async flush(action) { await act(async () => { action(); await new Promise(resolve => setTimeout(resolve, 0)); }); },
     async close() {
       await act(async () => dispose?.()); dom.window.close();
@@ -134,6 +138,25 @@ test('a saved WebSocket preference remains visible without being rewritten', asy
   } finally { await app.close(); }
 });
 
+test('provider updates refresh both model selectors and report diagnostics without rewriting selection', async () => {
+  const reported = [];
+  const app = harness({ report: message => reported.push(message) });
+  try {
+    await app.mount();
+    const models = [{ id: 'remote', provider: 'codex-oauth', name: 'Remote', contextWindow: 64000, reasoning: true }];
+    await app.flush(() => app.emitModels({ models, diagnostics: [{ provider: 'anthropic', message: 'refresh failed' }] }));
+    for (const label of ['Model', 'Small model']) {
+      const select = document.querySelector(`[aria-label="${label}"]`);
+      assert.match(select.textContent, /Remote/);
+      assert.doesNotMatch(select.textContent, /Claude Test|Haiku Test/);
+    }
+    assert.deepEqual(reported, ['anthropic: refresh failed']);
+    await app.flush(() => app.emitModels({ models, diagnostics: [{ provider: 'anthropic', message: 'refresh failed' }] }));
+    assert.equal(reported.length, 1);
+    assert.equal(app.calls.some(call => call[0] === 'update'), false);
+  } finally { await app.close(); }
+});
+
 test('an empty model catalog is visible and disables only model selection', async () => {
   const app = harness();
   app.bridge.getSettings = scope => Promise.resolve(snapshot(scope, []));
@@ -183,16 +206,18 @@ test('settings loading and read errors are represented explicitly', async () => 
 });
 
 test('the Electron preload contract reads and updates layered settings through the Go process', async () => {
-  const backend = new BackendService(backendBinary, [], { env: await createIsolatedBackendEnvironment() });
+  const environment = await createIsolatedBackendEnvironment();
+  const backend = new BackendService(backendBinary, [], { env: environment });
   const trustedURL = 'file:///synthetic/index.html';
   const webContents = Object.assign(new EventEmitter(), { mainFrame: { url: trustedURL } });
+  webContents.send = (channel, value) => webContents.emit(channel, value);
   const vibrancyCalls = [];
   const window = Object.assign(new EventEmitter(), { webContents, isDestroyed: () => false, setVibrancy: value => vibrancyCalls.push(value) });
   const handlers = new Map();
   const ipc = { handle: (channel, handler) => handlers.set(channel, handler), removeHandler: channel => handlers.delete(channel) };
   installSessionBridge(window, ipc, backend, trustedURL);
   const event = { sender: webContents, senderFrame: webContents.mainFrame };
-  const bridge = RozsaBridge.create((channel, ...args) => handlers.get(channel)(event, ...args));
+  const bridge = RozsaBridge.create((channel, ...args) => handlers.get(channel)(event, ...args), (channel, receive) => { webContents.on(channel, receive); return () => webContents.off(channel, receive); });
   try {
     await backend.initialize();
     assert.equal((await backend.getSettings('project')).models[0].id, 'test');
@@ -212,6 +237,30 @@ test('the Electron preload contract reads and updates layered settings through t
     const reset = await bridge.resetSetting('project', 'appearance_font_size');
     assert.equal(reset.appearance.fontSize, 14);
     await assert.rejects(bridge.updateSetting('project', 'appearance_theme_mode', 'sepia'), /invalid theme mode/i);
+    const updates = [];
+    const detach = bridge.onModelsChanged(update => updates.push(update));
+    await writeFile(join(environment.ROZSA_CONFIG_DIR, 'models', 'anthropic.json'), JSON.stringify({ providers: { anthropic: {
+      api: 'anthropic-messages', baseUrl: 'https://example.invalid', models: [{ id: 'available-after-login' }],
+    } } }));
+    await writeFile(join(environment.ROZSA_CONFIG_DIR, 'models', 'auth.json'), JSON.stringify({ anthropic: { type: 'api_key', key: 'fixture-only' } }));
+    const waitFor = async predicate => {
+      const deadline = Date.now() + 5000;
+      while (!predicate()) { if (Date.now() > deadline) throw new Error('model update timeout'); await new Promise(resolve => setTimeout(resolve, 25)); }
+    };
+    await waitFor(() => updates.some(update => update.models.some(model => model.provider === 'anthropic')));
+    assert.ok(updates.at(-1).models.some(model => model.provider === 'synthetic'));
+    await bridge.logoutAuth('anthropic');
+    await waitFor(() => updates.at(-1)?.models.every(model => model.provider !== 'anthropic'));
+    assert.deepEqual(updates.at(-1).models.map(model => model.provider), ['synthetic']);
+    const operation = await bridge.startAuth('codex-oauth');
+    const authorization = await bridge.nextAuthEvent(operation.operationId);
+    assert.equal(authorization.kind, 'authorization_url');
+    assert.equal(new URL(authorization.url).hostname, 'auth.openai.com');
+    await bridge.cancelAuth(operation.operationId);
+    let cancelled;
+    do { cancelled = await bridge.nextAuthEvent(operation.operationId); } while (cancelled.kind !== 'error');
+    assert.match(cancelled.message, /cancel/i);
+    detach();
   } finally { window.emit('closed'); await backend.stop(); }
 });
 

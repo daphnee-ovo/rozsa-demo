@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/settings"
@@ -63,7 +62,7 @@ func ConfiguredModel(providerOverride, modelOverride string) (types.Model, strin
 		return types.Model{}, "", "", fmt.Errorf("configured model %s/%s was not found", provider, modelID)
 	}
 	key, _ := registry.APIKey(provider)
-	return selected, key, filepath.Join(roots.Global(), "auth.json"), nil
+	return selected, key, roots.AuthPath(), nil
 }
 
 // SessionDirectories returns the writable global directory and the layered
@@ -76,4 +75,3 @@ func SessionDirectories(projectDir string) (string, []string, error) {
 	directories := roots.SessionDirs(projectDir)
 	return roots.WritableSessionDir(projectDir), directories[:], nil
 }
-

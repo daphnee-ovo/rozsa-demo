@@ -1,7 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter, ResponseError, type MessageConnection } from "vscode-jsonrpc/node";
 import { record, sessionEntries, sessionTarget, sessionSnapshot, sessionUpdate, subscriptionId, messageOperation, messageSubscription, messageEventResult, settingsSnapshot, themeDefinition, themeSummary, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry, type MessageOperation, type MessageSubscription, type MessageEventResult } from "./session-contract.js";
-import type { SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../contracts/ipc/session.js";
+import type { SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary, ModelUpdate } from "../../contracts/ipc/session.js";
+import { modelUpdate } from "./session-contract.js";
+import { authEvent, oauthProvider } from "./session-contract.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { SessionMethods } from "../../contracts/ipc/session.js";
 export { RPCFailure } from "./session-contract.js";
@@ -24,6 +26,9 @@ export class BackendService {
   private stopPromise: Promise<void> | undefined;
   private readonly closed: Promise<void>;
   private readonly timeoutMs: number;
+  private readonly modelListeners = new Set<(update: ModelUpdate) => void>();
+  private lastModelUpdate: ModelUpdate | undefined;
+  private modelWatch: Promise<unknown> | undefined;
 
   constructor(binary: string, directories: string[], options: BackendOptions = {}) {
     this.timeoutMs = options.requestTimeoutMs ?? 10000;
@@ -45,7 +50,29 @@ export class BackendService {
     this.process.stderr.on("data", (chunk: Buffer) => process.stderr.write(chunk));
     this.connection.onError(([error]) => this.fail(transportFailure("protocol", error.message, error)));
     this.connection.onClose(() => this.fail(transportFailure("closed", "Backend pipe closed")));
+    this.connection.onNotification("models-updated", (value: unknown) => {
+      try { this.publishModels(modelUpdate(value)); }
+      catch (error) { this.fail(transportFailure("protocol", asError(error).message, error)); }
+    });
+    this.connection.onNotification("models-error", (value: unknown) => {
+      if (!record(value) || typeof value.message !== "string") { this.fail(transportFailure("protocol", "Invalid model diagnostic")); return; }
+      this.publishModels({ models: this.lastModelUpdate?.models ?? [], diagnostics: [{ provider: "", message: value.message }] });
+    });
     this.connection.listen();
+  }
+  private publishModels(update: ModelUpdate): void {
+    this.lastModelUpdate = update;
+    for (const receive of this.modelListeners) receive(update);
+  }
+  onModelsChanged(receive: (update: ModelUpdate) => void): () => void {
+    this.modelListeners.add(receive);
+    const current = this.lastModelUpdate;
+    if (current) queueMicrotask(() => { if (this.modelListeners.has(receive)) receive(current); });
+    return () => { this.modelListeners.delete(receive); };
+  }
+  private watchModels(): Promise<unknown> {
+    if (!this.modelWatch) this.modelWatch = this.request("watch_models", {});
+    return this.modelWatch;
   }
   private fail(error: ProductFailure): void {
     if (this.failure) return;
@@ -84,7 +111,8 @@ export class BackendService {
             || (fault.kind === "session" && !["switch_session", "subscribe_sessions", "next_session_event"].includes(method))
             || (fault.kind === "message" && !["start_message", "continue_message", "subscribe_message_events", "next_message_event", "cancel_message"].includes(method))
             || (fault.kind === "runtime_initialization" && method !== "runtime_status")
-            || (fault.kind === "settings" && !["get_settings", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"].includes(method))) throw new Error("Backend error owner mismatch");
+            || (fault.kind === "settings" && !["get_settings", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"].includes(method))
+            || (fault.kind === "auth" && !["auth_login", "auth_input", "auth_next", "auth_cancel", "auth_logout"].includes(method))) throw new Error("Backend error owner mismatch");
           throw new RPCFailure(fault);
         } catch (fault) {
           if (fault instanceof RPCFailure) throw fault;
@@ -240,11 +268,27 @@ export class BackendService {
   }
   async getSettings(scope: SettingsScope): Promise<SettingsSnapshot> {
     if (scope !== "global" && scope !== "project") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid settings scope" });
+    await this.watchModels();
     return settingsSnapshot(await this.request("get_settings", { scope }));
   }
   async updateSetting(scope: SettingsScope, key: string, value: unknown): Promise<SettingsSnapshot> {
     if ((scope !== "global" && scope !== "project") || typeof key !== "string" || !key) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid setting update" });
     return settingsSnapshot(await this.request("update_setting", { scope, key, value }));
+  }
+  async startAuth(provider: import("../../contracts/ipc/session.js").OAuthProvider): Promise<MessageOperation> {
+    return messageOperation(await this.request("auth_login", { provider: oauthProvider(provider) }));
+  }
+  async submitAuth(operationId: string, value: string): Promise<void> {
+    if (await this.request("auth_input", { operationId, value }) !== true) throw transportFailure("protocol", "Invalid OAuth input response");
+  }
+  async nextAuthEvent(operationId: string): Promise<import("../../contracts/ipc/session.js").AuthEvent> {
+    return authEvent(await this.request("auth_next", { operationId }, 35000), operationId);
+  }
+  async cancelAuth(operationId: string): Promise<void> {
+    if (await this.request("auth_cancel", { operationId }) !== true) throw transportFailure("protocol", "Invalid OAuth cancellation response");
+  }
+  async logoutAuth(provider: import("../../contracts/ipc/session.js").OAuthProvider): Promise<void> {
+    if (await this.request("auth_logout", { provider: oauthProvider(provider) }) !== true) throw transportFailure("protocol", "Invalid OAuth logout response");
   }
   async resetSetting(scope: SettingsScope, key: string): Promise<SettingsSnapshot> {
     if ((scope !== "global" && scope !== "project") || typeof key !== "string" || !key) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid setting reset" });

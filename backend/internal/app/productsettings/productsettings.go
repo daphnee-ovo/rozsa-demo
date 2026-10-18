@@ -3,13 +3,16 @@
 package productsettings
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"rozsa/backend/internal/app/modelcatalog"
 	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
@@ -27,11 +30,12 @@ type ThemeDefinition = themes.Definition
 type ThemeSummary = themes.Summary
 
 type Snapshot struct {
-	Scope      Scope                     `json:"scope"`
-	Settings   map[string]any            `json:"settings"`
-	Appearance themes.AppearanceSnapshot `json:"appearance"`
-	Themes     []themes.Summary          `json:"themes"`
-	Models     []ModelOption             `json:"models"`
+	Scope            Scope                     `json:"scope"`
+	Settings         map[string]any            `json:"settings"`
+	Appearance       themes.AppearanceSnapshot `json:"appearance"`
+	Themes           []themes.Summary          `json:"themes"`
+	Models           []ModelOption             `json:"models"`
+	ModelDiagnostics []modelcatalog.Diagnostic `json:"modelDiagnostics"`
 }
 
 type ModelOption struct {
@@ -58,6 +62,7 @@ type ModelSelector interface {
 }
 
 type Service interface {
+	SnapshotContext(context.Context, Scope) (Snapshot, error)
 	Snapshot(Scope) (Snapshot, error)
 	Update(Scope, string, any) (Snapshot, error)
 	Reset(Scope, string) (Snapshot, error)
@@ -70,7 +75,8 @@ type service struct {
 	settings   SettingsOwner
 	themeStore themes.Store
 	appearance themes.Appearance
-	registry   *modelregistry.Registry
+	registry   modelregistry.Reader
+	catalog    modelcatalog.Service
 	selector   ModelSelector
 }
 
@@ -78,17 +84,21 @@ func New(manager SettingsOwner, themeStore themes.Store) Service {
 	return &service{settings: manager, themeStore: themeStore, appearance: themes.NewAppearance(themeStore, manager)}
 }
 
-func NewWithModelCatalog(manager SettingsOwner, themeStore themes.Store, registry *modelregistry.Registry, selector ModelSelector) Service {
-	return &service{settings: manager, themeStore: themeStore, appearance: themes.NewAppearance(themeStore, manager), registry: registry, selector: selector}
+func NewWithModelCatalog(manager SettingsOwner, themeStore themes.Store, catalog modelcatalog.Service, selector ModelSelector) Service {
+	return &service{settings: manager, themeStore: themeStore, appearance: themes.NewAppearance(themeStore, manager), registry: catalog, catalog: catalog, selector: selector}
 }
 
 func (service *service) Snapshot(scope Scope) (Snapshot, error) {
-	service.mu.Lock()
-	defer service.mu.Unlock()
-	return service.snapshot(scope)
+	return service.SnapshotContext(context.Background(), scope)
 }
 
-func (service *service) snapshot(scope Scope) (Snapshot, error) {
+func (service *service) SnapshotContext(ctx context.Context, scope Scope) (Snapshot, error) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	return service.snapshot(scope, ctx)
+}
+
+func (service *service) snapshot(scope Scope, ctx context.Context) (Snapshot, error) {
 	if scope != Global && scope != Project {
 		return Snapshot{}, fmt.Errorf("unsupported settings scope %q", scope)
 	}
@@ -103,16 +113,40 @@ func (service *service) snapshot(scope Scope) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	models := []ModelOption{}
-	if service.registry != nil {
-		for _, model := range service.registry.All() {
-			if !service.registry.IsConfigured(model.Provider, model.ID) {
-				continue
-			}
-			models = append(models, ModelOption{ID: model.ID, Name: model.Name, Provider: model.Provider, Reasoning: model.Reasoning, ContextWindow: model.ContextWindow})
-		}
+	update, err := service.models(ctx)
+	if err != nil {
+		return Snapshot{}, err
 	}
-	return Snapshot{Scope: scope, Settings: service.settings.Resolved(), Appearance: appearance, Themes: available, Models: models}, nil
+	return Snapshot{Scope: scope, Settings: service.settings.Resolved(), Appearance: appearance, Themes: available, Models: update.Models, ModelDiagnostics: update.Diagnostics}, nil
+}
+
+type ModelUpdate struct {
+	Models      []ModelOption             `json:"models"`
+	Diagnostics []modelcatalog.Diagnostic `json:"diagnostics"`
+}
+
+func modelUpdate(snapshot modelcatalog.Snapshot) ModelUpdate {
+	update := ModelUpdate{Models: []ModelOption{}, Diagnostics: snapshot.Diagnostics}
+	for _, model := range snapshot.Models {
+		update.Models = append(update.Models, ModelOption{ID: model.ID, Name: model.Name, Provider: model.Provider, Reasoning: model.Reasoning, ContextWindow: model.ContextWindow})
+	}
+	return update
+}
+func (service *service) models(ctx context.Context) (ModelUpdate, error) {
+	if service.catalog == nil {
+		return ModelUpdate{Models: []ModelOption{}, Diagnostics: []modelcatalog.Diagnostic{}}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	snapshot, err := service.catalog.Available(ctx)
+	return modelUpdate(snapshot), err
+}
+func (service *service) WatchModels(ctx context.Context, deliver func(ModelUpdate)) error {
+	if service.catalog == nil {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return service.catalog.Watch(ctx, func(snapshot modelcatalog.Snapshot) { deliver(modelUpdate(snapshot)) })
 }
 
 func (service *service) Update(scope Scope, key string, value any) (Snapshot, error) {
@@ -134,8 +168,12 @@ func (service *service) Update(scope Scope, key string, value any) (Snapshot, er
 				return Snapshot{}, errors.New("model catalog is unavailable")
 			}
 			found := false
-			for _, model := range service.registry.All() {
-				if model.ID == modelID && service.registry.IsConfigured(model.Provider, model.ID) {
+			available, err := service.models(context.Background())
+			if err != nil {
+				return Snapshot{}, err
+			}
+			for _, model := range available.Models {
+				if model.ID == modelID {
 					found = true
 					break
 				}
@@ -216,7 +254,7 @@ func (service *service) Update(scope Scope, key string, value any) (Snapshot, er
 			}
 		}
 	}
-	return service.snapshot(scope)
+	return service.snapshot(scope, context.Background())
 }
 
 func (service *service) selectModel(scope Scope, value any) (Snapshot, error) {
@@ -232,8 +270,22 @@ func (service *service) selectModel(scope Scope, value any) (Snapshot, error) {
 	if service.registry == nil || service.selector == nil {
 		return Snapshot{}, errors.New("model selection is unavailable")
 	}
+	available, err := service.models(context.Background())
+	if err != nil {
+		return Snapshot{}, err
+	}
+	found := false
+	for _, option := range available.Models {
+		if option.Provider == provider && option.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return Snapshot{}, fmt.Errorf("model %s/%s has no available provider credentials", provider, id)
+	}
 	model, exists := service.registry.Find(provider, id)
-	if !exists || !service.registry.IsConfigured(provider, id) {
+	if !exists {
 		return Snapshot{}, fmt.Errorf("model %s/%s is not configured", provider, id)
 	}
 	previous, err := service.settings.Overrides(scope)
@@ -257,7 +309,7 @@ func (service *service) selectModel(scope Scope, value any) (Snapshot, error) {
 		rollbackErr := service.settings.SetMany(scope, map[string]any{"defaultProvider": previous["defaultProvider"], "defaultModel": previous["defaultModel"], "defaultThinkingEffort": previous["defaultThinkingEffort"]})
 		return Snapshot{}, errors.Join(err, rollbackErr)
 	}
-	return service.snapshot(scope)
+	return service.snapshot(scope, context.Background())
 }
 
 func (service *service) Reset(scope Scope, key string) (Snapshot, error) {
@@ -282,7 +334,7 @@ func (service *service) Reset(scope Scope, key string) (Snapshot, error) {
 	if err := service.settings.Reset(scope, path); err != nil {
 		return Snapshot{}, err
 	}
-	return service.snapshot(scope)
+	return service.snapshot(scope, context.Background())
 }
 
 func (service *service) GetTheme(id string, mode themes.Mode) (themes.Definition, error) {

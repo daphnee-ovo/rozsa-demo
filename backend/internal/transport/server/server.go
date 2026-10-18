@@ -131,6 +131,27 @@ func serveProduct(input io.Reader, output io.Writer, app session.ApplicationServ
 	}()
 	conn := jsonrpc2.NewConn(jsonrpc2.NewStream(ownedIO{stdio{input, output}, stop}), jsonrpc2.WithPreempter(server))
 	conn.Go(context.Background(), server.handle)
+	if watcher, ok := server.settings.(interface {
+		WatchModels(context.Context, func(productsettings.ModelUpdate)) error
+	}); ok {
+		server.jobs.Add(1)
+		go func() {
+			defer server.jobs.Done()
+			select {
+			case <-server.modelWatch:
+			case <-lifetime.Done():
+				return
+			}
+			err := watcher.WatchModels(lifetime, func(update productsettings.ModelUpdate) {
+				if err := conn.Notify(lifetime, "models-updated", update); err != nil {
+					stop(err)
+				}
+			})
+			if err != nil && lifetime.Err() == nil {
+				_ = conn.Notify(lifetime, "models-error", map[string]string{"message": err.Error()})
+			}
+		}()
+	}
 	// Done waits for incoming handlers to drain. The native public Err exposes
 	// parser failures during that drain, but provides no read-failure callback.
 	// Observe Err to unwind a blocked app/long poll without wrapping Stream.
@@ -149,16 +170,18 @@ func serveProduct(input io.Reader, output io.Writer, app session.ApplicationServ
 }
 
 type rpcServer struct {
-	app        session.ApplicationService
-	messages   MessageApplication
-	settings   productsettings.Service
-	lifetime   context.Context
-	timeout    time.Duration
-	slots      chan struct{}
-	mu         sync.Mutex
-	pending    map[jsonrpc2.ID]context.CancelCauseFunc
-	jobs       sync.WaitGroup
-	switchTail <-chan struct{}
+	modelWatch     chan struct{}
+	modelWatchOnce sync.Once
+	app            session.ApplicationService
+	messages       MessageApplication
+	settings       productsettings.Service
+	lifetime       context.Context
+	timeout        time.Duration
+	slots          chan struct{}
+	mu             sync.Mutex
+	pending        map[jsonrpc2.ID]context.CancelCauseFunc
+	jobs           sync.WaitGroup
+	switchTail     <-chan struct{}
 	// Only accessed inline, before Async releases the read loop.
 	ready, closing bool
 	sync           sessionSync
@@ -183,7 +206,7 @@ func newServer(app session.ApplicationService, lifetime context.Context, timeout
 	if len(messages) > 0 {
 		messageApp = messages[0]
 	}
-	return &rpcServer{app: app, lifetime: lifetime, timeout: timeout,
+	return &rpcServer{app: app, lifetime: lifetime, timeout: timeout, modelWatch: make(chan struct{}),
 		slots: make(chan struct{}, maxConcurrentRequests), pending: make(map[jsonrpc2.ID]context.CancelCauseFunc),
 		sync: sessionSync{app: app}, messages: messageApp, messageSync: messageSync{app: messageApp}}
 }
@@ -244,6 +267,7 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	var messageSubscriptionParams types.MessageSubscriptionParams
 	var settingsScope settings.Scope
 	var settingsArguments any
+	var authArguments authParams
 	switch method {
 	case types.Initialize:
 		traceRPCStartup("initialize-request-received")
@@ -261,7 +285,10 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			capabilities = append(capabilities, string(types.StartMessage), string(types.ContinueMessage), string(types.SubscribeMessage), string(types.NextMessageEvent), string(types.UnsubscribeMessage), string(types.CancelMessage))
 		}
 		if server.settings != nil {
-			capabilities = append(capabilities, string(types.GetSettings), string(types.UpdateSetting), string(types.ResetSetting), string(types.ListThemes), string(types.GetTheme), string(types.SaveTheme))
+			capabilities = append(capabilities, string(types.GetSettings), string(types.UpdateSetting), string(types.ResetSetting), string(types.ListThemes), string(types.GetTheme), string(types.SaveTheme), string(types.WatchModels))
+		}
+		if application, ok := server.messages.(AuthApplication); ok && application.AuthService() != nil {
+			capabilities = append(capabilities, string(types.AuthLogin), string(types.AuthInput), string(types.AuthNext), string(types.AuthCancel), string(types.AuthLogout))
 		}
 		return types.InitializeResult{ProtocolVersion: 1, Capabilities: capabilities}, nil
 	case types.Shutdown:
@@ -329,6 +356,22 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			return nil, types.Error(types.RuntimeInitialization, result.Error)
 		}
 		return result, nil
+	case types.WatchModels:
+		if !server.ready {
+			return nil, types.Error(types.NotInitialized, "Backend is not initialized")
+		}
+		if !types.Params(req.Params(), &types.EmptyParams{}) || server.settings == nil {
+			return nil, types.Error(types.InvalidParams, "Invalid model watch request")
+		}
+		server.modelWatchOnce.Do(func() { close(server.modelWatch) })
+		return true, nil
+	case types.AuthLogin, types.AuthLogout, types.AuthInput, types.AuthNext, types.AuthCancel:
+		if !types.Params(req.Params(), &authArguments) {
+			return nil, types.Error(types.InvalidParams, "Invalid OAuth params")
+		}
+		if (method == types.AuthLogin || method == types.AuthLogout) && authArguments.Provider == "" || (method == types.AuthInput || method == types.AuthNext || method == types.AuthCancel) && authArguments.OperationID == "" || method == types.AuthInput && authArguments.Value == "" {
+			return nil, types.Error(types.InvalidParams, "Incomplete OAuth params")
+		}
 	case types.GetSettings, types.ListThemes:
 		var params settingsParams
 		if !types.Params(req.Params(), &params) || !validSettingsScope(params.Scope) {
@@ -423,6 +466,8 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 		var result any
 		var err error
 		switch method {
+		case types.AuthLogin, types.AuthLogout, types.AuthInput, types.AuthNext, types.AuthCancel:
+			result, err = server.authHandle(work, method, authArguments)
 		case types.GetSessions:
 			result, err = server.app.GetSessions(work)
 			if err != nil {
@@ -438,10 +483,10 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 		case types.NextSessionEvent:
 			result, err = server.sync.next(work, subscriptionParams.SubscriptionID)
 		case types.GetSettings:
-			result, err = server.settings.Snapshot(settingsScope)
+			result, err = server.settings.SnapshotContext(work, settingsScope)
 		case types.ListThemes:
 			var snapshot productsettings.Snapshot
-			snapshot, err = server.settings.Snapshot(settingsScope)
+			snapshot, err = server.settings.SnapshotContext(work, settingsScope)
 			result = snapshot.Themes
 		case types.UpdateSetting, types.ResetSetting:
 			params := settingsArguments.(settingParams)

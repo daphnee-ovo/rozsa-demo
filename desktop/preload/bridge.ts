@@ -1,9 +1,36 @@
 import { sessionTarget, sessionReply, historyReply, subscriptionId, syncReply, unsubscribeReply, messageSuccess, messageOperation, messageSubscription, messageEventResult, MESSAGE_START_CHANNEL, MESSAGE_CONTINUE_CHANNEL, MESSAGE_ACTIVE_CHANNEL, MESSAGE_SUBSCRIBE_CHANNEL, MESSAGE_NEXT_CHANNEL, MESSAGE_UNSUBSCRIBE_CHANNEL, MESSAGE_CANCEL_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL, SETTINGS_GET_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL } from "../main/session-contract.js";
 // Vite bundles this module into one sandbox preload; Electron is external.
+import { authEvent, oauthProvider, AUTH_LOGIN_CHANNEL, AUTH_INPUT_CHANNEL, AUTH_NEXT_CHANNEL, AUTH_CANCEL_CHANNEL, AUTH_LOGOUT_CHANNEL } from "../main/session-contract.js";
 export namespace RozsaBridge {
-  export function create(invoke: (channel: string, ...args: unknown[]) => Promise<unknown>): import("../main/session-contract").ProductBridge {
+  export function create(invoke: (channel: string, ...args: unknown[]) => Promise<unknown>, subscribe?: (channel: string, receive: (value: unknown) => void) => () => void): import("../main/session-contract").ProductBridge {
     const messageSubscriptions = new Map<string, import("../main/session-contract").MessageSubscription>();
     return Object.freeze({
+      async startAuth(provider: import("../../contracts/ipc/session.js").OAuthProvider) {
+        return messageOperation(messageSuccess(await invoke(AUTH_LOGIN_CHANNEL, oauthProvider(provider))));
+      },
+      async submitAuth(operationId: string, value: string) {
+        if (!validKey(operationId) || !validKey(value)) throw new Error("Invalid OAuth input");
+        messageSuccess(await invoke(AUTH_INPUT_CHANNEL, operationId, value));
+      },
+      async nextAuthEvent(operationId: string) {
+        if (!validKey(operationId)) throw new Error("Invalid OAuth operation");
+        return authEvent(messageSuccess(await invoke(AUTH_NEXT_CHANNEL, operationId)), operationId);
+      },
+      async cancelAuth(operationId: string) {
+        if (!validKey(operationId)) throw new Error("Invalid OAuth operation");
+        messageSuccess(await invoke(AUTH_CANCEL_CHANNEL, operationId));
+      },
+      async logoutAuth(provider: import("../../contracts/ipc/session.js").OAuthProvider) {
+        messageSuccess(await invoke(AUTH_LOGOUT_CHANNEL, oauthProvider(provider)));
+      },
+      ...(subscribe ? { onModelsChanged(receive: (update: import("../../contracts/ipc/session.js").ModelUpdate) => void) {
+        if (typeof receive !== "function" || !subscribe) throw new Error("Model events are unavailable");
+        return subscribe("product:models-changed", value => {
+          if (typeof value !== "object" || value === null || !("models" in value) || !("diagnostics" in value)
+            || !Array.isArray(value.models) || !value.models.every(validModelOption) || !validDiagnostics(value.diagnostics)) throw new Error("Invalid model update");
+          receive(value as import("../../contracts/ipc/session.js").ModelUpdate);
+        });
+      } } : {}),
       async getSessions(...args: never[]): Promise<import("../main/session-contract").SessionListReply> {
         if (args.length !== 0) throw new Error("getSessions accepts no arguments");
         return sessionReply(await invoke("product:get-sessions"));
@@ -124,10 +151,15 @@ function settingsSnapshot(value: unknown): import("../../contracts/ipc/session.j
   if (!validScope(snapshot.scope) || typeof snapshot.settings !== "object" || snapshot.settings === null || Array.isArray(snapshot.settings)
     || typeof appearance !== "object" || appearance === null || Array.isArray(appearance) || !Array.isArray(snapshot.themes) || !Array.isArray(snapshot.models)) throw new Error("Invalid settings response");
   const current = appearance as Record<string, unknown>;
+  if (snapshot.modelDiagnostics !== undefined && !validDiagnostics(snapshot.modelDiagnostics)) throw new Error("Invalid model diagnostics");
   if (!(["system", "light", "dark"].includes(current.themeMode as string)) || !Number.isInteger(current.fontSize)
     || typeof current.translucentSidebar !== "boolean" || !validThemeDefinition(current.lightTheme) || !validThemeDefinition(current.darkTheme)
     || !snapshot.themes.every(validThemeSummary) || !snapshot.models.every(validModelOption)) throw new Error("Invalid settings response");
   return value as import("../../contracts/ipc/session.js").SettingsSnapshot;
+}
+function validDiagnostics(value: unknown): boolean {
+  return Array.isArray(value) && value.every(item => typeof item === "object" && item !== null && !Array.isArray(item)
+    && typeof item.provider === "string" && typeof item.message === "string");
 }
 function validModelOption(value: unknown): value is import("../../contracts/ipc/session.js").ModelOption {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;

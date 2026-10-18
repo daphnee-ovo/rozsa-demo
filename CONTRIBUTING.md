@@ -66,6 +66,17 @@ bash devtools/test-desktop.sh
 
 Go dependencies and Electron/TypeScript/tsx/jsdom versions are defined by their module manifests and lockfiles. Use those files as the single source of version truth.
 
+Model configuration is layered from `<global>/models/` and `<project>/models/`;
+project entries override global entries. Both main and small model selectors use
+that catalog. Credentials live at `<global>/models/auth.json`. `/login anthropic`,
+`/login codex-oauth` and `/login github-copilot` start desktop authorization;
+`/login <authorization response>` supplies manual input to the current login.
+`/logout <provider>` removes only that provider's credentials. OAuth renewal and
+registered dynamic discovery update the corresponding provider; static providers
+are not queried for remote model lists. Catalog changes update both selectors,
+and failures appear in model diagnostics and the desktop exception channel.
+See [M092](docs/migration/evidence/M092.md) for focused checks and verification limits.
+
 The combined script is the shared T001/T003/T010 cross-language task target. It
 runs Go session/transport checks, list/history/RPC-contract module tests and one
 resource prepare check; Forge performs the package, TypeScript check and Go build

@@ -8,6 +8,7 @@ import (
 
 const (
 	GetSettings   Method    = "get_settings"
+	WatchModels   Method    = "watch_models"
 	UpdateSetting Method    = "update_setting"
 	ResetSetting  Method    = "reset_setting"
 	ListThemes    Method    = "list_themes"

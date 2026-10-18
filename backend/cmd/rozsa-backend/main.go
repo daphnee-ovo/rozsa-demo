@@ -6,18 +6,23 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"rozsa/backend/internal/app/auth"
 	"rozsa/backend/internal/app/bootstrap"
-	"rozsa/backend/internal/app/modelregistry"
+	"rozsa/backend/internal/app/modelcatalog"
 	"rozsa/backend/internal/app/productsettings"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
+	"rozsa/backend/internal/model/credentials"
+	"rozsa/backend/internal/model/modelsendpoint"
+	"rozsa/backend/internal/model/oauth/anthropic"
 	modeltypes "rozsa/backend/internal/model/types"
 	"rozsa/backend/internal/platform/configpaths"
 	"rozsa/backend/internal/transport/server"
@@ -75,32 +80,62 @@ func main() {
 		fail(err.Error())
 	}
 	modelDirectories := roots.ModelDirs()
-	registry, diagnostics, err := modelregistry.Load([]byte("{}"), modelDirectories[:]...)
+	authSource := modelcatalog.NewAuth(roots.AuthPath(), nil)
+	discovery := modelsendpoint.NewClient(&http.Client{Timeout: 20 * time.Second})
+	registry, err := modelcatalog.New(modelcatalog.Options{Directories: modelDirectories, Auth: authSource, Dynamic: map[string]modelcatalog.DynamicRefresh{
+		"codex-oauth": func(ctx context.Context, credential credentials.OAuthCredential, force bool) (bool, error) {
+			return discovery.RefreshIfNeeded(ctx, filepath.Join(modelDirectories[0], "codex-oauth.json"), credential.Access, credentials.AccountID(credential), force)
+		},
+	}})
 	if err != nil {
 		fail(err.Error())
-	}
-	for _, diagnostic := range diagnostics {
-		if diagnostic.Severity == "error" {
-			fail(fmt.Sprintf("model configuration %s: %s", diagnostic.Path, diagnostic.Message))
-		}
 	}
 	themeDirectories := roots.ThemeDirs()
 	coordinator := newRuntimeCoordinator(sessions)
 	productSettings := productsettings.NewWithModelCatalog(settingsManager, themes.NewStore(themeDirectories[0], themeDirectories[1]), registry, coordinator)
+	anthropicAuth, err := auth.NewAnthropic(roots.AuthPath(), anthropic.NewClient(nil), func(ctx context.Context, provider string) error { return registry.Refresh(ctx, provider, false) })
+	if err != nil {
+		fail(err.Error())
+	}
+	codexAuth := auth.NewCodex(roots.AuthPath(), filepath.Join(modelDirectories[0], "codex-oauth.json"), nil)
+	codexAuth.RefreshModels = func(ctx context.Context, _ credentials.OAuthCredential) error {
+		return registry.Refresh(ctx, "codex-oauth", true)
+	}
+	copilotAuth := &auth.Copilot{AuthPath: roots.AuthPath(), OnModelsChanged: func(ctx context.Context, provider string) error { return registry.Refresh(ctx, provider, false) }}
+	authService := auth.NewController(anthropicAuth, codexAuth, copilotAuth)
+	defer authService.Close()
 	backendStartupMark("session-service-ready")
 	backendStartupMark("runtime-initialization-started")
 	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		initial, initErr := registry.Available(ctx)
+		if initErr != nil {
+			coordinator.complete(nil, initErr)
+			return
+		}
 		model, apiKey, authPath, initErr := bootstrap.ConfiguredModel("", "")
 		if initErr != nil {
 			backendStartupMark("runtime-initialization-failed")
 			coordinator.complete(nil, initErr)
 			return
 		}
+		available := false
+		for _, option := range initial.Models {
+			if option.Provider == model.Provider && option.ID == model.ID {
+				available = true
+				break
+			}
+		}
+		if !available {
+			coordinator.complete(nil, fmt.Errorf("provider %s is unavailable for model %s; check model credentials and diagnostics", model.Provider, model.ID))
+			return
+		}
 		resolvedSettings := settingsManager.Resolved()
 		thinkingEffort, _ := resolvedSettings["defaultThinkingEffort"].(string)
 		app, initErr := runtime.New(runtime.Config{
 			SessionDir: writeDirectory, SessionDirs: catalogDirectories,
-			SessionService: sessions, ModelRegistry: registry,
+			SessionService: sessions, ModelRegistry: registry, Credentials: authSource,
 			Model: model, ThinkingEffort: modeltypes.ThinkingEffort(thinkingEffort), ResolvedSettings: settingsManager.Resolved, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
 		})
 		if initErr != nil {
@@ -111,7 +146,7 @@ func main() {
 		coordinator.complete(app, initErr)
 	}()
 	backendStartupMark("rpc-server-starting")
-	if err := server.ServeProductApplication(os.Stdin, os.Stdout, coordinator, productMessageApplication{coordinator: coordinator}, productSettings); err != nil {
+	if err := server.ServeProductApplication(os.Stdin, os.Stdout, coordinator, productMessageApplication{coordinator: coordinator, auth: authService}, productSettings); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

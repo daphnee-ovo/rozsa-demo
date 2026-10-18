@@ -40,6 +40,13 @@ func (configError *ConfigError) Error() string {
 }
 func (configError *ConfigError) Unwrap() error { return configError.Err }
 
+type Reader interface {
+	All() []modeltypes.Model
+	Find(string, string) (modeltypes.Model, bool)
+	APIKey(string) (string, bool)
+	IsConfigured(string, string) bool
+}
+
 type Registry struct {
 	models     []modeltypes.Model
 	configured map[string]bool

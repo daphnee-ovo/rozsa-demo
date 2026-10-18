@@ -7,15 +7,64 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
+	"rozsa/backend/internal/model/credentials"
 	"rozsa/backend/internal/model/types"
 )
 
 type modelSettingsProvider struct{}
+
+type credentialCapture struct {
+	key     string
+	account string
+}
+
+func (capture *credentialCapture) StreamSimple(_ context.Context, _ types.Model, _ types.Context, options types.SimpleStreamOptions, _ func(types.StreamEvent)) error {
+	capture.key, capture.account = options.Base.APIKey, options.Base.Headers["x-rozsa-account-id"]
+	return nil
+}
+
+func TestExistingProviderObservesCredentialRotationAndLogout(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_OAUTH_TOKEN", "")
+	t.Setenv("ROZSA_CONFIG_DIR", t.TempDir())
+	path := filepath.Join(t.TempDir(), "auth.json")
+	current := credentials.OAuthCredential{Access: "old", Refresh: "refresh", Expires: time.Now().Add(time.Hour).UnixMilli()}
+	if err := credentials.StoreOAuth(path, "anthropic", current); err != nil {
+		t.Fatal(err)
+	}
+	model := types.Model{ID: "test", Provider: "anthropic", API: types.APIAnthropicMessages}
+	app, err := New(Config{SessionDir: t.TempDir(), Model: model, AuthPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Shutdown(t.Context())
+	wrapper := app.provider.(providerWithKey)
+	capture := &credentialCapture{}
+	wrapper.Provider = capture
+	current.Access = "rotated"
+	if err := credentials.StoreOAuth(path, "anthropic", current); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrapper.StreamSimple(t.Context(), model, types.Context{}, types.SimpleStreamOptions{}, func(types.StreamEvent) {}); err != nil {
+		t.Fatal(err)
+	}
+	if capture.key != "rotated" {
+		t.Fatalf("provider reused stale token: %s", capture.key)
+	}
+	if _, err := credentials.RemoveStored(path, "anthropic"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrapper.StreamSimple(t.Context(), model, types.Context{}, types.SimpleStreamOptions{}, func(types.StreamEvent) {}); err == nil {
+		t.Fatal("logged-out provider reused a token")
+	}
+}
 
 func (modelSettingsProvider) StreamSimple(_ context.Context, _ types.Model, _ types.Context, _ types.SimpleStreamOptions, _ func(types.StreamEvent)) error {
 	return nil

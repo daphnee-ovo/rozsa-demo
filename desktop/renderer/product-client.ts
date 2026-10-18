@@ -23,6 +23,9 @@ function validate<T>(check: () => T): T {
 export class ProductClient {
   private readonly messageSubscriptions = new Map<string, MessageSubscription>();
   constructor(private readonly bridge: Pick<ProductBridge, "getSessions"> & Partial<Omit<ProductBridge, "getSessions">>) {}
+  onModelsChanged(receive: (update: import("../../contracts/ipc/session.js").ModelUpdate) => void): (() => void) | undefined {
+    return this.bridge.onModelsChanged?.(receive);
+  }
   async getSessions({ signal }: ReceiveOptions = {}): Promise<SessionListEntry[]> {
     const value = await receive(() => this.bridge.getSessions(), signal);
     const reply = validate(() => sessionReply(value));

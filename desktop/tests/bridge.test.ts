@@ -19,13 +19,13 @@ function deferred<T>() { return Promise.withResolvers<T>(); }
 const lightTheme: ThemeDefinition = { id: "rozsa", name: "Rozsa", mode: "light", accent: "#D7827E", background: "#FFFFFF", foreground: "#575279", uiFont: "system-ui", codeFont: "monospace", variables: {} };
 const darkTheme: ThemeDefinition = { ...lightTheme, id: "rozsa-dark", name: "Rozsa Dark", mode: "dark" };
 const settingsSnapshot: SettingsSnapshot = { scope: "global", settings: { appearance: { themeMode: "system", fontSize: 14, translucentSidebar: false } }, appearance: { themeMode: "system", fontSize: 14, translucentSidebar: false, lightTheme, darkTheme }, themes: [{ id: lightTheme.id, name: lightTheme.name, mode: lightTheme.mode }, { id: darkTheme.id, name: darkTheme.name, mode: darkTheme.mode }], models: [] };
-function host(backend: Partial<BackendService>) {
+function host(backend: Partial<BackendService>, openBrowser?: (url: string) => Promise<void>) {
   const url = "file:///synthetic/index.html", webContents = Object.assign(new EventEmitter(), { mainFrame: { url } });
   const vibrancyCalls: Array<string | null> = [];
   const window = Object.assign(new EventEmitter(), { webContents, isDestroyed: () => false, setVibrancy: (type: string | null) => vibrancyCalls.push(type) });
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<any>>();
   const ipc = { handle: (channel: string, handler: any) => { handlers.set(channel, handler); }, removeHandler: (channel: string) => handlers.delete(channel) };
-  installSessionBridge(window as unknown as BrowserWindow, ipc as unknown as IpcMain, backend as BackendService, url);
+  installSessionBridge(window as unknown as BrowserWindow, ipc as unknown as IpcMain, backend as BackendService, url, openBrowser);
   const event = { sender: webContents, senderFrame: webContents.mainFrame } as unknown as IpcMainInvokeEvent;
   const invoke = async (channel: string, ...args: unknown[]) => {
     const handler = handlers.get(channel); if (!handler) throw new Error("No handler"); return handler(event, ...args);
@@ -50,6 +50,42 @@ test("main rejects foreign senders, subframes, destinations and arity before dis
   assert.equal(invalid.error.kind, "invalid_params"); assert.equal(calls, 0);
   assert.deepEqual(await ui.invoke(SESSION_LIST_CHANNEL), { ok: true, sessions: [] }); assert.equal(calls, 1);
   ui.window.emit("closed"); assert.equal(ui.handlers.size, 0);
+});
+
+test("OAuth events open the provider browser through main and reject untrusted authorization destinations", async () => {
+  const opened: string[] = [], cancelled: string[] = [];
+  let url = "https://auth.openai.com/oauth/authorize?state=fixture";
+  const ui = host({
+    startAuth: async () => ({ operationId: "auth-op" }),
+    nextAuthEvent: async () => ({ operationId: "auth-op", provider: "codex-oauth", kind: "authorization_url", url }),
+    cancelAuth: async id => { cancelled.push(id); },
+  }, async value => { opened.push(value); });
+  await ui.bridge.startAuth!("codex-oauth");
+  assert.equal((await ui.bridge.nextAuthEvent!("auth-op")).kind, "authorization_url");
+  assert.deepEqual(opened, [url]);
+  url = "https://example.invalid/oauth";
+  await assert.rejects(ui.bridge.nextAuthEvent!("auth-op"), /not trusted/);
+  assert.deepEqual(cancelled, ["auth-op"]);
+  assert.equal(opened.length, 1);
+  ui.window.emit("closed");
+});
+
+test("navigation cancels OAuth and discards a pending authorization URL", async () => {
+  const opened: string[] = [], cancelled: string[] = [];
+  let resolveEvent!: (value: any) => void;
+  const ui = host({
+    startAuth: async () => ({ operationId: "auth-op" }),
+    nextAuthEvent: () => new Promise(resolve => { resolveEvent = resolve; }),
+    cancelAuth: async id => { cancelled.push(id); },
+  }, async value => { opened.push(value); });
+  await ui.bridge.startAuth!("codex-oauth");
+  const pending = ui.bridge.nextAuthEvent!("auth-op");
+  ui.webContents.emit("did-start-navigation", {}, "file:///replacement.html", false, true);
+  resolveEvent({ operationId: "auth-op", provider: "codex-oauth", kind: "authorization_url", url: "https://auth.openai.com/oauth/authorize" });
+  await assert.rejects(pending, /replaced/);
+  assert.deepEqual(opened, []);
+  assert.deepEqual(cancelled, ["auth-op"]);
+  ui.window.emit("closed");
 });
 
 test("settings and theme calls cross the trusted IPC bridge with runtime validation", async () => {
@@ -106,7 +142,7 @@ test("preload exposes validated session and message capabilities and rejects mal
   const calls: unknown[][] = [];
   const bridge = RozsaBridge.create(async (...args) => { calls.push(args); return { ok: true, update: snapshot("1") }; });
   assert.ok(Object.isFrozen(bridge));
-  assert.deepEqual(Object.keys(bridge), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage", "getSettings", "updateSetting", "resetSetting", "listThemes", "getTheme", "saveTheme"]);
+  assert.deepEqual(Object.keys(bridge), ["startAuth", "submitAuth", "nextAuthEvent", "cancelAuth", "logoutAuth", "getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage", "getSettings", "updateSetting", "resetSetting", "listThemes", "getTheme", "saveTheme"]);
   await assert.rejects((bridge.subscribeSessions as Function)("arbitrary"));
   await assert.rejects((bridge.nextSessionEvent as Function)("1", "extra"));
   await assert.rejects((bridge.nextSessionEvent as Function)({ subscriptionId: "1" }));

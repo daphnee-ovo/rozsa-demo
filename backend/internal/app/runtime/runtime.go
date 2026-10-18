@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"rozsa/backend/internal/app/compaction"
+	"rozsa/backend/internal/app/modelcatalog"
 	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/questions"
@@ -26,8 +27,6 @@ import (
 	"rozsa/backend/internal/app/subagent"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
-	modelprotocol "rozsa/backend/internal/model"
-	"rozsa/backend/internal/model/credentials"
 	"rozsa/backend/internal/model/types"
 )
 
@@ -35,7 +34,8 @@ type Config struct {
 	SessionDir       string
 	SessionDirs      []string
 	SessionService   *session.Service
-	ModelRegistry    *modelregistry.Registry
+	ModelRegistry    modelregistry.Reader
+	Credentials      modelcatalog.CredentialSource
 	Model            types.Model
 	ThinkingEffort   types.ThinkingEffort
 	ResolvedSettings func() map[string]any
@@ -51,7 +51,8 @@ type Runtime struct {
 	mu               sync.Mutex
 	session          *session.Manager
 	service          *session.Service
-	modelRegistry    *modelregistry.Registry
+	modelRegistry    modelregistry.Reader
+	credentialSource modelcatalog.CredentialSource
 	model            types.Model
 	thinkingEffort   types.ThinkingEffort
 	resolvedSettings func() map[string]any
@@ -80,30 +81,14 @@ func New(config Config) (*Runtime, error) {
 		return nil, errors.New("runtime requires a configured model, provider and API")
 	}
 	if config.Provider == nil {
-		provider, err := modelprotocol.NewProtocol(config.Model.API)
+		if config.Credentials == nil {
+			config.Credentials = modelcatalog.NewAuth(config.AuthPath, nil)
+		}
+		provider, err := prepareModelProviderWithSource(config.Model, config.APIKey, config.Credentials, config.ModelRegistry)
 		if err != nil {
 			return nil, err
 		}
-		resolver := credentials.NewResolver()
-		key := ""
-		if config.APIKey != "" {
-			key, err = resolver.ResolveConfigValue(config.APIKey)
-			if err != nil {
-				return nil, fmt.Errorf("resolve credentials for %s: %w", config.Model.Provider, err)
-			}
-		} else if credentialed, ok := provider.(types.ExternalCredentials); ok && credentialed.UsesExternalCredentials() {
-			// The protocol owns credentials from the SDK default chain or a
-			// protocol-specific bearer token provider.
-		} else {
-			key, err = resolveProviderKey(context.Background(), resolver, config.Model.Provider, "", config.AuthPath)
-			if err != nil {
-				return nil, fmt.Errorf("resolve credentials for %s: %w", config.Model.Provider, err)
-			}
-			if key == "" {
-				return nil, fmt.Errorf("No API key for provider: %s", config.Model.Provider)
-			}
-		}
-		config.Provider = providerWithKey{Provider: provider, key: key}
+		config.Provider = provider
 	}
 	if err := os.MkdirAll(config.SessionDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create session directory: %w", err)
@@ -130,7 +115,7 @@ func New(config Config) (*Runtime, error) {
 	if effort == "" || !config.Model.SupportsThinking(effort) {
 		effort = types.ThinkingOff
 	}
-	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, modelRegistry: config.ModelRegistry, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), messages: newMessageOperations()}
+	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, modelRegistry: config.ModelRegistry, credentialSource: config.Credentials, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), messages: newMessageOperations()}
 	lifecycleHooks := config.LifecycleHooks
 	rejectApprovals, cancelQuestions := lifecycleHooks.RejectApprovals, lifecycleHooks.CancelQuestions
 	lifecycleHooks.RejectApprovals = func(id string) error {
@@ -166,7 +151,11 @@ func (runtime *Runtime) SetModel(model types.Model, configuredAPIKey string, eff
 	if !model.SupportsThinking(effort) {
 		effort = types.ThinkingOff
 	}
-	wrappedProvider, err := prepareModelProvider(model, configuredAPIKey, runtime.authPath)
+	source := runtime.credentialSource
+	if source == nil {
+		source = modelcatalog.NewAuth(runtime.authPath, nil)
+	}
+	wrappedProvider, err := prepareModelProviderWithSource(model, configuredAPIKey, source, runtime.modelRegistry)
 	if err != nil {
 		return err
 	}
@@ -180,33 +169,6 @@ func (runtime *Runtime) SetModel(model types.Model, configuredAPIKey string, eff
 	runtime.thinkingEffort = effort
 	runtime.provider = wrappedProvider
 	return nil
-}
-
-func prepareModelProvider(model types.Model, configuredAPIKey, authPath string) (agent.Provider, error) {
-	protocol, err := modelprotocol.NewProtocol(model.API)
-	if err != nil {
-		return nil, err
-	}
-	resolver := credentials.NewResolver()
-	key := ""
-	if configuredAPIKey != "" {
-		key, err = resolver.ResolveConfigValue(configuredAPIKey)
-		if err != nil {
-			return nil, fmt.Errorf("resolve credentials for %s: %w", model.Provider, err)
-		}
-	} else if credentialed, ok := protocol.(types.ExternalCredentials); ok && credentialed.UsesExternalCredentials() {
-		// The protocol owns credentials from the SDK default chain or a
-		// protocol-specific bearer token provider.
-	} else {
-		key, err = resolveProviderKey(context.Background(), resolver, model.Provider, "", authPath)
-		if err != nil {
-			return nil, fmt.Errorf("resolve credentials for %s: %w", model.Provider, err)
-		}
-		if key == "" {
-			return nil, fmt.Errorf("No API key for provider: %s", model.Provider)
-		}
-	}
-	return providerWithKey{Provider: protocol, key: key}, nil
 }
 
 func (runtime *Runtime) SetThinkingEffort(effort types.ThinkingEffort) (types.ThinkingEffort, error) {
@@ -238,29 +200,6 @@ func validThinkingEffort(effort types.ThinkingEffort) bool {
 	default:
 		return false
 	}
-}
-
-func resolveProviderKey(ctx context.Context, resolver credentials.Resolver, provider, configured, authPath string) (string, error) {
-	if configured != "" {
-		return resolver.ResolveConfigValue(configured)
-	}
-	var environmentNames []string
-	switch provider {
-	case "anthropic":
-		environmentNames = []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}
-	case "cloudflare-ai-gateway":
-		environmentNames = []string{"CLOUDFLARE_API_KEY"}
-	}
-	for _, name := range environmentNames {
-		value, err := resolver.ResolveEnvironmentVariable(name)
-		if err != nil {
-			return "", err
-		}
-		if value != "" {
-			return value, nil
-		}
-	}
-	return resolver.ResolveAPIKey(ctx, provider, "", "", authPath, nil)
 }
 
 func (runtime *Runtime) GetSessions(ctx context.Context) ([]session.ListEntry, error) {
@@ -300,16 +239,6 @@ func (runtime *Runtime) QuestionOwner() *questions.Owner { return runtime.questi
 
 func (runtime *Runtime) Snapshot(ctx context.Context) (session.StateSnapshot, error) {
 	return runtime.service.Snapshot(ctx)
-}
-
-type providerWithKey struct {
-	Provider agent.Provider
-	key      string
-}
-
-func (provider providerWithKey) StreamSimple(ctx context.Context, model types.Model, input types.Context, options types.SimpleStreamOptions, emit func(types.StreamEvent)) error {
-	options.Base.APIKey = provider.key
-	return provider.Provider.StreamSimple(ctx, model, input, options, emit)
 }
 
 func openLatest(dir string) (*session.Manager, error) {
