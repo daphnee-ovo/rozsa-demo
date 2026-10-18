@@ -28,7 +28,8 @@ const (
 var builtinInstallMu sync.Mutex
 
 type builtinConfig struct {
-	BuiltinSkillsURL string `yaml:"BUILTIN_SKILLS_URL"`
+	BuiltinSkillsURL string   `yaml:"BUILTIN_SKILLS_URL"`
+	BuiltinSkills    []string `yaml:"BUILTIN_SKILLS"`
 }
 
 type builtinSource struct {
@@ -42,52 +43,65 @@ type githubContent struct {
 	DownloadURL string `json:"download_url"`
 }
 
-func builtinSkillsURL() (string, error) {
+func readBuiltinConfig() (builtinConfig, error) {
 	var config builtinConfig
 	if err := yaml.Unmarshal(backendconfig.BuiltinConfig, &config); err != nil {
-		return "", fmt.Errorf("parse embedded backend config: %w", err)
+		return builtinConfig{}, fmt.Errorf("parse embedded backend config: %w", err)
 	}
-	parsed, err := url.Parse(config.BuiltinSkillsURL)
+	return config, nil
+}
+
+func builtinSkillsURL(value string) (string, error) {
+	parsed, err := url.Parse(value)
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
 		return "", errors.New("BUILTIN_SKILLS_URL in embedded backend config must be an absolute HTTP URL")
 	}
-	return config.BuiltinSkillsURL, nil
+	return value, nil
 }
 
-func installMissingBuiltinSkills(ctx context.Context, globalSkillsDirectory string, source builtinSource) error {
-	builtinInstallMu.Lock()
-	defer builtinInstallMu.Unlock()
+func checkMissingBuiltinSkills(globalSkillsDirectory string, skillNames []string) ([]string, error) {
+	var missing []string
+	var checkErrors []error
+	for _, skillName := range skillNames {
+		destination := filepath.Join(globalSkillsDirectory, ".builtin", skillName)
+		skillFilePath := filepath.Join(destination, "SKILL.md")
+		info, err := os.Lstat(skillFilePath)
+		if err == nil {
+			if info.Mode().IsRegular() {
+				continue
+			}
+			checkErrors = append(checkErrors, fmt.Errorf("built-in skill entry is not a regular file: %s", skillFilePath))
+			continue
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			checkErrors = append(checkErrors, fmt.Errorf("inspect built-in skill file %q: %w", skillFilePath, err))
+			continue
+		}
+		missing = append(missing, skillName)
+	}
+	return missing, errors.Join(checkErrors...)
+}
+
+func downloadBuiltinSkills(ctx context.Context, globalSkillsDirectory string, skillNames []string, source builtinSource) error {
 	if source.client == nil {
 		source.client = &http.Client{Timeout: builtinRequestTimeout}
 	}
-	entries, err := listContents(ctx, source, "")
-	if err != nil {
-		return fmt.Errorf("list remote built-in skills: %w", err)
-	}
-	for _, entry := range entries {
-		if entry.Type != "dir" || !safeBuiltinName(entry.Name) {
-			continue
-		}
-		destination := filepath.Join(globalSkillsDirectory, ".builtin", entry.Name)
-		remoteFiles, err := collectRemoteSkillFiles(ctx, source, entry.Name, entry.Name)
+	var downloadErrors []error
+	for _, skillName := range skillNames {
+		remoteFiles, err := collectRemoteSkillFiles(ctx, source, skillName, skillName)
 		if err != nil {
-			return fmt.Errorf("inspect remote built-in skill %q: %w", entry.Name, err)
+			downloadErrors = append(downloadErrors, fmt.Errorf("inspect remote built-in skill %q: %w", skillName, err))
+			continue
 		}
 		if _, exists := remoteFiles["SKILL.md"]; !exists {
-			return fmt.Errorf("remote built-in skill %q does not contain a root SKILL.md", entry.Name)
-		}
-		missing, err := missingBuiltinFiles(destination, remoteFiles)
-		if err != nil {
-			return err
-		}
-		if !missing {
+			downloadErrors = append(downloadErrors, fmt.Errorf("remote built-in skill %q does not contain a root SKILL.md", skillName))
 			continue
 		}
-		if err := installRemoteSkill(ctx, globalSkillsDirectory, source, entry.Name, remoteFiles); err != nil {
-			return fmt.Errorf("initialize built-in skill %q: %w", entry.Name, err)
+		if err := installRemoteSkill(ctx, globalSkillsDirectory, source, skillName, remoteFiles); err != nil {
+			downloadErrors = append(downloadErrors, fmt.Errorf("initialize built-in skill %q: %w", skillName, err))
 		}
 	}
-	return nil
+	return errors.Join(downloadErrors...)
 }
 
 func listContents(ctx context.Context, source builtinSource, relativeDirectory string) ([]githubContent, error) {

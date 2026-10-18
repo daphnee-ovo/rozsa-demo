@@ -8,9 +8,9 @@ command -v npm >/dev/null
 # Generated artifacts and test temporary files stay within this project.
 # Tool caches retain their default configuration and locations.
 mkdir -p tmp/migration/{go-tmp,install-tmp} dist
-export GOTMPDIR="$project_root/tmp/migration/go-tmp"
-export TMPDIR="$project_root/tmp/migration/install-tmp"
+export GOTMPDIR="$project_root/tmp/go-tmp"
+export TMPDIR="$project_root/tmp/install-tmp"
 npm --prefix desktop ci --no-audit --no-fund
 (cd desktop && npm exec -- install-electron)
-# Forge hooks check TS7 and build Go; Vite alone emits application code/resources.
-npm --prefix desktop run package
+# The packaging script injects the built-in skill inventory before Forge builds Go.
+./devtools/package-desktop.sh package

@@ -1,1 +1,2 @@
 BUILTIN_SKILLS_URL: https://api.github.com/repos/daphnee-ovo/rozsa-demo/contents/backend/resources/builtin-skills?ref=main
+BUILTIN_SKILLS: ["rozsa-docs"]

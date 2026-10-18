@@ -12,8 +12,8 @@ command -v go >/dev/null
 command -v node >/dev/null
 command -v npm >/dev/null
 bash devtools/build-desktop.sh
-export GOTMPDIR="$project_root/tmp/migration/go-tmp"
-export TMPDIR="$project_root/tmp/migration/install-tmp"
+export GOTMPDIR="$project_root/tmp/go-tmp"
+export TMPDIR="$project_root/tmp/install-tmp"
 go -C backend test -count=1 ./internal/app/session/... ./internal/transport/...
 npm ci --prefix desktop/tests --no-audit --no-fund
 npm --prefix desktop/tests test

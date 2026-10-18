@@ -3,11 +3,13 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -105,10 +107,14 @@ func (application skillApplication) Enabled(cwd string, resolved map[string]any)
 	if err != nil {
 		return LoadResult{}, err
 	}
-	if err := application.ensureBuiltinSkills(roots); err != nil {
-		return LoadResult{}, err
+	builtinErr := application.ensureBuiltinSkills(roots)
+	loadResult := Load(skillSources(roots), boolSettings(resolved["skills"]))
+	if builtinErr != nil {
+		loadResult.Diagnostics = append(loadResult.Diagnostics, Diagnostic{
+			Path: filepath.Join(roots.SkillDirs()[0], ".builtin"), Message: builtinErr.Error(),
+		})
 	}
-	return Load(skillSources(roots), boolSettings(resolved["skills"])), nil
+	return loadResult, nil
 }
 
 func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error) {
@@ -119,9 +125,7 @@ func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error)
 	if err != nil {
 		return CatalogSnapshot{}, err
 	}
-	if err := application.ensureBuiltinSkills(roots); err != nil {
-		return CatalogSnapshot{}, err
-	}
+	builtinErr := application.ensureBuiltinSkills(roots)
 	globalOverrides, err := capabilityOverrides(application.settings, settings.Global)
 	if err != nil {
 		return CatalogSnapshot{}, err
@@ -140,6 +144,11 @@ func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error)
 		ProjectSkills: catalogItems(Resolve(project, nil).Skills, effective, globalOverrides, projectOverrides),
 		Diagnostics:   append(global.Diagnostics, project.Diagnostics...),
 	}
+	if builtinErr != nil {
+		snapshot.Diagnostics = append(snapshot.Diagnostics, Diagnostic{
+			Path: filepath.Join(roots.SkillDirs()[0], ".builtin"), Message: builtinErr.Error(),
+		})
+	}
 	return snapshot, nil
 }
 
@@ -152,18 +161,29 @@ func (application skillApplication) resolveRoots(cwd string) (configpaths.Roots,
 }
 
 func (application skillApplication) ensureBuiltinSkills(roots configpaths.Roots) error {
+	config, err := readBuiltinConfig()
+	if err != nil {
+		return application.notifyBuiltinError(err)
+	}
 	source := application.builtinSource
 	if source == nil {
-		baseURL, err := builtinSkillsURL()
+		baseURL, err := builtinSkillsURL(config.BuiltinSkillsURL)
 		if err != nil {
 			return application.notifyBuiltinError(err)
 		}
 		source = &builtinSource{baseURL: baseURL, client: &http.Client{Timeout: builtinRequestTimeout}}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), builtinRequestTimeout)
-	defer cancel()
+	builtinInstallMu.Lock()
+	defer builtinInstallMu.Unlock()
 	skillDirectories := roots.SkillDirs()
-	return application.notifyBuiltinError(installMissingBuiltinSkills(ctx, skillDirectories[0], *source))
+	missingSkills, checkErr := checkMissingBuiltinSkills(skillDirectories[0], config.BuiltinSkills)
+	var downloadErr error
+	if len(missingSkills) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), builtinRequestTimeout)
+		defer cancel()
+		downloadErr = downloadBuiltinSkills(ctx, skillDirectories[0], missingSkills, *source)
+	}
+	return application.notifyBuiltinError(errors.Join(checkErr, downloadErr))
 }
 
 func (application skillApplication) notifyBuiltinError(err error) error {
@@ -291,6 +311,9 @@ func Load(sources []Source, enabled map[string]bool) LoadResult {
 	for _, source := range sources {
 		entries, err := readDirectory(source.Directory)
 		if err != nil {
+			if !os.IsNotExist(err) {
+				result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: source.Directory, Message: "failed to scan: " + err.Error()})
+			}
 			continue
 		}
 		scan(source.Directory, source.Scope, entries, &result, true)
@@ -302,22 +325,49 @@ func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResu
 	for _, entry := range entries {
 		path := filepath.Join(directory, entry.Name())
 		info, err := os.Stat(path)
-		if err != nil || !info.IsDir() {
+		if err != nil {
+			if !os.IsNotExist(err) {
+				result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: path, Message: "failed to inspect: " + err.Error()})
+			}
 			continue
 		}
-		entryScope := scope
+		if !info.IsDir() {
+			continue
+		}
 		if sourceRoot && scope == User && entry.Name() == ".builtin" {
-			entryScope = Builtin
+			builtinEntries, err := readDirectory(path)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: path, Message: "failed to scan: " + err.Error()})
+				}
+				continue
+			}
+			config, err := readBuiltinConfig()
+			if err != nil {
+				result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: path, Message: err.Error()})
+				continue
+			}
+			filtered := make([]fs.DirEntry, 0, len(builtinEntries))
+			for _, builtinEntry := range builtinEntries {
+				if slices.Contains(config.BuiltinSkills, builtinEntry.Name()) {
+					filtered = append(filtered, builtinEntry)
+				}
+			}
+			scan(path, Builtin, filtered, result, true)
+			continue
 		}
 		filePath := filepath.Join(path, "SKILL.md")
 		info, err = os.Stat(filePath)
 		if err == nil && !info.IsDir() {
-			skill, diagnostic := parseFile(filePath, path, entryScope)
+			skill, diagnostic := parseFile(filePath, path, scope)
 			if diagnostic != nil {
 				result.Diagnostics = append(result.Diagnostics, *diagnostic)
 			} else {
 				result.Skills = append(result.Skills, skill)
 			}
+			continue
+		}
+		if sourceRoot && scope == Builtin {
 			continue
 		}
 		if err != nil && !os.IsNotExist(err) {
@@ -326,9 +376,12 @@ func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResu
 		}
 		nestedEntries, err := readDirectory(path)
 		if err != nil {
+			if !os.IsNotExist(err) {
+				result.Diagnostics = append(result.Diagnostics, Diagnostic{Path: path, Message: "failed to scan: " + err.Error()})
+			}
 			continue
 		}
-		scan(path, entryScope, nestedEntries, result, false)
+		scan(path, scope, nestedEntries, result, false)
 	}
 }
 

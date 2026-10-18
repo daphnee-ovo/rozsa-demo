@@ -66,6 +66,12 @@ bash devtools/test-desktop.sh
 
 Go dependencies and Electron/TypeScript/tsx/jsdom versions are defined by their module manifests and lockfiles. Use those files as the single source of version truth.
 
+Do not compile or launch the backend binary directly with `go build` or `go run`.
+Use `devtools/package-desktop.sh` when dependencies are installed, or
+`devtools/build-desktop.sh` for a clean setup. The packaging flow updates
+`BUILTIN_SKILLS` in the embedded `backend/config.yaml` before Forge builds Go.
+Use `go test` for Go package tests.
+
 Model configuration is layered from `<global>/models/` and `<project>/models/`;
 project entries override global entries. Both main and small model selectors use
 that catalog. Credentials live at `<global>/models/auth.json`. `/login anthropic`,

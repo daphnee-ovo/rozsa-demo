@@ -34,9 +34,13 @@ func TestLoadLayerPriorityDiagnosticsAndSlashNames(t *testing.T) {
 	writeSkill(t, project, "deploy", "---\nname: deploy\ndescription: project deploy\n---\nproject body")
 	writeSkill(t, project, "nested/lint", "---\ndescription: |\n  First line\n  second line\n---\nbody")
 	writeSkill(t, project, "invalid", "---\nname: invalid\n---\nmissing description")
+	failedSource := filepath.Join(root, "unreadable-source")
+	if err := os.WriteFile(failedSource, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
-	result := Load([]Source{{user, User}, {agents, Agents}, {project, Project}}, nil)
-	if len(result.Skills) != 2 || len(result.Diagnostics) != 1 {
+	result := Load([]Source{{user, User}, {failedSource, Agents}, {agents, Agents}, {project, Project}}, nil)
+	if len(result.Skills) != 2 || len(result.Diagnostics) != 2 {
 		t.Fatalf("got %d skills and %d diagnostics", len(result.Skills), len(result.Diagnostics))
 	}
 	var deploy Skill
@@ -59,6 +63,7 @@ func TestLoadLayerPriorityDiagnosticsAndSlashNames(t *testing.T) {
 func TestLoadDiscoversBuiltinDirectoryAndLetsRegularSkillsOverrideIt(t *testing.T) {
 	global := t.TempDir()
 	writeSkill(t, global, ".builtin/rozsa-docs", "---\nname: rozsa-docs\ndescription: built-in docs\n---\nbuiltin body")
+	writeSkill(t, global, ".builtin/not-in-compiled-list", "---\nname: not-in-compiled-list\ndescription: unrelated\n---\nbody")
 	loaded := Load([]Source{{Directory: global, Scope: User}}, nil)
 	if len(loaded.Skills) != 1 || loaded.Skills[0].Scope != Builtin || loaded.Skills[0].VariablePath() != "$USER_SKILLS/.builtin/rozsa-docs/SKILL.md" {
 		t.Fatalf("built-in skill was not discovered with its virtual path: %#v", loaded.Skills)
@@ -73,7 +78,6 @@ func TestLoadDiscoversBuiltinDirectoryAndLetsRegularSkillsOverrideIt(t *testing.
 
 func TestBuiltinSkillDownloadsEntireDirectoryAndFillsMissingFilesWithoutOverwrite(t *testing.T) {
 	server := newBuiltinContentsServer(t, map[string]any{
-		"": []map[string]string{{"name": "rozsa-docs", "type": "dir"}},
 		"rozsa-docs": []map[string]string{
 			{"name": "SKILL.md", "type": "file", "download_url": "/raw/rozsa-docs/SKILL.md"},
 			{"name": "references", "type": "dir"},
@@ -86,19 +90,20 @@ func TestBuiltinSkillDownloadsEntireDirectoryAndFillsMissingFilesWithoutOverwrit
 	if err := os.MkdirAll(existingDirectory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(existingDirectory, "SKILL.md"), []byte("local skill body"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	localNote := filepath.Join(existingDirectory, "local-note.md")
 	if err := os.WriteFile(localNote, []byte("keep local"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	source := builtinSource{baseURL: server.URL + "/contents/builtin-skills", client: server.Client()}
-	if err := installMissingBuiltinSkills(context.Background(), globalSkillDirectory, source); err != nil {
+	missing, err := checkMissingBuiltinSkills(globalSkillDirectory, []string{"rozsa-docs"})
+	if err != nil || !reflect.DeepEqual(missing, []string{"rozsa-docs"}) {
+		t.Fatalf("missing built-in skills = %#v, err=%v", missing, err)
+	}
+	if err := downloadBuiltinSkills(context.Background(), globalSkillDirectory, missing, source); err != nil {
 		t.Fatal(err)
 	}
 	for file, expected := range map[string]string{
-		"SKILL.md":            "local skill body",
+		"SKILL.md":            "name: rozsa-docs",
 		"references/guide.md": "guide content",
 		"local-note.md":       "keep local",
 	} {
@@ -110,7 +115,11 @@ func TestBuiltinSkillDownloadsEntireDirectoryAndFillsMissingFilesWithoutOverwrit
 			t.Errorf("%s = %q; want %q", file, contents, expected)
 		}
 	}
-	if err := installMissingBuiltinSkills(context.Background(), globalSkillDirectory, source); err != nil {
+	missing, err = checkMissingBuiltinSkills(globalSkillDirectory, []string{"rozsa-docs"})
+	if err != nil || len(missing) != 0 {
+		t.Fatalf("installed skill still missing: %#v err=%v", missing, err)
+	}
+	if err := downloadBuiltinSkills(context.Background(), globalSkillDirectory, missing, source); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(localNote)
@@ -128,7 +137,11 @@ func TestBuiltinSkillRejectsUnsafeRemotePath(t *testing.T) {
 	defer server.Close()
 	globalSkillDirectory := filepath.Join(t.TempDir(), "global", "skills")
 	source := builtinSource{baseURL: server.URL + "/contents/builtin-skills", client: server.Client()}
-	if err := installMissingBuiltinSkills(context.Background(), globalSkillDirectory, source); err == nil {
+	missing, err := checkMissingBuiltinSkills(globalSkillDirectory, []string{"rozsa-docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := downloadBuiltinSkills(context.Background(), globalSkillDirectory, missing, source); err == nil {
 		t.Fatal("unsafe remote entry was accepted")
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(globalSkillDirectory), "escape")); !errors.Is(err, os.ErrNotExist) {
@@ -145,7 +158,6 @@ func TestSkillDiscoveryDownloadsMissingBuiltins(t *testing.T) {
 		return configpaths.Resolve(projectDir, &global, nil, &home, "darwin")
 	}
 	server := newBuiltinContentsServer(t, map[string]any{
-		"":           []map[string]string{{"name": "rozsa-docs", "type": "dir"}},
 		"rozsa-docs": []map[string]string{{"name": "SKILL.md", "type": "file", "download_url": "/raw/rozsa-docs/SKILL.md"}},
 	})
 	defer server.Close()
@@ -160,9 +172,16 @@ func TestSkillDiscoveryDownloadsMissingBuiltins(t *testing.T) {
 }
 
 func TestBuiltinConfigAndInitializationErrorNotification(t *testing.T) {
-	url, err := builtinSkillsURL()
+	config, err := readBuiltinConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	url, err := builtinSkillsURL(config.BuiltinSkillsURL)
 	if err != nil || url != "https://api.github.com/repos/daphnee-ovo/rozsa-demo/contents/backend/resources/builtin-skills?ref=main" {
 		t.Fatalf("embedded config URL = %q err=%v", url, err)
+	}
+	if !reflect.DeepEqual(config.BuiltinSkills, []string{"rozsa-docs"}) {
+		t.Fatalf("embedded built-in skill names = %#v", config.BuiltinSkills)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
@@ -173,10 +192,11 @@ func TestBuiltinConfigAndInitializationErrorNotification(t *testing.T) {
 	resolver := func(projectDir string) (configpaths.Roots, error) {
 		return configpaths.Resolve(projectDir, &global, nil, nil, "darwin")
 	}
+	writeSkill(t, global, "available", "---\nname: available\ndescription: local skill\n---\nbody")
 	var notification error
 	application := NewApplicationWithBuiltinURL(nil, resolver, server.URL, server.Client(), func(err error) { notification = err })
-	_, err = application.Enabled(t.TempDir(), nil)
-	if err == nil || notification == nil || notification.Error() != err.Error() {
+	loaded, err := application.Enabled(t.TempDir(), nil)
+	if err != nil || notification == nil || len(loaded.Skills) != 1 || loaded.Skills[0].Name != "available" || len(loaded.Diagnostics) == 0 {
 		t.Fatalf("initialization error=%v notification=%v", err, notification)
 	}
 }
