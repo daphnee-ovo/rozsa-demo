@@ -5,6 +5,9 @@ import (
 	"crypto/rand"
 	"errors"
 	"sync"
+
+	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/app/sessions"
 )
 
 type MessageEventKind string
@@ -17,10 +20,12 @@ const (
 )
 
 type MessageEvent struct {
-	Sequence uint64
-	Kind     MessageEventKind
-	Delta    *string
-	Error    *string
+	SessionID   string
+	SessionPath string
+	Sequence    uint64
+	Kind        MessageEventKind
+	Delta       *string
+	Error       *string
 }
 
 type MessageEventSubscription interface {
@@ -29,16 +34,15 @@ type MessageEventSubscription interface {
 }
 
 type messageOperations struct {
-	mu     sync.Mutex
-	byID   map[string]*messageOperation
-	order  []string
-	active string
+	mu    sync.Mutex
+	byID  map[string]*messageOperation
+	order []string
 }
 
 type messageOperation struct {
 	mu          sync.Mutex
 	id          string
-	cancel      context.CancelFunc
+	execution   sessions.Execution
 	events      []MessageEvent
 	changed     chan struct{}
 	terminal    bool
@@ -57,28 +61,33 @@ func newMessageOperations() *messageOperations {
 	return &messageOperations{byID: make(map[string]*messageOperation)}
 }
 
-func (runtime *Runtime) StartMessage(_ context.Context, text string) (string, error) {
+func (runtime *Runtime) StartMessage(ctx context.Context, text string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if text == "" {
 		return "", errors.New("prompt must not be empty")
 	}
 	return runtime.startMessage(&text)
 }
 
-func (runtime *Runtime) ContinueMessage(_ context.Context) (string, error) {
+func (runtime *Runtime) ContinueMessage(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	return runtime.startMessage(nil)
 }
 
 func (runtime *Runtime) startMessage(prompt *string) (string, error) {
 	operationID := rand.Text()
-	manager, err := runtime.beginRun()
+	execution, err := runtime.beginRun(context.Background(), operationID)
 	if err != nil {
 		return "", err
 	}
-	operationContext, cancel := context.WithCancel(context.Background())
-	operation := &messageOperation{id: operationID, cancel: cancel, changed: make(chan struct{})}
+	operation := &messageOperation{id: operationID, execution: execution, changed: make(chan struct{})}
 	runtime.messages.add(operation)
 	go func() {
-		err := runtime.runReserved(operationContext, prompt, manager, operation.appendText)
+		err := runtime.runExecution(prompt, execution, operation.appendText)
 		operation.finish(err)
 		runtime.messages.finish(operationID)
 	}()
@@ -112,8 +121,7 @@ func (runtime *Runtime) CancelMessage(ctx context.Context, operationID string) e
 	if operation.terminal {
 		return errors.New("message operation has already completed")
 	}
-	operation.cancel()
-	return nil
+	return operation.execution.Cancel()
 }
 
 func (operations *messageOperations) add(operation *messageOperation) {
@@ -124,7 +132,6 @@ func (operations *messageOperations) add(operation *messageOperation) {
 	}
 	operations.byID[operation.id] = operation
 	operations.order = append(operations.order, operation.id)
-	operations.active = operation.id
 	operations.pruneLocked()
 }
 
@@ -135,37 +142,29 @@ func (operations *messageOperations) get(id string) (*messageOperation, bool) {
 	return operation, ok
 }
 
-func (operations *messageOperations) hasActive() bool {
-	operations.mu.Lock()
-	defer operations.mu.Unlock()
-	return operations.active != ""
-}
-
 func (operations *messageOperations) finish(id string) {
 	operations.mu.Lock()
 	defer operations.mu.Unlock()
-	if operations.active == id {
-		operations.active = ""
-	}
 	operations.pruneLocked()
 }
 
 func (operations *messageOperations) pruneLocked() {
-	for len(operations.order) > 64 {
-		oldest := operations.order[0]
+	for index := 0; len(operations.order) > 64 && index < len(operations.order); {
+		oldest := operations.order[index]
 		operation := operations.byID[oldest]
 		if operation == nil {
-			operations.order = operations.order[1:]
+			operations.order = append(operations.order[:index], operations.order[index+1:]...)
 			continue
 		}
 		operation.mu.Lock()
 		removable := operation.terminal && operation.subscribers == 0
 		operation.mu.Unlock()
 		if !removable {
-			return
+			index++
+			continue
 		}
 		delete(operations.byID, oldest)
-		operations.order = operations.order[1:]
+		operations.order = append(operations.order[:index], operations.order[index+1:]...)
 	}
 }
 
@@ -184,7 +183,7 @@ func (operation *messageOperation) finish(err error) {
 	if operation.terminal {
 		return
 	}
-	if errors.Is(err, context.Canceled) {
+	if sessions.CancellationOnly(err) {
 		operation.appendLocked(MessageEvent{Kind: MessageCanceled})
 	} else if err != nil {
 		message := err.Error()
@@ -193,10 +192,11 @@ func (operation *messageOperation) finish(err error) {
 		operation.appendLocked(MessageEvent{Kind: MessageCompleted})
 	}
 	operation.terminal = true
-	operation.cancel()
 }
 
 func (operation *messageOperation) appendLocked(event MessageEvent) {
+	event.SessionID = session.IDFromPath(operation.execution.Manager().Path())
+	event.SessionPath = operation.execution.Manager().Path()
 	event.Sequence = uint64(len(operation.events) + 1)
 	operation.events = append(operation.events, event)
 	close(operation.changed)

@@ -15,8 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/questions"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/app/sessions"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
 	modelprotocol "rozsa/backend/internal/model"
@@ -33,22 +35,26 @@ type Config struct {
 	AuthPath       string
 	Provider       agent.Provider
 	Output         io.Writer
+	LifecycleHooks sessions.Hooks
 }
 
-// Runtime owns the active session and serializes prompts against it.
+// Runtime composes providers and persistence with a session lifecycle owner.
 type Runtime struct {
-	mu        sync.Mutex
-	session   *session.Manager
-	service   *session.Service
-	model     types.Model
-	provider  agent.Provider
-	questions *questions.Owner
-	output    io.Writer
-	pending   []hooks.Message
-	queue     []string
-	revision  uint64
-	running   bool
-	messages  *messageOperations
+	mu            sync.Mutex
+	session       *session.Manager
+	service       *session.Service
+	model         types.Model
+	provider      agent.Provider
+	questions     *questions.Owner
+	approvals     *permissions.Owner
+	lifecycle     sessions.Owner
+	sessionDir    string
+	outputMu      sync.Mutex
+	output        io.Writer
+	revision      uint64
+	messages      *messageOperations
+	conversations map[string]*conversation
+	closing       bool
 }
 
 func New(config Config) (*Runtime, error) {
@@ -105,7 +111,28 @@ func New(config Config) (*Runtime, error) {
 	if err := service.AdoptManager(manager); err != nil {
 		return nil, fmt.Errorf("prepare active session snapshot: %w", err)
 	}
-	return &Runtime{session: manager, service: service, model: config.Model, provider: config.Provider, output: config.Output, questions: questions.NewOwner(), messages: newMessageOperations()}, nil
+	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, provider: config.Provider, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), messages: newMessageOperations()}
+	lifecycleHooks := config.LifecycleHooks
+	rejectApprovals, cancelQuestions := lifecycleHooks.RejectApprovals, lifecycleHooks.CancelQuestions
+	lifecycleHooks.RejectApprovals = func(id string) error {
+		runtime.approvals.CloseSession(id)
+		if rejectApprovals != nil {
+			return rejectApprovals(id)
+		}
+		return nil
+	}
+	lifecycleHooks.CancelQuestions = func(id string) error {
+		runtime.questions.CancelSession(id)
+		if cancelQuestions != nil {
+			return cancelQuestions(id)
+		}
+		return nil
+	}
+	runtime.lifecycle = sessions.New(lifecycleHooks)
+	if err := runtime.lifecycle.Register(manager); err != nil {
+		return nil, err
+	}
+	return runtime, nil
 }
 
 func resolveProviderKey(ctx context.Context, resolver credentials.Resolver, provider, configured, authPath string) (string, error) {
@@ -138,8 +165,8 @@ func (runtime *Runtime) GetSessions(ctx context.Context) ([]session.ListEntry, e
 func (runtime *Runtime) Switch(ctx context.Context, path, catalogID string) (session.LoadedSnapshot, error) {
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	if runtime.running || runtime.messages.hasActive() {
-		return session.LoadedSnapshot{}, errors.New("cannot switch sessions while a message is running")
+	if runtime.closing {
+		return session.LoadedSnapshot{}, sessions.ErrClosed
 	}
 	snapshot, err := runtime.service.Switch(ctx, path, catalogID)
 	if err != nil {
@@ -148,6 +175,12 @@ func (runtime *Runtime) Switch(ctx context.Context, path, catalogID string) (ses
 	manager, err := runtime.service.WritableManager(snapshot.Path, snapshot.CatalogID)
 	if err != nil {
 		return session.LoadedSnapshot{}, fmt.Errorf("resolve selected session for writing: %w", err)
+	}
+	if err := runtime.lifecycle.Register(manager); err != nil {
+		return session.LoadedSnapshot{}, err
+	}
+	if err := runtime.lifecycle.Activate(manager.Path()); err != nil {
+		return session.LoadedSnapshot{}, err
 	}
 	runtime.session = manager
 	return snapshot, nil
@@ -220,42 +253,59 @@ func (runtime *Runtime) Continue(ctx context.Context) error { return runtime.run
 var _ session.ApplicationService = (*Runtime)(nil)
 
 func (runtime *Runtime) run(ctx context.Context, prompt *string) error {
-	manager, err := runtime.beginRun()
+	execution, err := runtime.beginRun(ctx, "")
 	if err != nil {
 		return err
 	}
-	return runtime.runReserved(ctx, prompt, manager, nil)
+	return runtime.runExecution(prompt, execution, nil)
 }
 
-func (runtime *Runtime) beginRun() (*session.Manager, error) {
+func (runtime *Runtime) beginRun(ctx context.Context, operationID string) (sessions.Execution, error) {
 	runtime.mu.Lock()
-	if runtime.running || runtime.messages.hasActive() {
-		runtime.mu.Unlock()
-		return nil, errors.New("agent session is already running")
+	defer runtime.mu.Unlock()
+	if runtime.closing {
+		return nil, sessions.ErrClosed
 	}
-	runtime.running = true
-	manager := runtime.session
-	runtime.mu.Unlock()
-	return manager, nil
+	manager, err := runtime.lifecycle.Active()
+	if err != nil {
+		return nil, err
+	}
+	return runtime.lifecycle.Start(ctx, manager.Path(), operationID)
 }
 
-func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, manager *session.Manager, emitText func(string)) (runErr error) {
+func (runtime *Runtime) runExecution(prompt *string, execution sessions.Execution, emitText func(string)) (runErr error) {
+	defer func() { runErr = execution.Finish(runErr) }()
+	for {
+		err := runtime.runReserved(execution.Context(), prompt, execution, emitText)
+		runErr = errors.Join(runErr, err, execution.PromptFinished())
+		text, ok := execution.NextQueued()
+		if !ok {
+			return runErr
+		}
+		prompt = &text
+	}
+}
+
+func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, execution sessions.Execution, emitText func(string)) (runErr error) {
+	manager := execution.Manager()
+	conversation := runtime.conversation(manager)
 	defer func() {
+		if err := runtime.service.AdoptManager(manager); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("adopt written session: %w", err))
+		}
 		if _, err := runtime.service.Refresh(context.Background(), manager.Path(), manager.SessionID()); err != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("refresh session snapshot: %w", err))
 		}
-		runtime.mu.Lock()
-		runtime.running = false
-		runtime.mu.Unlock()
 	}()
 
 	if prompt != nil {
-		user := types.UserMessage{Content: types.UserText(*prompt), Timestamp: time.Now().UnixMilli()}
-		if _, err := manager.AppendMessage(session.UserMessage{Content: session.UserText(*prompt), Timestamp: user.Timestamp}); err != nil {
+		user := session.UserMessage{Content: session.UserText(*prompt), Timestamp: time.Now().UnixMilli()}
+		if _, err := manager.AppendMessage(user); err != nil {
 			return fmt.Errorf("persist user message: %w", err)
 		}
+		conversation.append(user)
 	}
-	contextMessages := manager.ContextMessages()
+	contextMessages := conversation.contextMessages()
 	if prompt == nil && len(contextMessages) == 0 {
 		return errors.New("No previous session found to continue")
 	}
@@ -263,7 +313,15 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, manager
 	config := agent.Config{Model: runtime.model, Provider: runtime.provider,
 		StreamOptions: types.SimpleStreamOptions{Base: types.StreamOptions{SessionID: stringPointer(manager.SessionID()), Headers: runtime.model.Headers}},
 		ConvertToLLM:  func(messages []hooks.Message) []types.Message { return toModelMessages(messages) },
-		Tools:         runtime.applicationTools(manager.SessionID())}
+		Tools:         runtime.applicationTools(session.IDFromPath(manager.Path())),
+		GetSteeringMessages: func() []hooks.Message {
+			var messages []hooks.Message
+			for _, text := range execution.TakeSteering() {
+				display := "[steer] " + text
+				messages = append(messages, hooks.Message{Kind: "standard", Standard: types.UserMessage{Content: types.UserText(text), DisplayText: &display, Timestamp: time.Now().UnixMilli()}})
+			}
+			return messages
+		}}
 	// The manager already includes a newly persisted prompt. Continue runs it
 	// from restored context without appending the same user turn twice.
 	result := agent.Continue(ctx, input, config)
@@ -277,13 +335,20 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, manager
 					emitText(delta.Delta)
 				}
 				if outputErr == nil {
-					if _, err := io.WriteString(runtime.output, delta.Delta); err != nil {
+					runtime.outputMu.Lock()
+					_, err := io.WriteString(runtime.output, delta.Delta)
+					runtime.outputMu.Unlock()
+					if err != nil {
 						outputErr = fmt.Errorf("write CLI output: %w", err)
 					}
 				}
 			}
 		case agent.AgentEnd:
 			completed = event.Messages
+		case agent.MessageEnd:
+			if message, ok := toSessionMessage(event.Message); ok {
+				conversation.appendDisplay(message)
+			}
 		}
 	}
 	ctxErr := ctx.Err()
@@ -295,7 +360,7 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, manager
 			continue
 		}
 		if ctxErr != nil {
-			if assistant, ok := persisted.(session.AssistantMessage); ok {
+			if assistant, ok := persisted.(session.AssistantMessage); ok && (assistant.StopReason == session.Error || assistant.StopReason == session.Aborted) {
 				assistant.StopReason = session.Aborted
 				assistant.ErrorMessage = nil
 				persisted = assistant
@@ -310,8 +375,13 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, manager
 		} else {
 			previousAssistant = nil
 		}
-		if _, err := manager.AppendMessage(persisted); err != nil {
-			return fmt.Errorf("persist agent message: %w", err)
+		conversation.appendContext(persisted)
+		// As in AgentSession::persist_new_messages, loop-produced users are
+		// retained live; the command layer already persisted prompt users.
+		if _, user := persisted.(session.UserMessage); !user {
+			if _, err := manager.AppendMessage(persisted); err != nil {
+				return fmt.Errorf("persist agent message: %w", err)
+			}
 		}
 		if assistant, ok := persisted.(session.AssistantMessage); ok && assistant.StopReason == session.Error {
 			if assistant.ErrorMessage != nil {
@@ -321,22 +391,16 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, manager
 			}
 		}
 	}
-	if len(completed) == 0 && prompt != nil {
+	if len(completed) == 0 && prompt != nil && ctxErr == nil {
 		return errors.New("agent completed without a persistable response")
-	}
-	if ctxErr != nil {
-		return ctxErr
-	}
-	if outputErr != nil {
-		return outputErr
 	}
 	runtime.mu.Lock()
 	runtime.revision++
 	runtime.mu.Unlock()
 	if streamErr != nil {
-		return fmt.Errorf("agent stream: %w", streamErr)
+		streamErr = fmt.Errorf("agent stream: %w", streamErr)
 	}
-	return nil
+	return errors.Join(ctxErr, outputErr, streamErr)
 }
 
 func toHookMessages(messages []session.Message) []hooks.Message {

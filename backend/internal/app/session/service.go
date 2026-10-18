@@ -112,7 +112,9 @@ func (service *Service) Refresh(ctx context.Context, path, catalogID string) (Lo
 	if err != nil {
 		return LoadedSnapshot{}, err
 	}
-	service.publish(active)
+	if service.loaded.activePath == path {
+		service.publish(active)
+	}
 	return active, nil
 }
 

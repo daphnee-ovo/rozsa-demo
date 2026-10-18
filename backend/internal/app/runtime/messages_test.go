@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,23 @@ import (
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/model/types"
 )
+
+func TestBackgroundOperationDoesNotPinAllCompletedOperations(t *testing.T) {
+	operations := newMessageOperations()
+	operations.add(&messageOperation{id: "background"})
+	for i := range 80 {
+		operations.add(&messageOperation{id: fmt.Sprintf("completed-%d", i), terminal: true})
+	}
+	if _, ok := operations.get("background"); !ok {
+		t.Fatal("pruned running background operation")
+	}
+	if _, ok := operations.get("completed-0"); ok {
+		t.Fatal("running background operation pinned old terminal history")
+	}
+	if _, ok := operations.get("completed-79"); !ok {
+		t.Fatal("pruned latest terminal history")
+	}
+}
 
 func TestStartMessageReplaysOrderedEventsToLateSubscription(t *testing.T) {
 	provider := &promptProvider{started: make(chan struct{}), ended: make(chan struct{})}
@@ -37,11 +55,10 @@ func TestStartMessageReplaysOrderedEventsToLateSubscription(t *testing.T) {
 	if err != nil || terminal.Kind != MessageCompleted || terminal.Sequence != 2 {
 		t.Fatalf("terminal event = %#v, %v", terminal, err)
 	}
-	app.mu.Lock()
-	running := app.running
-	app.mu.Unlock()
-	if running {
-		t.Fatal("message remained marked running after completion")
+	for _, status := range app.lifecycle.Snapshot().Sessions {
+		if status.Running {
+			t.Fatal("message remained marked running after completion")
+		}
 	}
 }
 

@@ -58,6 +58,9 @@ func (ownedIO ownedIO) Write(data []byte) (int, error) {
 const maxConcurrentRequests = 8
 const requestTimeout = 30 * time.Second
 
+// Leave the host's three-second process cleanup deadline room for diagnostics.
+const shutdownTimeout = 2 * time.Second
+
 func Serve(input io.Reader, output io.Writer, catalog session.Catalog) error {
 	return ServeApplication(input, output, session.NewService(catalog))
 }
@@ -80,6 +83,8 @@ type MessageApplication interface {
 type RuntimeStatusApplication interface {
 	RuntimeStatus() types.RuntimeStatusResult
 }
+
+type ShutdownApplication interface{ Shutdown(context.Context) error }
 
 type MessageEventSubscription interface {
 	Next(context.Context) (types.MessageEvent, error)
@@ -113,7 +118,7 @@ func serveWithMessages(input io.Reader, output io.Writer, app session.Applicatio
 	return serveProduct(input, output, app, messages, nil, timeout)
 }
 
-func serveProduct(input io.Reader, output io.Writer, app session.ApplicationService, messages MessageApplication, settingsApps []productsettings.Service, timeout time.Duration) error {
+func serveProduct(input io.Reader, output io.Writer, app session.ApplicationService, messages MessageApplication, settingsApps []productsettings.Service, timeout time.Duration) (serveErr error) {
 	lifetime, stop := context.WithCancelCause(context.Background())
 	defer stop(types.Error(types.Disconnected, "Connection ended"))
 	server := newServerWithSettings(app, lifetime, timeout, messages, settingsApps...)
@@ -122,6 +127,7 @@ func serveProduct(input io.Reader, output io.Writer, app session.ApplicationServ
 		server.sync.close()
 		server.messageSync.close()
 		server.jobs.Wait()
+		serveErr = errors.Join(serveErr, server.shutdownApplication())
 	}()
 	conn := jsonrpc2.NewConn(jsonrpc2.NewStream(ownedIO{stdio{input, output}, stop}), jsonrpc2.WithPreempter(server))
 	conn.Go(context.Background(), server.handle)
@@ -157,6 +163,19 @@ type rpcServer struct {
 	ready, closing bool
 	sync           sessionSync
 	messageSync    messageSync
+	shutdownOnce   sync.Once
+	shutdownErr    error
+}
+
+func (server *rpcServer) shutdownApplication() error {
+	server.shutdownOnce.Do(func() {
+		if app, ok := server.messages.(ShutdownApplication); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer cancel()
+			server.shutdownErr = app.Shutdown(ctx)
+		}
+	})
+	return server.shutdownErr
 }
 
 func newServer(app session.ApplicationService, lifetime context.Context, timeout time.Duration, messages ...MessageApplication) *rpcServer {
@@ -257,6 +276,13 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 		server.mu.Unlock()
 		server.sync.close()
 		server.messageSync.close()
+		if err := server.shutdownApplication(); err != nil {
+			kind := types.Message
+			if errors.Is(err, context.DeadlineExceeded) {
+				kind = types.Timeout
+			}
+			return nil, types.Error(kind, fmt.Sprintf("runtime shutdown: %v", err))
+		}
 		return true, nil
 	case types.GetSessions, types.SubscribeSessions:
 		if !types.Params(req.Params(), &types.EmptyParams{}) {

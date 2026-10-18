@@ -277,10 +277,11 @@ func (runner *loop) streamAssistant(modelContext types.Context) (types.Assistant
 		return abortedMessage(runner.config.Model), false, false
 	}
 	streamContext, cancel := context.WithCancel(runner.ctx)
-	defer cancel()
 	stream := make(chan types.StreamEvent, 32)
 	done := make(chan error, 1)
+	finished := make(chan struct{})
 	go func() {
+		defer close(finished)
 		done <- runner.config.Provider.StreamSimple(streamContext, runner.config.Model, modelContext, runner.config.StreamOptions, func(event types.StreamEvent) {
 			select {
 			case stream <- event:
@@ -289,6 +290,9 @@ func (runner *loop) streamAssistant(modelContext types.Context) (types.Assistant
 		})
 		close(stream)
 	}()
+	// Completion includes provider cleanup. The app's shutdown deadline can
+	// report a provider that has not returned after context cancellation.
+	defer func() { cancel(); <-finished }()
 	var partial *types.AssistantMessage
 	partialAdded := false
 	for {

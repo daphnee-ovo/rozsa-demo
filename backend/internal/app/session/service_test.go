@@ -8,6 +8,43 @@ import (
 	"testing"
 )
 
+func TestBackgroundRefreshPreservesSelectionAndWritableOwner(t *testing.T) {
+	dir := fixtureDir(t)
+	pathA := write(t, dir, "a.jsonl", sessionHeader("a"))
+	pathB := write(t, dir, "b.jsonl", sessionHeader("b"))
+	service := NewService(Catalog{Directories: []string{dir}})
+	if _, err := service.Switch(t.Context(), pathA, "a"); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := service.WritableManager(pathA, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Switch(t.Context(), pathB, "b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendMessage(UserMessage{Content: UserText("background")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Refresh(t.Context(), pathA, "a"); err != nil {
+		t.Fatal(err)
+	}
+	state, err := service.Snapshot(t.Context())
+	if err != nil || state.Active == nil || state.Active.Path != pathB {
+		t.Fatalf("background refresh changed selection: %+v, %v", state, err)
+	}
+	if _, err := service.Switch(t.Context(), pathA, "a"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := service.WritableManager(pathA, "a")
+	if err != nil || current != manager {
+		t.Fatalf("refresh replaced writable owner: %p -> %p, %v", manager, current, err)
+	}
+	if len(current.ContextMessages()) != 1 {
+		t.Fatal("background write disappeared")
+	}
+}
+
 func TestServiceWatermarksAndBoundedOverflow(t *testing.T) {
 	dir := fixtureDir(t)
 	path := write(t, dir, "stem.jsonl", sessionHeader("header"))

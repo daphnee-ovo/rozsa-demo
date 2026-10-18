@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -116,6 +117,7 @@ type runtimeCoordinator struct {
 	ready        chan struct{}
 	initErr      error
 	finished     bool
+	closing      bool
 	catalogTrace sync.Once
 	historyTrace sync.Once
 }
@@ -130,7 +132,11 @@ func (coordinator *runtimeCoordinator) complete(app *runtime.Runtime, err error)
 	if coordinator.finished {
 		return
 	}
-	if err == nil && app != nil && coordinator.selected != nil {
+	if coordinator.closing && app != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err = errors.Join(err, app.Shutdown(ctx))
+		cancel()
+	} else if err == nil && app != nil && coordinator.selected != nil {
 		_, err = app.Switch(context.Background(), coordinator.selected.Path, coordinator.selected.CatalogID)
 	}
 	if err == nil && app == nil {
@@ -144,6 +150,9 @@ func (coordinator *runtimeCoordinator) complete(app *runtime.Runtime, err error)
 func (coordinator *runtimeCoordinator) RuntimeStatus() types.RuntimeStatusResult {
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
+	if coordinator.closing {
+		return types.RuntimeStatusResult{State: "failed", Error: "runtime is shutting down"}
+	}
 	if !coordinator.finished {
 		return types.RuntimeStatusResult{State: "initializing"}
 	}
@@ -161,7 +170,28 @@ func (coordinator *runtimeCoordinator) await(ctx context.Context) (*runtime.Runt
 	}
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
+	if coordinator.closing {
+		return nil, errors.New("runtime is shutting down")
+	}
 	return coordinator.runtime, coordinator.initErr
+}
+
+func (coordinator *runtimeCoordinator) Shutdown(ctx context.Context) error {
+	coordinator.mu.Lock()
+	coordinator.closing = true
+	coordinator.mu.Unlock()
+	select {
+	case <-coordinator.ready:
+	case <-ctx.Done():
+		return fmt.Errorf("runtime initialization did not drain: %w", ctx.Err())
+	}
+	coordinator.mu.Lock()
+	app := coordinator.runtime
+	coordinator.mu.Unlock()
+	if app != nil {
+		return app.Shutdown(ctx)
+	}
+	return nil
 }
 
 func (coordinator *runtimeCoordinator) GetSessions(ctx context.Context) ([]session.ListEntry, error) {
@@ -180,6 +210,9 @@ func (coordinator *runtimeCoordinator) GetSessions(ctx context.Context) ([]sessi
 func (coordinator *runtimeCoordinator) Switch(ctx context.Context, path, catalogID string) (session.LoadedSnapshot, error) {
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
+	if coordinator.closing {
+		return session.LoadedSnapshot{}, errors.New("runtime is shutting down")
+	}
 	var snapshot session.LoadedSnapshot
 	var err error
 	firstCall := false

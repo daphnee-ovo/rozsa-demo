@@ -116,10 +116,10 @@ func (loadedSessions *LoadedSessions) Switch(path, catalogID string) (LoadedSnap
 
 func (loadedSessions *LoadedSessions) AdoptManager(manager *Manager) error {
 	manager.mu.Lock()
+	defer manager.mu.Unlock()
 	reader := manager.reader
 	path := reader.path
 	materialized := manager.materialized
-	manager.mu.Unlock()
 	if !materialized {
 		return nil
 	}
@@ -134,13 +134,19 @@ func (loadedSessions *LoadedSessions) AdoptManager(manager *Manager) error {
 	return nil
 }
 
-func loadedSnapshot(path, catalogID string, reader *Reader) (LoadedSnapshot, error) {
+// IDFromPath is the GUI session identity; the persisted header ID remains the
+// catalog identity and can differ from the filename.
+func IDFromPath(path string) string {
 	stem := filepath.Base(path)
 	// Rust file_stem treats a leading dot as part of a dotfile's name.
 	if dot := strings.LastIndex(stem, "."); dot > 0 {
 		stem = stem[:dot]
 	}
-	result := LoadedSnapshot{Path: path, CatalogID: catalogID, SessionID: stem, Cwd: reader.Header().Cwd, Messages: []HistoryMessage{}, ContextMessageCount: len(reader.ContextMessages())}
+	return stem
+}
+
+func loadedSnapshot(path, catalogID string, reader *Reader) (LoadedSnapshot, error) {
+	result := LoadedSnapshot{Path: path, CatalogID: catalogID, SessionID: IDFromPath(path), Cwd: reader.Header().Cwd, Messages: []HistoryMessage{}, ContextMessageCount: len(reader.ContextMessages())}
 	for _, entry := range reader.Entries() {
 		if message, ok := entry.Payload.(MessageEntry); ok {
 			view, err := historyMessage(entry.ID, message.Message)
@@ -156,11 +162,20 @@ func loadedSnapshot(path, catalogID string, reader *Reader) (LoadedSnapshot, err
 // Refresh rereads an already-open tab after its writable session manager has
 // appended entries. Failed reads preserve the previously usable cached tab.
 func (loadedSessions *LoadedSessions) Refresh(path, catalogID string) (LoadedSnapshot, error) {
+	selected := loadedSessions.activePath
 	previous, existed := loadedSessions.tabs[path]
 	delete(loadedSessions.tabs, path)
 	snapshot, err := loadedSessions.Switch(path, catalogID)
 	if err != nil && existed {
 		loadedSessions.tabs[path] = previous
+	}
+	if err == nil && existed {
+		tab := loadedSessions.tabs[path]
+		tab.manager = previous.manager
+		loadedSessions.tabs[path] = tab
+	}
+	if selected != "" || err != nil {
+		loadedSessions.activePath = selected
 	}
 	return snapshot, err
 }

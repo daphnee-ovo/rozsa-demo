@@ -10,6 +10,10 @@ import (
 
 type productMessageApplication struct{ coordinator *runtimeCoordinator }
 
+func (application productMessageApplication) Shutdown(ctx context.Context) error {
+	return application.coordinator.Shutdown(ctx)
+}
+
 func (application productMessageApplication) RuntimeStatus() types.RuntimeStatusResult {
 	return application.coordinator.RuntimeStatus()
 }
