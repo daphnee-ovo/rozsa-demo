@@ -282,7 +282,10 @@ function ToggleSetting({ label, value, disabled, onSave, onReset }: { label: str
   return <div className={`setting-item${disabled ? " is-disabled" : ""}`}><span className="setting-label">{label}</span><button type="button" className={`setting-toggle${value ? " on" : ""}`} role="switch" aria-label={label} aria-checked={value} disabled={disabled} onClick={() => onSave(!value)} />{onReset && <button type="button" className="setting-reset" disabled={disabled} onClick={onReset}>Reset</button>}</div>;
 }
 function SelectSetting({ label, value, values, disabled, onSave, onReset }: { label: string; value: string; values: string[]; disabled: boolean; onSave(value: string): Promise<void>; onReset?(): Promise<void> }) {
-  return <label className="setting-item"><span className="setting-label">{label}</span><select className="setting-select" aria-label={label} value={value} disabled={disabled} onChange={event => onSave(event.currentTarget.value)}>{values.map(item => <option key={item} value={item}>{optionLabel(item)}</option>)}</select>{onReset && <button type="button" className="setting-reset" disabled={disabled} onClick={onReset}>Reset</button>}</label>;
+  return <label className="setting-item"><span className="setting-label">{label}</span><select className="setting-select" aria-label={label} value={value} disabled={disabled} onChange={event => onSave(event.currentTarget.value)}>{values.map(item => {
+    const unavailable = label === "Transport" && item.startsWith("websocket");
+    return <option key={item} value={item} disabled={unavailable}>{optionLabel(item)}{unavailable ? " (not implemented)" : ""}</option>;
+  })}</select>{onReset && <button type="button" className="setting-reset" disabled={disabled} onClick={onReset}>Reset</button>}</label>;
 }
 function ModelSetting({ label, models, value, disabled, onSave, onReset }: { label: string; models: ModelOption[]; value: string; disabled: boolean; onSave(value: string): Promise<void>; onReset?(): Promise<void> }) {
   return <label className="setting-item"><span className="setting-label">{label}</span><select className="setting-select" aria-label={label} value={value} disabled={disabled || models.length === 0} onChange={event => onSave(event.currentTarget.value)}>

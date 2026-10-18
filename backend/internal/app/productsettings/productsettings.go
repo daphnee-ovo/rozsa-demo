@@ -190,9 +190,9 @@ func (service *service) Update(scope Scope, key string, value any) (Snapshot, er
 		if err := validateValue(key, normalized); err != nil {
 			return Snapshot{}, err
 		}
-	if key == "transport" && normalized != "auto" {
-		return Snapshot{}, fmt.Errorf("transport %q is not supported by the Go provider runtime", normalized)
-	}
+		if key == "transport" && normalized != "auto" && normalized != "sse" {
+			return Snapshot{}, fmt.Errorf("transport %q is not implemented", normalized)
+		}
 		var previousThinking any
 		if key == "thinking" {
 			overrides, err := service.settings.Overrides(scope)

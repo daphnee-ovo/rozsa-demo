@@ -70,6 +70,29 @@ func TestSnapshotUpdateAndResetUseLayeredSettingsAndThemeContract(t *testing.T) 
 	}
 }
 
+func TestSSETransportPersistsAcrossScopesAndRejectsWebSocket(t *testing.T) {
+	service := newTestService(t)
+	if _, err := service.Update(Global, "transport", "sse"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Update(Project, "transport", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	inherited, err := service.Reset(Project, "transport")
+	if err != nil || inherited.Settings["transport"] != "sse" {
+		t.Fatalf("inherited transport: %#v, %v", inherited.Settings, err)
+	}
+	for _, value := range []string{"websocket", "websocket-cached"} {
+		if _, err := service.Update(Global, "transport", value); err == nil {
+			t.Fatalf("accepted %s", value)
+		}
+	}
+	current, err := service.Snapshot(Global)
+	if err != nil || current.Settings["transport"] != "sse" {
+		t.Fatalf("failed update changed transport: %#v, %v", current.Settings, err)
+	}
+}
+
 func TestThemeSaveAndSelectionReturnPersistedDefinition(t *testing.T) {
 	service := newTestService(t)
 	theme := themes.Definition{

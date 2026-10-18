@@ -360,6 +360,8 @@ scope、缺省继承、不创建文件、override-only 落盘、reset 恢复、�
 
 #### TASK-T036 当前覆盖与差异
 
+2026-10-18 批准 T2 + M1：Transport 按实际能力提供 `auto`/`sse`，WebSocket 两项可见但禁用并标明未实现；既有配置不静默改写（TASK-T091）。模型目录继续沿用 Rust provider 凭据过滤，配置读取 `<global>/models/` 与 `<project>/models/`，凭据统一为 `<global>/models/auth.json`。列表可刷新并写回 OAuth 凭据，失败进入桌面异常通知；登录/注销与动态发现只更新对应 provider 的模型，主模型和小模型消费同一目录。公共链路由 TASK-T092 提供，OAuth 登录生命周期由 TASK-T032–T034 接入，T036 依赖这些任务。
+
 Go `internal/app/productsettings` 组合 T015 settings manager 与 T030 themes public contracts，提供 settings snapshot/update/reset、model catalog/selection、theme list/get/save；JSON-RPC、Electron main IPC、sandbox preload 与 renderer adapter 均有 typed/runtime 校验。React+TSX 现承载 General 与 Appearance，支持 global/project 写入、reset、模型/小模型选择及元数据、主题选择/编辑、字号和 sidebar 偏好。Go runtime 在后续 turn 使用新模型、thinking、image blocking、compaction 与 retry settings；首轮命名支持直接标题和已配置 small model。macOS translucent sidebar 由 Electron main 从持久化快照恢复并即时应用/清除 vibrancy。设置读取错误、写入失败、加载、依赖禁用、runtime setter 失败回滚、空模型目录和 scoped override 有针对性测试。
 
 对照来源为 `crates/rozsa-gui/frontend/ui/templates/features/settings.html`、`ui/scripts/features/settings.js`、`desktop/renderer/runtime/app/appearance-settings.ts`、`scenes-settings.ts`、`sessions-models.ts` 和 `crates/rozsa-gui/src/commands.rs` 的设置/模型命令，以及 `crates/rozsa-app/src/agent_session.rs` 的自动压缩与命名。Go 模型 catalog 当前列出 configured registry entries；与 Rust 根据 provider auth availability 过滤模型的边界尚未补齐。当前 Go provider 只实现 HTTP/SSE；WebSocket transport 选项和 General 中的 steering/follow-up/running-send mode 尚未接入执行路径。Native vibrancy 与 runtime settings 通过 mock/本地 Go 进程测试；打包 Electron GUI 的真实 macOS 材质效果未验证。

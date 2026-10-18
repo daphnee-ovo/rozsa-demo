@@ -1,0 +1,47 @@
+---
+source: test
+nums: 1
+---
+
+- [x] ISSUE-I019：Test TASK-T091 fail:node:internal/modules/esm/get_format:243
+  - severity: P1
+  - location：desktop/tests/general-settings.test.js
+  - description：node:internal/modules/esm/get_format:243
+      throw new ERR_UNKNOWN_FILE_EXTENSION(ext, filepath);
+            ^
+    
+    TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".tsx" for /Users/xinyue/ballad/rozsa-demo/desktop/renderer/scripts/features/settings.tsx
+        at Object.getFileProtocolModuleFormat [as file:] (node:internal/modules/esm/get_format:243:9)
+        at defaultGetFormat (node:internal/modules/esm/get_format:283:36)
+        at defaultLoadSync (node:internal/modules/esm/load:159:16)
+        at #loadAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:809:12)
+        at #loadSync (node:internal/modules/esm/loader:841:53)
+        at ModuleLoader.load (node:internal/modules/esm/loader:790:26)
+        at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:501:31)
+        at #getOrCreateModuleJobAfterResolve (node:internal/modules/esm/loader:567:36)
+        at afterResolve (node:internal/modules/esm/loader:614:52)
+        at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:620:12) {
+      code: 'ERR_UNKNOWN_FILE_EXTENSION'
+    }
+    
+    Node.js v26.10.0
+    ✖ general-settings.test.js (181.213ms)
+    ℹ tests 1
+    ℹ suites 0
+    ℹ pass 0
+    ℹ fail 1
+    ℹ cancelled 0
+    ℹ skipped 0
+    ℹ todo 0
+    ℹ duration_ms 192.980042
+    
+    ✖ failing tests:
+    
+    test at general-settings.test.js:1:1
+    ✖ general-settings.test.js (181.213ms)
+      'test failed'
+  - reproduce：node --test 'general-settings.test.js'
+    project_root: /Users/xinyue/ballad/rozsa-demo
+  - fix：DOW Node adapter未加载tsx导致配置失败；使用项目已有tsx loader运行完成验收，9项桌面行为及Go测试全部通过，无需修改产品或测试期望。
+  - files_modify: [desktop/tests/general-settings.test.js]
+  - files_create: []

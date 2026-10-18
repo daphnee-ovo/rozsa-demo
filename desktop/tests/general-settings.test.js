@@ -106,6 +106,34 @@ test('settings panes show configured model metadata, save selection and expose d
   } finally { await app.close(); }
 });
 
+test('transport exposes SSE and visibly disables unimplemented WebSocket modes', async () => {
+  const app = harness();
+  try {
+    await app.mount();
+    const select = document.querySelector('[aria-label="Transport"]');
+    for (const value of ['websocket', 'websocket-cached']) {
+      const option = select.querySelector(`option[value="${value}"]`);
+      assert.equal(option.disabled, true);
+      assert.match(option.textContent, /not implemented/i);
+    }
+    assert.equal(select.querySelector('option[value="sse"]').disabled, false);
+    await app.flush(() => { select.value = 'sse'; select.dispatchEvent(new app.dom.window.Event('change', { bubbles: true })); });
+    assert.ok(app.calls.some(call => call[0] === 'update' && call[2] === 'transport' && call[3] === 'sse'));
+  } finally { await app.close(); }
+});
+
+test('a saved WebSocket preference remains visible without being rewritten', async () => {
+  const app = harness();
+  app.bridge.getSettings = scope => Promise.resolve({ ...snapshot(scope), settings: { ...snapshot(scope).settings, transport: 'websocket-cached' } });
+  try {
+    await app.mount();
+    const select = document.querySelector('[aria-label="Transport"]');
+    assert.equal(select.value, 'websocket-cached');
+    assert.equal(select.selectedOptions[0].disabled, true);
+    assert.equal(app.calls.some(call => call[0] === 'update'), false);
+  } finally { await app.close(); }
+});
+
 test('an empty model catalog is visible and disables only model selection', async () => {
   const app = harness();
   app.bridge.getSettings = scope => Promise.resolve(snapshot(scope, []));
