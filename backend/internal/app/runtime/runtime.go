@@ -19,6 +19,7 @@ import (
 	"rozsa/backend/internal/app/questions"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/sessions"
+	"rozsa/backend/internal/app/subagent"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
 	modelprotocol "rozsa/backend/internal/model"
@@ -55,6 +56,9 @@ type Runtime struct {
 	messages      *messageOperations
 	conversations map[string]*conversation
 	closing       bool
+
+	subagents      map[string]subagent.Manager
+	subagentEvents map[string][]subagent.Event
 }
 
 func New(config Config) (*Runtime, error) {

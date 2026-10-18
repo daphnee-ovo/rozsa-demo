@@ -47,7 +47,7 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	runtime.mu.Lock()
 	runtime.closing = true
 	runtime.mu.Unlock()
-	return runtime.lifecycle.Shutdown(ctx)
+	return errors.Join(runtime.shutdownSubagents(ctx), runtime.lifecycle.Shutdown(ctx))
 }
 
 // ForkSession copies display history through the selected user message, with

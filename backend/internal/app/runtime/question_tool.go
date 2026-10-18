@@ -19,7 +19,7 @@ type askUserQuestionTool struct {
 }
 
 func (runtime *Runtime) applicationTools(sessionID string) []tools.Tool {
-	return []tools.Tool{askUserQuestionTool{sessionID: sessionID, owner: runtime.questions}}
+	return []tools.Tool{askUserQuestionTool{sessionID: sessionID, owner: runtime.questions}, runtime.subagentTool(sessionID)}
 }
 
 func (tool askUserQuestionTool) Name() string  { return askUserQuestionName }
