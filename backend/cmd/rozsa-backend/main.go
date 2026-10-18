@@ -11,8 +11,12 @@ import (
 	"time"
 
 	"rozsa/backend/internal/app/bootstrap"
+	"rozsa/backend/internal/app/productsettings"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/app/settings"
+	"rozsa/backend/internal/app/themes"
+	"rozsa/backend/internal/platform/configpaths"
 	"rozsa/backend/internal/transport/server"
 	"rozsa/backend/internal/transport/types"
 )
@@ -57,6 +61,18 @@ func main() {
 		writeDirectory = catalogDirectories[0]
 	}
 	sessions := session.NewService(session.Catalog{Directories: catalogDirectories})
+	roots, err := configpaths.Discover(cwd)
+	if err != nil {
+		fail(err.Error())
+	}
+	settingsPaths := roots.SettingsPaths()
+	projectSettingsPath := settingsPaths[1]
+	settingsManager, err := settings.Load(settingsPaths[0], &projectSettingsPath, nil)
+	if err != nil {
+		fail(err.Error())
+	}
+	themeDirectories := roots.ThemeDirs()
+	productSettings := productsettings.New(settingsManager, themes.NewStore(themeDirectories[0], themeDirectories[1]))
 	backendStartupMark("session-service-ready")
 	coordinator := newRuntimeCoordinator(sessions)
 	backendStartupMark("runtime-initialization-started")
@@ -80,7 +96,7 @@ func main() {
 		coordinator.complete(app, initErr)
 	}()
 	backendStartupMark("rpc-server-starting")
-	if err := server.ServeProductApplication(os.Stdin, os.Stdout, coordinator, productMessageApplication{coordinator: coordinator}); err != nil {
+	if err := server.ServeProductApplication(os.Stdin, os.Stdout, coordinator, productMessageApplication{coordinator: coordinator}, productSettings); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
