@@ -128,6 +128,50 @@ func TestBuiltinSkillDownloadsEntireDirectoryAndFillsMissingFilesWithoutOverwrit
 	}
 }
 
+func TestBuiltinSkillMarkerIsPublishedOnlyAfterOtherFilesInstall(t *testing.T) {
+	server := newBuiltinContentsServer(t, map[string]any{
+		"rozsa-docs": []map[string]string{
+			{"name": "SKILL.md", "type": "file", "download_url": "/raw/rozsa-docs/SKILL.md"},
+			{"name": "references", "type": "dir"},
+		},
+		"rozsa-docs/references": []map[string]string{{"name": "guide.md", "type": "file", "download_url": "/raw/rozsa-docs/references/guide.md"}},
+	})
+	defer server.Close()
+	globalSkillDirectory := filepath.Join(t.TempDir(), "global", "skills")
+	destination := filepath.Join(globalSkillDirectory, ".builtin", "rozsa-docs")
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	blocker := filepath.Join(destination, "references")
+	if err := os.WriteFile(blocker, []byte("keep this file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := builtinSource{baseURL: server.URL + "/contents/builtin-skills", client: server.Client()}
+	missing := []string{"rozsa-docs"}
+	if err := downloadBuiltinSkills(context.Background(), globalSkillDirectory, missing, source); err == nil {
+		t.Fatal("installation succeeded despite a conflicting auxiliary path")
+	}
+	marker := filepath.Join(destination, "SKILL.md")
+	if _, err := os.Lstat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("SKILL.md was published before auxiliary installation completed: %v", err)
+	}
+	missing, err := checkMissingBuiltinSkills(globalSkillDirectory, []string{"rozsa-docs"})
+	if err != nil || !reflect.DeepEqual(missing, []string{"rozsa-docs"}) {
+		t.Fatalf("incomplete install was not reported as missing: %#v, err=%v", missing, err)
+	}
+	if err := os.Remove(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if err := downloadBuiltinSkills(context.Background(), globalSkillDirectory, missing, source); err != nil {
+		t.Fatalf("retry installation: %v", err)
+	}
+	for _, file := range []string{"SKILL.md", "references/guide.md"} {
+		if _, err := os.Stat(filepath.Join(destination, file)); err != nil {
+			t.Errorf("installed file %s: %v", file, err)
+		}
+	}
+}
+
 func TestBuiltinSkillRejectsUnsafeRemotePath(t *testing.T) {
 	server := newBuiltinContentsServer(t, map[string]any{
 		"":                      []map[string]string{{"name": "rozsa-docs", "type": "dir"}},
@@ -192,7 +236,7 @@ func TestBuiltinConfigAndInitializationErrorNotification(t *testing.T) {
 	resolver := func(projectDir string) (configpaths.Roots, error) {
 		return configpaths.Resolve(projectDir, &global, nil, nil, "darwin")
 	}
-	writeSkill(t, global, "available", "---\nname: available\ndescription: local skill\n---\nbody")
+	writeSkill(t, filepath.Join(global, "skills"), "available", "---\nname: available\ndescription: local skill\n---\nbody")
 	var notification error
 	application := NewApplicationWithBuiltinURL(nil, resolver, server.URL, server.Client(), func(err error) { notification = err })
 	loaded, err := application.Enabled(t.TempDir(), nil)

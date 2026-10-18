@@ -231,7 +231,7 @@ func installRemoteSkill(ctx context.Context, globalSkillsDirectory string, sourc
 }
 
 func mergeMissingSkillFiles(staging, destination string) error {
-	return filepath.WalkDir(staging, func(sourcePath string, entry os.DirEntry, walkErr error) error {
+	if err := filepath.WalkDir(staging, func(sourcePath string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -241,6 +241,9 @@ func mergeMissingSkillFiles(staging, destination string) error {
 		relative, err := filepath.Rel(staging, sourcePath)
 		if err != nil {
 			return err
+		}
+		if relative == "SKILL.md" {
+			return nil
 		}
 		target := filepath.Join(destination, relative)
 		if entry.IsDir() {
@@ -276,7 +279,66 @@ func mergeMissingSkillFiles(staging, destination string) error {
 			return fmt.Errorf("install skill file %q: %w", relative, err)
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	return publishSkillMarkerAtomically(staging, destination)
+}
+
+func publishSkillMarkerAtomically(staging, destination string) error {
+	source := filepath.Join(staging, "SKILL.md")
+	target := filepath.Join(destination, "SKILL.md")
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("inspect downloaded SKILL.md: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("downloaded SKILL.md is not a regular file")
+	}
+
+	if info, err := os.Lstat(target); err == nil {
+		if info.Mode().IsRegular() {
+			return nil
+		}
+		return fmt.Errorf("existing SKILL.md is not a regular file: %s", target)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect existing SKILL.md %q: %w", target, err)
+	}
+
+	temporary, err := os.CreateTemp(destination, ".SKILL.md-install-*")
+	if err != nil {
+		return fmt.Errorf("create temporary SKILL.md: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+
+	contents, err := os.ReadFile(source)
+	if err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("read downloaded SKILL.md: %w", err)
+	}
+	if _, err := temporary.Write(contents); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("write temporary SKILL.md: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("sync temporary SKILL.md: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close temporary SKILL.md: %w", err)
+	}
+	if err := os.Link(temporaryPath, target); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			info, statErr := os.Lstat(target)
+			if statErr == nil && info.Mode().IsRegular() {
+				return nil
+			}
+			return fmt.Errorf("existing SKILL.md is not a regular file: %s", target)
+		}
+		return fmt.Errorf("publish SKILL.md atomically: %w", err)
+	}
+	return nil
 }
 
 func ensureSafeDirectories(root, target string) error {
