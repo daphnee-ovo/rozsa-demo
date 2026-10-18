@@ -436,6 +436,38 @@ func TestHTTPFailuresAndNoRetry(t *testing.T) {
 	}
 }
 
+func TestConfiguredRetryCountAndDelayCap(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if requests.Add(1) == 1 {
+			writer.Header().Set("Retry-After", "10")
+			writer.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = fmt.Fprint(writer, emptyMessage())
+	}))
+	defer server.Close()
+	model := fixtureModel()
+	model.BaseURL = server.URL
+	retries := uint32(1)
+	start := time.Now()
+	err := newTestProvider(server.Client()).StreamSimple(context.Background(), model, fixtureContext(), types.SimpleStreamOptions{Base: types.StreamOptions{APIKey: "secret", MaxRetries: &retries, MaxRetryDelay: time.Millisecond}}, func(types.StreamEvent) {})
+	if err != nil || requests.Load() != 2 {
+		t.Fatalf("err=%v requests=%d", err, requests.Load())
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("Retry-After exceeded configured delay cap: %s", elapsed)
+	}
+
+	zero := uint32(0)
+	requests.Store(0)
+	err = newTestProvider(server.Client()).StreamSimple(context.Background(), model, fixtureContext(), types.SimpleStreamOptions{Base: types.StreamOptions{APIKey: "secret", MaxRetries: &zero}}, func(types.StreamEvent) {})
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) || requests.Load() != 1 {
+		t.Fatalf("err=%v requests=%d, want one request and HTTP error", err, requests.Load())
+	}
+}
+
 func TestCancelTimeoutAndDisconnectedBody(t *testing.T) {
 	for _, mode := range []string{"before request", "before headers", "during stream", "timeout"} {
 		t.Run(mode, func(t *testing.T) {

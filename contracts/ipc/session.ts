@@ -36,11 +36,13 @@ export interface ThemeDefinition {
   foreground: string; uiFont: string; codeFont: string; variables: Record<string, string>;
 }
 export interface ThemeSummary { id: string; name: string; mode: "light" | "dark" }
+export interface ModelOption { id: string; name: string; provider: string; reasoning: boolean; contextWindow: number }
 export interface SettingsSnapshot {
   scope: SettingsScope;
   settings: Record<string, unknown>;
   appearance: { themeMode: "system" | "light" | "dark"; fontSize: number; translucentSidebar: boolean; lightTheme: ThemeDefinition; darkTheme: ThemeDefinition };
   themes: ThemeSummary[];
+  models: ModelOption[];
 }
 export type MessageEvent =
   | { sequence: number; kind: "text_delta"; delta: string; error?: never }

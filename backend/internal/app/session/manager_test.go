@@ -680,3 +680,19 @@ func TestManagerFileWriteFailures(t *testing.T) {
 		t.Fatal("failed cwd write advanced state")
 	}
 }
+
+func TestAppendSessionInfoIfUnsetPreservesManualRename(t *testing.T) {
+	manager := managerForTest(t)
+	appended, err := manager.AppendSessionInfoIfUnset("generated title")
+	if err != nil || !appended || manager.CurrentName() == nil || *manager.CurrentName() != "generated title" {
+		t.Fatalf("generated session name: appended=%v name=%v err=%v", appended, manager.CurrentName(), err)
+	}
+	manual := "manual title"
+	if _, err := manager.AppendSessionInfo(&manual); err != nil {
+		t.Fatal(err)
+	}
+	appended, err = manager.AppendSessionInfoIfUnset("late generated title")
+	if err != nil || appended || manager.CurrentName() == nil || *manager.CurrentName() != manual {
+		t.Fatalf("late generator replaced manual name: appended=%v name=%v err=%v", appended, manager.CurrentName(), err)
+	}
+}

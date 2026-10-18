@@ -1,5 +1,5 @@
-import { validatedBridgeFault, ProductFailure, type BridgeFault, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary } from "../../contracts/ipc/session.js";
-export type { SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../contracts/ipc/session.js";
+import { validatedBridgeFault, ProductFailure, type BridgeFault, type ModelOption, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary } from "../../contracts/ipc/session.js";
+export type { ModelOption, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../contracts/ipc/session.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { MessageEvent } from "../../contracts/ipc/session.js";
 export { ProductFailure, RPCFailure, bridgeFault, remoteFault, transportFailure } from "../../contracts/ipc/session.js";
@@ -153,13 +153,21 @@ export function themeSummary(value: unknown): ThemeSummary {
   return value as unknown as ThemeSummary;
 }
 export function settingsSnapshot(value: unknown): SettingsSnapshot {
-  if (!record(value) || (value.scope !== "global" && value.scope !== "project") || !record(value.settings) || !record(value.appearance) || !Array.isArray(value.themes)) throw new Error("Invalid settings response");
+  if (!record(value)) throw new Error("Invalid settings response");
+  if (value.scope !== "global" && value.scope !== "project") throw new Error("Invalid settings scope response");
+  if (!record(value.settings)) throw new Error("Invalid settings values response");
+  if (!record(value.appearance)) throw new Error("Invalid appearance response");
+  if (!Array.isArray(value.themes)) throw new Error("Invalid theme catalog response");
+  if (!Array.isArray(value.models)) throw new Error("Invalid model catalog response");
   const appearance = value.appearance;
   if (!["system", "light", "dark"].includes(appearance.themeMode as string) || !Number.isInteger(appearance.fontSize)
     || typeof appearance.translucentSidebar !== "boolean") throw new Error("Invalid appearance response");
   themeDefinition(appearance.lightTheme);
   themeDefinition(appearance.darkTheme);
   value.themes.forEach(themeSummary);
+  if (!value.models.every(model => record(model) && typeof model.id === "string" && model.id.length > 0
+    && typeof model.name === "string" && typeof model.provider === "string" && typeof model.reasoning === "boolean"
+    && Number.isSafeInteger(model.contextWindow) && (model.contextWindow as number) > 0)) throw new Error("Invalid model catalog response");
   return value as unknown as SettingsSnapshot;
 }
 

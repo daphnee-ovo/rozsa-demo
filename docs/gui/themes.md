@@ -2,7 +2,7 @@
 
 本文的 `frontend/` 路径与 Tauri 行为属于旧 Rust 工程。新前端及其原型只共享 `desktop/renderer/`；两套工程的源码、测试、资源、入口和构建产物互不依赖。下文的共享约束仅限各自工程内部。
 
-旧 Rust/Tauri Appearance 位于设置面板的 `Appearance` tab，行为来源是 `crates/rozsa-gui/frontend/ui/templates/features/settings.html` 与 `ui/scripts/features/settings.js`。Electron 产品由 `desktop/renderer/scripts/features/settings.tsx` 提供 React 界面，通过 `get_settings`、`update_setting`、`list_themes`、`get_theme` 与 `save_theme` 调用 Go `productsettings` 和 `themes` 契约；Go 返回持久化后的分层设置及完整主题快照。`global` 与 `project` scope 分别写入对应设置层，`reset_setting` 删除当前层的覆盖值。Renderer 应用主题 token，Electron main 持有窗口 vibrancy；目前 translucent sidebar 的偏好可持久化，但运行时开关尚未接入窗口 vibrancy 更新。
+旧 Rust/Tauri Appearance 位于设置面板的 `Appearance` tab，行为来源是 `crates/rozsa-gui/frontend/ui/templates/features/settings.html` 与 `ui/scripts/features/settings.js`。Electron 产品由 `desktop/renderer/scripts/features/settings.tsx` 提供 React 界面，通过 `get_settings`、`update_setting`、`list_themes`、`get_theme` 与 `save_theme` 调用 Go `productsettings` 和 `themes` 契约；Go 返回持久化后的分层设置及完整主题快照。`global` 与 `project` scope 分别写入对应设置层，`reset_setting` 删除当前层的覆盖值。Renderer 应用主题 token；Electron main 在 macOS 根据已保存的 `translucentSidebar` 设置应用或清除 sidebar vibrancy，读取设置时也会恢复该状态。其他平台不应用 macOS vibrancy。
 
 界面只暴露以下运行时选项：
 
@@ -59,7 +59,7 @@ Accent、Background、Foreground、UI font 和 Code font 在修改后自动写�
 }
 ```
 
-`mode` 必须与 Light/Dark Theme 匹配。主题文件解析失败、字段为空、CSS 变量名非法或值包含不支持的字符时，GUI 会返回明确错误，不会静默加载空主题。
+`mode` 必须与 Light/Dark Theme 匹配。主题文件解析失败、字段为空、CSS 变量名非法或值包含不支持的字符时，GUI 会返回明确错误，不会静默加载空主题。macOS vibrancy 的单元与 bridge 行为由桌面定向测试覆盖；打包应用中的实际系统材质效果尚未进行宿主 GUI 验证。
 
 视觉 token 位于共享 `ui/styles/foundations/tokens.css`；新增组件不在宿主保存第二套颜色。设计与缺口边界见 [GUI 架构](./ARCHITECTURE.md)。
 

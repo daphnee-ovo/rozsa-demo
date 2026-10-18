@@ -6,15 +6,19 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
+	"rozsa/backend/internal/app/compaction"
+	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/questions"
 	"rozsa/backend/internal/app/session"
@@ -28,34 +32,41 @@ import (
 )
 
 type Config struct {
-	SessionDir     string
-	SessionDirs    []string
-	SessionService *session.Service
-	Model          types.Model
-	APIKey         string
-	AuthPath       string
-	Provider       agent.Provider
-	Output         io.Writer
-	LifecycleHooks sessions.Hooks
+	SessionDir       string
+	SessionDirs      []string
+	SessionService   *session.Service
+	ModelRegistry    *modelregistry.Registry
+	Model            types.Model
+	ThinkingEffort   types.ThinkingEffort
+	ResolvedSettings func() map[string]any
+	APIKey           string
+	AuthPath         string
+	Provider         agent.Provider
+	Output           io.Writer
+	LifecycleHooks   sessions.Hooks
 }
 
 // Runtime composes providers and persistence with a session lifecycle owner.
 type Runtime struct {
-	mu            sync.Mutex
-	session       *session.Manager
-	service       *session.Service
-	model         types.Model
-	provider      agent.Provider
-	questions     *questions.Owner
-	approvals     *permissions.Owner
-	lifecycle     sessions.Owner
-	sessionDir    string
-	outputMu      sync.Mutex
-	output        io.Writer
-	revision      uint64
-	messages      *messageOperations
-	conversations map[string]*conversation
-	closing       bool
+	mu               sync.Mutex
+	session          *session.Manager
+	service          *session.Service
+	modelRegistry    *modelregistry.Registry
+	model            types.Model
+	thinkingEffort   types.ThinkingEffort
+	resolvedSettings func() map[string]any
+	provider         agent.Provider
+	authPath         string
+	questions        *questions.Owner
+	approvals        *permissions.Owner
+	lifecycle        sessions.Owner
+	sessionDir       string
+	outputMu         sync.Mutex
+	output           io.Writer
+	revision         uint64
+	messages         *messageOperations
+	conversations    map[string]*conversation
+	closing          bool
 
 	subagents      map[string]subagent.Manager
 	subagentEvents map[string][]subagent.Event
@@ -115,7 +126,11 @@ func New(config Config) (*Runtime, error) {
 	if err := service.AdoptManager(manager); err != nil {
 		return nil, fmt.Errorf("prepare active session snapshot: %w", err)
 	}
-	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, provider: config.Provider, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), messages: newMessageOperations()}
+	effort := config.ThinkingEffort
+	if effort == "" || !config.Model.SupportsThinking(effort) {
+		effort = types.ThinkingOff
+	}
+	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, modelRegistry: config.ModelRegistry, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), messages: newMessageOperations()}
 	lifecycleHooks := config.LifecycleHooks
 	rejectApprovals, cancelQuestions := lifecycleHooks.RejectApprovals, lifecycleHooks.CancelQuestions
 	lifecycleHooks.RejectApprovals = func(id string) error {
@@ -137,6 +152,92 @@ func New(config Config) (*Runtime, error) {
 		return nil, err
 	}
 	return runtime, nil
+}
+
+// SetModel validates and prepares the provider before replacing the model used
+// by subsequent runtime turns. A running turn retains its current snapshot.
+func (runtime *Runtime) SetModel(model types.Model, configuredAPIKey string, effort types.ThinkingEffort) error {
+	if model.ID == "" || model.Provider == "" || model.API == "" {
+		return errors.New("runtime requires a configured model, provider and API")
+	}
+	if !validThinkingEffort(effort) {
+		return fmt.Errorf("invalid thinking effort: %s", effort)
+	}
+	if !model.SupportsThinking(effort) {
+		effort = types.ThinkingOff
+	}
+	wrappedProvider, err := prepareModelProvider(model, configuredAPIKey, runtime.authPath)
+	if err != nil {
+		return err
+	}
+
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.closing {
+		return sessions.ErrClosed
+	}
+	runtime.model = model
+	runtime.thinkingEffort = effort
+	runtime.provider = wrappedProvider
+	return nil
+}
+
+func prepareModelProvider(model types.Model, configuredAPIKey, authPath string) (agent.Provider, error) {
+	protocol, err := modelprotocol.NewProtocol(model.API)
+	if err != nil {
+		return nil, err
+	}
+	resolver := credentials.NewResolver()
+	key := ""
+	if configuredAPIKey != "" {
+		key, err = resolver.ResolveConfigValue(configuredAPIKey)
+		if err != nil {
+			return nil, fmt.Errorf("resolve credentials for %s: %w", model.Provider, err)
+		}
+	} else if credentialed, ok := protocol.(types.ExternalCredentials); ok && credentialed.UsesExternalCredentials() {
+		// The protocol owns credentials from the SDK default chain or a
+		// protocol-specific bearer token provider.
+	} else {
+		key, err = resolveProviderKey(context.Background(), resolver, model.Provider, "", authPath)
+		if err != nil {
+			return nil, fmt.Errorf("resolve credentials for %s: %w", model.Provider, err)
+		}
+		if key == "" {
+			return nil, fmt.Errorf("No API key for provider: %s", model.Provider)
+		}
+	}
+	return providerWithKey{Provider: protocol, key: key}, nil
+}
+
+func (runtime *Runtime) SetThinkingEffort(effort types.ThinkingEffort) (types.ThinkingEffort, error) {
+	if !validThinkingEffort(effort) {
+		return "", fmt.Errorf("invalid thinking effort: %s", effort)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.closing {
+		return "", sessions.ErrClosed
+	}
+	if !runtime.model.SupportsThinking(effort) {
+		effort = types.ThinkingOff
+	}
+	runtime.thinkingEffort = effort
+	return effort, nil
+}
+
+func (runtime *Runtime) Model() types.Model {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return runtime.model
+}
+
+func validThinkingEffort(effort types.ThinkingEffort) bool {
+	switch effort {
+	case types.ThinkingOff, types.ThinkingLow, types.ThinkingMedium, types.ThinkingHigh, types.ThinkingXHigh, types.ThinkingMax:
+		return true
+	default:
+		return false
+	}
 }
 
 func resolveProviderKey(ctx context.Context, resolver credentials.Resolver, provider, configured, authPath string) (string, error) {
@@ -293,6 +394,11 @@ func (runtime *Runtime) runExecution(prompt *string, execution sessions.Executio
 func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, execution sessions.Execution, emitText func(string)) (runErr error) {
 	manager := execution.Manager()
 	conversation := runtime.conversation(manager)
+	settings := map[string]any{}
+	if runtime.resolvedSettings != nil {
+		settings = runtime.resolvedSettings()
+	}
+	nameCandidate := prompt != nil && boolSetting(settings["autoSessionNaming"]) && manager.CurrentName() == nil && !hasUserMessage(conversation.contextMessages())
 	defer func() {
 		if err := runtime.service.AdoptManager(manager); err != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("adopt written session: %w", err))
@@ -314,8 +420,14 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 		return errors.New("No previous session found to continue")
 	}
 	input := hooks.AgentContext{Messages: toHookMessages(contextMessages)}
-	config := agent.Config{Model: runtime.model, Provider: runtime.provider,
-		StreamOptions: types.SimpleStreamOptions{Base: types.StreamOptions{SessionID: stringPointer(manager.SessionID()), Headers: runtime.model.Headers}},
+	if enabled, _ := settings["blockImages"].(bool); enabled {
+		input.Messages = withoutImages(input.Messages)
+	}
+	runtime.mu.Lock()
+	model, provider, effort := runtime.model, runtime.provider, runtime.thinkingEffort
+	runtime.mu.Unlock()
+	config := agent.Config{Model: model, Provider: provider,
+		StreamOptions: types.SimpleStreamOptions{Base: types.StreamOptions{SessionID: stringPointer(manager.SessionID()), Headers: model.Headers}},
 		ConvertToLLM:  func(messages []hooks.Message) []types.Message { return toModelMessages(messages) },
 		Tools:         runtime.applicationTools(session.IDFromPath(manager.Path())),
 		GetSteeringMessages: func() []hooks.Message {
@@ -326,6 +438,21 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 			}
 			return messages
 		}}
+	if retry := objectSetting(settings["retry"]); retry != nil {
+		if timeout, ok := settingInteger(retry["timeoutMs"]); ok && timeout > 0 {
+			config.StreamOptions.Base.Timeout = time.Duration(timeout) * time.Millisecond
+		}
+		if maximum, ok := settingInteger(retry["maxRetries"]); ok && maximum >= 0 && maximum <= int64(^uint32(0)) {
+			value := uint32(maximum)
+			config.StreamOptions.Base.MaxRetries = &value
+		}
+		if delay, ok := settingInteger(retry["maxRetryDelayMs"]); ok && delay > 0 {
+			config.StreamOptions.Base.MaxRetryDelay = time.Duration(delay) * time.Millisecond
+		}
+	}
+	if effort != types.ThinkingOff {
+		config.StreamOptions.Reasoning = &effort
+	}
 	// The manager already includes a newly persisted prompt. Continue runs it
 	// from restored context without appending the same user turn twice.
 	result := agent.Continue(ctx, input, config)
@@ -404,7 +531,252 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 	if streamErr != nil {
 		streamErr = fmt.Errorf("agent stream: %w", streamErr)
 	}
-	return errors.Join(ctxErr, outputErr, streamErr)
+	operationErr := errors.Join(ctxErr, outputErr, streamErr)
+	if operationErr == nil {
+		if err := runtime.compactIfNeeded(ctx, manager, conversation, model, provider, settings); err != nil {
+			operationErr = fmt.Errorf("automatic compaction: %w", err)
+		}
+	}
+	if operationErr == nil && nameCandidate {
+		if err := runtime.generateSessionName(ctx, manager, *prompt, settings); err != nil {
+			fmt.Fprintf(os.Stderr, "session name generation failed: %v\n", err)
+		}
+	}
+	return operationErr
+}
+
+func (runtime *Runtime) compactIfNeeded(ctx context.Context, manager *session.Manager, conversation *conversation, model types.Model, provider agent.Provider, settings map[string]any) error {
+	compactionSettings := objectSetting(settings["compaction"])
+	if !boolSetting(compactionSettings["enabled"]) {
+		return nil
+	}
+	triggerRatio, triggerOK := settingFloat(compactionSettings["triggerRatio"])
+	targetRatio, targetOK := settingFloat(compactionSettings["targetRatio"])
+	if !triggerOK || !targetOK {
+		return errors.New("compaction ratios are unavailable")
+	}
+	if model.ContextWindow <= 0 {
+		return errors.New("model context window must be greater than zero")
+	}
+	limits, err := (compaction.Settings{Enabled: true, TriggerRatio: triggerRatio, TargetRatio: targetRatio}).ResolveTokenLimits(uint64(model.ContextWindow))
+	if err != nil {
+		return err
+	}
+	entries := manager.Entries()
+	start := 0
+	previousSummary := ""
+	for index := len(entries) - 1; index >= 0; index-- {
+		compact, ok := entries[index].Payload.(session.Compaction)
+		if !ok {
+			continue
+		}
+		previousSummary = compact.Summary
+		for keptIndex, entry := range entries {
+			if entry.ID == compact.FirstKeptEntryID {
+				start = keptIndex
+				break
+			}
+		}
+		break
+	}
+	if start >= len(entries) {
+		return nil
+	}
+	activeEntries := entries[start:]
+	contextTokens := latestContextTokens(manager.ContextMessages())
+	engine := compaction.Engine{Trigger: compaction.Trigger{ThresholdTokens: limits.ThresholdTokens, TargetTokens: limits.TargetTokens}}
+	plan := engine.PrepareWithContext(activeEntries, contextTokens)
+	if plan == nil {
+		return nil
+	}
+	result, err := engine.Execute(ctx, manager, activeEntries, *plan, func(ctx context.Context, content string) (string, error) {
+		if previousSummary != "" {
+			content = "Previous summary:\n" + previousSummary + "\n\nEarlier messages:\n" + content
+		}
+		return runtime.summarize(ctx, model, provider, content, settings)
+	})
+	if err != nil {
+		return err
+	}
+	kept := manager.ContextMessages()
+	display := "Previous conversation summary"
+	contextMessages := append([]session.Message{session.UserMessage{Content: session.UserText(result.Summary), DisplayText: &display}}, kept...)
+	conversation.replaceContext(contextMessages)
+	return nil
+}
+
+func latestContextTokens(messages []session.Message) uint64 {
+	for index := len(messages) - 1; index >= 0; index-- {
+		assistant, ok := messages[index].(session.AssistantMessage)
+		if !ok {
+			continue
+		}
+		if assistant.Usage.TotalTokens > assistant.Usage.Output {
+			promptTokens := assistant.Usage.TotalTokens - assistant.Usage.Output
+			return promptTokens
+		}
+		return assistant.Usage.Input + assistant.Usage.CacheRead + assistant.Usage.CacheWrite
+	}
+	return 0
+}
+
+func (runtime *Runtime) summarize(ctx context.Context, model types.Model, provider agent.Provider, content string, settings map[string]any) (string, error) {
+	systemPrompt := "Summarize the earlier conversation for a coding assistant continuing the same task. Preserve user goals, constraints, decisions, paths, and unfinished work. Be concise and do not invent details. Return only the summary."
+	maxTokens := model.MaxTokens
+	if maxTokens <= 0 || maxTokens > 2048 {
+		maxTokens = 2048
+	}
+	effort := types.ThinkingLow
+	options := types.SimpleStreamOptions{Base: types.StreamOptions{MaxTokens: &maxTokens}, Reasoning: &effort}
+	if retry := objectSetting(settings["retry"]); retry != nil {
+		if timeout, ok := settingInteger(retry["timeoutMs"]); ok && timeout > 0 {
+			options.Base.Timeout = time.Duration(timeout) * time.Millisecond
+		}
+	}
+	var result strings.Builder
+	var streamErr error
+	err := provider.StreamSimple(ctx, model, types.Context{SystemPrompt: &systemPrompt, Messages: []types.Message{types.UserMessage{Content: types.UserText(content)}}}, options, func(event types.StreamEvent) {
+		switch event := event.(type) {
+		case types.TextDelta:
+			result.WriteString(event.Delta)
+		case types.StreamError:
+			if event.Error.ErrorMessage != nil {
+				streamErr = errors.New(*event.Error.ErrorMessage)
+			} else {
+				streamErr = errors.New("provider returned a compaction error")
+			}
+		case types.Done:
+			if result.Len() == 0 {
+				for _, block := range event.Message.Content {
+					if text, ok := block.(types.TextBlock); ok {
+						result.WriteString(text.Text)
+					}
+				}
+			}
+		}
+	})
+	if err != nil {
+		return "", err
+	}
+	if streamErr != nil {
+		return "", streamErr
+	}
+	return strings.TrimSpace(result.String()), nil
+}
+
+func hasUserMessage(messages []session.Message) bool {
+	for _, message := range messages {
+		if _, ok := message.(session.UserMessage); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (runtime *Runtime) generateSessionName(ctx context.Context, manager *session.Manager, input string, settings map[string]any) error {
+	title := directSessionName(input)
+	if title == "" {
+		smallModelID, _ := settings["smallModel"].(string)
+		if smallModelID == "" || runtime.modelRegistry == nil {
+			return nil
+		}
+		var model types.Model
+		for _, candidate := range runtime.modelRegistry.All() {
+			if candidate.ID == smallModelID && runtime.modelRegistry.IsConfigured(candidate.Provider, candidate.ID) {
+				model = candidate
+				break
+			}
+		}
+		if model.ID == "" {
+			return fmt.Errorf("configured small model %q was not found", smallModelID)
+		}
+		apiKey, _ := runtime.modelRegistry.APIKey(model.Provider)
+		runtime.mu.Lock()
+		currentModel, provider := runtime.model, runtime.provider
+		runtime.mu.Unlock()
+		if currentModel.ID != model.ID || currentModel.Provider != model.Provider || currentModel.API != model.API {
+			nextProvider, err := prepareModelProvider(model, apiKey, runtime.authPath)
+			if err != nil {
+				return err
+			}
+			provider = nextProvider
+		}
+		systemPrompt := "Create a concise session title for the user's coding task. Use the same language as the user. Return only the title. Use at most 8 words, or at most 24 characters for languages without spaces. Do not explain, reason, add labels, quotes, or ending punctuation."
+		maxTokens := 32
+		low := types.ThinkingLow
+		var raw strings.Builder
+		var streamErr error
+		err := provider.StreamSimple(ctx, model, types.Context{SystemPrompt: &systemPrompt, Messages: []types.Message{types.UserMessage{Content: types.UserText(strings.TrimSpace(input))}}}, types.SimpleStreamOptions{Base: types.StreamOptions{MaxTokens: &maxTokens}, Reasoning: &low}, func(event types.StreamEvent) {
+			switch event := event.(type) {
+			case types.TextDelta:
+				raw.WriteString(event.Delta)
+			case types.StreamError:
+				if event.Error.ErrorMessage != nil {
+					streamErr = errors.New(*event.Error.ErrorMessage)
+				} else {
+					streamErr = errors.New("provider returned a naming error")
+				}
+			case types.Done:
+				if raw.Len() == 0 {
+					for _, block := range event.Message.Content {
+						if text, ok := block.(types.TextBlock); ok {
+							raw.WriteString(text.Text)
+						}
+					}
+				}
+			}
+		})
+		if err != nil {
+			return fmt.Errorf("session naming request: %w", err)
+		}
+		if streamErr != nil {
+			return fmt.Errorf("session naming request: %w", streamErr)
+		}
+		title = normalizeSessionName(raw.String())
+	}
+	if title == "" || manager.CurrentName() != nil {
+		return nil
+	}
+	_, err := manager.AppendSessionInfoIfUnset(title)
+	return err
+}
+
+func directSessionName(input string) string {
+	normalized := strings.Join(strings.Fields(input), " ")
+	if normalized == "" || len(strings.Fields(normalized)) >= 8 {
+		return ""
+	}
+	maxCharacters := 60
+	for _, character := range normalized {
+		if character >= 0x2E80 && character <= 0x9FFF || character >= 0xF900 && character <= 0xFAFF || character >= 0x20000 && character <= 0x2FA1F {
+			maxCharacters = 24
+			break
+		}
+	}
+	if len([]rune(normalized)) <= maxCharacters {
+		return normalized
+	}
+	return ""
+}
+
+func normalizeSessionName(input string) string {
+	for _, line := range strings.Split(input, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(line, "Title:"), "title:"))
+		line = strings.Trim(line, "\"'` ")
+		line = strings.Join(strings.Fields(line), " ")
+		if line == "" {
+			return ""
+		}
+		if len([]rune(line)) > 60 {
+			line = string([]rune(line)[:57]) + "..."
+		}
+		return line
+	}
+	return ""
 }
 
 func toHookMessages(messages []session.Message) []hooks.Message {
@@ -415,6 +787,84 @@ func toHookMessages(messages []session.Message) []hooks.Message {
 		}
 	}
 	return result
+}
+
+func withoutImages(messages []hooks.Message) []hooks.Message {
+	filtered := make([]hooks.Message, len(messages))
+	for i, message := range messages {
+		filtered[i] = message
+		if message.Kind != "standard" {
+			continue
+		}
+		switch value := message.Standard.(type) {
+		case types.UserMessage:
+			blocks, ok := value.Content.(types.UserBlocks)
+			if !ok {
+				continue
+			}
+			value.Content = types.UserBlocks(withoutImageBlocks(blocks))
+			filtered[i].Standard = value
+		case types.AssistantMessage:
+			value.Content = withoutImageBlocks(value.Content)
+			filtered[i].Standard = value
+		case types.ToolResultMessage:
+			value.Content = withoutImageBlocks(value.Content)
+			filtered[i].Standard = value
+		}
+	}
+	return filtered
+}
+
+func withoutImageBlocks(blocks []types.ContentBlock) []types.ContentBlock {
+	filtered := make([]types.ContentBlock, 0, len(blocks))
+	for _, block := range blocks {
+		if _, image := block.(types.ImageBlock); !image {
+			filtered = append(filtered, block)
+		}
+	}
+	return filtered
+}
+
+func objectSetting(value any) map[string]any {
+	object, _ := value.(map[string]any)
+	return object
+}
+
+func boolSetting(value any) bool {
+	enabled, _ := value.(bool)
+	return enabled
+}
+
+func settingInteger(value any) (int64, bool) {
+	switch value := value.(type) {
+	case json.Number:
+		parsed, err := value.Int64()
+		return parsed, err == nil
+	case int:
+		return int64(value), true
+	case int64:
+		return value, true
+	case float64:
+		if value == float64(int64(value)) {
+			return int64(value), true
+		}
+	}
+	return 0, false
+}
+
+func settingFloat(value any) (float64, bool) {
+	switch value := value.(type) {
+	case json.Number:
+		parsed, err := value.Float64()
+		return parsed, err == nil
+	case float64:
+		return value, true
+	case int:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	}
+	return 0, false
 }
 
 func toModelMessage(message session.Message) (types.Message, bool) {

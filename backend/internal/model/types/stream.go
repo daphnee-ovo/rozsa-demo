@@ -42,6 +42,8 @@ type StreamOptions struct {
 	SessionID      *string
 	Headers        map[string]string
 	Timeout        time.Duration
+	MaxRetries     *uint32
+	MaxRetryDelay  time.Duration
 	Metadata       json.RawMessage
 }
 type SimpleStreamOptions struct {

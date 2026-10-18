@@ -34,7 +34,15 @@ func (runtime *Runtime) conversationLocked(manager *session.Manager) *conversati
 
 func newConversation(manager *session.Manager) *conversation {
 	conversation := &conversation{context: manager.ContextMessages()}
-	for _, entry := range manager.Entries() {
+	entries := manager.Entries()
+	for index := len(entries) - 1; index >= 0; index-- {
+		if compact, ok := entries[index].Payload.(session.Compaction); ok && compact.Summary != "" {
+			display := "Previous conversation summary"
+			conversation.context = append([]session.Message{session.UserMessage{Content: session.UserText(compact.Summary), DisplayText: &display}}, conversation.context...)
+			break
+		}
+	}
+	for _, entry := range entries {
 		if message, ok := entry.Payload.(session.MessageEntry); ok {
 			conversation.display = append(conversation.display, message.Message)
 		}
@@ -71,4 +79,10 @@ func (conversation *conversation) appendDisplay(message session.Message) {
 	conversation.mu.Lock()
 	defer conversation.mu.Unlock()
 	conversation.display = append(conversation.display, message)
+}
+
+func (conversation *conversation) replaceContext(messages []session.Message) {
+	conversation.mu.Lock()
+	defer conversation.mu.Unlock()
+	conversation.context = append([]session.Message(nil), messages...)
 }

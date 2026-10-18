@@ -228,6 +228,20 @@ func (manager *Manager) AppendSessionInfo(name *string) (string, error) {
 	return manager.Append(SessionInfo{name})
 }
 
+// AppendSessionInfoIfUnset lets asynchronous title generation preserve a
+// concurrent manual rename.
+func (manager *Manager) AppendSessionInfoIfUnset(name string) (bool, error) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.currentNameLocked() != nil {
+		return false, nil
+	}
+	if _, err := manager.appendLocked(SessionInfo{&name}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // CopyContextMessagesFrom copies messages only, with fresh IDs and links. Each
 // successful append remains committed if a later append fails, as in Rust.
 func (manager *Manager) CopyContextMessagesFrom(source *Manager) error {
@@ -253,6 +267,10 @@ func (manager *Manager) CopyContextMessagesFromPath(path string) error {
 func (manager *Manager) CurrentName() *string {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	return manager.currentNameLocked()
+}
+
+func (manager *Manager) currentNameLocked() *string {
 	var best *Entry
 	for _, entry := range manager.reader.byID {
 		if _, ok := entry.Payload.(SessionInfo); ok && (best == nil || entry.Timestamp > best.Timestamp) {

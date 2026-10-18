@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"rozsa/backend/internal/app/bootstrap"
+	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/productsettings"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
+	modeltypes "rozsa/backend/internal/model/types"
 	"rozsa/backend/internal/platform/configpaths"
 	"rozsa/backend/internal/transport/server"
 	"rozsa/backend/internal/transport/types"
@@ -72,10 +74,20 @@ func main() {
 	if err != nil {
 		fail(err.Error())
 	}
+	modelDirectories := roots.ModelDirs()
+	registry, diagnostics, err := modelregistry.Load([]byte("{}"), modelDirectories[:]...)
+	if err != nil {
+		fail(err.Error())
+	}
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			fail(fmt.Sprintf("model configuration %s: %s", diagnostic.Path, diagnostic.Message))
+		}
+	}
 	themeDirectories := roots.ThemeDirs()
-	productSettings := productsettings.New(settingsManager, themes.NewStore(themeDirectories[0], themeDirectories[1]))
-	backendStartupMark("session-service-ready")
 	coordinator := newRuntimeCoordinator(sessions)
+	productSettings := productsettings.NewWithModelCatalog(settingsManager, themes.NewStore(themeDirectories[0], themeDirectories[1]), registry, coordinator)
+	backendStartupMark("session-service-ready")
 	backendStartupMark("runtime-initialization-started")
 	go func() {
 		model, apiKey, authPath, initErr := bootstrap.ConfiguredModel("", "")
@@ -84,10 +96,12 @@ func main() {
 			coordinator.complete(nil, initErr)
 			return
 		}
+		resolvedSettings := settingsManager.Resolved()
+		thinkingEffort, _ := resolvedSettings["defaultThinkingEffort"].(string)
 		app, initErr := runtime.New(runtime.Config{
 			SessionDir: writeDirectory, SessionDirs: catalogDirectories,
-			SessionService: sessions,
-			Model:          model, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
+			SessionService: sessions, ModelRegistry: registry,
+			Model: model, ThinkingEffort: modeltypes.ThinkingEffort(thinkingEffort), ResolvedSettings: settingsManager.Resolved, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
 		})
 		if initErr != nil {
 			backendStartupMark("runtime-initialization-failed")
@@ -174,6 +188,22 @@ func (coordinator *runtimeCoordinator) await(ctx context.Context) (*runtime.Runt
 		return nil, errors.New("runtime is shutting down")
 	}
 	return coordinator.runtime, coordinator.initErr
+}
+
+func (coordinator *runtimeCoordinator) SetModel(model modeltypes.Model, configuredAPIKey string, effort modeltypes.ThinkingEffort) error {
+	app, err := coordinator.await(context.Background())
+	if err != nil {
+		return err
+	}
+	return app.SetModel(model, configuredAPIKey, effort)
+}
+
+func (coordinator *runtimeCoordinator) SetThinkingEffort(effort modeltypes.ThinkingEffort) (modeltypes.ThinkingEffort, error) {
+	app, err := coordinator.await(context.Background())
+	if err != nil {
+		return "", err
+	}
+	return app.SetThinkingEffort(effort)
 }
 
 func (coordinator *runtimeCoordinator) Shutdown(ctx context.Context) error {

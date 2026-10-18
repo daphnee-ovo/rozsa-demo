@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -76,6 +77,33 @@ func TestResetRestoresInheritedValueAndPreservesUnknownKeys(testContext *testing
 	}
 }
 
+func TestSetManyValidatesAndPersistsRelatedValuesAsOneUpdate(testContext *testing.T) {
+	tempDir := testContext.TempDir()
+	globalPath := filepath.Join(tempDir, "global.json")
+	projectPath := filepath.Join(tempDir, "project.json")
+	manager, err := Load(globalPath, &projectPath, nil)
+	if err != nil {
+		testContext.Fatal(err)
+	}
+	if err := manager.SetMany(Project, map[string]any{"defaultProvider": "anthropic", "defaultModel": "claude-test"}); err != nil {
+		testContext.Fatal(err)
+	}
+	before, err := os.ReadFile(projectPath)
+	if err != nil {
+		testContext.Fatal(err)
+	}
+	if err := manager.SetMany(Project, map[string]any{"defaultProvider": "openai", "appearance.fontSize": json.Number("31")}); err == nil {
+		testContext.Fatal("invalid related setting was accepted")
+	}
+	after, err := os.ReadFile(projectPath)
+	if err != nil {
+		testContext.Fatal(err)
+	}
+	if string(before) != string(after) || manager.Resolved()["defaultProvider"] != "anthropic" {
+		testContext.Fatal("rejected multi-value update partially changed settings")
+	}
+}
+
 func TestNestedResetRestoresInheritedCapabilityAndInvalidUpdateIsNotPersisted(testContext *testing.T) {
 	tempDir := testContext.TempDir()
 	globalPath := filepath.Join(tempDir, "global.json")
@@ -106,6 +134,40 @@ func TestNestedResetRestoresInheritedCapabilityAndInvalidUpdateIsNotPersisted(te
 	if string(beforeContents) != string(afterContents) {
 		testContext.Fatal("invalid settings update changed the persisted file")
 	}
+}
+
+func TestManagerSerializesLayerReadsAndWrites(testContext *testing.T) {
+	tempDir := testContext.TempDir()
+	globalPath := filepath.Join(tempDir, "global.json")
+	projectPath := filepath.Join(tempDir, "project.json")
+	manager, err := Load(globalPath, &projectPath, nil)
+	if err != nil {
+		testContext.Fatal(err)
+	}
+
+	var workers sync.WaitGroup
+	for worker := 0; worker < 4; worker++ {
+		workers.Add(1)
+		go func(worker int) {
+			defer workers.Done()
+			for iteration := 0; iteration < 20; iteration++ {
+				if worker == 0 {
+					if err := manager.Set(Project, "defaultModel", "model"); err != nil {
+						testContext.Errorf("set setting: %v", err)
+					}
+					continue
+				}
+				_ = manager.Resolved()
+				if _, exists := manager.Path(Project); !exists {
+					testContext.Error("project settings path disappeared")
+				}
+				if _, err := manager.Overrides(Project); err != nil {
+					testContext.Errorf("read project overrides: %v", err)
+				}
+			}
+		}(worker)
+	}
+	workers.Wait()
 }
 
 func TestMissingSettingsUseDefaultsButParseAndSchemaFailuresAreVisible(testContext *testing.T) {

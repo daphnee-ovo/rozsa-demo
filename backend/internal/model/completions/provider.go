@@ -122,6 +122,10 @@ func (provider *Provider) StreamSimple(ctx context.Context, model types.Model, i
 	if options.Base.Timeout > 0 {
 		client.Timeout = 0
 	}
+	maxRetries := 2
+	if options.Base.MaxRetries != nil {
+		maxRetries = int(*options.Base.MaxRetries)
+	}
 	var response *http.Response
 	for attempt := 0; ; attempt++ {
 		attemptRequest := req.Clone(ctx)
@@ -132,8 +136,8 @@ func (provider *Provider) StreamSimple(ctx context.Context, model types.Model, i
 		response, err = client.Do(attemptRequest)
 		if err != nil {
 			var networkError net.Error
-			if attempt < 2 && !errors.Is(err, context.Canceled) && (errors.As(err, &networkError) && (networkError.Timeout() || networkError.Temporary())) {
-				if waitErr := retryWait(ctx, attempt, ""); waitErr != nil {
+			if attempt < maxRetries && !errors.Is(err, context.Canceled) && (errors.As(err, &networkError) && (networkError.Timeout() || networkError.Temporary())) {
+				if waitErr := retryWait(ctx, attempt, "", options.Base.MaxRetryDelay); waitErr != nil {
 					return waitErr
 				}
 				continue
@@ -141,12 +145,12 @@ func (provider *Provider) StreamSimple(ctx context.Context, model types.Model, i
 			return fmt.Errorf("HTTP request failed: %w", err)
 		}
 		status := response.StatusCode
-		if status != http.StatusRequestTimeout && status != http.StatusConflict && status != http.StatusTooManyRequests && status < 500 || attempt >= 2 {
+		if status != http.StatusRequestTimeout && status != http.StatusConflict && status != http.StatusTooManyRequests && status < 500 || attempt >= maxRetries {
 			break
 		}
 		delay := response.Header.Get("Retry-After")
 		_ = response.Body.Close()
-		if waitErr := retryWait(ctx, attempt, delay); waitErr != nil {
+		if waitErr := retryWait(ctx, attempt, delay, options.Base.MaxRetryDelay); waitErr != nil {
 			return waitErr
 		}
 	}
@@ -184,10 +188,13 @@ func hasImage(messages []types.Message) bool {
 	return false
 }
 
-func retryWait(ctx context.Context, attempt int, header string) error {
+func retryWait(ctx context.Context, attempt int, header string, maximum time.Duration) error {
 	delay := 250 * time.Millisecond * time.Duration(1<<attempt)
 	if seconds, err := strconv.ParseUint(header, 10, 32); err == nil {
 		delay = time.Duration(seconds) * time.Second
+	}
+	if maximum > 0 && delay > maximum {
+		delay = maximum
 	}
 	timer := time.NewTimer(delay)
 	defer timer.Stop()

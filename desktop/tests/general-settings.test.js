@@ -17,12 +17,15 @@ const backendBinary = join(root, 'dist', process.platform === 'win32' ? 'rozsa-b
 function theme(id, mode, overrides = {}) {
   return { id, name: id, mode, accent: '#7D4F59', background: '#FFFFFF', foreground: '#211D1F', uiFont: 'system-ui', codeFont: 'monospace', variables: {}, ...overrides };
 }
-function snapshot(scope = 'global') {
+function snapshot(scope = 'global', models = [
+  { id: 'claude-test', name: 'Claude Test', provider: 'anthropic', reasoning: true, contextWindow: 64000 },
+  { id: 'haiku-test', name: 'Haiku Test', provider: 'anthropic', reasoning: true, contextWindow: 32000 },
+]) {
   const lightTheme = theme('rozsa', 'light'), darkTheme = theme('rozsa-dark', 'dark');
   return {
     scope,
     settings: {
-      defaultProvider: '', defaultModel: '', smallModel: '', defaultThinkingEffort: 'off',
+      defaultProvider: 'anthropic', defaultModel: 'claude-test', smallModel: 'haiku-test', defaultThinkingEffort: 'off',
       compaction: { enabled: false, triggerRatio: 0.9, targetRatio: 0.7 }, retry: { timeoutMs: null, maxRetries: null, maxRetryDelayMs: null },
       autoSessionNaming: true, steeringMode: 'one-at-a-time', followUpMode: 'one-at-a-time', runningSendMode: 'queue',
       transport: 'auto', blockImages: false, hideThinking: false,
@@ -30,6 +33,7 @@ function snapshot(scope = 'global') {
     },
     appearance: { themeMode: 'system', fontSize: 14, translucentSidebar: false, lightTheme, darkTheme },
     themes: [{ id: lightTheme.id, name: lightTheme.name, mode: lightTheme.mode }, { id: darkTheme.id, name: darkTheme.name, mode: darkTheme.mode }],
+    models,
   };
 }
 function harness({ failUpdate = false, loading } = {}) {
@@ -53,6 +57,9 @@ function harness({ failUpdate = false, loading } = {}) {
       if (failUpdate) throw new Error('write denied');
       const next = structuredClone(state[scope]);
       if (key === 'auto_compact') next.settings.compaction.enabled = value;
+      if (key === 'hide_thinking') next.settings.hideThinking = value;
+      if (key === 'model') { next.settings.defaultProvider = value.provider; next.settings.defaultModel = value.id; }
+      if (key === 'small_model') next.settings.smallModel = value;
       if (key === 'appearance_show_rate_limits') next.settings.appearance.showRateLimits = value;
       if (key === 'appearance_font_size') { next.appearance.fontSize = value; next.settings.appearance.fontSize = value; }
       state[scope] = next;
@@ -78,19 +85,47 @@ function harness({ failUpdate = false, loading } = {}) {
   };
 }
 
-test('settings panes load the contract, expose inherited scopes and disable dependent controls', async () => {
+test('settings panes show configured model metadata, save selection and expose dependent controls', async () => {
   const app = harness();
   try {
     await app.mount();
     const { document } = app.dom.window;
-    assert.equal(document.querySelector('#pane-general [aria-label="Model"]').value, '');
-    assert.equal(document.querySelector('#pane-general [aria-label="Model"]').disabled, true);
+    assert.equal(document.querySelector('#pane-general [aria-label="Model"]').value, 'anthropic\u0000claude-test');
+    assert.equal(document.querySelector('#pane-general [aria-label="Model"]').disabled, false);
+    const rows = [...document.querySelectorAll('#pane-general .setting-item')];
+    assert.equal(rows.find(row => row.querySelector('.setting-label')?.textContent === 'Provider')?.querySelector('.setting-value')?.textContent, 'anthropic');
+    assert.equal(rows.find(row => row.querySelector('.setting-label')?.textContent === 'Context window')?.querySelector('.setting-value')?.textContent, '64,000');
     assert.equal(document.querySelector('#pane-appearance [aria-label="Font size (px)"]').value, '14');
     assert.equal(document.querySelector('#pane-appearance [aria-label="Show hourly limit"]').disabled, true);
     await app.flush(() => { document.querySelector('#pane-general [aria-label="Settings scope"]').value = 'project'; document.querySelector('#pane-general [aria-label="Settings scope"]').dispatchEvent(new app.dom.window.Event('change', { bubbles: true })); });
     await app.flush(() => document.querySelector('#pane-general [aria-label="Auto compact"]').click());
+    await app.flush(() => { document.querySelector('#pane-general [aria-label="Model"]').value = 'anthropic\u0000haiku-test'; document.querySelector('#pane-general [aria-label="Model"]').dispatchEvent(new app.dom.window.Event('change', { bubbles: true })); });
     assert.ok(app.calls.some(call => call[0] === 'get' && call[1] === 'project'));
     assert.ok(app.calls.some(call => call[0] === 'update' && call[1] === 'project' && call[2] === 'auto_compact' && call[3] === true));
+    assert.ok(app.calls.some(call => call[0] === 'update' && call[1] === 'project' && call[2] === 'model' && call[3].id === 'haiku-test'));
+  } finally { await app.close(); }
+});
+
+test('an empty model catalog is visible and disables only model selection', async () => {
+  const app = harness();
+  app.bridge.getSettings = scope => Promise.resolve(snapshot(scope, []));
+  try {
+    await app.mount();
+    const { document } = app.dom.window;
+    assert.equal(document.querySelector('#pane-general [aria-label="Model"]').disabled, true);
+    assert.match(document.querySelector('#pane-general [aria-label="Model"]').textContent, /No configured models/);
+    assert.equal(document.querySelector('#pane-general [aria-label="Auto compact"]').disabled, false);
+  } finally { await app.close(); }
+});
+
+test('hide thinking updates the conversation display class after the setting is saved', async () => {
+  const app = harness();
+  try {
+    await app.mount();
+    const { document } = app.dom.window;
+    assert.equal(document.body.classList.contains('hide-thinking'), false);
+    await app.flush(() => document.querySelector('#pane-general [aria-label="Hide thinking blocks"]').click());
+    assert.equal(document.body.classList.contains('hide-thinking'), true);
   } finally { await app.close(); }
 });
 
@@ -123,7 +158,8 @@ test('the Electron preload contract reads and updates layered settings through t
   const backend = new BackendService(backendBinary, [], { env: await createIsolatedBackendEnvironment() });
   const trustedURL = 'file:///synthetic/index.html';
   const webContents = Object.assign(new EventEmitter(), { mainFrame: { url: trustedURL } });
-  const window = Object.assign(new EventEmitter(), { webContents, isDestroyed: () => false });
+  const vibrancyCalls = [];
+  const window = Object.assign(new EventEmitter(), { webContents, isDestroyed: () => false, setVibrancy: value => vibrancyCalls.push(value) });
   const handlers = new Map();
   const ipc = { handle: (channel, handler) => handlers.set(channel, handler), removeHandler: channel => handlers.delete(channel) };
   installSessionBridge(window, ipc, backend, trustedURL);
@@ -131,9 +167,17 @@ test('the Electron preload contract reads and updates layered settings through t
   const bridge = RozsaBridge.create((channel, ...args) => handlers.get(channel)(event, ...args));
   try {
     await backend.initialize();
+    assert.equal((await backend.getSettings('project')).models[0].id, 'test');
     const initial = await bridge.getSettings('project');
     assert.equal(initial.scope, 'project');
     assert.equal(initial.appearance.fontSize, 14);
+    if (process.platform === 'darwin') assert.deepEqual(vibrancyCalls, [null]);
+    assert.deepEqual(initial.models.map(model => [model.provider, model.id, model.contextWindow]), [['synthetic', 'test', 4096]]);
+    const selected = await bridge.updateSetting('project', 'model', { provider: 'synthetic', id: 'test' });
+    assert.equal(selected.settings.defaultProvider, 'synthetic');
+    assert.equal(selected.settings.defaultModel, 'test');
+    const thinking = await bridge.updateSetting('project', 'thinking', 'high');
+    assert.equal(thinking.settings.defaultThinkingEffort, 'off');
     assert.deepEqual((await bridge.listThemes('project')).map(item => item.id), ['rozsa', 'rozsa-dark']);
     const updated = await bridge.updateSetting('project', 'appearance_font_size', 19);
     assert.equal(updated.appearance.fontSize, 19);
@@ -154,7 +198,7 @@ test('the existing renderer settings adapter maps legacy settings intents to typ
   });
   const settings = await adapter.request('get_settings');
   assert.equal(settings.auto_compact, false);
-  assert.equal(settings.model_provider, '');
+  assert.equal(settings.model_provider, 'anthropic');
   await adapter.request('update_setting', { key: 'auto_compact', value: 'true' });
   assert.deepEqual(calls, [['get', 'global'], ['update', 'global', 'auto_compact', true]]);
 });

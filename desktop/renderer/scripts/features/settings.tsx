@@ -1,7 +1,7 @@
 import React, { useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ProductClient } from "../../product-client.js";
-import type { ProductBridge, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../../main/session-contract.js";
+import type { ModelOption, ProductBridge, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../../main/session-contract.js";
 
 type Props = { client: ProductClient; pane: "general" | "appearance" };
 type Settings = Record<string, unknown>;
@@ -92,6 +92,10 @@ function SettingsPane({ client, pane }: Props) {
   }, [client, pane, scope]);
 
   useEffect(() => {
+    if (snapshot) document.body.classList.toggle("hide-thinking", booleanValue(snapshot.settings.hideThinking));
+  }, [snapshot]);
+
+  useEffect(() => {
     if (pane !== "appearance" || !snapshot || snapshot.appearance.themeMode !== "system") return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const refresh = () => applyAppearance(snapshot);
@@ -157,7 +161,7 @@ function SettingsPane({ client, pane }: Props) {
     </header>
     {error && <p className="settings-error" role="alert">{error}</p>}
     {validation && <p className="settings-error" role="alert">{validation}</p>}
-    {pane === "general" ? <General settings={settings} saving={saving} update={update} reset={reset} /> :
+    {pane === "general" ? <General settings={settings} models={snapshot.models} saving={saving} update={update} reset={reset} /> :
       <Appearance snapshot={snapshot} themes={themes} saving={saving} update={update} reset={reset} saveTheme={saveTheme} />}
   </>;
 }
@@ -171,16 +175,24 @@ function Pane({ pane, scope, setScope, status, error = "" }: { pane: Props["pane
   </>;
 }
 
-function General({ settings, saving, update, reset }: { settings: Settings; saving: boolean; update(key: string, value: unknown): Promise<void>; reset(key: string): Promise<void> }) {
+function General({ settings, models, saving, update, reset }: { settings: Settings; models: ModelOption[]; saving: boolean; update(key: string, value: unknown): Promise<void>; reset(key: string): Promise<void> }) {
   const compaction = object(settings.compaction);
   const retry = object(settings.retry);
+  const provider = stringValue(settings.defaultProvider);
+  const modelId = stringValue(settings.defaultModel);
+  const selectedModel = models.find(model => model.provider === provider && model.id === modelId);
+  const selectedModelKey = selectedModel ? `${selectedModel.provider}\u0000${selectedModel.id}` : "";
+  const smallModelId = stringValue(settings.smallModel);
   return <>
     <Group title="Models">
-      <SelectSetting label="Model" value={stringValue(settings.defaultModel)} disabled values={[stringValue(settings.defaultModel)]} onSave={async () => {}} />
-      <SelectSetting label="Small model" value={stringValue(settings.smallModel)} disabled values={[stringValue(settings.smallModel)]} onSave={async () => {}} />
-      <StaticSetting label="Provider" value={stringValue(settings.defaultProvider, "—")} />
-      <StaticSetting label="Context window" value="—" />
-      <p className="setting-note">Model selection and context details are not yet exposed by the Go runtime contract.</p>
+      <ModelSetting label="Model" models={models} value={selectedModelKey} disabled={saving} onSave={value => {
+        const [selectedProvider, selectedID] = value.split("\u0000");
+        if (selectedProvider && selectedID) return update("model", { provider: selectedProvider, id: selectedID });
+        return Promise.resolve();
+      }} />
+      <ModelSetting label="Small model" models={models} value={models.find(model => model.id === smallModelId)?.provider.concat("\u0000", smallModelId) || ""} disabled={saving} onSave={value => update("small_model", value ? value.split("\u0000")[1] : "")} onReset={() => reset("small_model")} />
+      <StaticSetting label="Provider" value={selectedModel?.provider || provider || "—"} />
+      <StaticSetting label="Context window" value={selectedModel ? selectedModel.contextWindow.toLocaleString() : "—"} />
       <SelectSetting label="Thinking effort" value={stringValue(settings.defaultThinkingEffort, "off")} disabled={saving} values={["off", "low", "medium", "high", "xhigh", "max"]} onSave={value => update("thinking", value)} onReset={() => reset("thinking")} />
     </Group>
     <Group title="Behavior">
@@ -202,7 +214,6 @@ function General({ settings, saving, update, reset }: { settings: Settings; savi
       <ToggleSetting label="Block images" value={booleanValue(settings.blockImages)} disabled={saving} onSave={value => update("block_images", value)} onReset={() => reset("block_images")} />
       <ToggleSetting label="Hide thinking blocks" value={booleanValue(settings.hideThinking)} disabled={saving} onSave={value => update("hide_thinking", value)} onReset={() => reset("hide_thinking")} />
     </Group>
-    <p className="setting-note">Settings save through Go. Hot-applying these preferences to the active runtime is not yet connected.</p>
   </>;
 }
 
@@ -226,7 +237,6 @@ function Appearance({ snapshot, themes, saving, update, reset, saveTheme }: { sn
     </Group>
     <ThemeEditor mode="light" theme={appearance.lightTheme} themes={themes} selected={selected("light")} saving={saving} update={update} onSave={saveTheme} />
     <ThemeEditor mode="dark" theme={appearance.darkTheme} themes={themes} selected={selected("dark")} saving={saving} update={update} onSave={saveTheme} />
-    <p className="setting-note">The translucent sidebar preference is persisted. Updating native window vibrancy from this control remains unconnected.</p>
   </>;
 }
 
@@ -273,6 +283,12 @@ function ToggleSetting({ label, value, disabled, onSave, onReset }: { label: str
 }
 function SelectSetting({ label, value, values, disabled, onSave, onReset }: { label: string; value: string; values: string[]; disabled: boolean; onSave(value: string): Promise<void>; onReset?(): Promise<void> }) {
   return <label className="setting-item"><span className="setting-label">{label}</span><select className="setting-select" aria-label={label} value={value} disabled={disabled} onChange={event => onSave(event.currentTarget.value)}>{values.map(item => <option key={item} value={item}>{optionLabel(item)}</option>)}</select>{onReset && <button type="button" className="setting-reset" disabled={disabled} onClick={onReset}>Reset</button>}</label>;
+}
+function ModelSetting({ label, models, value, disabled, onSave, onReset }: { label: string; models: ModelOption[]; value: string; disabled: boolean; onSave(value: string): Promise<void>; onReset?(): Promise<void> }) {
+  return <label className="setting-item"><span className="setting-label">{label}</span><select className="setting-select" aria-label={label} value={value} disabled={disabled || models.length === 0} onChange={event => onSave(event.currentTarget.value)}>
+    <option value="">{models.length ? "Choose a model" : "No configured models"}</option>
+    {models.map(model => <option key={`${model.provider}/${model.id}`} value={`${model.provider}\u0000${model.id}`}>{model.name} · {model.provider}</option>)}
+  </select>{onReset && <button type="button" className="setting-reset" disabled={disabled} onClick={onReset}>Reset</button>}</label>;
 }
 function optionLabel(value: string): string {
   return ({ "one-at-a-time": "One at a time", all: "All", queue: "Queue", steer: "Steer", auto: "Auto", sse: "SSE", websocket: "WebSocket", "websocket-cached": "WebSocket (cached)", remained: "Remaining", used: "Used", xhigh: "Xhigh" } as Record<string, string>)[value] || value[0]?.toUpperCase() + value.slice(1);

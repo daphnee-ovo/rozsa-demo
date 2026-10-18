@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"rozsa/backend/internal/model/types"
 )
@@ -97,6 +98,40 @@ func TestStreamSimpleReportsHTTPAndTruncatedSSEErrors(t *testing.T) {
 				t.Fatalf("terminal=%T, want StreamError", terminal)
 			}
 		})
+	}
+}
+
+func TestStreamSimpleUsesConfiguredRetryCountAndDelayCap(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "10")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprint(w, `{"error":"retry"}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+	model := types.Model{ID: "m", Provider: "custom", API: types.APIOpenAICompletions, BaseURL: server.URL}
+	retries := uint32(1)
+	started := time.Now()
+	err := NewProvider(server.Client()).StreamSimple(context.Background(), model, types.Context{}, types.SimpleStreamOptions{Base: types.StreamOptions{MaxRetries: &retries, MaxRetryDelay: time.Millisecond}}, func(types.StreamEvent) {})
+	if err != nil || calls != 2 {
+		t.Fatalf("configured retry result: err=%v calls=%d", err, calls)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("Retry-After exceeded configured delay cap: %s", elapsed)
+	}
+
+	calls = 0
+	noRetries := uint32(0)
+	err = NewProvider(server.Client()).StreamSimple(context.Background(), model, types.Context{}, types.SimpleStreamOptions{Base: types.StreamOptions{MaxRetries: &noRetries}}, func(types.StreamEvent) {})
+	if err == nil || calls != 1 {
+		t.Fatalf("zero retry setting: err=%v calls=%d", err, calls)
 	}
 }
 

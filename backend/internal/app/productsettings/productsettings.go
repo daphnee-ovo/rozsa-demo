@@ -10,8 +10,10 @@ import (
 	"strings"
 	"sync"
 
+	"rozsa/backend/internal/app/modelregistry"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
+	"rozsa/backend/internal/model/types"
 )
 
 type Scope = settings.Scope
@@ -29,14 +31,30 @@ type Snapshot struct {
 	Settings   map[string]any            `json:"settings"`
 	Appearance themes.AppearanceSnapshot `json:"appearance"`
 	Themes     []themes.Summary          `json:"themes"`
+	Models     []ModelOption             `json:"models"`
+}
+
+type ModelOption struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider"`
+	Reasoning     bool   `json:"reasoning"`
+	ContextWindow int    `json:"contextWindow"`
 }
 
 // SettingsOwner is the layered settings contract required by the product API.
 type SettingsOwner interface {
 	Resolved() map[string]any
 	Path(settings.Scope) (string, bool)
+	Overrides(settings.Scope) (map[string]any, error)
 	Set(settings.Scope, string, any) error
+	SetMany(settings.Scope, map[string]any) error
 	Reset(settings.Scope, string) error
+}
+
+type ModelSelector interface {
+	SetModel(types.Model, string, types.ThinkingEffort) error
+	SetThinkingEffort(types.ThinkingEffort) (types.ThinkingEffort, error)
 }
 
 type Service interface {
@@ -52,10 +70,16 @@ type service struct {
 	settings   SettingsOwner
 	themeStore themes.Store
 	appearance themes.Appearance
+	registry   *modelregistry.Registry
+	selector   ModelSelector
 }
 
 func New(manager SettingsOwner, themeStore themes.Store) Service {
 	return &service{settings: manager, themeStore: themeStore, appearance: themes.NewAppearance(themeStore, manager)}
+}
+
+func NewWithModelCatalog(manager SettingsOwner, themeStore themes.Store, registry *modelregistry.Registry, selector ModelSelector) Service {
+	return &service{settings: manager, themeStore: themeStore, appearance: themes.NewAppearance(themeStore, manager), registry: registry, selector: selector}
 }
 
 func (service *service) Snapshot(scope Scope) (Snapshot, error) {
@@ -79,7 +103,16 @@ func (service *service) snapshot(scope Scope) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{Scope: scope, Settings: service.settings.Resolved(), Appearance: appearance, Themes: available}, nil
+	models := []ModelOption{}
+	if service.registry != nil {
+		for _, model := range service.registry.All() {
+			if !service.registry.IsConfigured(model.Provider, model.ID) {
+				continue
+			}
+			models = append(models, ModelOption{ID: model.ID, Name: model.Name, Provider: model.Provider, Reasoning: model.Reasoning, ContextWindow: model.ContextWindow})
+		}
+	}
+	return Snapshot{Scope: scope, Settings: service.settings.Resolved(), Appearance: appearance, Themes: available, Models: models}, nil
 }
 
 func (service *service) Update(scope Scope, key string, value any) (Snapshot, error) {
@@ -87,6 +120,30 @@ func (service *service) Update(scope Scope, key string, value any) (Snapshot, er
 	defer service.mu.Unlock()
 	if key == "" || strings.TrimSpace(key) != key {
 		return Snapshot{}, errors.New("setting key must be non-empty and trimmed")
+	}
+	if key == "model" {
+		return service.selectModel(scope, value)
+	}
+	if key == "small_model" {
+		modelID, ok := value.(string)
+		if !ok {
+			return Snapshot{}, errors.New("small model must be a model id")
+		}
+		if modelID != "" {
+			if service.registry == nil {
+				return Snapshot{}, errors.New("model catalog is unavailable")
+			}
+			found := false
+			for _, model := range service.registry.All() {
+				if model.ID == modelID && service.registry.IsConfigured(model.Provider, model.ID) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return Snapshot{}, fmt.Errorf("small model %q is not configured", modelID)
+			}
+		}
 	}
 	if strings.HasPrefix(key, "appearance_") {
 		field := map[string]string{
@@ -133,9 +190,72 @@ func (service *service) Update(scope Scope, key string, value any) (Snapshot, er
 		if err := validateValue(key, normalized); err != nil {
 			return Snapshot{}, err
 		}
+	if key == "transport" && normalized != "auto" {
+		return Snapshot{}, fmt.Errorf("transport %q is not supported by the Go provider runtime", normalized)
+	}
+		var previousThinking any
+		if key == "thinking" {
+			overrides, err := service.settings.Overrides(scope)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			previousThinking = overrides["defaultThinkingEffort"]
+		}
 		if err := service.settings.Set(scope, path, normalized); err != nil {
 			return Snapshot{}, err
 		}
+		if key == "thinking" && service.selector != nil {
+			effort, err := service.selector.SetThinkingEffort(types.ThinkingEffort(normalized.(string)))
+			if err != nil {
+				return Snapshot{}, errors.Join(err, service.settings.SetMany(scope, map[string]any{"defaultThinkingEffort": previousThinking}))
+			}
+			if string(effort) != normalized {
+				if err := service.settings.Set(scope, path, string(effort)); err != nil {
+					return Snapshot{}, err
+				}
+			}
+		}
+	}
+	return service.snapshot(scope)
+}
+
+func (service *service) selectModel(scope Scope, value any) (Snapshot, error) {
+	selection, ok := value.(map[string]any)
+	if !ok {
+		return Snapshot{}, errors.New("model selection must include provider and id")
+	}
+	provider, providerOK := selection["provider"].(string)
+	id, idOK := selection["id"].(string)
+	if !providerOK || !idOK || provider == "" || id == "" || len(selection) != 2 {
+		return Snapshot{}, errors.New("model selection must include provider and id")
+	}
+	if service.registry == nil || service.selector == nil {
+		return Snapshot{}, errors.New("model selection is unavailable")
+	}
+	model, exists := service.registry.Find(provider, id)
+	if !exists || !service.registry.IsConfigured(provider, id) {
+		return Snapshot{}, fmt.Errorf("model %s/%s is not configured", provider, id)
+	}
+	previous, err := service.settings.Overrides(scope)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	effortText, _ := service.settings.Resolved()["defaultThinkingEffort"].(string)
+	effort := types.ThinkingEffort(effortText)
+	if effort == "" {
+		effort = types.ThinkingOff
+	}
+	if !model.SupportsThinking(effort) {
+		effort = types.ThinkingOff
+	}
+	updates := map[string]any{"defaultProvider": provider, "defaultModel": id, "defaultThinkingEffort": string(effort)}
+	if err := service.settings.SetMany(scope, updates); err != nil {
+		return Snapshot{}, err
+	}
+	apiKey, _ := service.registry.APIKey(provider)
+	if err := service.selector.SetModel(model, apiKey, effort); err != nil {
+		rollbackErr := service.settings.SetMany(scope, map[string]any{"defaultProvider": previous["defaultProvider"], "defaultModel": previous["defaultModel"], "defaultThinkingEffort": previous["defaultThinkingEffort"]})
+		return Snapshot{}, errors.Join(err, rollbackErr)
 	}
 	return service.snapshot(scope)
 }
@@ -183,7 +303,7 @@ func settingPath(key string) (string, bool) {
 		"compaction_target_ratio": "compaction.targetRatio", "retry_timeout_ms": "retry.timeoutMs", "retry_max_retries": "retry.maxRetries",
 		"retry_max_delay_ms": "retry.maxRetryDelayMs", "auto_session_naming": "autoSessionNaming", "steering_mode": "steeringMode",
 		"follow_up_mode": "followUpMode", "running_send_mode": "runningSendMode", "transport": "transport",
-		"block_images": "blockImages", "hide_thinking": "hideThinking",
+		"block_images": "blockImages", "hide_thinking": "hideThinking", "small_model": "smallModel",
 	}
 	path, exists := paths[key]
 	return path, exists

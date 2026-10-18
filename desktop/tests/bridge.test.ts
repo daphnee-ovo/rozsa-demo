@@ -18,10 +18,11 @@ const snapshot = (id: string, watermark = 0): SessionUpdate => ({ subscriptionId
 function deferred<T>() { return Promise.withResolvers<T>(); }
 const lightTheme: ThemeDefinition = { id: "rozsa", name: "Rozsa", mode: "light", accent: "#D7827E", background: "#FFFFFF", foreground: "#575279", uiFont: "system-ui", codeFont: "monospace", variables: {} };
 const darkTheme: ThemeDefinition = { ...lightTheme, id: "rozsa-dark", name: "Rozsa Dark", mode: "dark" };
-const settingsSnapshot: SettingsSnapshot = { scope: "global", settings: { appearance: { themeMode: "system", fontSize: 14, translucentSidebar: false } }, appearance: { themeMode: "system", fontSize: 14, translucentSidebar: false, lightTheme, darkTheme }, themes: [{ id: lightTheme.id, name: lightTheme.name, mode: lightTheme.mode }, { id: darkTheme.id, name: darkTheme.name, mode: darkTheme.mode }] };
+const settingsSnapshot: SettingsSnapshot = { scope: "global", settings: { appearance: { themeMode: "system", fontSize: 14, translucentSidebar: false } }, appearance: { themeMode: "system", fontSize: 14, translucentSidebar: false, lightTheme, darkTheme }, themes: [{ id: lightTheme.id, name: lightTheme.name, mode: lightTheme.mode }, { id: darkTheme.id, name: darkTheme.name, mode: darkTheme.mode }], models: [] };
 function host(backend: Partial<BackendService>) {
   const url = "file:///synthetic/index.html", webContents = Object.assign(new EventEmitter(), { mainFrame: { url } });
-  const window = Object.assign(new EventEmitter(), { webContents, isDestroyed: () => false });
+  const vibrancyCalls: Array<string | null> = [];
+  const window = Object.assign(new EventEmitter(), { webContents, isDestroyed: () => false, setVibrancy: (type: string | null) => vibrancyCalls.push(type) });
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<any>>();
   const ipc = { handle: (channel: string, handler: any) => { handlers.set(channel, handler); }, removeHandler: (channel: string) => handlers.delete(channel) };
   installSessionBridge(window as unknown as BrowserWindow, ipc as unknown as IpcMain, backend as BackendService, url);
@@ -29,7 +30,7 @@ function host(backend: Partial<BackendService>) {
   const invoke = async (channel: string, ...args: unknown[]) => {
     const handler = handlers.get(channel); if (!handler) throw new Error("No handler"); return handler(event, ...args);
   };
-  return { window, webContents, handlers, event, invoke, bridge: RozsaBridge.create(invoke) };
+  return { window, webContents, handlers, event, invoke, vibrancyCalls, bridge: RozsaBridge.create(invoke) };
 }
 
 test("main rejects foreign senders, subframes, destinations and arity before dispatch", async () => {
@@ -76,6 +77,28 @@ test("settings and theme calls cross the trusted IPC bridge with runtime validat
   assert.equal((await ui.bridge.getTheme("rozsa", "light")).id, "rozsa");
   await ui.bridge.saveTheme(lightTheme);
   assert.deepEqual(calls, [["get", "project"], ["update", "global", "appearance.fontSize", 18], ["reset", "project", "appearance.fontSize"], ["save"]]);
+  ui.window.emit("closed");
+});
+
+test("native sidebar vibrancy follows persisted settings snapshots", async () => {
+  let translucentSidebar = false;
+  const ui = host({
+    getSettings: async scope => ({ ...settingsSnapshot, scope, appearance: { ...settingsSnapshot.appearance, translucentSidebar } }),
+    updateSetting: async (scope, key, value) => {
+      assert.equal(key, "appearance_translucent_sidebar");
+      translucentSidebar = value === true;
+      return { ...settingsSnapshot, scope, appearance: { ...settingsSnapshot.appearance, translucentSidebar } };
+    },
+    resetSetting: async scope => {
+      translucentSidebar = false;
+      return { ...settingsSnapshot, scope, appearance: { ...settingsSnapshot.appearance, translucentSidebar } };
+    },
+  });
+  const nativeCalls = process.platform === "darwin" ? [null, "sidebar", null] : [];
+  await ui.bridge.getSettings("global");
+  await ui.bridge.updateSetting("global", "appearance_translucent_sidebar", true);
+  await ui.bridge.resetSetting("global", "appearance_translucent_sidebar");
+  assert.deepEqual(ui.vibrancyCalls, nativeCalls);
   ui.window.emit("closed");
 });
 

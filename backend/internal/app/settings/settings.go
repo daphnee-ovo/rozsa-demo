@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type Scope string
@@ -48,6 +49,7 @@ func (settingsError *Error) Unwrap() error { return settingsError.Err }
 
 // Manager owns the merged view and the paths for its independent layers.
 type Manager struct {
+	mu       sync.RWMutex
 	paths    map[Scope]string
 	resolved map[string]any
 }
@@ -70,15 +72,23 @@ func Load(globalPath string, projectPath, localPath *string) (*Manager, error) {
 }
 
 // Resolved returns a deep copy so callers cannot bypass validation by mutation.
-func (manager *Manager) Resolved() map[string]any { return cloneObject(manager.resolved) }
+func (manager *Manager) Resolved() map[string]any {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	return cloneObject(manager.resolved)
+}
 
 func (manager *Manager) Path(scope Scope) (string, bool) {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
 	settingsPath, exists := manager.paths[scope]
 	return settingsPath, exists
 }
 
 // Overrides returns only values explicitly written at the requested scope.
 func (manager *Manager) Overrides(scope Scope) (map[string]any, error) {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
 	settingsPath, exists := manager.paths[scope]
 	if !exists {
 		return nil, fmt.Errorf("settings path for %s scope is unavailable", scope)
@@ -94,25 +104,35 @@ func (manager *Manager) Overrides(scope Scope) (map[string]any, error) {
 // while preserving unrelated and unknown keys.
 // A nil value removes the override so the prior layer becomes effective.
 func (manager *Manager) Set(scope Scope, key string, value any) error {
+	return manager.SetMany(scope, map[string]any{key: value})
+}
+
+// SetMany writes related values in one layer update and refreshes the resolved
+// view only after the complete candidate has passed validation and persistence.
+func (manager *Manager) SetMany(scope Scope, values map[string]any) error {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
 	settingsPath, exists := manager.paths[scope]
 	if !exists {
 		return fmt.Errorf("settings path for %s scope is unavailable", scope)
-	}
-	keys := strings.Split(key, ".")
-	if key == "" {
-		return errors.New("settings key must be non-empty")
-	}
-	for _, part := range keys {
-		if part == "" {
-			return errors.New("settings key path must not contain empty fields")
-		}
 	}
 	root, err := readLayer(settingsPath)
 	if err != nil {
 		return err
 	}
-	if err := setPath(root, keys, value); err != nil {
-		return err
+	for key, value := range values {
+		keys := strings.Split(key, ".")
+		if key == "" {
+			return errors.New("settings key must be non-empty")
+		}
+		for _, part := range keys {
+			if part == "" {
+				return errors.New("settings key path must not contain empty fields")
+			}
+		}
+		if err := setPath(root, keys, value); err != nil {
+			return err
+		}
 	}
 	resolvedCandidate, err := resolve(manager.paths, &scope, root)
 	if err != nil {
@@ -129,6 +149,8 @@ func (manager *Manager) Reset(scope Scope, key string) error { return manager.Se
 
 // SaveGlobal writes the fully resolved settings at the global path.
 func (manager *Manager) SaveGlobal() error {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
 	return writePretty(manager.paths[Global], manager.resolved, false)
 }
 

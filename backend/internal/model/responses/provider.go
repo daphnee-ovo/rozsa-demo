@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -97,9 +98,37 @@ func (provider *Provider) StreamSimple(ctx context.Context, model types.Model, i
 	if options.Base.Timeout > 0 {
 		client.Timeout = 0
 	}
-	response, err := client.Do(request)
-	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+	maxRetries := uint32(0)
+	if options.Base.MaxRetries != nil {
+		maxRetries = *options.Base.MaxRetries
+	}
+	var response *http.Response
+	for attempt := uint32(0); ; attempt++ {
+		attemptRequest := request.Clone(ctx)
+		attemptRequest.Body, err = request.GetBody()
+		if err != nil {
+			return fmt.Errorf("rebuild Responses request: %w", err)
+		}
+		response, err = client.Do(attemptRequest)
+		if err != nil {
+			var networkError net.Error
+			if attempt >= maxRetries || errors.Is(err, context.Canceled) || !errors.As(err, &networkError) || !(networkError.Timeout() || networkError.Temporary()) {
+				return fmt.Errorf("HTTP request failed: %w", err)
+			}
+			if waitErr := waitRetry(ctx, attempt, "", options.Base.MaxRetryDelay); waitErr != nil {
+				return waitErr
+			}
+			continue
+		}
+		status := response.StatusCode
+		if status != http.StatusRequestTimeout && status != http.StatusConflict && status != http.StatusTooManyRequests && status < 500 || attempt >= maxRetries {
+			break
+		}
+		delay := response.Header.Get("Retry-After")
+		_ = response.Body.Close()
+		if waitErr := waitRetry(ctx, attempt, delay, options.Base.MaxRetryDelay); waitErr != nil {
+			return waitErr
+		}
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -111,6 +140,24 @@ func (provider *Provider) StreamSimple(ctx context.Context, model types.Model, i
 	}
 	emit(types.Start{Partial: snapshot(output)})
 	return consume(ctx, response.Body, model, &output, emit)
+}
+
+func waitRetry(ctx context.Context, attempt uint32, header string, maximum time.Duration) error {
+	delay := 250 * time.Millisecond * time.Duration(1<<min(attempt, 6))
+	if seconds, err := time.ParseDuration(header + "s"); header != "" && err == nil {
+		delay = seconds
+	}
+	if maximum > 0 && delay > maximum {
+		delay = maximum
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func resolveEndpoint(base string) (string, error) {

@@ -122,10 +122,16 @@ function settingsSnapshot(value: unknown): import("../../contracts/ipc/session.j
   const snapshot = value as Record<string, unknown>;
   const appearance = snapshot.appearance;
   if (!validScope(snapshot.scope) || typeof snapshot.settings !== "object" || snapshot.settings === null || Array.isArray(snapshot.settings)
-    || typeof appearance !== "object" || appearance === null || Array.isArray(appearance) || !Array.isArray(snapshot.themes)) throw new Error("Invalid settings response");
+    || typeof appearance !== "object" || appearance === null || Array.isArray(appearance) || !Array.isArray(snapshot.themes) || !Array.isArray(snapshot.models)) throw new Error("Invalid settings response");
   const current = appearance as Record<string, unknown>;
   if (!(["system", "light", "dark"].includes(current.themeMode as string)) || !Number.isInteger(current.fontSize)
     || typeof current.translucentSidebar !== "boolean" || !validThemeDefinition(current.lightTheme) || !validThemeDefinition(current.darkTheme)
-    || !snapshot.themes.every(validThemeSummary)) throw new Error("Invalid settings response");
+    || !snapshot.themes.every(validThemeSummary) || !snapshot.models.every(validModelOption)) throw new Error("Invalid settings response");
   return value as import("../../contracts/ipc/session.js").SettingsSnapshot;
+}
+function validModelOption(value: unknown): value is import("../../contracts/ipc/session.js").ModelOption {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const model = value as Record<string, unknown>;
+  return validKey(model.id) && typeof model.name === "string" && validKey(model.provider)
+    && typeof model.reasoning === "boolean" && Number.isSafeInteger(model.contextWindow) && (model.contextWindow as number) > 0;
 }

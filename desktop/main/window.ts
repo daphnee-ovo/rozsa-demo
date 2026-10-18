@@ -13,7 +13,6 @@ export function createWindow(): BrowserWindow {
     title: "Rózsa", show: false,
     ...(process.platform === "darwin" ? {
       titleBarStyle: "hiddenInset" as const,
-      vibrancy: "sidebar" as const,
       visualEffectState: "followWindow" as const,
     } : {}),
     webPreferences: {

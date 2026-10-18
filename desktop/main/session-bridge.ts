@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from "electron";
 import type { BackendService } from "./backend-service.js";
+import { applySidebarVibrancy } from "./native-appearance.js";
 import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL, SETTINGS_GET_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL, sessionTarget, subscriptionId, bridgeFault, transportFailure, RPCFailure } from "./session-contract.js";
 
 // One trusted session page, one Go subscription. Navigation invalidates pending
@@ -76,15 +77,21 @@ export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backen
   const validKey = (key: unknown): key is string => typeof key === "string" && key.length > 0 && key.trim() === key;
   settingsHandle(SETTINGS_GET_CHANNEL, 1, async scope => {
     if (!validScope(scope)) throw new Error("Invalid settings scope");
-    return backend.getSettings(scope);
+    const snapshot = await backend.getSettings(scope);
+    applySidebarVibrancy(window, snapshot.appearance.translucentSidebar);
+    return snapshot;
   });
   settingsHandle(SETTINGS_UPDATE_CHANNEL, 3, async (scope, key, value) => {
     if (!validScope(scope) || !validKey(key)) throw new Error("Invalid setting update");
-    return backend.updateSetting(scope, key, value);
+    const snapshot = await backend.updateSetting(scope, key, value);
+    if (key === "appearance_translucent_sidebar") applySidebarVibrancy(window, snapshot.appearance.translucentSidebar);
+    return snapshot;
   });
   settingsHandle(SETTINGS_RESET_CHANNEL, 2, async (scope, key) => {
     if (!validScope(scope) || !validKey(key)) throw new Error("Invalid setting reset");
-    return backend.resetSetting(scope, key);
+    const snapshot = await backend.resetSetting(scope, key);
+    if (key === "appearance_translucent_sidebar") applySidebarVibrancy(window, snapshot.appearance.translucentSidebar);
+    return snapshot;
   });
   settingsHandle(THEMES_LIST_CHANNEL, 1, async scope => {
     if (!validScope(scope)) throw new Error("Invalid settings scope");
