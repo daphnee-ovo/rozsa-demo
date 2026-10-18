@@ -31,8 +31,10 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "3.14.21",
+    "pele": "1.6.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "streamdown": "2.7.0",
     "vscode-jsonrpc": "9.0.3"
   }
 }

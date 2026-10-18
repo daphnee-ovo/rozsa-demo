@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { act } from "react";
 import { createConversationRenderer } from "../renderer/scripts/features/conversation-view.tsx";
+import { completeMermaidFences } from "../renderer/scripts/features/markdown-renderer.tsx";
 import * as conversation from "../renderer/scripts/features/conversation.ts";
 import { createDOM, loadApp, readFrontend, withDOM } from "./helpers/browser.js";
 
@@ -15,7 +16,13 @@ test.after(() => {
 async function withMessageApp(action, html = '<div id="chatMessages"></div><div id="msgInput" contenteditable="true">draft text</div>') {
   const app = loadApp({ html });
   return withDOM(app.dom, async () => {
-    const renderer = createConversationRenderer(app.document.getElementById("chatMessages"));
+    const chat = app.document.getElementById("chatMessages");
+    Object.defineProperties(chat, {
+      clientHeight: { configurable: true, value: 720 },
+      clientWidth: { configurable: true, value: 960 },
+      getBoundingClientRect: { configurable: true, value: () => ({ top: 0, left: 0, right: 960, bottom: 720, width: 960, height: 720, x: 0, y: 0, toJSON() {} }) },
+    });
+    const renderer = createConversationRenderer(chat);
     app.window.RozsaConversation = { ...conversation, renderView: renderer.render };
     app.window.RozsaTools = { messageTextMarkup: String };
     app.evaluate("renderToolChips = () => {}; updateInputHighlight = () => {}; autoResize = () => {}; updateAbortButton = () => {};");
@@ -28,7 +35,10 @@ async function withMessageApp(action, html = '<div id="chatMessages"></div><div 
 }
 
 async function render(app, script) {
-  await act(async () => { app.evaluate(script); });
+  await act(async () => {
+    app.evaluate(script);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  });
 }
 
 test("React messages preserve user, assistant and system roles plus rich Markdown", async () => {
@@ -46,23 +56,25 @@ test("React messages preserve user, assistant and system roles plus rich Markdow
     ];
     await render(app, 'renderMessages(window.__messages, false, "session-markdown")');
     const container = app.document.getElementById("chatMessages");
-    assert.equal(container.children.length, 3);
-    assert.match(container.children[0].className, /msg-user/);
-    assert.equal(container.children[0].querySelector(".markdown-body")?.textContent, "用户你好");
-    assert.match(container.children[1].querySelector(".msg-role")?.textContent || "", /Rozsa/);
-    assert.ok(container.children[1].querySelector(".md-code-block code")?.textContent.includes("const 答案 = 42;"));
-    assert.ok(container.children[1].querySelector(".md-table th")?.textContent.includes("名称"));
-    assert.equal(container.children[1].querySelectorAll(".markdown-body li").length, 2);
-    const link = container.children[1].querySelector('a[href="https://example.test/docs"]');
+    const rows = container.querySelectorAll(".conversation-virtual-row .msg");
+    assert.equal(rows.length, 3, container.innerHTML);
+    assert.match(rows[0].className, /msg-user/);
+    assert.equal(rows[0].querySelector(".markdown-body")?.textContent, "用户你好");
+    assert.match(rows[1].querySelector(".msg-role")?.textContent || "", /Rozsa/);
+    assert.ok(rows[1].querySelector(".md-code-block code")?.textContent.includes("const 答案 = 42;"));
+    assert.equal(rows[1].querySelector(".md-copy")?.getAttribute("aria-label"), "Copy code");
+    assert.ok(rows[1].querySelector(".md-table th")?.textContent.includes("名称"));
+    assert.equal(rows[1].querySelectorAll(".markdown-body li").length, 2);
+    const link = rows[1].querySelector('a[href="https://example.test/docs"]');
     assert.equal(link?.getAttribute("rel"), "noreferrer");
     assert.equal(link?.target, "_blank");
-    const image = container.children[1].querySelector("img");
+    const image = rows[1].querySelector("img");
     assert.equal(image?.getAttribute("alt"), "架构图");
     assert.equal(image?.getAttribute("src"), "https://images.example.test/diagram.png");
-    assert.ok(container.children[1].textContent?.includes("界".repeat(300)));
-    assert.match(container.children[2].className, /msg-system/);
-    assert.equal(container.children[2].querySelector(".msg-role")?.textContent, "System");
-    assert.equal(container.children[2].querySelector(".markdown-body")?.textContent, "系统提示");
+    assert.ok(rows[1].textContent?.includes("界".repeat(300)));
+    assert.match(rows[2].className, /msg-system/);
+    assert.equal(rows[2].querySelector(".msg-role")?.textContent, "System");
+    assert.equal(rows[2].querySelector(".markdown-body")?.textContent, "系统提示");
 
     const policy = readFrontend("index.html").match(/Content-Security-Policy" content="([^"]+)"/)?.[1];
     assert.match(policy || "", /img-src 'self' data:/);
@@ -79,18 +91,19 @@ test("streaming partials, continuation, image blocks and provider errors remain 
     app.window.__messages = [first];
     await render(app, 'renderMessages(window.__messages, true, "session-stream")');
     const container = app.document.getElementById("chatMessages");
-    assert.equal(container.children.length, 1);
+    assert.equal(container.querySelectorAll(".conversation-virtual-row .msg").length, 1);
     assert.ok(container.querySelector(".stream-cursor"));
     assert.ok(container.querySelector(".markdown-body")?.textContent?.includes("部分"));
     app.window.__messages = [partial];
     await render(app, 'renderMessages(window.__messages, true, "session-stream")');
-    assert.equal(container.children.length, 1);
+    assert.equal(container.querySelectorAll(".conversation-virtual-row .msg").length, 1);
     assert.ok(container.querySelector(".markdown-body")?.textContent?.includes("部分回答"));
     app.window.__messages = [partial, { kind: "standard", entryId: "assistant-next", message: { role: "assistant", content: [{ type: "text", text: "续写" }] } }];
     await render(app, 'renderMessages(window.__messages, true, "session-stream")');
-    assert.equal(container.children.length, 2);
-    assert.match(container.children[1].className, /msg-assistant-continuation/);
-    assert.equal(container.children[1].querySelector(".msg-role"), null);
+    const continuation = container.querySelectorAll(".conversation-virtual-row .msg")[1];
+    assert.equal(container.querySelectorAll(".conversation-virtual-row .msg").length, 2);
+    assert.match(continuation.className, /msg-assistant-continuation/);
+    assert.equal(continuation.querySelector(".msg-role"), null);
 
     app.window.__messages = [{ kind: "standard", entryId: "image-1", message: { role: "user", content: [{ type: "image", data: "not-base64", mimeType: "text/html" }] } }];
     await render(app, 'renderMessages(window.__messages, false, "session-image")');
@@ -103,25 +116,45 @@ test("streaming partials, continuation, image blocks and provider errors remain 
   });
 });
 
-test("memoized React rows keep completed messages and skip their Markdown work during streaming", async () => {
+test("memoized React rows keep completed messages stable during streaming", async () => {
   await withMessageApp(async app => {
-    const originalMarkdown = app.window.renderMarkdown;
-    let parsed = 0;
-    app.window.renderMarkdown = text => { parsed++; return originalMarkdown(text); };
     const completed = { kind: "standard", entryId: "finished", message: { role: "user", content: [{ type: "text", text: "old" }] } };
     const firstPartial = { kind: "standard", entryId: "current", message: { role: "assistant", content: [{ type: "text", text: "a" }] } };
     app.window.__messages = [completed, firstPartial];
     await render(app, 'renderMessages(window.__messages, true, "session-performance")');
-    const rows = app.document.querySelectorAll("#chatMessages > .msg");
+    const rows = app.document.querySelectorAll("#chatMessages .conversation-virtual-row .msg");
     const completedNode = rows[0];
-    const before = parsed;
     const nextPartial = { kind: "standard", entryId: "current", message: { role: "assistant", content: [{ type: "text", text: "ab" }] } };
     app.window.__messages = [completed, nextPartial];
     await render(app, 'renderMessages(window.__messages, true, "session-performance")');
-    const updatedRows = app.document.querySelectorAll("#chatMessages > .msg");
+    const updatedRows = app.document.querySelectorAll("#chatMessages .conversation-virtual-row .msg");
     assert.equal(updatedRows[0], completedNode);
-    assert.equal(parsed - before, 1);
     assert.ok(updatedRows[1].textContent?.includes("ab"));
+  });
+});
+
+test("Mermaid source is eligible only after its matching source fence closes", () => {
+  const prefix = "```mermaid\nflowchart LR\n  A --> B\n";
+  assert.equal(completeMermaidFences(prefix).size, 0);
+  assert.deepEqual([...completeMermaidFences(`${prefix}\`\`\``)], ["flowchart LR\n  A --> B"]);
+  assert.deepEqual([...completeMermaidFences("~~~mermaid title=ready\nsequenceDiagram\n  A->>B: hello\n~~~")], ["sequenceDiagram\n  A->>B: hello"]);
+  assert.equal(completeMermaidFences("~~~mermaid\nflowchart LR\n  A --> B\n```").size, 0);
+  assert.equal(completeMermaidFences("```ts\nconst x = 1;\n```").size, 0);
+});
+
+test("an incomplete Mermaid fence stays readable and becomes an interactive placeholder only at closure", async () => {
+  await withMessageApp(async app => {
+    const prefix = "Before the diagram.\n\n```mermaid\nflowchart LR\n  A --> B\n";
+    const partial = { kind: "standard", entryId: "mermaid-stream", activeStream: true, streamTarget: "text", message: { role: "assistant", content: [{ type: "text", text: prefix }] } };
+    app.window.__messages = [partial];
+    await render(app, 'renderMessages(window.__messages, true, "session-mermaid")');
+    assert.equal(app.document.querySelector(".md-mermaid-wrap"), null);
+    assert.ok(app.document.querySelector(".md-code-block code")?.textContent?.includes("A --> B"));
+
+    const complete = { ...partial, activeStream: false, message: { role: "assistant", content: [{ type: "text", text: `${prefix}\`\`\`` }] } };
+    app.window.__messages = [complete];
+    await render(app, 'renderMessages(window.__messages, false, "session-mermaid")');
+    assert.equal(app.document.querySelector(".md-mermaid-wrap")?.getAttribute("data-mermaid-source"), "complete");
   });
 });
 

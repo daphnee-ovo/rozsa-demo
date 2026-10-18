@@ -47,8 +47,8 @@ function imageData(seed = 1, width = 128, height = 96) {
   ]).toString("base64");
 }
 
-function markdown(index) {
-  return [
+function markdown(index, complexMarkdown = false) {
+  const blocks = [
     `## Review ${index}: preserve the active branch`,
     "",
     "A long-session rendering sample with CJK text: 会话状态应保持稳定。",
@@ -66,7 +66,29 @@ function markdown(index) {
     "```",
     "",
     "[Local reference](https://example.invalid/performance-fixture)",
-  ].join("\n");
+  ];
+  if (complexMarkdown) blocks.push(
+    "",
+    `> Streaming review ${index} keeps long-form content, nested lists, and two independent diagrams in one message.`,
+    "",
+    "1. Verify the branch identity.",
+    "   - Preserve the current scroll anchor.",
+    "   - Keep code readable at narrow widths.",
+    "",
+    "```mermaid",
+    "flowchart LR",
+    `  request_${index}[Request] --> render_${index}[Streamdown] --> diagram_${index}[Pele]`,
+    "```",
+    "",
+    "```mermaid",
+    "sequenceDiagram",
+    `  participant UI as View ${index}`,
+    "  participant Chart as Diagram",
+    "  UI->>Chart: Mount after the closing fence",
+    "  Chart-->>UI: Reflow at container width",
+    "```",
+  );
+  return blocks.join("\n");
 }
 
 export async function writeConversationFixture(directory, id, {
@@ -75,6 +97,7 @@ export async function writeConversationFixture(directory, id, {
   imageAtEnd = false,
   toolEvery = 12,
   toolAtEnd = false,
+  complexMarkdown = false,
 } = {}) {
   await mkdir(directory, { recursive: true });
   const path = join(directory, `${id}.jsonl`);
@@ -95,7 +118,7 @@ export async function writeConversationFixture(directory, id, {
 
   for (let index = 0; index < pairs; index++) {
     const userId = `${id}-user-${index}`;
-    const userContent = [{ type: "text", text: markdown(index) }];
+    const userContent = [{ type: "text", text: markdown(index, complexMarkdown) }];
     if ((imageEvery > 0 && index % imageEvery === 0) || (imageAtEnd && index === pairs - 1)) {
       userContent.push({ type: "image", mimeType: "image/png", data: image });
     }
@@ -104,7 +127,7 @@ export async function writeConversationFixture(directory, id, {
     const assistantId = `${id}-assistant-${index}`;
     const content = [
       { type: "thinking", thinking: `Inspecting session ${id}, step ${index}.\n\n- Compare the current branch.\n- Preserve the pending work.` },
-      { type: "text", text: `Completed analysis ${index}.\n\n${markdown(index)}` },
+      { type: "text", text: `Completed analysis ${index}.\n\n${markdown(index, complexMarkdown)}` },
     ];
     const toolCallId = `${id}-tool-${index}`;
     if (toolEvery > 0 && (index % toolEvery === 0 || (toolAtEnd && index === pairs - 1))) {
@@ -118,7 +141,7 @@ export async function writeConversationFixture(directory, id, {
     if (toolEvery > 0 && (index % toolEvery === 0 || (toolAtEnd && index === pairs - 1))) {
       append(`${id}-tool-result-${index}`, {
         role: "toolResult", toolCallId, toolName: "read",
-        content: [{ type: "text", text: `Synthetic tool output ${index}\n${markdown(index)}` }],
+        content: [{ type: "text", text: `Synthetic tool output ${index}\n${markdown(index, complexMarkdown)}` }],
       });
     }
   }

@@ -17,6 +17,8 @@ function percentile(values, fraction) {
 }
 
 function summarize(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const trimmed = sorted.length >= 5 ? sorted.slice(1, -1) : null;
   return {
     samples: values.length,
     min: Math.min(...values),
@@ -24,6 +26,9 @@ function summarize(values) {
     p95: percentile(values, 0.95),
     max: Math.max(...values),
     mean: values.reduce((sum, value) => sum + value, 0) / values.length,
+    trimmedMeanDropOneEach: trimmed
+      ? trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length
+      : null,
   };
 }
 
@@ -48,7 +53,7 @@ async function measureLaunch(environment, fixture, mode, index) {
       return chat.scrollHeight-chat.scrollTop-chat.clientHeight;
     })()`);
     const fullyReadyMs = Date.now() - app.spawnEpochMs;
-    await cdp.waitFor("window.__ROZSA_PERF__?.markdownWorkerDurations.length > 0", "background Markdown preparation completed", 30000);
+    await cdp.waitFor("window.__ROZSA_PERF__?.markdownStages?.renderCommit.length > 0", "Markdown render-to-commit stages recorded", 30000);
     const historyObservation = await cdp.evaluate(`(async()=>{
       const started=performance.now();
       const reply=await window.rozsa.switchSession({path:${JSON.stringify(fixture.path)},catalogId:${JSON.stringify(fixture.id)}});
@@ -81,7 +86,7 @@ async function measureLaunch(environment, fixture, mode, index) {
           longTasks: window.__ROZSA_PERF__.longTasks,
           frameGaps: window.__ROZSA_PERF__.frameGaps,
           visibility: window.__ROZSA_PERF__.visibility,
-          markdownWorkerDurations: window.__ROZSA_PERF__.markdownWorkerDurations,
+          markdownStages: window.__ROZSA_PERF__.markdownStages,
         },
       };
     })()`);
@@ -121,7 +126,7 @@ async function measureLaunch(environment, fixture, mode, index) {
       historySnapshotBytes: historyObservation.payloadBytes,
       historySwitchMs: historyObservation.switchMs,
       memory: processMemory,
-      markdownWorkerDurations: renderer.capture?.markdownWorkerDurations || [],
+      markdownStages: renderer.capture?.markdownStages || {},
       longTaskSupported: renderer.capture?.longTaskSupported === true,
       longTasks: renderer.capture?.longTasks || [],
       frameGapMaxMs: Math.max(0, ...(renderer.capture?.frameGaps || [])),
@@ -148,7 +153,10 @@ function modeReport(samples) {
     sessionCatalogRenderedMs: summarize(samples.map(sample => sample.sessionCatalogRenderedMs)),
     sessionCatalogRenderDelayMs: summarize(samples.map(sample => sample.sessionCatalogRenderDelayMs)),
     firstContentfulPaintMs: summarize(samples.map(sample => sample.paintsMs["first-contentful-paint"])),
-    markdownWorkerMaxMs: summarize(samples.map(sample => Math.max(0, ...sample.markdownWorkerDurations))),
+    markdownStages: Object.fromEntries(["renderCommit", "peleMount", "peleAdapt"].map(stage => {
+      const values = samples.flatMap(sample => sample.markdownStages?.[stage] || []);
+      return [stage, values.length ? summarize(values) : { samples: 0 }];
+    })),
     loadedHistoryReadyMs: summarize(samples.map(sample => sample.loadedHistoryReadyMs)),
     historyDataReceivedMs: summarize(samples.map(sample => sample.historyDataReceivedMs)),
     firstConversationCommitMs: summarize(samples.map(sample => sample.firstConversationCommitMs)),
@@ -186,7 +194,7 @@ test("cold and warm Electron startup measure shell, conversation, images and vis
     for (const sample of samples) {
       for (const region of requiredRegions) assert.ok(Number.isFinite(sample.visibleElementMs[region]), `startup did not record visible region ${region}`);
       assert.equal(sample.longTaskSupported, true, "Chromium long-task observation is required for responsiveness measurements");
-      assert.ok(sample.markdownWorkerDurations.length > 0, "complex startup history must be prepared in a Web Worker");
+      assert.ok(sample.markdownStages?.renderCommit?.length > 0, "Markdown render-to-commit measurements must be recorded");
       assert.equal(sample.historyEntryCount, 1200, `expected full 1200-message history data, saw ${sample.historyEntryCount}`);
       assert.ok(sample.historyRows > 0 && sample.historyRows < sample.historyEntryCount, `expected bounded viewport DOM rows, saw ${sample.historyRows}/${sample.historyEntryCount}`);
       assert.ok(sample.initialRangeStart >= sample.historyEntryCount - 64, `first mounted message range started at ${sample.initialRangeStart}, not near the latest history`);

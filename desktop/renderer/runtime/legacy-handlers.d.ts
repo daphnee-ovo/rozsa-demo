@@ -17,7 +17,7 @@ declare global {
     RozsaConversation: Pick<typeof import('../scripts/features/conversation.ts'), 'emptyConversationMarkup' | 'messageFrame' | 'createMessageFrame' | 'runningPanelMarkup' | 'thinkingMarkup'> & {
       renderView: (props: import('../scripts/features/conversation-view.tsx').ConversationViewProps) => void;
     };
-    renderMarkdown: (text: string) => string;
+    renderMarkdown: (text: string) => Promise<string>;
     RozsaComposer: Pick<typeof import('../scripts/components/composer.js'), 'renderSendState'>;
     RozsaPopover: ReturnType<typeof import('../scripts/components/popover.js')['init']>;
     RozsaSidebarFeedback: ReturnType<typeof import('./adapters/notifications.js')['createSidebarFeedback']>;

@@ -10,7 +10,11 @@ const rounds = Math.max(1, Number(process.env.ROZSA_PERF_ROUNDS || 1));
 const calibration = process.env.ROZSA_PERF_CALIBRATION === "1";
 const pairsPerSession = Math.max(1, Number(process.env.ROZSA_PERF_STRESS_PAIRS || 3000));
 const expectedRows = pairsPerSession * 2;
-const streamTokens = Array.from({ length: 32 }, (_, index) => `stress-stream-${String(index).padStart(2, "0")} `);
+const streamTokens = [
+  ...Array.from({ length: 32 }, (_, index) => `stress-stream-${String(index).padStart(2, "0")} `),
+  "\n```mermaid\nflowchart LR\n  stream_open[Open] --> stream_closed[Close]\n",
+  "```",
+];
 
 function percentile(values, fraction) {
   const sorted = [...values].sort((left, right) => left - right);
@@ -18,6 +22,8 @@ function percentile(values, fraction) {
 }
 
 function summarize(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const trimmed = sorted.length >= 5 ? sorted.slice(1, -1) : null;
   return {
     samples: values.length,
     min: Math.min(...values),
@@ -25,6 +31,9 @@ function summarize(values) {
     p95: percentile(values, 0.95),
     max: Math.max(...values),
     mean: values.reduce((sum, value) => sum + value, 0) / values.length,
+    trimmedMeanDropOneEach: trimmed
+      ? trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length
+      : null,
   };
 }
 
@@ -35,19 +44,20 @@ async function startProvider() {
     request.resume();
     request.on("end", () => {
       response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-      let index = 0;
-      const timer = setInterval(() => {
+      let index = 0, timer;
+      const sendNext = () => {
         if (index < streamTokens.length) {
           response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: streamTokens[index] } }] })}\n\n`);
           index++;
+          timer = setTimeout(sendNext, index === streamTokens.length - 1 ? 300 : 15);
         } else {
           response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 30, completion_tokens: 32 } })}\n\n`);
           response.write("data: [DONE]\n\n");
-          clearInterval(timer);
           response.end();
         }
-      }, 15);
-      response.on("close", () => clearInterval(timer));
+      };
+      timer = setTimeout(sendNext, 15);
+      response.on("close", () => clearTimeout(timer));
     });
   });
   await new Promise((resolve, reject) => server.listen(0, "127.0.0.1", resolve).once("error", reject));
@@ -132,15 +142,9 @@ async function measureRound(index, longFixture, provider) {
     cdp = await attachPage(await app.devToolsURL());
     phase = "initial history render";
     await cdp.waitFor("performance.getEntriesByName('rozsa:ui-interactive-ready').length > 0", "stress renderer UI readiness");
-    const markdownParity = await cdp.evaluate(`(async () => {
-      const fence = String.fromCharCode(96).repeat(3);
-      const source = ["# Heading", "", "A **bold** paragraph with [link](https://example.invalid).", "", "- first", "- second", "", "| left | right |", "| :--- | ---: |", "| a | b |", "", "> quoted", "", fence + "ts", "const value = 1;", fence, "", "![local](data:image/png;base64,AA==)", "", "$inline$"].join(String.fromCharCode(10));
-      const prepared = await window.RozsaMarkdownWorker.prepare([{ key: "parity", source }]);
-      return prepared.parity === window.renderMarkdown(source);
-    })()`);
-    assert.equal(markdownParity, true, "worker Markdown output must match the synchronous renderer for supported blocks");
     await cdp.waitFor(`Number(document.querySelector('#chatMessages [data-virtualized=true]')?.dataset.historyEntryCount) === ${expectedRows}`, `complete complex ${expectedRows}-message history available`, 90000);
     await cdp.waitFor("document.querySelectorAll('#chatMessages .msg').length > 0", "latest complex-session viewport rendered", 90000);
+    await cdp.waitFor("document.querySelectorAll('#chatMessages .md-mermaid[data-pele-ready=true]').length > 0", "visible complete Mermaid diagrams mounted with Pele", 90000);
     await cdp.waitFor("Array.from(document.querySelectorAll('#chatMessages img')).every(image => image.complete && image.naturalWidth > 0)", "stress image decode", 90000);
     const initial = await cdp.evaluate(`({
       rows: document.querySelectorAll("#chatMessages .msg").length,
@@ -150,6 +154,7 @@ async function measureRound(index, longFixture, provider) {
       thinking: document.querySelectorAll("#chatMessages .thinking-block").length,
       expandedTools: document.querySelectorAll("#chatMessages .tool-call.expanded").length,
       expandedThinking: document.querySelectorAll("#chatMessages .thinking-block.expanded").length,
+      mermaidCharts: document.querySelectorAll("#chatMessages .md-mermaid[data-pele-ready=true]").length,
       renderReadyEpochMs: Date.now(),
     })`);
     const loadedHistoryMs = initial.renderReadyEpochMs - app.spawnEpochMs;
@@ -157,6 +162,7 @@ async function measureRound(index, longFixture, provider) {
     assert.ok(initial.rows > 0 && initial.rows < expectedRows, `expected bounded viewport DOM rows, saw ${initial.rows}/${expectedRows}`);
     assert.ok(initial.tools > 0, `expected visible historical tool cards, saw ${initial.tools}`);
     assert.ok(initial.thinking > 0, `expected visible thinking blocks, saw ${initial.thinking}`);
+    assert.ok(initial.mermaidCharts > 0, "complex Markdown fixture must mount visible Mermaid diagrams");
     assert.equal(initial.expandedTools, 0);
     assert.equal(initial.expandedThinking, 0);
 
@@ -185,6 +191,72 @@ async function measureRound(index, longFixture, provider) {
       return performance.now() - started;
     })()`, 30000);
 
+    phase = "responsive Mermaid measurement";
+    const beforeResize = await cdp.evaluate(`({
+      width: document.querySelector("#chatMessages .md-mermaid")?.clientWidth || 0,
+      viewportWidth: window.innerWidth,
+      adaptations: window.__ROZSA_PERF__?.markdownStages?.peleAdapt?.length || 0,
+    })`);
+    assert.ok(beforeResize.width > 0, "visible Mermaid container width is unavailable");
+    const narrowContainerWidth = Math.max(240, beforeResize.width - 280);
+    await cdp.evaluate(`(() => {
+      const diagram = document.querySelector("#chatMessages .md-mermaid");
+      diagram.style.width = "${narrowContainerWidth}px";
+    })()`);
+    await cdp.evaluate("new Promise(resolve => setTimeout(resolve, 500))", 3000);
+    const afterResize = await cdp.evaluate(`({
+      width: document.querySelector("#chatMessages .md-mermaid")?.clientWidth || 0,
+      viewportWidth: window.innerWidth,
+      mainPanelRight: document.querySelector('[data-od-id="main-panel"]').getBoundingClientRect().right,
+      documentWidth: document.documentElement.clientWidth,
+      adaptations: window.__ROZSA_PERF__?.markdownStages?.peleAdapt?.length || 0,
+      viewBox: document.querySelector("#chatMessages .md-mermaid svg")?.getAttribute("viewBox") || "",
+    })`);
+    assert.ok(afterResize.width > 0 && afterResize.width < beforeResize.width,
+      `Mermaid container did not narrow: ${JSON.stringify({ beforeResize, afterResize })}`);
+    assert.ok(afterResize.adaptations > beforeResize.adaptations,
+      `Pele adaptation was not timed after width change: ${JSON.stringify({ beforeResize, afterResize })}`);
+    const narrowDiagramWidth = afterResize.width;
+    await cdp.evaluate(`(() => {
+      document.querySelector("#chatMessages .md-mermaid").style.removeProperty("width");
+    })()`);
+    await cdp.waitFor(`window.__ROZSA_PERF__?.markdownStages?.peleAdapt?.length > ${afterResize.adaptations}`,
+      "Pele re-adapts when the full conversation container width is restored", 10000);
+    const restoredLayout = await cdp.evaluate(`({
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.clientWidth,
+      mainPanelRight: document.querySelector('[data-od-id="main-panel"]').getBoundingClientRect().right,
+      diagramWidth: document.querySelector("#chatMessages .md-mermaid")?.clientWidth || 0,
+    })`);
+    assert.ok(Math.abs(restoredLayout.mainPanelRight - restoredLayout.documentWidth) <= 1,
+      `main panel did not fill the Electron viewport after container reflow: ${JSON.stringify(restoredLayout)}`);
+    assert.ok(restoredLayout.diagramWidth > narrowContainerWidth,
+      `Mermaid container did not return to full width: ${JSON.stringify({ narrowContainerWidth, restoredLayout })}`);
+    if (process.platform === "darwin") {
+      const collapsed = await cdp.evaluate(`(() => {
+        const toggle = document.querySelector("body > .sidebar-toggle-button");
+        if (!toggle) throw new Error("macOS sidebar toggle is unavailable");
+        if (!document.body.classList.contains("sidebar-collapsed")) toggle.click();
+        const panel = document.querySelector('[data-od-id="main-panel"]').getBoundingClientRect();
+        return {
+          collapsed: document.body.classList.contains("sidebar-collapsed"),
+          viewportWidth: window.innerWidth,
+          outerWidth: window.outerWidth,
+          panelRight: panel.right,
+          documentWidth: document.documentElement.clientWidth,
+        };
+      })()`);
+      assert.equal(collapsed.collapsed, true, `sidebar did not collapse: ${JSON.stringify(collapsed)}`);
+      assert.ok(Math.abs(collapsed.viewportWidth - collapsed.outerWidth) <= 1,
+        `renderer viewport did not match the actual Electron window: ${JSON.stringify(collapsed)}`);
+      assert.ok(Math.abs(collapsed.panelRight - collapsed.documentWidth) <= 1,
+        `main panel left a blank strip after hiding the sidebar: ${JSON.stringify(collapsed)}`);
+      await cdp.evaluate("new Promise(resolve => setTimeout(resolve, 220))", 3000);
+    }
+    const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    const screenshotPath = join(outputRoot, `stress-${index}-markdown.png`);
+    await writeFile(screenshotPath, Buffer.from(screenshot.data, "base64"));
+
     phase = "session switching";
     phase = "session catalog";
     const sessions = await cdp.evaluate("window.RozsaUIHost.port.request('get_sessions')");
@@ -196,8 +268,10 @@ async function measureRound(index, longFixture, provider) {
     assert.ok(longSession && longIndex >= 0, "long history session missing from isolated catalog");
     phase = "switch to short history";
     const switchOut = await measureSessionSwitch(cdp, shortIndex, shortSession.id, 10);
+    await cdp.waitFor("window.__ROZSA_PERF__?.activePeleMounts === 0", "Pele observers released after virtual rows are removed", 10000);
     phase = "switch back to long history";
     const switchBack = await measureSessionSwitch(cdp, longIndex, longSession.id, expectedRows);
+    await cdp.waitFor("window.__ROZSA_PERF__?.activePeleMounts > 0", "visible Mermaid diagrams remount after session restoration", 30000);
 
     phase = "tool and thinking expansion";
     const toolToggleMs = [];
@@ -234,7 +308,18 @@ async function measureRound(index, longFixture, provider) {
     await cdp.evaluate("window.RozsaUIHost.port.request('send_message',{message:'Stream during complex history interaction'})");
     await cdp.waitFor(`window.RozsaUIHost.port.request('get_state').then(state => state.messages.at(-1)?.message?.content?.map(block => block.text || '').join(' ') || '').then(text => text.includes(${JSON.stringify(streamTokens[0])}))`, "first stream delta", 15000);
     const firstDeltaMs = Date.now() - sendStarted;
+    await cdp.waitFor(`window.RozsaUIHost.port.request('get_state').then(state => state.messages.at(-1)?.message?.content?.map(block => block.text || '').join(' ') || '').then(text => text.includes("flowchart LR"))`, "streaming Mermaid source received before its closing fence", 15000);
+    await cdp.evaluate("(() => { const chat = document.querySelector('#chatMessages'); chat.scrollTop = chat.scrollHeight; })()");
+    await cdp.waitFor(`(() => [...document.querySelectorAll("#chatMessages .conversation-virtual-row .msg")].some(item => item.textContent.includes("flowchart LR")))()`,
+      "streaming message row mounted at the conversation end", 15000);
+    const openDiagram = await cdp.evaluate(`(() => {
+      const row = [...document.querySelectorAll("#chatMessages .conversation-virtual-row .msg")].filter(item => item.textContent.includes("flowchart LR")).at(-1);
+      return { sourceVisible: row?.textContent.includes("stream_closed"), rendered: Boolean(row?.querySelector(".md-mermaid-wrap")) };
+    })()`);
+    assert.equal(openDiagram.sourceVisible, true, `streaming Mermaid source must remain readable before closure: ${JSON.stringify(openDiagram)}`);
+    assert.equal(openDiagram.rendered, false, "incomplete stream must not mount a diagram from Streamdown's temporary completion");
     await cdp.waitFor(`window.RozsaUIHost.port.request('get_state').then(state => state.messages.at(-1)?.message?.content?.map(block => block.text || '').join(' ') || '').then(text => text.includes(${JSON.stringify(streamTokens.at(-1).trim())}))`, "stream completion", 30000);
+    await cdp.waitFor(`(() => { const row = [...document.querySelectorAll("#chatMessages .conversation-virtual-row .msg")].find(item => item.textContent.includes("stress-stream-31")); return Boolean(row?.querySelector(".md-mermaid[data-pele-ready=true]")); })()`, "Pele mounts the stream diagram after the source fence closes", 30000);
     const streamRows = await cdp.evaluate("Number(document.querySelector('#chatMessages [data-virtualized=true]')?.dataset.historyEntryCount)");
     assert.equal(streamRows, expectedRows + 2);
 
@@ -246,13 +331,15 @@ async function measureRound(index, longFixture, provider) {
       longTaskSupported: window.__ROZSA_PERF__?.longTaskSupported,
       longTasks: window.__ROZSA_PERF__?.longTasks || [],
       frameGaps: window.__ROZSA_PERF__?.frameGaps || [],
-      markdownWorkerDurations: window.__ROZSA_PERF__?.markdownWorkerDurations || [],
+      markdownStages: window.__ROZSA_PERF__?.markdownStages || {},
       scrollTop: document.querySelector("#chatMessages").scrollTop,
     })`);
     assert.equal(browser.longTaskSupported, true);
     const longTaskDurations = browser.longTasks.map(task => task.duration);
     const frameGapsOver50Ms = browser.frameGaps.filter(gap => gap >= 50).length;
-    assert.ok(browser.markdownWorkerDurations.length >= 2, "initial and switched long histories must use the Markdown worker");
+    assert.ok(browser.markdownStages.renderCommit?.length > 0, `Markdown render-to-commit durations were not measured: ${JSON.stringify(browser.markdownStages)}`);
+    assert.ok(browser.markdownStages.peleMount?.length > 0, "Pele mount durations were not measured");
+    assert.ok(browser.markdownStages.peleAdapt?.length > 0, "Pele width adaptation was not measured");
     assert.ok(browser.frameGaps.length >= 30, "animation-frame samples were not collected");
     const frameGapP95Ms = percentile(browser.frameGaps, 0.95);
     return {
@@ -279,8 +366,12 @@ async function measureRound(index, longFixture, provider) {
       scrollMs,
       typingMs,
       firstDeltaMs,
-      markdownWorkerP95Ms: percentile(browser.markdownWorkerDurations, 0.95),
-      markdownWorkerMaxMs: Math.max(...browser.markdownWorkerDurations),
+      markdownRenderCommitP95Ms: percentile(browser.markdownStages.renderCommit, 0.95),
+      peleMountP95Ms: percentile(browser.markdownStages.peleMount, 0.95),
+      peleAdaptP95Ms: percentile(browser.markdownStages.peleAdapt, 0.95),
+      mermaidCharts: initial.mermaidCharts,
+      narrowDiagramWidth,
+      screenshotPath,
       jsHeapMB: heap / (1024 * 1024),
       domNodes: nodeCount,
       longTaskCount: longTaskDurations.length,
@@ -317,7 +408,7 @@ async function measureRound(index, longFixture, provider) {
 test("complex session stress measures rendering, images, expansion, input, streaming and resource pressure", async () => {
   const fixtureDirectory = join(outputRoot, "stress-fixture");
   await mkdir(fixtureDirectory, { recursive: true });
-  const longFixture = await writeConversationFixture(fixtureDirectory, "long-session", { pairs: pairsPerSession, imageEvery: 24, toolEvery: 20, toolAtEnd: true });
+  const longFixture = await writeConversationFixture(fixtureDirectory, "long-session", { pairs: pairsPerSession, imageEvery: 24, toolEvery: 20, toolAtEnd: true, complexMarkdown: true });
   const provider = await startProvider();
   const samples = [];
   const failedAttempts = [];
@@ -343,7 +434,7 @@ test("complex session stress measures rendering, images, expansion, input, strea
   }
 
   const metrics = [
-    "loadedHistoryMs", "historyReachabilityMs", "markdownWorkerP95Ms", "markdownWorkerMaxMs", "switchOutMs", "switchOutPreparationMs", "switchOutRpcMs", "switchOutRenderAfterRpcMs",
+    "loadedHistoryMs", "historyReachabilityMs", "markdownRenderCommitP95Ms", "peleMountP95Ms", "peleAdaptP95Ms", "switchOutMs", "switchOutPreparationMs", "switchOutRpcMs", "switchOutRenderAfterRpcMs",
     "switchBackMs", "switchBackPreparationMs", "switchBackRpcMs", "switchBackRenderAfterRpcMs", "toolToggleP95Ms", "thinkingToggleP95Ms",
     "scrollMs", "typingMs", "firstDeltaMs", "jsHeapMB", "maxRSSMB", "maxRendererRSSMB",
     "longTaskP95Ms", "frameGapP95Ms", "frameGapMaxMs", "frameGapsOver50Ms", "longestTaskMs",

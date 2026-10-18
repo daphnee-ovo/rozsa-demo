@@ -56,7 +56,7 @@ NativeTitlebarHost + NativeSplitHost
 
 新工程的 [UI_COVERAGE.json](../../prototype/docs/UI_COVERAGE.json) 记录设计覆盖、新共享 owner、真实触发方式和使用方；[DESIGN_GAPS.md](../../prototype/docs/DESIGN_GAPS.md) 记录未覆盖状态及恢复条件。
 
-已覆盖的 Sidebar、Conversation frame、Composer、工具内容、替换式面板、Settings、通知与 Dev Flow 使用共享实现。未覆盖主动入口保留空容器并暂停操作，后续迭代逐项补齐设计。无法安全暂停的被动消息状态、在途恢复和错误出口保留原运行实现，标为受阻；不计入已迁移区域，不作为共享 UI 的备用实现。
+已覆盖的 Sidebar、Conversation frame、Composer、工具内容、替换式面板、Settings、通知与 Dev Flow 使用共享实现。Conversation 的 Markdown 由 Streamdown 渲染；完整 Mermaid 围栏由 Pele 自适应容器宽度，虚拟行卸载时销毁其观察器。未覆盖主动入口保留空容器并暂停操作，后续迭代逐项补齐设计。无法安全暂停的被动消息状态、在途恢复和错误出口保留原运行实现，标为受阻；不计入已迁移区域，不作为共享 UI 的备用实现。
 
 所有通知位于右上角。错误 toast 到期后进入 unresolved error tray；恢复成功明确 resolve。普通 ready/success 不主动打扰。Dev Flow 由项目级 app runtime 提供状态，GUI 不读取 `.dev-doc` 或解析原始 REST/SSE。
 

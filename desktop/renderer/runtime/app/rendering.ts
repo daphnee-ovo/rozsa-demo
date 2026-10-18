@@ -309,11 +309,11 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
   if (!window.RozsaConversation?.renderView) throw new Error('React conversation renderer is unavailable');
   renderedMessageSessionId = sessionId;
   renderedRawMessageCount = allMessages.length;
-  const commit = (preparedMarkdown, preserveScroll = true) => {
+  const commit = (preserveScroll = true) => {
     if (generation !== conversationRenderGeneration) return;
     const followEnd = preserveScroll ? shouldStickToBottom : !chatAutoScrollPaused && isChatNearBottom(container);
     window.RozsaConversation.renderView({ entryCount: visibleMessages.length, entryIds, entryAt,
-      markdown: renderMarkdown, preparedMarkdown, empty: visibleMessages.length === 0, sessionId, followEnd,
+      empty: visibleMessages.length === 0, sessionId, followEnd,
       initialScrollTop: restoringScroll ? savedView.scrollTop : null });
     if (preserveScroll && (restoringScroll || followEnd)) {
       requestAnimationFrame(() => {
@@ -322,31 +322,7 @@ function renderMessages(messages, streaming, sessionId = null, turnActivity = nu
       });
     }
   };
-  if (!streaming && visibleMessages.length >= 50) {
-    const jobs = [];
-    const firstPreparedIndex = Math.max(0, visibleMessages.length - 40);
-    for (let index = firstPreparedIndex; index < visibleMessages.length; index++) {
-      const entry = entryAt(index);
-      if (entry.kind !== 'standard' || !entry.message || !Array.isArray(entry.message.content)) continue;
-      const content = entry.message.content;
-      for (const type of ['text', 'thinking']) {
-        const source = content.filter(block => block.type === type && typeof block.text === 'string').map(block => block.text).join('\n');
-        if (source) jobs.push({ key: entry.id + ':' + type, source });
-      }
-    }
-    if (jobs.length) {
-      const started = performance.now();
-      commit(undefined);
-      window.RozsaMarkdownWorker.prepare(jobs).then(preparedMarkdown => {
-        if (window.__ROZSA_PERF__?.markdownWorkerDurations) window.__ROZSA_PERF__.markdownWorkerDurations.push(performance.now() - started);
-        commit(preparedMarkdown, false);
-      }).catch(error => {
-        if (generation === conversationRenderGeneration) showError('Markdown worker failed: ' + String(error));
-      });
-      return;
-    }
-  }
-  commit(undefined);
+  commit();
 }
 
 function bashPresentationRenderKey(raw, toolResultMap) {

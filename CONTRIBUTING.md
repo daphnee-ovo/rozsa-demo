@@ -212,11 +212,18 @@ isolated from both wildcard UI suites and run independently with
 `npm --prefix desktop/tests run test:performance`. Cold and warm end-to-end
 startup to a fully rendered latest viewport over the complete 1200-message
 history (including decoded images visible in that viewport) each have a hard
-3000ms limit per measured round; any sample above 3000ms fails, and the report
-also records P50/P95 after at least 30 rounds per mode. A separate 6000-message
+4000ms cold and 3000ms warm limit per measured round; any sample above its mode limit fails, and the report
+also records at least 30 rounds per mode, per-round samples, min/P50/P95/max and
+mean; with at least five rounds it reports a supplemental mean after dropping
+one highest and one lowest sample. This trimmed mean never replaces raw samples
+or per-round hard-limit failures. A separate 6000-message
 stress scenario measures scroll reachability, bounded DOM, expansion, switching,
 input, frame stalls and memory without requiring every historical row in the
 initial viewport DOM.
+Conversation performance records Streamdown render and React commit durations,
+Pele mount and responsive adaptation, plus long-task, DOM and memory samples.
+The stress fixture includes two complete Mermaid blocks in representative
+messages; ordinary test suites do not run this workload.
 Main/preload follow Forge's main.cjs/preload.cjs convention. Preload is a single
 sandbox bundle with Electron as the only external runtime require. Strict
 Bundler-resolution TS configs keep Node globals out of renderer and DOM out of

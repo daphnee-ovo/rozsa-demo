@@ -276,9 +276,12 @@ function showHelp(topic) {
   const div = document.createElement('div');
   div.className = 'msg msg-assistant';
   div.innerHTML = '<div class="msg-avatar">?</div><div class="msg-body"><div class="msg-role">Help</div>' +
-    '<div class="msg-content markdown-body">' + renderMarkdown(helpText) + '</div></div>';
+    '<div class="msg-content markdown-body"></div></div>';
+  const body = div.querySelector('.msg-content');
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+  void renderMarkdown(helpText).then(html => { if (body?.isConnected) body.innerHTML = html; })
+    .catch(error => window.showError?.('Could not render help Markdown: ' + String(error)));
 }
 
 function showHotkeys() {
@@ -295,9 +298,12 @@ function showHotkeys() {
   const div = document.createElement('div');
   div.className = 'msg msg-assistant';
   div.innerHTML = '<div class="msg-avatar">?</div><div class="msg-body"><div class="msg-role">Hotkeys</div>' +
-    '<div class="msg-content markdown-body">' + renderMarkdown(hotkeysText) + '</div></div>';
+    '<div class="msg-content markdown-body"></div></div>';
+  const body = div.querySelector('.msg-content');
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+  void renderMarkdown(hotkeysText).then(html => { if (body?.isConnected) body.innerHTML = html; })
+    .catch(error => window.showError?.('Could not render shortcut Markdown: ' + String(error)));
 }
 
 function clampPercent(value) {

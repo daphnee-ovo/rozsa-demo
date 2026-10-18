@@ -22,7 +22,7 @@ import { bindToast, bindErrorTray } from '../../scripts/components/notification.
 import { subscribeNotifications, showRuntimeError } from '../adapters/notifications.js';
 import * as sidebar from '../../scripts/features/sidebar.js';
 import { loadTemplate } from '../../scripts/core/template-loader.ts';
-import { renderMarkdown as renderMarkdownCore } from '../../scripts/features/markdown-core.ts';
+import { renderMarkdownStatic } from '../../scripts/features/markdown-renderer.tsx';
 import * as devFlow from '../../scripts/features/dev-flow.js';
 import { devFlowSettingsView, devFlowDetailView } from '../adapters/sidebar-dev-flow.js';
 
@@ -31,53 +31,15 @@ declare global {
     RozsaSessionCatalogReady: Promise<unknown>;
     RozsaInitialStateReady: Promise<unknown>;
     RozsaSidebarReady: Promise<void>;
-    RozsaMarkdownRenderer: (source: string) => string;
-    RozsaMarkdownWorker: { prepare(jobs: Array<{ key: string; source: string }>): Promise<Record<string, string>> };
-    renderMarkdown: (source: string) => string;
+    RozsaMarkdownRenderer: (source: string) => Promise<string>;
+    renderMarkdown: (source: string) => Promise<string>;
   }
 }
 
-let markdownWorker: Worker | undefined;
-let markdownWorkerFailure: Error | undefined;
-let markdownRequestId = 0;
-const markdownRequests = new Map<number, {
-  resolve(value: Record<string, string>): void;
-  reject(error: Error): void;
-}>();
-function requireMarkdownWorker(): Worker {
-  if (markdownWorkerFailure) throw markdownWorkerFailure;
-  if (!markdownWorker) {
-    markdownWorker = new Worker(new URL('../../scripts/workers/markdown.worker.ts', import.meta.url), {
-      type: 'module', name: 'rozsa-markdown',
-    });
-    markdownWorker.addEventListener('message', event => {
-      const pending = markdownRequests.get(event.data.requestId);
-      if (!pending) return;
-      markdownRequests.delete(event.data.requestId);
-      pending.resolve(event.data.html);
-    });
-    const fail = (event: ErrorEvent | MessageEvent): void => {
-      markdownWorkerFailure = new Error('Markdown worker failed', { cause: event });
-      for (const pending of markdownRequests.values()) pending.reject(markdownWorkerFailure);
-      markdownRequests.clear();
-    };
-    markdownWorker.addEventListener('error', fail);
-    markdownWorker.addEventListener('messageerror', fail);
-  }
-  return markdownWorker;
-}
-window.RozsaMarkdownRenderer = renderMarkdownCore;
-window.renderMarkdown = renderMarkdownCore;
-window.RozsaMarkdownWorker = Object.freeze({
-  prepare(jobs: Array<{ key: string; source: string }>): Promise<Record<string, string>> {
-    const worker = requireMarkdownWorker();
-    const requestId = ++markdownRequestId;
-    return new Promise((resolve, reject) => {
-      markdownRequests.set(requestId, { resolve, reject });
-      worker.postMessage({ requestId, jobs });
-    });
-  },
-});
+const renderMarkdown = (source: string): Promise<string> => import('../../scripts/features/markdown-renderer.tsx')
+  .then(module => module.renderMarkdownStatic(source));
+window.RozsaMarkdownRenderer = renderMarkdown;
+window.renderMarkdown = renderMarkdown;
 
 const performanceCapture = new URLSearchParams(location.search).get("rozsa_perf") === "1";
 const startupAnchors = [
@@ -97,7 +59,7 @@ if (performanceCapture) {
   const perfState = {
     longTasks: [] as Array<{ startTime: number; duration: number }>,
     frameGaps: [] as number[],
-    markdownWorkerDurations: [] as number[],
+    markdownStages: { renderCommit: [] as number[], peleMount: [] as number[], peleAdapt: [] as number[] },
     visibility: [{ at: performance.now(), state: document.visibilityState, focused: document.hasFocus() }],
     longTaskSupported: false,
   };

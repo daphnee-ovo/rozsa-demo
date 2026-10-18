@@ -1,8 +1,8 @@
 // @ts-nocheck
-function renderMarkdown(source) {
+async function renderMarkdown(source) {
   const renderer = window.RozsaMarkdownRenderer;
   if (typeof renderer !== 'function') throw new Error('Markdown renderer is not initialized');
-  return renderer(source);
+  return await renderer(source);
 }
 
 function escapeHtml(value) {

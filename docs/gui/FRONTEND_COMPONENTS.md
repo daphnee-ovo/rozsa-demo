@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | 基础输入/动作 | `templates/primitives/{input,action}.html` | `styles/primitives/actions.css`，输入视觉由 Composer owner 提供 | 组合控件保留各自键盘语义 |
 | Sidebar | `templates/features/sidebar.html` | `styles/features/sidebar.css`、`sidebar-window.css`、`layouts/sidebar-shell.css` | `scripts/features/sidebar.js`；session、quota、Settings navigation 与 Dev Flow 摘要 |
-| Conversation | `templates/features/conversation.html`、`scripts/features/conversation.js` | `styles/features/conversation.css`、`thinking.css` | message frame、empty state、thinking；产品 streaming/error 缺口仍受阻 |
+| Conversation | `templates/features/conversation.html`、`scripts/features/conversation.js`、`scripts/features/conversation-view.tsx`、`scripts/features/markdown-renderer.tsx` | `styles/features/conversation.css`、`thinking.css` | `@tanstack/react-virtual` 保留稳定消息身份与动态行测量；Streamdown 负责流式 Markdown，Pele 仅挂载源围栏已闭合的 Mermaid 图；代码操作复用既有 `md-copy` 样式 |
 | Composer | `templates/composites/composer.html`、`templates/primitives/input.html` | `styles/composites/composer.css` | `scripts/components/composer.js`、`scripts/flows/conversation.js`；输入、toolbar、发送意图 |
 | Queue / Steering | Composer 的 `queuedMessages`、`steeringConversation` slot | `styles/features/queue.css`、`steering.css` | 复用 Composer；原型演示保留，未覆盖的产品主动操作暂停 |
 | Popover | `templates/composites/popover.html` | `styles/composites/popover.css` | `scripts/components/popover.js`；宿主提供选项与保存操作 |

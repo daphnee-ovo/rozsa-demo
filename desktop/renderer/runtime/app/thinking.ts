@@ -23,6 +23,7 @@ const DEV_FLOW_TITLE_CACHE_LIMIT = 64;
 const DEV_FLOW_TITLE_RESPONSE_LIMIT = 2 * 1024 * 1024;
 const DEV_FLOW_TITLE_TIMEOUT_MS = 1500;
 const devFlowTitleCache = new Map();
+let activeThinkingMarkdownGeneration = 0;
 const devFlowTitleRequests = new Map();
 let devFlowTitleSettingsRequest = null;
 
@@ -313,7 +314,12 @@ function patchStreamingThinking(container, index, raw, thinkingDurationMs) {
     const chevron = block.querySelector('.thinking-chevron');
     if (header && chevron) header.insertBefore(nextDuration, chevron);
   }
-  if (markdown) markdown.innerHTML = renderMarkdown(thinking);
+  if (markdown) {
+    const generation = ++activeThinkingMarkdownGeneration;
+    void renderMarkdown(thinking).then(html => {
+      if (generation === activeThinkingMarkdownGeneration && markdown.isConnected) markdown.innerHTML = html;
+    }).catch(error => window.showError?.('Could not render thinking Markdown: ' + String(error)));
+  }
   block.classList.add('active');
   const contentEl = block.querySelector('.thinking-content');
   if (contentEl) contentEl.setAttribute('data-stream-cursor-target', 'thinking');

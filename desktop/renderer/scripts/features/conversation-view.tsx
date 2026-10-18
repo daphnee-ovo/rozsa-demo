@@ -1,6 +1,7 @@
 import React, { Fragment, memo, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { MarkdownContent } from "./markdown-renderer.tsx";
 
 export type ConversationRole = "user" | "assistant" | "system" | "toolResult";
 export interface ConversationBlock { type: string; text?: string; id?: string; name?: string; [key: string]: unknown }
@@ -33,8 +34,6 @@ export interface ConversationViewProps {
   entryCount?: number;
   entryIds?: string[];
   entryAt?: (index: number) => ConversationEntry | undefined;
-  markdown(text: string): string;
-  preparedMarkdown?: Record<string, string>;
   empty: boolean;
   sessionId?: string | null;
   scrollElement?: HTMLElement | null;
@@ -44,8 +43,6 @@ export interface ConversationViewProps {
 
 interface MessageRowProps {
   entry: ConversationEntry;
-  markdown: (text: string) => string;
-  preparedMarkdown?: Record<string, string>;
 }
 
 function textBlocks(content: ConversationBlock[], type: "text" | "thinking"): string {
@@ -62,14 +59,6 @@ function ImageBlock({ block }: { block: ConversationBlock }) {
   return <img className="md-image" alt="Image attachment" src={`data:${mimeType};base64,${data}`} />;
 }
 
-function Markdown({ value, render, html, className = "msg-content markdown-body", cursor = false }: {
-  value: string; render: (text: string) => string; html?: string; className?: string; cursor?: boolean;
-}) {
-  if (!value) return null;
-  return <div className={className} data-stream-cursor-target={cursor ? "text" : undefined}
-    dangerouslySetInnerHTML={{ __html: (html === undefined ? render(value) : html) + (cursor ? '<span class="stream-cursor">▌</span>' : '') }} />;
-}
-
 function Frame({ role, index, continuation, children }: {
   role: ConversationRole; index: number; continuation: boolean; children: ReactNode;
 }) {
@@ -80,9 +69,7 @@ function Frame({ role, index, continuation, children }: {
   </div>;
 }
 
-function ThinkingBlock({ text, entry, render, html }: {
-  text: string; entry: ConversationEntry; render: (text: string) => string; html?: string;
-}) {
+function ThinkingBlock({ text, entry }: { text: string; entry: ConversationEntry }) {
   const expanded = entry.thinkingExpanded !== false;
   const active = entry.activeStream === true && entry.streamTarget === "thinking";
   return <div className={`thinking-block${expanded ? " expanded" : ""}${active ? " active" : ""}`}>
@@ -101,12 +88,12 @@ function ThinkingBlock({ text, entry, render, html }: {
       <span className="thinking-chevron"><svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span>
     </div>
     <div className="thinking-content" data-stream-cursor-target={active ? "thinking" : undefined}>
-      <Markdown value={text} render={render} html={html} className="thinking-markdown markdown-body" />
+      <div className="thinking-markdown markdown-body"><MarkdownContent value={text} active={active} /></div>
     </div>
   </div>;
 }
 
-const MessageRow = memo(function MessageRow({ entry, markdown, preparedMarkdown }: MessageRowProps) {
+const MessageRow = memo(function MessageRow({ entry }: MessageRowProps) {
   const message = entry.message as ConversationMessage;
   const content = Array.isArray(message.content) ? message.content : [];
   if (entry.kind === "custom") {
@@ -123,7 +110,7 @@ const MessageRow = memo(function MessageRow({ entry, markdown, preparedMarkdown 
   if (message.role === "user" || message.role === "system") {
     const text = textBlocks(content, "text");
     return <Frame role={message.role} index={entry.messageIndex} continuation={false}>
-      <Markdown value={text} render={markdown} html={preparedMarkdown?.[`${entry.id}:text`]} />
+      <div className="msg-content markdown-body"><MarkdownContent value={text} /></div>
       {content.filter(block => block.type === "image").map((block, index) => <ImageBlock key={`${entry.id}:image:${index}`} block={block} />)}
       {entry.bodyMarkup ? <div dangerouslySetInnerHTML={{ __html: entry.bodyMarkup }} /> : null}
     </Frame>;
@@ -141,15 +128,17 @@ const MessageRow = memo(function MessageRow({ entry, markdown, preparedMarkdown 
   const text = textBlocks(content, "text");
   return <Frame role="assistant" index={entry.messageIndex} continuation={entry.continuation === true}>
     {error ? <div className="msg-content msg-error"><pre>{error}</pre></div> : null}
-    {thinking ? <ThinkingBlock text={thinking} entry={entry} render={markdown} html={preparedMarkdown?.[`${entry.id}:thinking`]} /> : null}
+    {thinking ? <ThinkingBlock text={thinking} entry={entry} /> : null}
     {entry.bodyMarkup ? <div dangerouslySetInnerHTML={{ __html: entry.bodyMarkup }} /> : null}
-    <Markdown value={text} render={markdown} html={preparedMarkdown?.[`${entry.id}:text`]} cursor={entry.activeStream === true && entry.streamTarget === "text"} />
+    <div className="msg-content markdown-body" data-stream-cursor-target={entry.activeStream && entry.streamTarget === "text" ? "text" : undefined}>
+      <MarkdownContent value={text} active={entry.activeStream === true && entry.streamTarget === "text"}
+        cursor={entry.activeStream === true && entry.streamTarget === "text"} />
+    </div>
     {content.filter(block => block.type === "image").map((block, index) => <ImageBlock key={`${entry.id}:image:${index}`} block={block} />)}
     {entry.turnActivityMarkup ? <div dangerouslySetInnerHTML={{ __html: entry.turnActivityMarkup }} /> : null}
     {entry.activeStream && entry.streamTarget && !text && !thinking ? <span className="stream-cursor">▌</span> : null}
   </Frame>;
-}, (previous, next) => previous.entry === next.entry && previous.markdown === next.markdown
-  && previous.preparedMarkdown === next.preparedMarkdown);
+}, (previous, next) => previous.entry === next.entry);
 
 function EmptyConversation() {
   return <div className="chat-empty" data-od-id="chat-empty">
@@ -161,11 +150,11 @@ function EmptyConversation() {
   </div>;
 }
 
-export function ConversationView({ entries = [], entryCount = entries.length, entryIds, entryAt, markdown, preparedMarkdown, empty, sessionId = null, scrollElement = null, followEnd = false, initialScrollTop = null }: ConversationViewProps) {
+export function ConversationView({ entries = [], entryCount = entries.length, entryIds, entryAt, empty, sessionId = null, scrollElement = null, followEnd = false, initialScrollTop = null }: ConversationViewProps) {
   const hasEntries = entryCount > 0;
   const listRef = useRef<HTMLDivElement>(null);
   const initialRangeCaptured = useRef(false);
-  const styles = scrollElement ? getComputedStyle(scrollElement) : null;
+  const styles = scrollElement ? scrollElement.ownerDocument.defaultView?.getComputedStyle(scrollElement) ?? null : null;
   const scrollMargin = styles ? Number.parseFloat(styles.paddingTop) || 0 : 0;
   const paddingBottom = styles ? Number.parseFloat(styles.paddingBottom) || 0 : 0;
   const gap = styles ? Number.parseFloat(styles.rowGap) || 0 : 0;
@@ -193,7 +182,7 @@ export function ConversationView({ entries = [], entryCount = entries.length, en
     if (followEnd && entryCount > 0) virtualizer.scrollToEnd({ behavior: "instant" });
   }, [entryCount, sessionId, followEnd]);
   useLayoutEffect(() => {
-    if (new URLSearchParams(location.search).get("rozsa_perf") !== "1") return;
+    if (new URLSearchParams(scrollElement?.ownerDocument.defaultView?.location.search || "").get("rozsa_perf") !== "1") return;
     const switchTrace = window.__ROZSA_SESSION_SWITCH_TRACE__;
     if (switchTrace && switchTrace.sessionId === sessionId && !switchTrace.renderCommittedAt) {
       switchTrace.renderCommittedAt = performance.now();
@@ -212,7 +201,7 @@ export function ConversationView({ entries = [], entryCount = entries.length, en
       return <div key={entry.id} ref={virtualizer.measureElement} data-index={item.index}
         className="conversation-virtual-row"
         style={{ transform: `translateY(${item.start - scrollMargin}px)` }}>
-        <MessageRow entry={entry} markdown={markdown} preparedMarkdown={preparedMarkdown} />
+        <MessageRow entry={entry} />
       </div>;
     })}
   </div>;

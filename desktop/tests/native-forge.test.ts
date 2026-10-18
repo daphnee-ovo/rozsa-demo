@@ -91,17 +91,29 @@ try {
       const initiallyCollapsed = document.body.classList.contains('sidebar-collapsed');
       button.click();
       const collapsedAfterFirstClick = document.body.classList.contains('sidebar-collapsed');
+      const viewportWidth = window.innerWidth;
+      const windowWidth = window.outerWidth;
+      const mainPanel = document.querySelector('[data-od-id="main-panel"]').getBoundingClientRect();
+      const collapsedMainFillsViewport = Math.abs(mainPanel.right - viewportWidth) <= 1;
+      const viewportFillsWindow = Math.abs(viewportWidth - windowWidth) <= 1;
       const firstLabel = button.getAttribute('aria-label');
       button.click();
       return {
         initiallyCollapsed,
         collapsedAfterFirstClick,
+        viewportWidth,
+        windowWidth,
+        mainPanelRight: mainPanel.right,
+        collapsedMainFillsViewport,
+        viewportFillsWindow,
         restoredAfterSecondClick: document.body.classList.contains('sidebar-collapsed') === initiallyCollapsed,
         restoredLabel: button.getAttribute('aria-label') === (initiallyCollapsed ? 'Show sidebar' : 'Hide sidebar'),
         firstLabel,
       };
     })()`);
     assert.equal(sidebarToggleRoundTrip.collapsedAfterFirstClick, !sidebarToggleRoundTrip.initiallyCollapsed);
+    assert.equal(sidebarToggleRoundTrip.collapsedMainFillsViewport, true, JSON.stringify(sidebarToggleRoundTrip));
+    assert.equal(sidebarToggleRoundTrip.viewportFillsWindow, true, JSON.stringify(sidebarToggleRoundTrip));
     assert.equal(sidebarToggleRoundTrip.restoredAfterSecondClick, true);
     assert.equal(sidebarToggleRoundTrip.restoredLabel, true);
     const surfaces = await evaluate(`(() => {
