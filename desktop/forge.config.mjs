@@ -8,7 +8,7 @@ export default {
     name: "Rózsa", executableName: "rozsa",
     asar: true, extraResource: [backendPath],
     // Packager scratch files stay in the project; tool caches use defaults.
-    tmpdir: resolve(projectRoot, "tmp/migration/packager"),
+    tmpdir: resolve(projectRoot, "tmp/packager"),
     // The pinned npm Electron package supplies official release hashes. Keep
     // verification enabled without fetching mutable checksum metadata each run.
     download: { checksums: JSON.parse(readFileSync(new URL("./node_modules/electron/checksums.json", import.meta.url), "utf8")) },

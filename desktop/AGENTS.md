@@ -11,4 +11,4 @@
 
 ## macOS packaged-app 检查
 
-- 完成门禁应提权运行。`ROZSA_TEST_APP_BUNDLE` 只指定源包；测试副本位于项目 `tmp/migration/install-tmp`。复制 `.app` 时保留 framework 相对链接，并用 `--enable-logging=stderr` 捕获启动诊断。
+- 完成门禁应提权运行。`ROZSA_TEST_APP_BUNDLE` 只指定源包；测试副本位于项目 `tmp/install-tmp`。复制 `.app` 时保留 framework 相对链接，并用 `--enable-logging=stderr` 捕获启动诊断。

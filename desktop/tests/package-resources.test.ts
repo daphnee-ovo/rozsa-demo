@@ -30,7 +30,7 @@ if (process.platform !== "win32") assert.ok((await stat(backend)).mode & 0o111, 
 
 // A damaged copy exercises the actual packaged entry's startup diagnostic without
 // changing the maker output or the user's installed application.
-const scratch = await mkdtemp(join(root, "tmp/migration/install-tmp/rozsa-package-"));
+const scratch = await mkdtemp(join(root, "tmp/install-tmp/rozsa-package-"));
 const damagedApp = join(scratch, `${product}.app`);
 await cp(appBundle, damagedApp, { recursive: true, verbatimSymlinks: true });
 if (process.platform === "darwin") {

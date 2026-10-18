@@ -55,7 +55,7 @@ const electronBinary = join(root, "desktop/node_modules/electron/dist", (await r
 let logs = "";
 const child = spawn(process.env.ROZSA_NATIVE_EXECUTABLE || electronBinary,
   [...(process.env.ROZSA_NATIVE_EXECUTABLE ? [] : [join(root, "desktop")]), "--remote-debugging-port=0", `--user-data-dir=${join(output, "profile")}`, "--session-dir", sessions],
-  { cwd: output, env: { ...process.env, ROZSA_CONFIG_DIR: config, ROZSA_PROJECT_CONFIG_DIR: projectConfig, TMPDIR: join(root, "tmp/migration/install-tmp") }, stdio: ["ignore", "pipe", "pipe"] });
+  { cwd: output, env: { ...process.env, ROZSA_CONFIG_DIR: config, ROZSA_PROJECT_CONFIG_DIR: projectConfig, TMPDIR: join(root, "tmp/install-tmp") }, stdio: ["ignore", "pipe", "pipe"] });
 const exited = new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
 const closed = new Promise(resolve => child.once("close", (code, signal) => resolve({ code, signal })));
 child.stdout.on("data", chunk => { logs += chunk.toString(); });

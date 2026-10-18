@@ -15,7 +15,7 @@ import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 const root = resolve(import.meta.dirname, "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const backendEnvironment = await createIsolatedBackendEnvironment();
-const catalogFixture = join(root, "tmp/migration/session-contract-catalog");
+const catalogFixture = join(root, "tmp/session-contract-catalog");
 await mkdir(catalogFixture, { recursive: true });
 const writableSessions = join(catalogFixture, "writable"), invalidCatalog = join(catalogFixture, "not-a-directory");
 await mkdir(writableSessions, { recursive: true });

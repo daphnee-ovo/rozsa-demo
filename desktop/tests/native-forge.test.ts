@@ -23,7 +23,7 @@ const cli = join(root, "desktop/node_modules/@electron-forge/cli/dist/electron-f
 let logs = "", normal = false, socket: WebSocket | undefined;
 const child = spawn(process.execPath, [cli, "start", "--", "--remote-debugging-port=0", `--user-data-dir=${join(output, "profile")}`, "--session-dir", sessions], {
   cwd: join(fixture, "desktop"), stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env, ...backendEnvironment, TMPDIR: join(root, "tmp/migration/install-tmp") },
+  env: { ...process.env, ...backendEnvironment, TMPDIR: join(root, "tmp/install-tmp") },
 });
 const exited = new Promise<number | null>((accept, reject) => { child.once("error", reject); child.once("exit", accept); });
 child.stdout.on("data", b => logs += b.toString()); child.stderr.on("data", b => logs += b.toString());

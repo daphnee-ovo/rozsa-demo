@@ -14,7 +14,7 @@ export function prepareDesktopBuild(platform = process.platform, arch = process.
   if (check.status !== 0) throw new Error("Desktop typecheck failed; no build/package started");
   const env = { ...process.env };
   for (const [name, directory] of Object.entries({ GOTMPDIR: "go-tmp", TMPDIR: "install-tmp" })) {
-    const path = resolve(projectRoot, "tmp/migration", directory);
+    const path = resolve(projectRoot, "tmp", directory);
     mkdirSync(path, { recursive: true }); env[name] = path;
   }
   // Explicit target prevents ambient GOOS/GOARCH from producing an unusable binary.

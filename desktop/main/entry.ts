@@ -15,7 +15,7 @@ function startupMark(stage: string): void {
 startupMark("main-entry");
 // Development runtime storage is isolated as well as the catalog inputs.
 app.setName("Rózsa");
-const profile = resolve(app.commandLine.getSwitchValue("user-data-dir") || (app.isPackaged ? app.getPath("userData") : join(app.getAppPath(), "../tmp/migration/electron-profile")));
+const profile = resolve(app.commandLine.getSwitchValue("user-data-dir") || (app.isPackaged ? app.getPath("userData") : join(app.getAppPath(), "../tmp/electron-profile")));
 mkdirSync(profile, { recursive: true });
 app.setPath("userData", profile);
 app.setPath("sessionData", profile);

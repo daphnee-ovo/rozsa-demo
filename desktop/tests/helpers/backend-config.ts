@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const base = join(root, "tmp/migration/backend-test-config");
+const base = join(root, "tmp/backend-test-config");
 
 export async function createIsolatedBackendEnvironment(): Promise<NodeJS.ProcessEnv> {
   await mkdir(base, { recursive: true });

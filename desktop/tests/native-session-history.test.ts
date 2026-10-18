@@ -24,7 +24,7 @@ await writeFile(path,original); await writeFile(empty,emptyText); await writeFil
 const before = await stat(path), emptyBefore = await stat(empty), badBefore = await stat(bad);
 const electron = join(root,"desktop/node_modules/electron/dist",(await readFile(join(root,"desktop/node_modules/electron/path.txt"),"utf8")).trim());
 let logs = "";
-const child = spawn(process.env.ROZSA_NATIVE_EXECUTABLE || electron,[...(process.env.ROZSA_NATIVE_EXECUTABLE ? [] : [join(root,"desktop")]),"--remote-debugging-port=0",`--user-data-dir=${join(output,"profile")}`,"--session-dir",dir],{cwd:output,env:{...process.env,...backendEnvironment,TMPDIR:join(root,"tmp/migration/install-tmp")},stdio:["ignore","pipe","pipe"]});
+const child = spawn(process.env.ROZSA_NATIVE_EXECUTABLE || electron,[...(process.env.ROZSA_NATIVE_EXECUTABLE ? [] : [join(root,"desktop")]),"--remote-debugging-port=0",`--user-data-dir=${join(output,"profile")}`,"--session-dir",dir],{cwd:output,env:{...process.env,...backendEnvironment,TMPDIR:join(root,"tmp/install-tmp")},stdio:["ignore","pipe","pipe"]});
 const exited = new Promise<number|null>((resolve,reject)=>{child.once("error",reject);child.once("exit",resolve);});
 child.stdout.on("data",(b:Buffer)=>logs+=b.toString()); child.stderr.on("data",(b:Buffer)=>logs+=b.toString());
 async function poll<T>(get:()=>Promise<T|undefined>,label:string):Promise<T> {

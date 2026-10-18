@@ -45,7 +45,7 @@ export async function startElectron(environment, { performanceTrace = true } = {
       ROZSA_CONFIG_DIR: environment.config,
       ROZSA_PROJECT_CONFIG_DIR: environment.projectConfig,
       ROZSA_PERF_TRACE: performanceTrace ? "1" : "0",
-      TMPDIR: join(projectRoot, "tmp/migration/install-tmp"),
+      TMPDIR: join(projectRoot, "tmp/install-tmp"),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

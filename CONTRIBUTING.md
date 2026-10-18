@@ -97,7 +97,7 @@ dow 0.3.10 does not recognize the tsx TypeScript test runner.
 Launch against explicit synthetic directories in layer order:
 
 ```bash
-npm --prefix desktop start -- -- --user-data-dir="$PWD/tmp/migration/electron-profile" --session-dir /absolute/synthetic/global --session-dir /absolute/synthetic/project
+npm --prefix desktop start -- -- --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/global --session-dir /absolute/synthetic/project
 ```
 
 The renderer cannot supply paths or arbitrary IPC. No default user session or
@@ -164,11 +164,11 @@ not launch a GUI or enter full TEST. See
 
 Tool versions and the supported Node range are defined by `desktop/package.json`
 and its lockfile. Install the declared dependencies with `npm ci`; build/package/run
-scripts place temporary working files under project `tmp/migration/`.
+scripts place temporary working files under project `tmp/`.
 
 ```bash
 bash devtools/build-desktop.sh
-npm --prefix desktop start -- -- --user-data-dir="$PWD/tmp/migration/electron-profile" --session-dir /absolute/synthetic/sessions
+npm --prefix desktop start -- -- --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/sessions
 bash devtools/package-desktop.sh
 bash devtools/package-desktop.sh make
 bash devtools/test-desktop.sh

@@ -26,7 +26,7 @@ await writeFile(join(project, "broken.jsonl"), "malformed header\n");
 const before = await stat(fixture);
 let logs = "";
 const electronBinary = join(root, "desktop/node_modules/electron/dist", (await readFile(join(root, "desktop/node_modules/electron/path.txt"), "utf8")).trim());
-const child = spawn(process.env.ROZSA_NATIVE_EXECUTABLE || electronBinary, [...(process.env.ROZSA_NATIVE_EXECUTABLE ? [] : [join(root, "desktop")]), "--remote-debugging-port=0", `--user-data-dir=${join(output, "profile")}`, "--session-dir", global, "--session-dir", project], { cwd: output, env: { ...process.env, ...backendEnvironment, TMPDIR: join(root, "tmp/migration/install-tmp") }, stdio: ["ignore", "pipe", "pipe"] });
+const child = spawn(process.env.ROZSA_NATIVE_EXECUTABLE || electronBinary, [...(process.env.ROZSA_NATIVE_EXECUTABLE ? [] : [join(root, "desktop")]), "--remote-debugging-port=0", `--user-data-dir=${join(output, "profile")}`, "--session-dir", global, "--session-dir", project], { cwd: output, env: { ...process.env, ...backendEnvironment, TMPDIR: join(root, "tmp/install-tmp") }, stdio: ["ignore", "pipe", "pipe"] });
 const exited = new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("exit", code => resolve(code)); });
 child.stdout.on("data", (data: Buffer) => { logs += data.toString(); });
 child.stderr.on("data", (data: Buffer) => { logs += data.toString(); });
