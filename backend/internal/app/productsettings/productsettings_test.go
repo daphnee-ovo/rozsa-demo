@@ -3,18 +3,20 @@ package productsettings
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"rozsa/backend/internal/app/modelcatalog"
 	"rozsa/backend/internal/app/modelregistry"
-	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/settings"
+	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/themes"
-	"rozsa/backend/internal/platform/configpaths"
 	"rozsa/backend/internal/model/credentials"
 	modeltypes "rozsa/backend/internal/model/types"
+	"rozsa/backend/internal/platform/configpaths"
 )
 
 func newTestService(t *testing.T) Service {
@@ -122,7 +124,9 @@ func TestSkillCatalogUpdateAndResetUseLayeredSettings(t *testing.T) {
 	resolveRoots := func(projectDir string) (configpaths.Roots, error) {
 		return configpaths.Resolve(projectDir, &globalRoot, nil, &home, "darwin")
 	}
-	skillApplication := skills.NewApplication(manager, resolveRoots)
+	builtinServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) { _, _ = response.Write([]byte("[]")) }))
+	t.Cleanup(builtinServer.Close)
+	skillApplication := skills.NewApplicationWithBuiltinURL(manager, resolveRoots, builtinServer.URL, builtinServer.Client())
 	service := NewWithModelCatalogAndSkills(manager, themes.NewStore(filepath.Join(globalRoot, "themes"), filepath.Join(projectRoot, "themes")), nil, nil, skillApplication, cwd)
 
 	initial, err := service.Snapshot(Global)

@@ -2,8 +2,10 @@
 package skills
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +23,7 @@ const (
 	User Scope = iota
 	Agents
 	Project
+	Builtin
 )
 
 type Source struct {
@@ -47,18 +50,18 @@ type LoadResult struct {
 }
 
 type CatalogItem struct {
-	Name            string  `json:"name"`
-	Label           string  `json:"label"`
-	Description     string  `json:"description"`
-	Effective       bool    `json:"effective"`
-	GlobalOverride  *bool   `json:"globalOverride"`
-	ProjectOverride *bool   `json:"projectOverride"`
+	Name            string `json:"name"`
+	Label           string `json:"label"`
+	Description     string `json:"description"`
+	Effective       bool   `json:"effective"`
+	GlobalOverride  *bool  `json:"globalOverride"`
+	ProjectOverride *bool  `json:"projectOverride"`
 }
 
 type CatalogSnapshot struct {
 	GlobalSkills  []CatalogItem `json:"globalSkills"`
 	ProjectSkills []CatalogItem `json:"projectSkills"`
-	Diagnostics   []Diagnostic `json:"diagnostics"`
+	Diagnostics   []Diagnostic  `json:"diagnostics"`
 }
 
 type SettingsOwner interface {
@@ -73,37 +76,55 @@ type RootsResolver func(string) (configpaths.Roots, error)
 // and the product settings API. Its implementation owns directory discovery
 // and the settings persistence details.
 type Application interface {
+	EnsureBuiltins(cwd string) error
 	Enabled(cwd string, resolved map[string]any) (LoadResult, error)
 	Catalog(cwd string) (CatalogSnapshot, error)
 	SetEnabled(cwd string, scope settings.Scope, name string, enabled *bool) (CatalogSnapshot, error)
 }
 
 type skillApplication struct {
-	settings SettingsOwner
-	roots    RootsResolver
+	settings      SettingsOwner
+	roots         RootsResolver
+	builtinSource *builtinSource
+	notifyError   func(error)
 }
 
-func NewApplication(settingsOwner SettingsOwner, roots RootsResolver) Application {
-	return skillApplication{settings: settingsOwner, roots: roots}
+func NewApplication(settingsOwner SettingsOwner, roots RootsResolver, notificationSink ...func(error)) Application {
+	application := skillApplication{settings: settingsOwner, roots: roots}
+	if len(notificationSink) > 0 {
+		application.notifyError = notificationSink[0]
+	}
+	return application
+}
+
+func NewApplicationWithBuiltinURL(settingsOwner SettingsOwner, roots RootsResolver, baseURL string, client *http.Client, notificationSink ...func(error)) Application {
+	application := skillApplication{settings: settingsOwner, roots: roots, builtinSource: &builtinSource{baseURL: baseURL, client: client}}
+	if len(notificationSink) > 0 {
+		application.notifyError = notificationSink[0]
+	}
+	return application
 }
 
 func (application skillApplication) Enabled(cwd string, resolved map[string]any) (LoadResult, error) {
-	if application.roots == nil {
-		return LoadResult{}, fmt.Errorf("skill roots resolver is unavailable")
-	}
-	roots, err := application.roots(cwd)
+	roots, err := application.resolveRoots(cwd)
 	if err != nil {
+		return LoadResult{}, err
+	}
+	if err := application.ensureBuiltinSkills(roots); err != nil {
 		return LoadResult{}, err
 	}
 	return Load(skillSources(roots), boolSettings(resolved["skills"])), nil
 }
 
 func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error) {
-	if application.roots == nil || application.settings == nil {
+	if application.settings == nil {
 		return CatalogSnapshot{}, fmt.Errorf("skill catalog dependencies are unavailable")
 	}
-	roots, err := application.roots(cwd)
+	roots, err := application.resolveRoots(cwd)
 	if err != nil {
+		return CatalogSnapshot{}, err
+	}
+	if err := application.ensureBuiltinSkills(roots); err != nil {
 		return CatalogSnapshot{}, err
 	}
 	globalOverrides, err := capabilityOverrides(application.settings, settings.Global)
@@ -125,6 +146,48 @@ func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error)
 		Diagnostics:   append(global.Diagnostics, project.Diagnostics...),
 	}
 	return snapshot, nil
+}
+
+func (application skillApplication) EnsureBuiltins(cwd string) error {
+	roots, err := application.resolveRoots(cwd)
+	if err != nil {
+		return err
+	}
+	return application.ensureBuiltinSkills(roots)
+}
+
+func (application skillApplication) resolveRoots(cwd string) (configpaths.Roots, error) {
+	if application.roots == nil {
+		return configpaths.Roots{}, application.notifyBuiltinError(fmt.Errorf("skill roots resolver is unavailable"))
+	}
+	roots, err := application.roots(cwd)
+	return roots, application.notifyBuiltinError(err)
+}
+
+func (application skillApplication) ensureBuiltinSkills(roots configpaths.Roots) error {
+	source := application.builtinSource
+	if source == nil {
+		baseURL, err := configuredBuiltinSkillsURL()
+		if err != nil {
+			return application.notifyBuiltinError(err)
+		}
+		source = &builtinSource{baseURL: baseURL, client: &http.Client{Timeout: builtinRequestTimeout}}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), builtinRequestTimeout)
+	defer cancel()
+	return application.notifyBuiltinError(ensureBuiltinSkills(ctx, roots, *source))
+}
+
+func (application skillApplication) notifyBuiltinError(err error) error {
+	if err != nil && application.notifyError != nil {
+		application.notifyError(err)
+	}
+	return err
+}
+
+func ensureBuiltinSkills(ctx context.Context, roots configpaths.Roots, source builtinSource) error {
+	skillDirectories := roots.SkillDirs()
+	return installMissingBuiltinSkills(ctx, skillDirectories[0], source)
 }
 
 func (application skillApplication) SetEnabled(cwd string, scope settings.Scope, name string, enabled *bool) (CatalogSnapshot, error) {
@@ -247,22 +310,26 @@ func Load(sources []Source, enabled map[string]bool) LoadResult {
 		if err != nil {
 			continue
 		}
-		scan(source.Directory, source.Scope, entries, &result)
+		scan(source.Directory, source.Scope, entries, &result, true)
 	}
 	return Resolve(result, enabled)
 }
 
-func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResult) {
+func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResult, sourceRoot bool) {
 	for _, entry := range entries {
 		path := filepath.Join(directory, entry.Name())
 		info, err := os.Stat(path)
 		if err != nil || !info.IsDir() {
 			continue
 		}
+		entryScope := scope
+		if sourceRoot && scope == User && entry.Name() == ".builtin" {
+			entryScope = Builtin
+		}
 		filePath := filepath.Join(path, "SKILL.md")
 		info, err = os.Stat(filePath)
 		if err == nil && !info.IsDir() {
-			skill, diagnostic := parseFile(filePath, path, scope)
+			skill, diagnostic := parseFile(filePath, path, entryScope)
 			if diagnostic != nil {
 				result.Diagnostics = append(result.Diagnostics, *diagnostic)
 			} else {
@@ -278,7 +345,7 @@ func scan(directory string, scope Scope, entries []fs.DirEntry, result *LoadResu
 		if err != nil {
 			continue
 		}
-		scan(path, scope, nestedEntries, result)
+		scan(path, entryScope, nestedEntries, result, false)
 	}
 }
 
@@ -370,7 +437,7 @@ func Resolve(loaded LoadResult, enabled map[string]bool) LoadResult {
 			continue
 		}
 		if index, exists := indexes[skill.Name]; exists {
-			if skill.Scope > resolved[index].Scope {
+			if scopePriority(skill.Scope) > scopePriority(resolved[index].Scope) {
 				resolved[index] = skill
 			}
 			continue
@@ -383,8 +450,26 @@ func Resolve(loaded LoadResult, enabled map[string]bool) LoadResult {
 }
 
 func (skill Skill) VariablePath() string {
+	if skill.Scope == Builtin {
+		return fmt.Sprintf("$USER_SKILLS/.builtin/%s/%s", filepath.Base(skill.BaseDir), filepath.Base(skill.FilePath))
+	}
 	variable := map[Scope]string{User: "$USER_SKILLS", Agents: "$AGENTS_SKILLS", Project: "$PROJECT_SKILLS"}[skill.Scope]
 	return fmt.Sprintf("%s/%s/%s", variable, filepath.Base(skill.BaseDir), filepath.Base(skill.FilePath))
+}
+
+func scopePriority(scope Scope) uint8 {
+	switch scope {
+	case Builtin:
+		return 0
+	case User:
+		return 1
+	case Agents:
+		return 2
+	case Project:
+		return 3
+	default:
+		return 0
+	}
 }
 
 func (result LoadResult) SlashCommandNames() []string {

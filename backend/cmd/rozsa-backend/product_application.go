@@ -10,8 +10,13 @@ import (
 )
 
 type productMessageApplication struct {
-	coordinator *runtimeCoordinator
-	auth        auth.Service
+	coordinator   *runtimeCoordinator
+	auth          auth.Service
+	notifications <-chan server.AppNotification
+}
+
+func (application productMessageApplication) AppNotifications() <-chan server.AppNotification {
+	return application.notifications
 }
 
 func (application productMessageApplication) AuthService() auth.Service { return application.auth }

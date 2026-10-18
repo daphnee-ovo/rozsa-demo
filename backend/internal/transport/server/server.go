@@ -86,6 +86,19 @@ type RuntimeStatusApplication interface {
 
 type ShutdownApplication interface{ Shutdown(context.Context) error }
 
+type AppNotification struct {
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Severity  string `json:"severity"`
+	Title     string `json:"title"`
+	Message   string `json:"message"`
+	TimeoutMs int    `json:"timeoutMs"`
+}
+
+type AppNotificationSource interface {
+	AppNotifications() <-chan AppNotification
+}
+
 type MessageEventSubscription interface {
 	Next(context.Context) (types.MessageEvent, error)
 	Close()
@@ -131,6 +144,28 @@ func serveProduct(input io.Reader, output io.Writer, app session.ApplicationServ
 	}()
 	conn := jsonrpc2.NewConn(jsonrpc2.NewStream(ownedIO{stdio{input, output}, stop}), jsonrpc2.WithPreempter(server))
 	conn.Go(context.Background(), server.handle)
+	if source, ok := messages.(AppNotificationSource); ok {
+		if notifications := source.AppNotifications(); notifications != nil {
+			server.jobs.Add(1)
+			go func() {
+				defer server.jobs.Done()
+				for {
+					select {
+					case <-lifetime.Done():
+						return
+					case notification, open := <-notifications:
+						if !open {
+							return
+						}
+						if err := conn.Notify(lifetime, "app-notification", notification); err != nil {
+							stop(err)
+							return
+						}
+					}
+				}
+			}()
+		}
+	}
 	if watcher, ok := server.settings.(interface {
 		WatchModels(context.Context, func(productsettings.ModelUpdate)) error
 	}); ok {

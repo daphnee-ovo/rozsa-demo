@@ -2,8 +2,11 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,7 +85,8 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	skillApplication := skills.NewApplication(settingsManager, rootsResolver)
+	builtinServer := newRuntimeBuiltinServer(t)
+	skillApplication := skills.NewApplicationWithBuiltinURL(settingsManager, rootsResolver, builtinServer.URL+"/contents/builtin-skills", builtinServer.Client())
 
 	writeDirectory, otherDirectory := filepath.Join(root, "sessions-a"), filepath.Join(root, "sessions-b")
 	if err := os.MkdirAll(writeDirectory, 0o755); err != nil {
@@ -125,6 +129,14 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 		if strings.Contains(firstPrompt, absent) {
 			t.Errorf("first request system prompt unexpectedly contains %q: %s", absent, firstPrompt)
 		}
+	}
+	for _, absent := range []string{"Guidelines:", "{{GUIDELINES}}", "Rózsa docs (read only when", "{{README_PATH}}"} {
+		if strings.Contains(firstPrompt, absent) {
+			t.Errorf("default system prompt unexpectedly contains moved documentation guidance %q", absent)
+		}
+	}
+	if !strings.Contains(firstPrompt, "rozsa-docs: Use when the user asks about Rózsa itself") {
+		t.Fatalf("built-in skill is not discoverable in the normal system prompt: %s", firstPrompt)
 	}
 	firstUser := lastUserMessage(t, firstContext)
 	userText, ok := firstUser.Content.(types.UserText)
@@ -191,6 +203,20 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 	if !ok || !strings.Contains(string(thirdText), "project B body") {
 		t.Fatalf("session B skill was not injected: %#v", thirdUser.Content)
 	}
+
+	if err := app.Prompt(context.Background(), "/skill:rozsa-docs"); err != nil {
+		t.Fatal(err)
+	}
+	fourthContext := provider.captured()[3]
+	fourthPrompt := promptText(t, fourthContext)
+	if strings.Contains(fourthPrompt, "Rózsa docs (read only when") || strings.Contains(fourthPrompt, "{{README_PATH}}") {
+		t.Fatal("skill body was copied into the system prompt instead of loaded on demand")
+	}
+	fourthUser := lastUserMessage(t, fourthContext)
+	fourthText, ok := fourthUser.Content.(types.UserText)
+	if !ok || !strings.Contains(string(fourthText), "Rózsa docs (read only when") || !strings.Contains(string(fourthText), "{{README_PATH}}") {
+		t.Fatalf("on-demand rozsa-docs body was not injected into the user context: %#v", fourthUser.Content)
+	}
 }
 
 func TestProductionRuntimeReturnsRootResolutionFailureBeforeProviderCall(t *testing.T) {
@@ -219,6 +245,34 @@ func TestProductionRuntimeReturnsRootResolutionFailureBeforeProviderCall(t *test
 	if got := len(app.session.ContextMessages()); got != 0 {
 		t.Fatalf("user message persisted despite root resolution failure: %d messages", got)
 	}
+}
+
+func newRuntimeBuiltinServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var body any
+		switch request.URL.Path {
+		case "/contents/builtin-skills":
+			body = []map[string]string{{"name": "rozsa-docs", "type": "dir"}}
+		case "/contents/builtin-skills/rozsa-docs":
+			body = []map[string]string{{"name": "SKILL.md", "type": "file", "download_url": server.URL + "/raw/rozsa-docs/SKILL.md"}}
+		case "/raw/rozsa-docs/SKILL.md":
+			_, _ = response.Write([]byte("---\nname: rozsa-docs\ndescription: Use when the user asks about Rózsa itself\n---\nRózsa docs (read only when needed): {{README_PATH}}"))
+			return
+		default:
+			http.NotFound(response, request)
+			return
+		}
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Errorf("encode built-in listing: %v", err)
+			return
+		}
+		_, _ = response.Write(encoded)
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
 
 func promptText(t *testing.T, input types.Context) string {

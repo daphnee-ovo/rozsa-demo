@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,8 +19,8 @@ import (
 	"rozsa/backend/internal/app/productsettings"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/session"
-	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/settings"
+	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/themes"
 	"rozsa/backend/internal/model/credentials"
 	"rozsa/backend/internal/model/modelsendpoint"
@@ -81,7 +82,13 @@ func main() {
 		fail(err.Error())
 	}
 	resolveRoots := func(projectDir string) (configpaths.Roots, error) { return configpaths.Discover(projectDir) }
-	skillApplication := skills.NewApplication(settingsManager, resolveRoots)
+	notifications := make(chan server.AppNotification, 16)
+	skillApplication := skills.NewApplication(settingsManager, resolveRoots, func(err error) {
+		notifications <- server.AppNotification{
+			Type: "upsert", ID: "builtin-skills-initialization", Severity: "error",
+			Title: "Built-in skills unavailable", Message: err.Error(), TimeoutMs: 6000,
+		}
+	})
 	modelDirectories := roots.ModelDirs()
 	authSource := modelcatalog.NewAuth(roots.AuthPath(), nil)
 	discovery := modelsendpoint.NewClient(&http.Client{Timeout: 20 * time.Second})
@@ -150,7 +157,12 @@ func main() {
 		coordinator.complete(app, initErr)
 	}()
 	backendStartupMark("rpc-server-starting")
-	if err := server.ServeProductApplication(os.Stdin, os.Stdout, coordinator, productMessageApplication{coordinator: coordinator, auth: authService}, productSettings); err != nil {
+	go func() {
+		if err := skillApplication.EnsureBuiltins(cwd); err != nil {
+			log.Printf("built-in skill initialization failed: %v", err)
+		}
+	}()
+	if err := server.ServeProductApplication(os.Stdin, os.Stdout, coordinator, productMessageApplication{coordinator: coordinator, auth: authService, notifications: notifications}, productSettings); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

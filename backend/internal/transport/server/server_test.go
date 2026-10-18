@@ -102,3 +102,51 @@ func TestUninitializedAndNotificationGating(t *testing.T) {
 		t.Fatal("truncated frame accepted")
 	}
 }
+
+type notificationTestApplication struct {
+	MessageApplication
+	notifications <-chan AppNotification
+}
+
+func (application notificationTestApplication) AppNotifications() <-chan AppNotification {
+	return application.notifications
+}
+
+func TestAppNotificationSourcePublishesRendererEvent(t *testing.T) {
+	client, backend := net.Pipe()
+	client.SetDeadline(time.Now().Add(5 * time.Second))
+	notifications := make(chan AppNotification, 1)
+	ended := make(chan error, 1)
+	go func() {
+		ended <- ServeProductApplication(backend, backend, session.NewService(session.Catalog{}), notificationTestApplication{notifications: notifications})
+		_ = backend.Close()
+	}()
+	stream := jsonrpc2.NewStream(client)
+	if _, err := stream.Write(t.Context(), jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "initialize", jsonrpc2.RawMessage(`{"protocolVersion":1}`))); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := stream.Read(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	notifications <- AppNotification{Type: "upsert", ID: "builtin-skills-initialization", Severity: "error", Title: "Built-in skills unavailable", Message: "remote unavailable", TimeoutMs: 6000}
+	frames := stream.(rawFrames)
+	frame, _, err := frames.ReadFrame(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"method":"app-notification"`, `"severity":"error"`, `remote unavailable`} {
+		if !bytes.Contains(frame, []byte(expected)) {
+			t.Fatalf("notification frame missing %q: %s", expected, frame)
+		}
+	}
+	if _, err := stream.Write(t.Context(), jsonrpc2.NewCall(jsonrpc2.NewNumberID(2), "shutdown", jsonrpc2.RawMessage(`{}`))); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := stream.Read(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Close()
+	if err := <-ended; err != nil {
+		t.Fatal(err)
+	}
+}
