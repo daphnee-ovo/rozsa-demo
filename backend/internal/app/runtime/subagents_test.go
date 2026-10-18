@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -178,5 +179,86 @@ func TestProductionSubagentToolsDoNotRecurseOrShareOwner(t *testing.T) {
 	}
 	if _, err := app.SubagentManager("other-session"); err == nil {
 		t.Fatal("unregistered owner accepted")
+	}
+}
+
+func TestSubagentSurvivesConsumerReloadAndRestartRetainsOnlyHistory(t *testing.T) {
+	app := newTestRuntime(t, &subagentProvider{}, nil)
+	defer app.Shutdown(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	operationID, err := app.StartMessage(ctx, "delegate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription, err := app.SubscribeMessageEvents(ctx, operationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, ok := waitForQuestion(app.questions)
+	if !ok {
+		t.Fatal("subagent question did not start")
+	}
+	mainID := session.IDFromPath(app.session.Path())
+	manager, err := app.SubagentManager(mainID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription.Close()
+	reconnected, err := app.SubagentManager(mainID)
+	if err != nil || reconnected != manager {
+		t.Fatal("consumer reload recreated live manager")
+	}
+	infos := reconnected.List()
+	if len(infos) != 1 || infos[0].Status != subagent.Running || infos[0].SessionID != request.SessionID {
+		t.Fatal("consumer detach stopped running subagent")
+	}
+	if len(app.SubagentEvents(mainID, 0)) == 0 {
+		t.Fatal("consumer reload lost event history")
+	}
+	resumed, err := app.SubscribeMessageEvents(ctx, operationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resumed.Close()
+	if err := app.questions.Respond(request.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		event, err := resumed.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if event.Kind == MessageFailed || event.Kind == MessageCanceled {
+			t.Fatalf("reattached execution failed: %#v", event)
+		}
+		if event.Kind == MessageCompleted {
+			break
+		}
+	}
+	path := *infos[0].SessionFile
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := New(Config{SessionDir: app.sessionDir, Model: app.model, Provider: &subagentProvider{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Shutdown(context.Background())
+	empty, err := restarted.SubagentManager(mainID)
+	if err != nil || len(empty.List()) != 0 {
+		t.Fatal("restart unexpectedly restored manager metadata")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("restart changed saved subagent history")
+	}
+	history, err := session.OpenManager(path)
+	if err != nil || len(history.ContextMessages()) != 4 {
+		t.Fatal("saved subagent JSONL is no longer readable")
 	}
 }

@@ -58,7 +58,7 @@ Session manager 在内存/index 更新前追加序列化 entry；append 没有�
 | F07 | Read/Write/Edit/Bash、模糊编辑、文件锁、diff/evidence、进程树退出 | `rozsa-app/src/tools/`、GUI `git_diff.rs`/`turn_diff.rs` | Go app/tools + platform；真实临时文件、进程取消和错误路径 |
 | F08 | 权限模式、deny/ask/allow、glob/regex、shell 分段、信任与持久化、Hint | `rozsa-app/src/permissions/`、GUI permission commands | Go app；现有规则/审批/信任测试，不能换语言后放宽规则 |
 | F09 | AskUserQuestion 多题/多选/Other、排队、切 session、取消和迟到响应 | `tools/ask_user_question.rs`、GUI state/commands | Go app + UI；按 session/request identity 回放 |
-| F10 | subagent 的范围、上下文、运行/恢复/取消、queue/steering/fork | `rozsa-app/src/subagent/`、GUI commands | Go app；保留生命周期及访问范围，不能只保留静态卡片 |
+| F10 | subagent 的范围、上下文、运行/取消与存活执行重接；主会话 queue/steering/fork | `rozsa-app/src/subagent/`、GUI commands | Go app；保留生命周期及访问范围，不能只保留静态卡片。应用重启保留 subagent JSONL 历史，不新增跨重启 manager 元数据恢复或 subagent 专属 queue/steering/fork（2026-10-18 决定，见 docs/app/README.md） |
 | F11 | 设置分层、继承/reset、主题、快捷键、capability、skills/resources、扩展 hooks | `settings/`、`themes.rs`、`skills/`、`resources/`、`extensions/`、GUI key_bindings | Go app 与 renderer/native 各归其职；设置和 hooks 错误策略逐项对照 |
 | F12 | Dev Flow 发现、配置、dashboard 启停、REST/SSE、重连、回收、状态与详情 | `rozsa-app/src/dev_flow/`、GUI `dev_flow.rs` | Go app；真实 dow contract、watcher/重连/清理验收 |
 | F13 | 消息/Markdown/code/diff、工具生命周期、通知与 unresolved error tray | 旧 GUI `app.js`/共享 UI 脚本（行为参照）、`notifications.rs` | `desktop/renderer/` + Go view model；正常/空/长/错误/取消完整状态矩阵 |

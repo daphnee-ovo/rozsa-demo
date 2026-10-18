@@ -202,6 +202,10 @@ pub struct SpawnConfig {
 - 最多 `MAX_ACTIVE_SUBAGENTS = 10` 个并发运行的 subagent
 - 子 agent 自动屏蔽 `subagent` 工具（防止递归）
 
+#### 恢复边界决策（2026-10-18）
+
+界面重载接回仍存活的 subagent 执行；应用重启仅保留 JSONL 历史，不新增跨重启 manager 恢复或 subagent 专属 queue/steering/fork，主会话已有 steering/fork 不受此边界影响。旧 Rust 的 `SharedResources::restore_agent` → `create_agent`（`crates/rozsa-gui/src/state.rs`）会调用 `AgentSession::new` 新建空 manager；`SubagentManager::spawn` / `drain_subagent_stream`（`crates/rozsa-app/src/subagent/manager.rs`）保存 header/source link 与消息，JSONL 未保存原 `system_prompt`/scope。后续若改变跨重启恢复行为，需明确元数据持久化与权限恢复规则。Go 运行入口为 `backend/internal/app/runtime/subagents.go`，完整 renderer 重接表现由对应 UI 切片验收。
+
 ### SubagentScope
 
 **职责**：控制 subagent 可访问的工具和路径。
