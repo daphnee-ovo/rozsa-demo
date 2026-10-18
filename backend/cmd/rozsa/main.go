@@ -49,7 +49,7 @@ func main() {
 		fail(err.Error(), 1)
 	}
 	resolveRoots := func(projectDir string) (configpaths.Roots, error) { return configpaths.Discover(projectDir) }
-	skillApplication := skills.NewApplication(settingsManager, resolveRoots)
+	skillApplication := skills.NewApplication(settingsManager, resolveRoots, nil)
 	model, configuredKey, authPath, err := bootstrap.ConfiguredModel(providerID, modelID)
 	if err != nil {
 		fail(err.Error(), 1)
@@ -67,11 +67,6 @@ func main() {
 	if err != nil {
 		fail(err.Error(), 1)
 	}
-	go func() {
-		if err := skillApplication.EnsureBuiltins(cwd); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "built-in skill initialization failed: %v\n", err)
-		}
-	}()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if continueSession {

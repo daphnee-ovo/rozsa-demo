@@ -76,7 +76,6 @@ type RootsResolver func(string) (configpaths.Roots, error)
 // and the product settings API. Its implementation owns directory discovery
 // and the settings persistence details.
 type Application interface {
-	EnsureBuiltins(cwd string) error
 	Enabled(cwd string, resolved map[string]any) (LoadResult, error)
 	Catalog(cwd string) (CatalogSnapshot, error)
 	SetEnabled(cwd string, scope settings.Scope, name string, enabled *bool) (CatalogSnapshot, error)
@@ -89,19 +88,15 @@ type skillApplication struct {
 	notifyError   func(error)
 }
 
-func NewApplication(settingsOwner SettingsOwner, roots RootsResolver, notificationSink ...func(error)) Application {
+func NewApplication(settingsOwner SettingsOwner, roots RootsResolver, notificationSink func(error)) Application {
 	application := skillApplication{settings: settingsOwner, roots: roots}
-	if len(notificationSink) > 0 {
-		application.notifyError = notificationSink[0]
-	}
+	application.notifyError = notificationSink
 	return application
 }
 
-func NewApplicationWithBuiltinURL(settingsOwner SettingsOwner, roots RootsResolver, baseURL string, client *http.Client, notificationSink ...func(error)) Application {
+func NewApplicationWithBuiltinURL(settingsOwner SettingsOwner, roots RootsResolver, baseURL string, client *http.Client, notificationSink func(error)) Application {
 	application := skillApplication{settings: settingsOwner, roots: roots, builtinSource: &builtinSource{baseURL: baseURL, client: client}}
-	if len(notificationSink) > 0 {
-		application.notifyError = notificationSink[0]
-	}
+	application.notifyError = notificationSink
 	return application
 }
 
@@ -148,14 +143,6 @@ func (application skillApplication) Catalog(cwd string) (CatalogSnapshot, error)
 	return snapshot, nil
 }
 
-func (application skillApplication) EnsureBuiltins(cwd string) error {
-	roots, err := application.resolveRoots(cwd)
-	if err != nil {
-		return err
-	}
-	return application.ensureBuiltinSkills(roots)
-}
-
 func (application skillApplication) resolveRoots(cwd string) (configpaths.Roots, error) {
 	if application.roots == nil {
 		return configpaths.Roots{}, application.notifyBuiltinError(fmt.Errorf("skill roots resolver is unavailable"))
@@ -167,7 +154,7 @@ func (application skillApplication) resolveRoots(cwd string) (configpaths.Roots,
 func (application skillApplication) ensureBuiltinSkills(roots configpaths.Roots) error {
 	source := application.builtinSource
 	if source == nil {
-		baseURL, err := configuredBuiltinSkillsURL()
+		baseURL, err := builtinSkillsURL()
 		if err != nil {
 			return application.notifyBuiltinError(err)
 		}
@@ -175,7 +162,8 @@ func (application skillApplication) ensureBuiltinSkills(roots configpaths.Roots)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), builtinRequestTimeout)
 	defer cancel()
-	return application.notifyBuiltinError(ensureBuiltinSkills(ctx, roots, *source))
+	skillDirectories := roots.SkillDirs()
+	return application.notifyBuiltinError(installMissingBuiltinSkills(ctx, skillDirectories[0], *source))
 }
 
 func (application skillApplication) notifyBuiltinError(err error) error {
@@ -183,11 +171,6 @@ func (application skillApplication) notifyBuiltinError(err error) error {
 		application.notifyError(err)
 	}
 	return err
-}
-
-func ensureBuiltinSkills(ctx context.Context, roots configpaths.Roots, source builtinSource) error {
-	skillDirectories := roots.SkillDirs()
-	return installMissingBuiltinSkills(ctx, skillDirectories[0], source)
 }
 
 func (application skillApplication) SetEnabled(cwd string, scope settings.Scope, name string, enabled *bool) (CatalogSnapshot, error) {

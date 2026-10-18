@@ -86,7 +86,7 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 		t.Fatal(err)
 	}
 	builtinServer := newRuntimeBuiltinServer(t)
-	skillApplication := skills.NewApplicationWithBuiltinURL(settingsManager, rootsResolver, builtinServer.URL+"/contents/builtin-skills", builtinServer.Client())
+	skillApplication := skills.NewApplicationWithBuiltinURL(settingsManager, rootsResolver, builtinServer.URL+"/contents/builtin-skills", builtinServer.Client(), nil)
 
 	writeDirectory, otherDirectory := filepath.Join(root, "sessions-a"), filepath.Join(root, "sessions-b")
 	if err := os.MkdirAll(writeDirectory, 0o755); err != nil {
@@ -231,7 +231,7 @@ func TestProductionRuntimeReturnsRootResolutionFailureBeforeProviderCall(t *test
 		SessionDir: filepath.Join(root, "sessions"),
 		Model:      types.Model{ID: "test-model", Provider: "test-provider", API: types.APIAnthropicMessages, ContextWindow: 128000, MaxTokens: 4096},
 		Provider:   provider, Output: io.Discard, ResolvedSettings: settingsManager.Resolved,
-		Skills: skills.NewApplication(settingsManager, resolveRoots), ResolveRoots: resolveRoots,
+		Skills: skills.NewApplication(settingsManager, resolveRoots, nil), ResolveRoots: resolveRoots,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -27,7 +27,7 @@ const (
 
 var builtinInstallMu sync.Mutex
 
-type BuiltinConfig struct {
+type builtinConfig struct {
 	BuiltinSkillsURL string `yaml:"BUILTIN_SKILLS_URL"`
 }
 
@@ -42,24 +42,16 @@ type githubContent struct {
 	DownloadURL string `json:"download_url"`
 }
 
-func LoadBuiltinConfig(configPath string) (BuiltinConfig, error) {
-	contents, err := os.ReadFile(configPath)
-	if err != nil {
-		return BuiltinConfig{}, fmt.Errorf("read backend config %q: %w", configPath, err)
-	}
-	return parseBuiltinConfig(contents, configPath)
-}
-
-func parseBuiltinConfig(contents []byte, source string) (BuiltinConfig, error) {
-	var config BuiltinConfig
-	if err := yaml.Unmarshal(contents, &config); err != nil {
-		return BuiltinConfig{}, fmt.Errorf("parse backend config %q: %w", source, err)
+func builtinSkillsURL() (string, error) {
+	var config builtinConfig
+	if err := yaml.Unmarshal(backendconfig.BuiltinConfig, &config); err != nil {
+		return "", fmt.Errorf("parse embedded backend config: %w", err)
 	}
 	parsed, err := url.Parse(config.BuiltinSkillsURL)
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
-		return BuiltinConfig{}, fmt.Errorf("BUILTIN_SKILLS_URL in %q must be an absolute HTTP URL", source)
+		return "", errors.New("BUILTIN_SKILLS_URL in embedded backend config must be an absolute HTTP URL")
 	}
-	return config, nil
+	return config.BuiltinSkillsURL, nil
 }
 
 func installMissingBuiltinSkills(ctx context.Context, globalSkillsDirectory string, source builtinSource) error {
@@ -99,9 +91,14 @@ func installMissingBuiltinSkills(ctx context.Context, globalSkillsDirectory stri
 }
 
 func listContents(ctx context.Context, source builtinSource, relativeDirectory string) ([]githubContent, error) {
-	requestURL, err := contentsURL(source.baseURL, relativeDirectory)
-	if err != nil {
-		return nil, err
+	requestURL := source.baseURL
+	if relativeDirectory != "" {
+		parsed, err := url.Parse(source.baseURL)
+		if err != nil {
+			return nil, err
+		}
+		parsed.Path = path.Join(parsed.Path, relativeDirectory)
+		requestURL = parsed.String()
 	}
 	body, err := fetchURL(ctx, source.client, requestURL)
 	if err != nil {
@@ -114,28 +111,17 @@ func listContents(ctx context.Context, source builtinSource, relativeDirectory s
 	return entries, nil
 }
 
-func contentsURL(baseURL, relativePath string) (string, error) {
-	parsed, err := url.Parse(baseURL)
-	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
-		return "", errors.New("built-in skills URL must be an absolute HTTP URL")
-	}
-	if relativePath != "" {
-		parsed.Path = path.Join(parsed.Path, relativePath)
-	}
-	return parsed.String(), nil
-}
-
 func collectRemoteSkillFiles(ctx context.Context, source builtinSource, skillName, remoteDirectory string) (map[string]githubContent, error) {
 	entries, err := listContents(ctx, source, remoteDirectory)
 	if err != nil {
 		return nil, err
 	}
 	files := make(map[string]githubContent)
+	relativeDirectory := strings.TrimPrefix(strings.TrimPrefix(remoteDirectory, skillName), "/")
 	for _, entry := range entries {
 		if !safeBuiltinName(entry.Name) {
 			return nil, fmt.Errorf("GitHub Contents returned unsafe name %q", entry.Name)
 		}
-		relativeDirectory := strings.TrimPrefix(strings.TrimPrefix(remoteDirectory, skillName), "/")
 		relativePath := path.Join(relativeDirectory, entry.Name)
 		if entry.Type == "dir" {
 			nested, err := collectRemoteSkillFiles(ctx, source, skillName, path.Join(remoteDirectory, entry.Name))
@@ -189,15 +175,6 @@ func missingBuiltinFiles(destination string, remoteFiles map[string]githubConten
 
 func installRemoteSkill(ctx context.Context, globalSkillsDirectory string, source builtinSource, skillName string, remoteFiles map[string]githubContent) error {
 	destination := filepath.Join(globalSkillsDirectory, ".builtin", skillName)
-	destinationExists := false
-	if info, err := os.Lstat(destination); err == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("destination is not a directory: %s", destination)
-		}
-		destinationExists = true
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect destination: %w", err)
-	}
 	parent := filepath.Dir(destination)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return fmt.Errorf("create built-in skill directory: %w", err)
@@ -223,20 +200,16 @@ func installRemoteSkill(ctx context.Context, globalSkillsDirectory string, sourc
 			return fmt.Errorf("write %q: %w", relative, err)
 		}
 	}
-	if destinationExists {
-		missing, checkErr := missingBuiltinFiles(destination, remoteFiles)
-		if checkErr != nil {
-			return checkErr
-		}
-		if !missing {
-			return nil
-		}
-		return mergeMissingSkillFiles(staging, destination)
-	}
 	if err := os.Rename(staging, destination); err != nil {
-		missing, checkErr := missingBuiltinFiles(destination, remoteFiles)
-		if !missing && checkErr == nil {
-			return nil
+		if _, statErr := os.Lstat(destination); statErr == nil {
+			missing, checkErr := missingBuiltinFiles(destination, remoteFiles)
+			if checkErr != nil {
+				return checkErr
+			}
+			if !missing {
+				return nil
+			}
+			return mergeMissingSkillFiles(staging, destination)
 		}
 		return fmt.Errorf("install into %s: %w", destination, err)
 	}
@@ -257,10 +230,7 @@ func mergeMissingSkillFiles(staging, destination string) error {
 		}
 		target := filepath.Join(destination, relative)
 		if entry.IsDir() {
-			if err := ensureSafeDirectories(destination, filepath.Dir(target)); err != nil {
-				return fmt.Errorf("create missing skill directory %q: %w", relative, err)
-			}
-			return nil
+			return ensureSafeDirectories(destination, target)
 		}
 		if !entry.Type().IsRegular() {
 			return fmt.Errorf("downloaded skill entry %q is not a regular file", relative)
@@ -268,34 +238,30 @@ func mergeMissingSkillFiles(staging, destination string) error {
 		if err := ensureSafeDirectories(destination, filepath.Dir(target)); err != nil {
 			return fmt.Errorf("prepare skill file %q: %w", relative, err)
 		}
-		if info, err := os.Lstat(target); err == nil {
-			if !info.Mode().IsRegular() {
-				return fmt.Errorf("existing skill path %q is not a regular file", relative)
-			}
-			return nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("inspect skill file %q: %w", relative, err)
-		}
 		input, err := os.Open(sourcePath)
 		if err != nil {
 			return err
 		}
-		temporary, err := os.CreateTemp(filepath.Dir(target), ".builtin-skill-file-*")
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
-			return errors.Join(err, input.Close())
-		}
-		_, copyErr := io.Copy(temporary, input)
-		inputCloseErr := input.Close()
-		closeErr := temporary.Close()
-		if err := errors.Join(copyErr, inputCloseErr, closeErr); err != nil {
-			_ = os.Remove(temporary.Name())
+			_ = input.Close()
+			if errors.Is(err, os.ErrExist) {
+				info, statErr := os.Lstat(target)
+				if statErr == nil && info.Mode().IsRegular() {
+					return nil
+				}
+				return fmt.Errorf("existing skill path %q is not a regular file", relative)
+			}
 			return err
 		}
-		if err := os.Link(temporary.Name(), target); err != nil && !errors.Is(err, os.ErrExist) {
-			_ = os.Remove(temporary.Name())
-			return fmt.Errorf("install missing skill file %q: %w", relative, err)
+		_, copyErr := io.Copy(output, input)
+		inputCloseErr := input.Close()
+		outputCloseErr := output.Close()
+		if err := errors.Join(copyErr, inputCloseErr, outputCloseErr); err != nil {
+			_ = os.Remove(target)
+			return fmt.Errorf("install skill file %q: %w", relative, err)
 		}
-		return os.Remove(temporary.Name())
+		return nil
 	})
 }
 
@@ -312,10 +278,12 @@ func ensureSafeDirectories(root, target string) error {
 		current = filepath.Join(current, segment)
 		info, err := os.Lstat(current)
 		if errors.Is(err, os.ErrNotExist) {
-			if err := os.Mkdir(current, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-				return err
+			err = os.Mkdir(current, 0o700)
+			if errors.Is(err, os.ErrExist) {
+				info, err = os.Lstat(current)
+			} else if err == nil {
+				info, err = os.Lstat(current)
 			}
-			info, err = os.Lstat(current)
 		}
 		if err != nil {
 			return err
@@ -354,41 +322,4 @@ func fetchURL(ctx context.Context, client *http.Client, target string) ([]byte, 
 
 func safeBuiltinName(name string) bool {
 	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\\:`) && path.Base(name) == name
-}
-
-func configuredBuiltinSkillsURL() (string, error) {
-	configPath, exists, err := developmentConfigPath()
-	if err != nil {
-		return "", err
-	}
-	contents := backendconfig.BuiltinConfig()
-	source := "compiled backend config"
-	if exists {
-		var readErr error
-		contents, readErr = os.ReadFile(configPath)
-		if readErr != nil {
-			return "", fmt.Errorf("read development backend config %q: %w", configPath, readErr)
-		}
-		source = configPath
-	}
-	config, err := parseBuiltinConfig(contents, source)
-	if err != nil {
-		return "", err
-	}
-	return config.BuiltinSkillsURL, nil
-}
-
-func developmentConfigPath() (string, bool, error) {
-	executable, err := os.Executable()
-	if err != nil {
-		return "", false, fmt.Errorf("locate backend executable: %w", err)
-	}
-	configPath := filepath.Clean(filepath.Join(filepath.Dir(executable), "..", "backend", "config.yaml"))
-	if _, err := os.Stat(configPath); err == nil {
-		return configPath, true, nil
-	} else if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
-	} else {
-		return "", false, fmt.Errorf("inspect development backend config %q: %w", configPath, err)
-	}
 }

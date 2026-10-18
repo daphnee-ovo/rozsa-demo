@@ -6,8 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -119,20 +117,6 @@ func TestStdioProcessProtocolAndDiagnostics(t *testing.T) {
 	}
 	modelConfig := `{"providers":{"test":{"api":"openai-completions","apiKey":"test-key","baseUrl":"http://127.0.0.1:1/v1","models":[{"id":"test","contextWindow":4096,"maxTokens":256}]}}}`
 	if err := os.WriteFile(filepath.Join(global, "models", "test.json"), []byte(modelConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	builtinServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) { _, _ = response.Write([]byte("[]")) }))
-	t.Cleanup(builtinServer.Close)
-	testExecutable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	builtinConfig := filepath.Clean(filepath.Join(filepath.Dir(testExecutable), "..", "backend", "config.yaml"))
-	if err := os.MkdirAll(filepath.Dir(builtinConfig), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Remove(builtinConfig) })
-	if err := os.WriteFile(builtinConfig, []byte("BUILTIN_SKILLS_URL: "+builtinServer.URL+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, malformed := range []bool{false, true} {

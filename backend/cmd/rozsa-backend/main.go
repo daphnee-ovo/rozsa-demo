@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -157,11 +156,6 @@ func main() {
 		coordinator.complete(app, initErr)
 	}()
 	backendStartupMark("rpc-server-starting")
-	go func() {
-		if err := skillApplication.EnsureBuiltins(cwd); err != nil {
-			log.Printf("built-in skill initialization failed: %v", err)
-		}
-	}()
 	if err := server.ServeProductApplication(os.Stdin, os.Stdout, coordinator, productMessageApplication{coordinator: coordinator, auth: authService, notifications: notifications}, productSettings); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

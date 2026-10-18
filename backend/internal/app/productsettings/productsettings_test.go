@@ -126,7 +126,7 @@ func TestSkillCatalogUpdateAndResetUseLayeredSettings(t *testing.T) {
 	}
 	builtinServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) { _, _ = response.Write([]byte("[]")) }))
 	t.Cleanup(builtinServer.Close)
-	skillApplication := skills.NewApplicationWithBuiltinURL(manager, resolveRoots, builtinServer.URL, builtinServer.Client())
+	skillApplication := skills.NewApplicationWithBuiltinURL(manager, resolveRoots, builtinServer.URL, builtinServer.Client(), nil)
 	service := NewWithModelCatalogAndSkills(manager, themes.NewStore(filepath.Join(globalRoot, "themes"), filepath.Join(projectRoot, "themes")), nil, nil, skillApplication, cwd)
 
 	initial, err := service.Snapshot(Global)

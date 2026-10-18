@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	backendconfig "rozsa/backend"
 	"rozsa/backend/internal/platform/configpaths"
 )
 
@@ -137,7 +136,7 @@ func TestBuiltinSkillRejectsUnsafeRemotePath(t *testing.T) {
 	}
 }
 
-func TestApplicationEnsuresBuiltinBeforeSkillDiscovery(t *testing.T) {
+func TestSkillDiscoveryDownloadsMissingBuiltins(t *testing.T) {
 	root := t.TempDir()
 	global := filepath.Join(root, "config")
 	home := filepath.Join(root, "home")
@@ -150,10 +149,7 @@ func TestApplicationEnsuresBuiltinBeforeSkillDiscovery(t *testing.T) {
 		"rozsa-docs": []map[string]string{{"name": "SKILL.md", "type": "file", "download_url": "/raw/rozsa-docs/SKILL.md"}},
 	})
 	defer server.Close()
-	application := NewApplicationWithBuiltinURL(nil, resolver, server.URL+"/contents/builtin-skills", server.Client())
-	if err := application.EnsureBuiltins(cwd); err != nil {
-		t.Fatal(err)
-	}
+	application := NewApplicationWithBuiltinURL(nil, resolver, server.URL+"/contents/builtin-skills", server.Client(), nil)
 	loaded, err := application.Enabled(cwd, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -164,23 +160,9 @@ func TestApplicationEnsuresBuiltinBeforeSkillDiscovery(t *testing.T) {
 }
 
 func TestBuiltinConfigAndInitializationErrorNotification(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("BUILTIN_SKILLS_URL: https://example.test/contents/builtin-skills\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	config, err := LoadBuiltinConfig(configPath)
-	if err != nil || config.BuiltinSkillsURL != "https://example.test/contents/builtin-skills" {
-		t.Fatalf("loaded config = %#v err=%v", config, err)
-	}
-	if err := os.WriteFile(configPath, []byte("BUILTIN_SKILLS_URL: file:///etc/passwd\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadBuiltinConfig(configPath); err == nil {
-		t.Fatal("non-HTTP built-in skills URL was accepted")
-	}
-	embedded, err := parseBuiltinConfig(backendconfig.BuiltinConfig(), "compiled backend config")
-	if err != nil || embedded.BuiltinSkillsURL != "https://api.github.com/repos/daphnee-ovo/rozsa-demo/contents/backend/resources/builtin-skills?ref=main" {
-		t.Fatalf("compiled config = %#v err=%v", embedded, err)
+	url, err := builtinSkillsURL()
+	if err != nil || url != "https://api.github.com/repos/daphnee-ovo/rozsa-demo/contents/backend/resources/builtin-skills?ref=main" {
+		t.Fatalf("embedded config URL = %q err=%v", url, err)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
@@ -193,25 +175,9 @@ func TestBuiltinConfigAndInitializationErrorNotification(t *testing.T) {
 	}
 	var notification error
 	application := NewApplicationWithBuiltinURL(nil, resolver, server.URL, server.Client(), func(err error) { notification = err })
-	err = application.EnsureBuiltins(t.TempDir())
+	_, err = application.Enabled(t.TempDir(), nil)
 	if err == nil || notification == nil || notification.Error() != err.Error() {
 		t.Fatalf("initialization error=%v notification=%v", err, notification)
-	}
-}
-
-func TestConfiguredBuiltinURLFallsBackToCompiledConfig(t *testing.T) {
-	if _, exists, err := developmentConfigPath(); err != nil {
-		t.Fatal(err)
-	} else if exists {
-		t.Skip("development config is present beside the test binary")
-	}
-	embedded, err := parseBuiltinConfig(backendconfig.BuiltinConfig(), "compiled backend config")
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolved, err := configuredBuiltinSkillsURL()
-	if err != nil || resolved != embedded.BuiltinSkillsURL {
-		t.Fatalf("configured URL = %q err=%v; want embedded %q", resolved, err, embedded.BuiltinSkillsURL)
 	}
 }
 
