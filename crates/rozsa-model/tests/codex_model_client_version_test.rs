@@ -14,7 +14,7 @@ fn run(command: &mut Command) {
 fn models_request_sends_codex_compatible_client_version() {
     let source = include_str!("../src/models_endpoint.rs");
 
-    assert!(source.contains("const CODEX_MODELS_CLIENT_VERSION: &str = \"0.146.0\";"));
+    assert!(source.contains("const CODEX_MODELS_CLIENT_VERSION: &str = \"0.164.0\";"));
     assert!(source.contains(".query(&[(\"client_version\", CODEX_MODELS_CLIENT_VERSION)])"));
 }
 

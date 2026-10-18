@@ -32,7 +32,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const CACHE_DURATION_SECS: u64 = 24 * 60 * 60; // 24 hours
 const MODELS_ENDPOINT: &str = "/wham/models";
 const DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api";
-const CODEX_MODELS_CLIENT_VERSION: &str = "0.146.0";
+const CODEX_MODELS_CLIENT_VERSION: &str = "0.164.0";
 
 /// Check if the cached model config needs refresh and update if so.
 /// Returns Ok(true) if refreshed, Ok(false) if cache is fresh.
