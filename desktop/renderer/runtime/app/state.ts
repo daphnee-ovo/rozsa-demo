@@ -29,6 +29,7 @@
 // ===================================================================
 
 let invoke, listen;
+let sidebarInteractive = false;
 // Runtime-only design gaps. Passive message/error delivery remains active until
 // its state matrix has a safe shared replacement (UI-CONV-002).
 const conversationSuspensions = Object.freeze({
@@ -296,7 +297,7 @@ window.addEventListener('DOMContentLoaded', () => {
       sessions = catalog;
       materializeFallbackTemplate('fallbackSidebarTemplate', 'fallbackSidebarMount');
       const sessionList = document.getElementById('sessionList');
-      if (sessionList) {
+      if (sessionList && !sidebarInteractive) {
         sessionList.inert = true;
         sessionList.setAttribute('aria-busy', 'true');
       }
@@ -320,6 +321,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   restoreConversationState();
   nativeSplitMode = false;
   preparePlatformSceneDom();
+  sidebarInteractive = true;
   const sessionList = document.getElementById('sessionList');
   if (sessionList) {
     sessionList.inert = false;

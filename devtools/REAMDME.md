@@ -4,7 +4,8 @@
 
 ## Electron + Go desktop
 
-- `start-desktop.sh`：生成内置技能配置，并通过 Forge/Vite 启动当前 Electron + Go Rózsa 调试应用。应用参数原样跟在脚本后，例如 `bash devtools/start-desktop.sh --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/sessions`。
+- `start-desktop.sh`：编译当前代码并通过 Forge/Vite 启动调试应用；默认加载 `tmp/desktop-debug/sessions/` 的 Markdown、Mermaid、工具调用和长历史合成示例。已有示例文件不会覆盖。应用参数原样跟在脚本后；显式传 `--session-dir /absolute/sessions` 或 `--session-dir=/absolute/sessions` 时仅使用指定目录。不生成 `.app` 包。
+- `prepare-debug-sessions.mjs`：生成上述示例会话；可传目录作为第一个参数，已有同名文件保留。
 - `build-desktop.sh`：全新安装桌面依赖并生成当前主机的应用包；首次设置或依赖变更后使用。
 - `package-desktop.sh`：依赖已安装时生成应用包；传入 `make` 生成当前主机安装包，其余参数传给 Forge。
 - `test-desktop.sh`：运行 Electron + Go 跨语言验收，不启动完整 TEST phase。

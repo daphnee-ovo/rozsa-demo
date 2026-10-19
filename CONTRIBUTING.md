@@ -175,6 +175,17 @@ bash devtools/package-desktop.sh make
 bash devtools/test-desktop.sh
 ```
 
+With no `--session-dir`, `start-desktop.sh` loads synthetic Markdown, Mermaid,
+tool-call and long-history sessions from `tmp/desktop-debug/sessions/`. Existing
+files are preserved so edits and new turns survive restarts. An explicit
+`--session-dir` selects only the supplied directories. This starts the latest
+development code through Forge; use `package-desktop.sh` to update the app bundle.
+Check fixture generation and argument forwarding with
+`node --test desktop/tests/debug-sessions.test.js`; the separate native check is
+`npm --prefix desktop/tests exec -- tsx desktop/tests/native-debug-launcher.test.ts`.
+It launches an isolated source copy and verifies real session selection,
+diagram rendering and owned backend shutdown.
+
 `test-desktop.sh` resolves the repository root from its own location, validates
 the module manifests, packages the current tree and runs the `desktop/tests`
 behavior suite plus Go/resource checks. Run it from a tree containing the

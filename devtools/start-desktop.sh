@@ -17,5 +17,18 @@ if [[ ! -x desktop/node_modules/.bin/electron-forge ]]; then
   exit 69
 fi
 
+app_args=("$@")
+has_session_directory=false
+for argument in "$@"; do
+  case "$argument" in
+    --session-dir|--session-dir=*) has_session_directory=true ;;
+  esac
+done
+if [[ "$has_session_directory" == false ]]; then
+  sample_directory="$(node devtools/prepare-debug-sessions.mjs)"
+  app_args+=(--session-dir "$sample_directory")
+  printf 'Loading synthetic debug sessions: %s\nExisting session files are preserved. Use --session-dir to load your own directory.\n' "$sample_directory"
+fi
+
 node devtools/update-builtin-skills-config.mjs
-npm --prefix desktop start -- -- "$@"
+exec npm --prefix desktop start -- -- "${app_args[@]}"
