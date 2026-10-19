@@ -3,7 +3,7 @@ source: test
 nums: 1
 ---
 
-- [ ] ISSUE-I024：Test TASK-T100 fail:node:internal/modules/esm/get_format:243
+- [x] ISSUE-I024：Test TASK-T100 fail:node:internal/modules/esm/get_format:243
   - severity: P1
   - location：desktop/tests/message-states.test.js
   - description：node:internal/modules/esm/get_format:243
@@ -42,5 +42,6 @@ nums: 1
       'test failed'
   - reproduce：node --test 'message-states.test.js'
     project_root: /Users/xinyue/ballad/rozsa-demo
-  - fix：
+  - fix：Confirmed runner mismatch: bare Node cannot load the existing TSX module. The configured tsx runner passes all six message-state checks. TASK-T100 completion also passed with the same tsx loader supplied only through NODE_OPTIONS for that invocation; no test or shared test.ci was weakened.
   - files_modify: [desktop/tests/message-states.test.js]
+  - files_create: []
