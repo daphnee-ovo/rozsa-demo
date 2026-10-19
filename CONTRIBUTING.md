@@ -226,6 +226,14 @@ Conversation performance records Streamdown render and React commit durations,
 Pele mount and responsive adaptation, plus long-task, DOM and memory samples.
 The stress fixture includes two complete Mermaid blocks in representative
 messages; ordinary test suites do not run this workload.
+Run `npm --prefix desktop/tests exec -- tsx desktop/tests/native-layout.test.ts`
+after building the desktop app to check viewport coverage at multiple UI scales,
+sidebar collapse/reopen, Mermaid source/diagram switching, Lucide controls,
+the in-app diagram viewer, PNG export and disabled double-click zoom. It uses
+isolated session/config directories, saves light/dark sidebar screenshots and
+closes its own instance.
+On macOS the sidebar uses the native material behind a transparent window and
+a dominant theme tint across the full pane; the conversation surface remains opaque.
 Main/preload follow Forge's main.cjs/preload.cjs convention. Preload is a single
 sandbox bundle with Electron as the only external runtime require. Strict
 Bundler-resolution TS configs keep Node globals out of renderer and DOM out of

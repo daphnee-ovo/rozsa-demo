@@ -47,16 +47,27 @@ body > .sidebar-toggle-button { display: none; }
 body.macos-host > .sidebar-toggle-button {
   display: inline-flex;
   position: fixed;
-  z-index: 200;
+  z-index: 220;
   top: 0;
-  left: 76px;
-  height: 32px;
+  left: calc(76px / var(--ui-scale));
+  height: calc(32px / var(--ui-scale));
   -webkit-app-region: no-drag;
 }
 /* The existing conversation header continues behind the native window controls. */
 body.macos-host [data-od-id="panel-header"] {
   top: 0;
   -webkit-app-region: drag;
+}
+body.macos-host [data-od-id="app-body"].sidebar-collapsed [data-od-id="panel-header"] {
+  padding-left: max(124px, calc(124px / var(--ui-scale)));
+}
+body.macos-host [data-od-id="app-body"].sidebar-collapsed [data-od-id="panel-header"]::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: max(124px, calc(124px / var(--ui-scale)));
+  height: calc(32px / var(--ui-scale));
+  -webkit-app-region: no-drag;
 }
 body.macos-host [data-od-id="panel-header"] button,
 body.macos-host [data-od-id="panel-header"] a { -webkit-app-region: no-drag; }
@@ -68,7 +79,7 @@ body.macos-host [data-od-id="sidebar"] > [data-od-id="sidebar-sessions"] > .side
 body.macos-host > .sidebar-toggle-button {
   width: 30px;
   margin-left: 5px;
-  height: 32px;
+  height: calc(32px / var(--ui-scale));
   padding: 3px;
 }
 @media (min-width: 781px) and (max-width: 1100px) {

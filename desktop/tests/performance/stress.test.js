@@ -39,17 +39,20 @@ function summarize(values) {
 
 async function startProvider() {
   let requests = 0;
+  const pendingFences = new Set();
   const server = createServer((request, response) => {
     requests++;
     request.resume();
     request.on("end", () => {
       response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-      let index = 0, timer;
+      let index = 0, timer, fenceReleased = false;
+      const releaseFence = () => { fenceReleased = true; pendingFences.delete(releaseFence); sendNext(); };
       const sendNext = () => {
+        if (index === streamTokens.length - 1 && !fenceReleased) { pendingFences.add(releaseFence); return; }
         if (index < streamTokens.length) {
           response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: streamTokens[index] } }] })}\n\n`);
           index++;
-          timer = setTimeout(sendNext, index === streamTokens.length - 1 ? 300 : 15);
+          timer = setTimeout(sendNext, 15);
         } else {
           response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 30, completion_tokens: 32 } })}\n\n`);
           response.write("data: [DONE]\n\n");
@@ -57,13 +60,13 @@ async function startProvider() {
         }
       };
       timer = setTimeout(sendNext, 15);
-      response.on("close", () => clearTimeout(timer));
+      response.on("close", () => { clearTimeout(timer); pendingFences.delete(releaseFence); });
     });
   });
   await new Promise((resolve, reject) => server.listen(0, "127.0.0.1", resolve).once("error", reject));
   const address = server.address();
   assert.ok(address && typeof address === "object");
-  return { server, get requests() { return requests; }, baseURL: `http://127.0.0.1:${address.port}/v1` };
+  return { server, releaseDiagramFence: () => { for (const release of pendingFences) release(); }, get requests() { return requests; }, baseURL: `http://127.0.0.1:${address.port}/v1` };
 }
 
 async function measureToggle(cdp, controlSelector, targetSelector, className) {
@@ -310,14 +313,15 @@ async function measureRound(index, longFixture, provider) {
     const firstDeltaMs = Date.now() - sendStarted;
     await cdp.waitFor(`window.RozsaUIHost.port.request('get_state').then(state => state.messages.at(-1)?.message?.content?.map(block => block.text || '').join(' ') || '').then(text => text.includes("flowchart LR"))`, "streaming Mermaid source received before its closing fence", 15000);
     await cdp.evaluate("(() => { const chat = document.querySelector('#chatMessages'); chat.scrollTop = chat.scrollHeight; })()");
-    await cdp.waitFor(`(() => [...document.querySelectorAll("#chatMessages .conversation-virtual-row .msg")].some(item => item.textContent.includes("flowchart LR")))()`,
+    await cdp.waitFor(`(() => [...document.querySelectorAll("#chatMessages .conversation-virtual-row .msg")].some(item => item.textContent.includes("stress-stream-31") && item.textContent.includes("flowchart LR")))()`,
       "streaming message row mounted at the conversation end", 15000);
     const openDiagram = await cdp.evaluate(`(() => {
-      const row = [...document.querySelectorAll("#chatMessages .conversation-virtual-row .msg")].filter(item => item.textContent.includes("flowchart LR")).at(-1);
+      const row = [...document.querySelectorAll("#chatMessages .conversation-virtual-row .msg")].find(item => item.textContent.includes("stress-stream-31"));
       return { sourceVisible: row?.textContent.includes("stream_closed"), rendered: Boolean(row?.querySelector(".md-mermaid-wrap")) };
     })()`);
     assert.equal(openDiagram.sourceVisible, true, `streaming Mermaid source must remain readable before closure: ${JSON.stringify(openDiagram)}`);
     assert.equal(openDiagram.rendered, false, "incomplete stream must not mount a diagram from Streamdown's temporary completion");
+    provider.releaseDiagramFence();
     await cdp.waitFor(`window.RozsaUIHost.port.request('get_state').then(state => state.messages.at(-1)?.message?.content?.map(block => block.text || '').join(' ') || '').then(text => text.includes(${JSON.stringify(streamTokens.at(-1).trim())}))`, "stream completion", 30000);
     await cdp.waitFor(`(() => { const row = [...document.querySelectorAll("#chatMessages .conversation-virtual-row .msg")].find(item => item.textContent.includes("stress-stream-31")); return Boolean(row?.querySelector(".md-mermaid[data-pele-ready=true]")); })()`, "Pele mounts the stream diagram after the source fence closes", 30000);
     const streamRows = await cdp.evaluate("Number(document.querySelector('#chatMessages [data-virtualized=true]')?.dataset.historyEntryCount)");
@@ -422,6 +426,8 @@ test("complex session stress measures rendering, images, expansion, input, strea
         samples.push(await measureRound(index, longFixture, provider));
       } catch (error) {
         failedAttempts.push(error.performanceFailure || { round: index, phase: "startup", error: String(error) });
+      } finally {
+        provider.releaseDiagramFence();
       }
       await writeFile(progressPath, JSON.stringify({
         platform: process.platform, arch: process.arch, requestedRounds: rounds,
@@ -447,7 +453,7 @@ test("complex session stress measures rendering, images, expansion, input, strea
   assert.equal(samples.length, rounds, `collected ${samples.length} valid stress samples after ${attempts} attempts`);
 
   if (!calibration) {
-    assert.equal(failedAttempts.length, 0, `${failedAttempts.length} renderer-stall attempts occurred during stress sampling`);
+    assert.equal(failedAttempts.length, 0, `${failedAttempts.length} failed attempts occurred during stress sampling`);
     const thresholds = JSON.parse(await readFile(join(import.meta.dirname, "thresholds.json"), "utf8"));
     assert.equal(thresholds.status, "fixed", "performance thresholds are awaiting calibration");
     for (const [metric, measured] of Object.entries(summary)) {

@@ -219,6 +219,7 @@ TASK_ROADMAP 的功能覆盖随实现维护；未做功能保持待实现。最�
 - SPEC-AC-006: 工具、并行/取消、hooks、权限、问题、subagent、queue/steer/fork/compaction 与 Dev Flow 整链路通过，含真实进程退出和 watcher。
 - SPEC-AC-007: IPC schema、握手、所选库的 framing/message semantics、背压、request/notification 与身份路由、领域错误映射、订阅/快照竞态、reload、断管、关闭均有测试；副作用请求不自动重试。该验收要求不表示实现已通过。
 - SPEC-AC-008: 全部设计缺口恢复且用户已批准相关原型；完整状态矩阵通过；新原型和 Electron 产品保持一份 UI（不包含旧 Rust/Tauri），生产包不含 mock/gallery。
+  Mermaid 源码视图卸载图表，返回按钮紧邻复制按钮左侧；图表按钮统一 Lucide 与相同边框/尺寸。全屏指应用内容区内图表查看页，支持 Pele 缩放、退出、Escape 和保存完整 PNG，不切换系统窗口全屏。Sidebar 原生材质覆盖整栏并叠加主题 tint；字体缩放后工作区仍填满窗口。
 - SPEC-AC-009: 单 WebView 原生视觉与交互成对检查通过；separator ARIA/键盘、最小化、极限宽度等实验遗留项全部验收。
 - SPEC-AC-010: macOS/Linux/Windows 在各自系统验证 CLI、文件/进程/凭据/输入/窗口；交叉编译不能替代真实 GUI 验收。
 - SPEC-AC-011: Go 与 JS/TS 单元/特性测试各归模块；跨语言 shell 集成；新增 bug 修复有先失败后通过的回归证据；TEST 阶段仅按用户显式请求进入。

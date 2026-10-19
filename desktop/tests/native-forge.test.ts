@@ -17,7 +17,7 @@ await symlink(join(root, "desktop/node_modules"), join(fixture, "desktop/node_mo
 await symlink(join(root, "backend"), join(fixture, "backend"), process.platform === "win32" ? "junction" : "dir");
 const sessions = join(output, "sessions"); await mkdir(sessions);
 const jsonl = JSON.stringify({ type: "session", version: 3, id: "hmr", timestamp: "t", cwd: "/synthetic" }) + "\n"
-  + JSON.stringify({ type: "message", id: "m", parentId: null, timestamp: "t", message: { role: "user", content: "Forge stdio history" } }) + "\n";
+  + JSON.stringify({ type: "message", id: "m", parentId: null, timestamp: "t", message: { role: "user", content: "Forge stdio history\n\n```mermaid\nflowchart LR\n  A[Request] --> B[Streamdown] --> C[Pele]\n```" } }) + "\n";
 await writeFile(join(sessions, "hmr.jsonl"), jsonl);
 const cli = join(root, "desktop/node_modules/@electron-forge/cli/dist/electron-forge.js");
 let logs = "", normal = false, socket: WebSocket | undefined;
@@ -61,6 +61,100 @@ try {
   };
   await poll(async () => await evaluate("document.querySelectorAll('#sessionList .session-item').length===1 && !!document.querySelector('#chatMessages')") ? true : undefined, "full UI and stdio catalog");
   await poll(async () => await evaluate("document.body && getComputedStyle(document.body).getPropertyValue('--font-ui').trim().length > 0") ? true : undefined, "shared tokens in development");
+  await poll(async () => await evaluate("document.querySelector('.md-mermaid[data-pele-ready=true]') && document.querySelector('.md-mermaid-pele-actions .pele-zoom button')") ? true : undefined, "Pele diagram and native zoom controls");
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: 4 }, sessionId);
+  await evaluate("document.activeElement?.blur(); new Promise(resolve => setTimeout(resolve, 150))");
+  const mermaidTypography = await evaluate(`(() => {
+    const diagram = document.querySelector('.md-mermaid');
+    const wrap = diagram.closest('.md-mermaid-wrap');
+    const label = diagram.querySelector('svg.pele text');
+    const bodyText = document.querySelector('.markdown-body');
+    const buttons = [...document.querySelectorAll('.md-mermaid-pele-actions .pele-zoom button')];
+    const tools = [...wrap.querySelectorAll('.md-mermaid-actions > button')];
+    return {
+      labelSize: getComputedStyle(label).fontSize,
+      bodySize: getComputedStyle(bodyText).fontSize,
+      labelFont: getComputedStyle(label).fontFamily,
+      bodyFont: getComputedStyle(bodyText).fontFamily,
+      labels: buttons.map(button => button.getAttribute('aria-label')),
+      hiddenByDefault: buttons.every(button => getComputedStyle(button.closest('.pele-zoom')).opacity === '0'),
+      labelsAreFocusable: buttons.every(button => button.tabIndex >= 0),
+      zoomHidden: getComputedStyle(wrap.querySelector('.pele-zoom')).opacity === '0',
+      toggleHidden: getComputedStyle(tools[0]).opacity === '0',
+      toggleSize: getComputedStyle(tools[0]).width,
+      zoomSize: getComputedStyle(buttons[0]).width,
+      lucideControls: [...wrap.querySelectorAll('.md-mermaid-actions > button .lucide')].length === 2
+        && buttons.every(button => !!button.querySelector('.lucide')),
+      controlsAtTopRight: (() => {
+        const toolbar = wrap.querySelector('.md-mermaid-actions').getBoundingClientRect();
+        const chart = wrap.getBoundingClientRect();
+        // User-message paper rotates .6deg; allow its projected edge offset.
+        return Math.abs(toolbar.right - chart.right + 8) <= 2 && Math.abs(toolbar.top - chart.top - 8) <= 2;
+      })(),
+      bounds: (() => { const rect = diagram.getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + Math.min(32, rect.height / 2) }; })(),
+    };
+  })()`);
+  assert.equal(mermaidTypography.labelSize, mermaidTypography.bodySize, JSON.stringify(mermaidTypography));
+  assert.equal(mermaidTypography.labelFont, mermaidTypography.bodyFont, JSON.stringify(mermaidTypography));
+  assert.deepEqual(mermaidTypography.labels, ["Zoom in", "Zoom out", "Reset zoom"]);
+  assert.equal(mermaidTypography.hiddenByDefault, true);
+  assert.equal(mermaidTypography.zoomHidden, true);
+  assert.equal(mermaidTypography.toggleHidden, true);
+  assert.equal(mermaidTypography.toggleSize, '26px');
+  assert.equal(mermaidTypography.zoomSize, '26px');
+  assert.equal(mermaidTypography.lucideControls, true);
+  assert.equal(mermaidTypography.controlsAtTopRight, true);
+  assert.equal(mermaidTypography.labelsAreFocusable, true);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: mermaidTypography.bounds.x, y: mermaidTypography.bounds.y }, sessionId);
+  await poll(async () => await evaluate("[...document.querySelectorAll('.md-mermaid-actions > button, .md-mermaid-pele-actions .pele-zoom')].every(button => getComputedStyle(button).opacity === '1')") ? true : undefined, "hover control transition");
+  const hoverControlsVisible = await evaluate("[...document.querySelectorAll('.md-mermaid-actions > button, .md-mermaid-pele-actions .pele-zoom')].every(button => getComputedStyle(button).opacity === '1')");
+  assert.equal(hoverControlsVisible, true);
+  const focusControlsVisible = await evaluate(`(() => { const button = document.querySelector('.md-mermaid-pele-actions .pele-zoom button'); button.focus({ focusVisible: true }); return getComputedStyle(button.parentElement).opacity === '1' && button.matches(':focus-visible') && document.activeElement === button; })()`);
+  assert.equal(focusControlsVisible, true);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: 4 }, sessionId);
+  await evaluate("window.dispatchEvent(new Event('blur')); window.dispatchEvent(new Event('focus'))");
+  await poll(async () => await evaluate("getComputedStyle(document.querySelector('.md-mermaid-pele-actions .pele-zoom')).opacity === '0'") ? true : undefined, "blur control transition");
+  const refocusControlsHidden = await evaluate(`(() => { const button = document.querySelector('.md-mermaid-pele-actions .pele-zoom button'); return getComputedStyle(button.parentElement).opacity === '0' && document.activeElement !== button; })()`);
+  assert.equal(refocusControlsHidden, true);
+  const sourceButton = await evaluate(`(() => { const rect = document.querySelector('.md-mermaid-actions [aria-label="Show source"]').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: sourceButton.x, y: sourceButton.y }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sourceButton.x, y: sourceButton.y, button: "left", clickCount: 1 }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sourceButton.x, y: sourceButton.y, button: "left", clickCount: 1 }, sessionId);
+  const toggleToSource = await evaluate(`(() => { const button = document.querySelector('.md-mermaid-return'); return { label: button?.getAttribute('aria-label'), source: document.querySelector('.md-mermaid-source code')?.textContent, diagramRemoved: !document.querySelector('.md-mermaid'), chartWrapperRemoved: !document.querySelector('.md-mermaid-wrap'), staleSvgRemoved: !document.querySelector('.md-mermaid-source svg.pele'), returnImmediatelyBeforeCopy: button?.nextElementSibling?.classList.contains('md-copy') === true, returnVisible: getComputedStyle(button).opacity === '1' && getComputedStyle(button).pointerEvents === 'auto', lucideIcons: document.querySelectorAll('.md-mermaid-source .lucide').length === 2 }; })()`);
+  assert.equal(toggleToSource.label, "Show diagram");
+  assert.match(toggleToSource.source, /A\[Request\] --> B\[Streamdown\] --> C\[Pele\]/);
+  assert.equal(toggleToSource.diagramRemoved, true);
+  assert.equal(toggleToSource.chartWrapperRemoved, true);
+  assert.equal(toggleToSource.staleSvgRemoved, true);
+  assert.equal(toggleToSource.returnImmediatelyBeforeCopy, true);
+  assert.equal(toggleToSource.returnVisible, true);
+  assert.equal(toggleToSource.lucideIcons, true);
+  const diagramButton = await evaluate(`(() => { const rect = document.querySelector('.md-mermaid-return').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: diagramButton.x, y: diagramButton.y }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: diagramButton.x, y: diagramButton.y, button: "left", clickCount: 1 }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: diagramButton.x, y: diagramButton.y, button: "left", clickCount: 1 }, sessionId);
+  await poll(async () => await evaluate(`!!document.querySelector(".md-mermaid[data-pele-ready='true']") && !!document.querySelector(".md-mermaid-pele-actions .pele-zoom button[aria-label='Zoom in']")`) ? true : undefined, "Pele remounts when returning to the diagram");
+  const zoomBefore = await evaluate("document.querySelector('.md-mermaid svg.pele')?.outerHTML");
+  const zoomPoint = await evaluate(`(() => { const rect = document.querySelector('.md-mermaid-pele-actions .pele-zoom button[aria-label="Zoom in"]').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: zoomPoint.x, y: zoomPoint.y }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: zoomPoint.x, y: zoomPoint.y, button: "left", clickCount: 1 }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: zoomPoint.x, y: zoomPoint.y, button: "left", clickCount: 1 }, sessionId);
+  const zoomAfter = await evaluate("document.querySelector('.md-mermaid svg.pele')?.outerHTML");
+  assert.notEqual(zoomAfter, zoomBefore, "zoom in changes the rendered diagram");
+  const viewBoxBeforeDoubleClick = await evaluate("document.querySelector('.md-mermaid svg.pele').getAttribute('viewBox')");
+  const diagramPoint = await evaluate(`(() => { const rect = document.querySelector('.md-mermaid svg.pele').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: diagramPoint.x, y: diagramPoint.y }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: diagramPoint.x, y: diagramPoint.y, button: "left", clickCount: 2 }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: diagramPoint.x, y: diagramPoint.y, button: "left", clickCount: 2 }, sessionId);
+  const doubleClickAfter = await evaluate("document.querySelector('.md-mermaid svg.pele').getAttribute('viewBox')");
+  assert.equal(doubleClickAfter, viewBoxBeforeDoubleClick, "double-click does not zoom the Mermaid chart");
+  const fullscreenPoint = await evaluate(`(() => { const rect = document.querySelector('.md-mermaid-actions [aria-label="Enter fullscreen"]').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: fullscreenPoint.x, y: fullscreenPoint.y }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: fullscreenPoint.x, y: fullscreenPoint.y, button: "left", clickCount: 1 }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: fullscreenPoint.x, y: fullscreenPoint.y, button: "left", clickCount: 1 }, sessionId);
+  await poll(async () => await evaluate("!!document.querySelector('body > .md-mermaid-fullscreen svg.pele') && !document.fullscreenElement") ? true : undefined, "in-app diagram viewer entry");
+  await evaluate("document.querySelector('[aria-label=\"Exit fullscreen\"]').click()");
+  await poll(async () => await evaluate("!document.querySelector('.md-mermaid-fullscreen') && !!document.querySelector('.md-mermaid svg.pele')") ? true : undefined, "diagram viewer exit");
   if (process.platform === "darwin") {
     const titlebarLayout = await evaluate(`(() => {
       const toggle = document.querySelector('body > .sidebar-toggle-button');
@@ -86,51 +180,77 @@ try {
       sidebarHasSoftCastShadow: true,
       mainHeaderKeepsGlassTreatment: true,
     });
-    const sidebarToggleRoundTrip = await evaluate(`(() => {
+    const sidebarSetup = await evaluate(`(() => {
       const button = document.querySelector('body > .sidebar-toggle-button');
       const initiallyCollapsed = document.body.classList.contains('sidebar-collapsed');
-      button.click();
-      const collapsedAfterFirstClick = document.body.classList.contains('sidebar-collapsed');
+      if (!initiallyCollapsed) button.click();
+      const appBody = document.querySelector('[data-od-id="app-body"]');
+      appBody.classList.add('sidebar-edge-visible');
+      document.documentElement.setAttribute('data-theme-translucent-sidebar', 'true');
+      const overlay = document.querySelector('[data-od-id="sidebar"]');
+      const overlayBackground = getComputedStyle(overlay).backgroundColor;
+      const overlayTop = overlay.getBoundingClientRect().top;
+      const buttonRect = button.getBoundingClientRect();
+      const buttonPoint = { x: buttonRect.x + buttonRect.width / 2, y: buttonRect.y + buttonRect.height / 2 };
+      const hitTarget = document.elementFromPoint(buttonPoint.x, buttonPoint.y)?.closest('.sidebar-toggle-button') === button;
       const viewportWidth = window.innerWidth;
       const windowWidth = window.outerWidth;
       const mainPanel = document.querySelector('[data-od-id="main-panel"]').getBoundingClientRect();
-      const collapsedMainFillsViewport = Math.abs(mainPanel.right - viewportWidth) <= 1;
-      const viewportFillsWindow = Math.abs(viewportWidth - windowWidth) <= 1;
-      const firstLabel = button.getAttribute('aria-label');
-      button.click();
-      return {
-        initiallyCollapsed,
-        collapsedAfterFirstClick,
-        viewportWidth,
-        windowWidth,
-        mainPanelRight: mainPanel.right,
-        collapsedMainFillsViewport,
-        viewportFillsWindow,
-        restoredAfterSecondClick: document.body.classList.contains('sidebar-collapsed') === initiallyCollapsed,
-        restoredLabel: button.getAttribute('aria-label') === (initiallyCollapsed ? 'Show sidebar' : 'Hide sidebar'),
-        firstLabel,
-      };
+      const headerAvoidance = getComputedStyle(document.querySelector('[data-od-id="panel-header"]')).paddingLeft;
+      return { initiallyCollapsed, buttonPoint, hitTarget, overlayOpaque: !/rgba\(0, 0, 0, 0\)|transparent/.test(overlayBackground),
+        overlayStartsAtTitlebar: overlayTop === 0, headerAvoidance, lucideSidebarIcon: !!button.querySelector('.lucide-panel-left'),
+        viewportWidth, windowWidth, mainPanelRight: mainPanel.right };
     })()`);
-    assert.equal(sidebarToggleRoundTrip.collapsedAfterFirstClick, !sidebarToggleRoundTrip.initiallyCollapsed);
-    assert.equal(sidebarToggleRoundTrip.collapsedMainFillsViewport, true, JSON.stringify(sidebarToggleRoundTrip));
-    assert.equal(sidebarToggleRoundTrip.viewportFillsWindow, true, JSON.stringify(sidebarToggleRoundTrip));
-    assert.equal(sidebarToggleRoundTrip.restoredAfterSecondClick, true);
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: sidebarSetup.buttonPoint.x, y: sidebarSetup.buttonPoint.y }, sessionId);
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sidebarSetup.buttonPoint.x, y: sidebarSetup.buttonPoint.y, button: "left", clickCount: 1 }, sessionId);
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sidebarSetup.buttonPoint.x, y: sidebarSetup.buttonPoint.y, button: "left", clickCount: 1 }, sessionId);
+    const sidebarToggleRoundTrip = await evaluate(`(() => {
+      const button = document.querySelector('body > .sidebar-toggle-button');
+      const appBody = document.querySelector('[data-od-id="app-body"]');
+      const initiallyCollapsed = ${JSON.stringify(sidebarSetup.initiallyCollapsed)};
+      const expandedByRealClick = !document.body.classList.contains('sidebar-collapsed');
+      const firstLabel = button.getAttribute('aria-label');
+      appBody.classList.remove('sidebar-edge-visible');
+      document.documentElement.setAttribute('data-theme-translucent-sidebar', 'false');
+      if (document.body.classList.contains('sidebar-collapsed') !== initiallyCollapsed) button.click();
+      return { expandedByRealClick, restoredAfterClick: document.body.classList.contains('sidebar-collapsed') === initiallyCollapsed,
+        restoredLabel: button.getAttribute('aria-label') === (initiallyCollapsed ? 'Show sidebar' : 'Hide sidebar'), firstLabel };
+    })()`);
+    assert.equal(sidebarToggleRoundTrip.expandedByRealClick, true);
+    assert.ok(Math.abs(sidebarSetup.mainPanelRight - sidebarSetup.viewportWidth) <= 1, JSON.stringify(sidebarSetup));
+    assert.ok(Math.abs(sidebarSetup.viewportWidth - sidebarSetup.windowWidth) <= 1, JSON.stringify(sidebarSetup));
+    assert.equal(sidebarToggleRoundTrip.restoredAfterClick, true);
     assert.equal(sidebarToggleRoundTrip.restoredLabel, true);
+    assert.equal(sidebarSetup.hitTarget, true);
+    assert.equal(sidebarSetup.overlayOpaque, true);
+    assert.equal(sidebarSetup.overlayStartsAtTitlebar, true);
+    assert.equal(sidebarSetup.headerAvoidance, '124px');
+    assert.equal(sidebarSetup.lucideSidebarIcon, true);
     const surfaces = await evaluate(`(() => {
       document.documentElement.setAttribute('data-theme-translucent-sidebar', 'true');
+      const tintProbe = document.createElement('div');
+      tintProbe.style.backgroundColor = getComputedStyle(document.body).getPropertyValue('--sidebar-vibrancy-tint').trim();
+      document.body.append(tintProbe);
+      const sidebarTint = getComputedStyle(tintProbe).backgroundColor;
+      tintProbe.remove();
       return {
       enabled: document.documentElement.getAttribute('data-theme-translucent-sidebar'),
       host: document.body.className,
       sidebar: getComputedStyle(document.querySelector('[data-od-id="sidebar"]')).backgroundColor,
       main: getComputedStyle(document.querySelector('[data-od-id="main-panel"]')).backgroundColor,
       sidebarFilter: getComputedStyle(document.querySelector('[data-od-id="sidebar"]')).backdropFilter,
+      sidebarTint,
+      sidebarRight: document.querySelector('[data-od-id="sidebar"]').getBoundingClientRect().right,
+      mainLeft: document.querySelector('[data-od-id="main-panel"]').getBoundingClientRect().left,
       };
     })()`);
     assert.equal(surfaces.enabled, "true");
     assert.match(surfaces.host, /macos-host/);
-    assert.match(surfaces.sidebar, /rgba?\(0, 0, 0, 0\)/);
+    assert.equal(surfaces.sidebar, surfaces.sidebarTint);
     assert.doesNotMatch(surfaces.main, /rgba?\(0, 0, 0, 0\)/);
     assert.equal(surfaces.sidebarFilter, "none");
+    assert.match(surfaces.sidebarTint, /\/\s*0?\.76\s*\)/, JSON.stringify(surfaces));
+    assert.ok(Math.abs(surfaces.mainLeft - surfaces.sidebarRight) <= 1, JSON.stringify(surfaces));
     const opaque = await evaluate(`(() => {
       document.documentElement.setAttribute('data-theme-translucent-sidebar', 'false');
       return {
@@ -139,7 +259,7 @@ try {
     })()`);
     assert.doesNotMatch(opaque.sidebar, /rgba?\(0, 0, 0, 0\)/);
   }
-  assert.deepEqual(await evaluate("({node:typeof window.require,bridge:Object.keys(window.rozsa)})"), { node: "undefined", bridge: ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage"] });
+  assert.deepEqual(await evaluate("({node:typeof window.require,bridge:Object.keys(window.rozsa)})"), { node: "undefined", bridge: ["startAuth", "submitAuth", "nextAuthEvent", "cancelAuth", "logoutAuth", "onModelsChanged", "onRuntimeInitializationError", "getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage", "getSettings", "updateSetting", "resetSetting", "listThemes", "getTheme", "saveTheme"] });
   await evaluate("document.querySelector('#sessionList .session-item').click()");
   await poll(async () => await evaluate("document.querySelector('#chatMessages')?.textContent.includes('Forge stdio history')") ? true : undefined, "conversation history");
   const backendPID = Number(/Backend started: (\d+)/.exec(logs)?.[1]); assert.ok(backendPID > 0);

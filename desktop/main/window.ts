@@ -14,6 +14,8 @@ export function createWindow(): BrowserWindow {
     ...(process.platform === "darwin" ? {
       titleBarStyle: "hiddenInset" as const,
       visualEffectState: "followWindow" as const,
+      transparent: true,
+      backgroundColor: "#00000000",
     } : {}),
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
