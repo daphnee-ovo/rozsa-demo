@@ -244,7 +244,7 @@ func TestScopeBeforePermissionAndDisabledRecursiveTools(t *testing.T) {
 	})
 	manager := newManager(t, provider, func(config *Config) {
 		config.DisabledTools = map[string]bool{"write": true}
-		config.Tools = func(string) []tools.Tool {
+		config.Tools = func(string, *session.Manager) []tools.Tool {
 			return []tools.Tool{inertTool{name: "read", execute: func() { executions++ }}, inertTool{name: "write"}, inertTool{name: "subagent"}}
 		}
 		config.PermissionHook = func(id string) hooks.PreToolUse {
@@ -329,7 +329,7 @@ func TestAbortWaitsForRunningBashProcessCleanup(t *testing.T) {
 		return nil
 	})
 	manager := newManager(t, provider, func(config *Config) {
-		config.Tools = func(string) []tools.Tool {
+		config.Tools = func(string, *session.Manager) []tools.Tool {
 			return []tools.Tool{processTool{inertTool: inertTool{name: "bash"}, command: fmt.Sprintf("printf ready > '%s'; sleep 30", strings.ReplaceAll(marker, "'", "'\"'\"'")), cwd: dir, finished: finished}}
 		}
 	})

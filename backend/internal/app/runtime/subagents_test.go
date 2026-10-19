@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -179,6 +180,54 @@ func TestProductionSubagentToolsDoNotRecurseOrShareOwner(t *testing.T) {
 	}
 	if _, err := app.SubagentManager("other-session"); err == nil {
 		t.Fatal("unregistered owner accepted")
+	}
+}
+
+func TestSubagentProductionToolsCheckScopeBeforePermission(t *testing.T) {
+	workspace := t.TempDir()
+	outsidePath := filepath.Join(t.TempDir(), "outside.txt")
+	provider := newToolLoopProvider("write", func(types.Context) json.RawMessage {
+		data, _ := json.Marshal(map[string]any{"file_path": outsidePath, "content": "must not be written"})
+		return data
+	})
+	app := newProductionRuntime(t, provider, workspace, nil, nil)
+	mainID := session.IDFromPath(app.session.Path())
+	manager, err := app.SubagentManager(mainID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := manager.Spawn(t.Context(), subagent.SpawnConfig{SystemPrompt: "child", Scope: subagent.Scope{Paths: []string{"allowed"}}}, "spawn-call")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Send(t.Context(), info.ID, "write outside scope", true, "send-call"); err != nil {
+		t.Fatal(err)
+	}
+	firstCall := <-provider.calls
+	assertProductionTools(t, firstCall.Tools)
+	if requests := app.PendingApprovals(info.SessionID); len(requests) != 0 {
+		t.Fatalf("permission hook ran before subagent scope check: %+v", requests)
+	}
+	if _, err := os.Stat(outsidePath); !os.IsNotExist(err) {
+		t.Fatalf("out-of-scope Write changed the filesystem: %v", err)
+	}
+	snapshot, err := manager.Snapshot(info.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundScopeError := false
+	for _, message := range snapshot.Messages {
+		result, ok := message.Standard.(types.ToolResultMessage)
+		if ok && result.ToolName == "write" && result.IsError {
+			for _, block := range result.Content {
+				if text, ok := block.(types.TextBlock); ok && strings.Contains(text.Text, "outside the allowed scope") {
+					foundScopeError = true
+				}
+			}
+		}
+	}
+	if !foundScopeError {
+		t.Fatalf("subagent scope denial was not returned to the model: %+v", snapshot.Messages)
 	}
 }
 

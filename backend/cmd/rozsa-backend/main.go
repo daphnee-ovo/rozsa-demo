@@ -15,6 +15,7 @@ import (
 	"rozsa/backend/internal/app/auth"
 	"rozsa/backend/internal/app/bootstrap"
 	"rozsa/backend/internal/app/modelcatalog"
+	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/productsettings"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/session"
@@ -77,6 +78,10 @@ func main() {
 	settingsPaths := roots.SettingsPaths()
 	projectSettingsPath := settingsPaths[1]
 	settingsManager, err := settings.Load(settingsPaths[0], &projectSettingsPath, nil)
+	if err != nil {
+		fail(err.Error())
+	}
+	projectRuleStore, err := permissions.NewProjectRuleStore(settingsManager)
 	if err != nil {
 		fail(err.Error())
 	}
@@ -145,7 +150,7 @@ func main() {
 		app, initErr := runtime.New(runtime.Config{
 			SessionDir: writeDirectory, SessionDirs: catalogDirectories,
 			SessionService: sessions, ModelRegistry: registry, Credentials: authSource,
-			Model: model, ThinkingEffort: modeltypes.ThinkingEffort(thinkingEffort), ResolvedSettings: settingsManager.Resolved, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
+			Model: model, ThinkingEffort: modeltypes.ThinkingEffort(thinkingEffort), ResolvedSettings: settingsManager.Resolved, ProjectRuleStore: projectRuleStore, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
 			Skills: skillApplication, ResolveRoots: resolveRoots,
 		})
 		if initErr != nil {

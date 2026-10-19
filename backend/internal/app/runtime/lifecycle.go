@@ -7,23 +7,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/sessions"
 )
-
-// ApprovalRequests is the shared pending-request boundary consumed by tool and
-// transport slices; runtime cancellation cleans this same owner.
-type ApprovalRequests interface {
-	Add(permissions.Identity, permissions.ApprovalInfo) error
-	Get(permissions.Identity) (permissions.Request, bool)
-	Queue(string) []permissions.Request
-	BeginResponse(permissions.Identity, permissions.Response) error
-	FinishResponse(permissions.Identity, bool) error
-	Mark(permissions.Identity, permissions.RequestStatus) error
-}
-
-func (runtime *Runtime) ApprovalOwner() ApprovalRequests { return runtime.approvals }
 
 func (runtime *Runtime) SessionStatus() sessions.Snapshot { return runtime.lifecycle.Snapshot() }
 

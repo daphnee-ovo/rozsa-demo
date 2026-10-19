@@ -30,6 +30,7 @@ import (
 	"rozsa/backend/internal/app/subagent"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
+	"rozsa/backend/internal/core/tools"
 	"rozsa/backend/internal/model/types"
 	"rozsa/backend/internal/platform/configpaths"
 )
@@ -43,6 +44,7 @@ type Config struct {
 	Model            types.Model
 	ThinkingEffort   types.ThinkingEffort
 	ResolvedSettings func() map[string]any
+	ProjectRuleStore permissions.ProjectRuleStore
 	Skills           skills.Application
 	ResolveRoots     func(string) (configpaths.Roots, error)
 	APIKey           string
@@ -54,28 +56,29 @@ type Config struct {
 
 // Runtime composes providers and persistence with a session lifecycle owner.
 type Runtime struct {
-	mu               sync.Mutex
-	session          *session.Manager
-	service          *session.Service
-	modelRegistry    modelregistry.Reader
-	credentialSource modelcatalog.CredentialSource
-	model            types.Model
-	thinkingEffort   types.ThinkingEffort
-	resolvedSettings func() map[string]any
-	skills           skills.Application
-	resolveRoots     func(string) (configpaths.Roots, error)
-	provider         agent.Provider
-	authPath         string
-	questions        *questions.Owner
-	approvals        *permissions.Owner
-	lifecycle        sessions.Owner
-	sessionDir       string
-	outputMu         sync.Mutex
-	output           io.Writer
-	revision         uint64
-	messages         *messageOperations
-	conversations    map[string]*conversation
-	closing          bool
+	mu                sync.Mutex
+	session           *session.Manager
+	service           *session.Service
+	modelRegistry     modelregistry.Reader
+	credentialSource  modelcatalog.CredentialSource
+	model             types.Model
+	thinkingEffort    types.ThinkingEffort
+	resolvedSettings  func() map[string]any
+	skills            skills.Application
+	resolveRoots      func(string) (configpaths.Roots, error)
+	provider          agent.Provider
+	authPath          string
+	questions         *questions.Owner
+	approvals         *permissions.Owner
+	permissionRuntime *permissionRuntime
+	lifecycle         sessions.Owner
+	sessionDir        string
+	outputMu          sync.Mutex
+	output            io.Writer
+	revision          uint64
+	messages          *messageOperations
+	conversations     map[string]*conversation
+	closing           bool
 
 	subagents      map[string]subagent.Manager
 	subagentEvents map[string][]subagent.Event
@@ -126,11 +129,11 @@ func New(config Config) (*Runtime, error) {
 	if effort == "" || !config.Model.SupportsThinking(effort) {
 		effort = types.ThinkingOff
 	}
-	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, modelRegistry: config.ModelRegistry, credentialSource: config.Credentials, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, skills: config.Skills, resolveRoots: config.ResolveRoots, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), messages: newMessageOperations()}
+	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, modelRegistry: config.ModelRegistry, credentialSource: config.Credentials, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, skills: config.Skills, resolveRoots: config.ResolveRoots, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), permissionRuntime: newPermissionRuntime(config.ProjectRuleStore), messages: newMessageOperations()}
 	lifecycleHooks := config.LifecycleHooks
 	rejectApprovals, cancelQuestions := lifecycleHooks.RejectApprovals, lifecycleHooks.CancelQuestions
 	lifecycleHooks.RejectApprovals = func(id string) error {
-		runtime.approvals.CloseSession(id)
+		runtime.closeApprovalSession(id)
 		if rejectApprovals != nil {
 			return rejectApprovals(id)
 		}
@@ -377,7 +380,8 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 	if prompt == nil && len(contextMessages) == 0 {
 		return errors.New("No previous session found to continue")
 	}
-	input := hooks.AgentContext{SystemPrompt: systemPrompt, Messages: toHookMessages(contextMessages)}
+	registeredTools := runtime.applicationToolsFor(session.IDFromPath(manager.Path()), manager)
+	input := hooks.AgentContext{SystemPrompt: systemPrompt, Messages: toHookMessages(contextMessages), Tools: tools.Metadata(registeredTools)}
 	if enabled, _ := settings["blockImages"].(bool); enabled {
 		input.Messages = withoutImages(input.Messages)
 	}
@@ -387,7 +391,8 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 	config := agent.Config{Model: model, Provider: provider,
 		StreamOptions: types.SimpleStreamOptions{Base: types.StreamOptions{SessionID: stringPointer(manager.SessionID()), Headers: model.Headers}},
 		ConvertToLLM:  func(messages []hooks.Message) []types.Message { return toModelMessages(messages) },
-		Tools:         runtime.applicationTools(session.IDFromPath(manager.Path())),
+		Tools:         registeredTools,
+		PreToolUse:    runtime.permissionHook(session.IDFromPath(manager.Path()), manager.Cwd()),
 		GetSteeringMessages: func() []hooks.Message {
 			var messages []hooks.Message
 			for _, text := range execution.TakeSteering() {

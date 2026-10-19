@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 
+	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/sessions"
 	"rozsa/backend/internal/app/subagent"
 	subagenttool "rozsa/backend/internal/app/tools/subagent"
+	"rozsa/backend/internal/core/hooks"
 	"rozsa/backend/internal/core/tools"
 )
 
@@ -42,13 +44,16 @@ func (runtime *Runtime) SubagentManager(sessionID string) (subagent.Manager, err
 			return nil, err
 		}
 	}
-	manager, err := subagent.New(subagent.Config{SessionDir: runtime.sessionDir, MainSessionUUID: writer.SessionID(), MainSessionFile: writer.Path(), Cwd: writer.Cwd(), Model: runtime.model, Provider: runtime.provider,
+	permissionRoot := writer.Cwd()
+	manager, err := subagent.New(subagent.Config{SessionDir: runtime.sessionDir, MainSessionUUID: writer.SessionID(), MainSessionFile: writer.Path(), Cwd: permissionRoot, Model: runtime.model, Provider: runtime.provider,
 		ToSessionMessage: toSessionMessage,
-		Tools: func(id string) []tools.Tool {
-			return []tools.Tool{askUserQuestionTool{sessionID: id, owner: runtime.questions}}
+		Tools: func(id string, sessionWriter *session.Manager) []tools.Tool {
+			registered := newProductionTools(sessionWriter)
+			return append(registered, askUserQuestionTool{sessionID: id, owner: runtime.questions})
 		},
+		PermissionHook: func(id string) hooks.PreToolUse { return runtime.permissionHook(id, permissionRoot) },
 		LifecycleHooks: sessions.Hooks{
-			RejectApprovals: func(id string) error { runtime.approvals.CloseSession(id); return nil },
+			RejectApprovals: runtime.closeApprovalSession,
 			CancelQuestions: func(id string) error { runtime.questions.CancelSession(id); return nil },
 		},
 		Emit: func(event subagent.Event) {

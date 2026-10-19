@@ -80,12 +80,14 @@ const (
 	AllowSession
 	Deny
 	DenyWithHint
+	AllowProject
 )
 
 type Response struct {
-	Kind     ResponseKind
-	TrustKey string
-	Hint     string
+	Kind      ResponseKind
+	TrustKey  string
+	TrustKeys []string
+	Hint      string
 }
 
 type Rules struct {
@@ -170,7 +172,21 @@ func (p *policy) ApplyResponse(sessionID string, response Response) error {
 	case AllowOnce, Deny, DenyWithHint:
 		return nil
 	case AllowSession:
-		return p.recordSessionApproval(sessionID, response.TrustKey)
+		trustKeys := response.TrustKeys
+		if len(trustKeys) == 0 && response.TrustKey != "" {
+			trustKeys = []string{response.TrustKey}
+		}
+		if len(trustKeys) == 0 {
+			return fmt.Errorf("session approval requires a trust scope")
+		}
+		for _, trustKey := range trustKeys {
+			if err := p.recordSessionApproval(sessionID, trustKey); err != nil {
+				return err
+			}
+		}
+		return nil
+	case AllowProject:
+		return fmt.Errorf("project approval requires a project settings store")
 	default:
 		return fmt.Errorf("unsupported permission response kind: %d", response.Kind)
 	}

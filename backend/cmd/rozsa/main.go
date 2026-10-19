@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"rozsa/backend/internal/app/bootstrap"
+	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/skills"
@@ -48,6 +49,10 @@ func main() {
 	if err != nil {
 		fail(err.Error(), 1)
 	}
+	projectRuleStore, err := permissions.NewProjectRuleStore(settingsManager)
+	if err != nil {
+		fail(err.Error(), 1)
+	}
 	resolveRoots := func(projectDir string) (configpaths.Roots, error) { return configpaths.Discover(projectDir) }
 	skillApplication := skills.NewApplication(settingsManager, resolveRoots, nil)
 	model, configuredKey, authPath, err := bootstrap.ConfiguredModel(providerID, modelID)
@@ -62,7 +67,7 @@ func main() {
 	}
 	app, err := runtime.New(runtime.Config{
 		SessionDir: sessionDir, Model: model, APIKey: apiKey, AuthPath: authPath, Output: os.Stdout,
-		ResolvedSettings: settingsManager.Resolved, Skills: skillApplication, ResolveRoots: resolveRoots,
+		ResolvedSettings: settingsManager.Resolved, ProjectRuleStore: projectRuleStore, Skills: skillApplication, ResolveRoots: resolveRoots,
 	})
 	if err != nil {
 		fail(err.Error(), 1)

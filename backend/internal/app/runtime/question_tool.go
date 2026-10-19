@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"rozsa/backend/internal/app/questions"
+	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/core/tools"
 	"rozsa/backend/internal/model/types"
 )
@@ -19,7 +20,16 @@ type askUserQuestionTool struct {
 }
 
 func (runtime *Runtime) applicationTools(sessionID string) []tools.Tool {
-	return []tools.Tool{askUserQuestionTool{sessionID: sessionID, owner: runtime.questions}, runtime.subagentTool(sessionID)}
+	runtime.mu.Lock()
+	manager := runtime.session
+	runtime.mu.Unlock()
+	return runtime.applicationToolsFor(sessionID, manager)
+}
+
+func (runtime *Runtime) applicationToolsFor(sessionID string, manager *session.Manager) []tools.Tool {
+	registered := newProductionTools(manager)
+	registered = append(registered, askUserQuestionTool{sessionID: sessionID, owner: runtime.questions}, runtime.subagentTool(sessionID))
+	return registered
 }
 
 func (tool askUserQuestionTool) Name() string  { return askUserQuestionName }

@@ -65,7 +65,7 @@ type Config struct {
 	Model                                             types.Model
 	ThinkingEffort                                    types.ThinkingEffort
 	Provider                                          agent.Provider
-	Tools                                             func(string) []tools.Tool
+	Tools                                             func(string, *session.Manager) []tools.Tool
 	DisabledTools                                     map[string]bool
 	PermissionHook                                    func(string) hooks.PreToolUse
 	ToSessionMessage                                  func(hooks.Message) (session.Message, bool)
@@ -196,7 +196,7 @@ func (manager *manager) Spawn(ctx context.Context, config SpawnConfig, callID st
 	info := Info{ID: id, Name: config.Name, Status: Idle, ModelID: model.ID, ModelProvider: model.Provider, ThinkingEffort: effort, CreatedAt: now, LastActivityAt: now, SessionFile: sessionFile, SessionID: session.IDFromPath(path)}
 	var available []tools.Tool
 	if manager.config.Tools != nil {
-		for _, tool := range manager.config.Tools(info.SessionID) {
+		for _, tool := range manager.config.Tools(info.SessionID, writer) {
 			if tool.Name() != "subagent" && !manager.config.DisabledTools[tool.Name()] && config.Scope.Allows(tool.Name()) {
 				available = append(available, tool)
 			}
