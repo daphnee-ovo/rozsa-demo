@@ -18,13 +18,13 @@ html[data-theme-translucent-sidebar="true"] [data-od-id="app-body"] {
 html[data-theme-translucent-sidebar="true"] [data-od-id="sidebar"] {
   background: var(--sidebar-vibrancy-tint);
 }
-html[data-theme-translucent-sidebar="true"] body.macos-host [data-od-id="sidebar"],
-html[data-theme-translucent-sidebar="true"] .settings-tabs {
+html body [data-od-id="app-body"] > [data-od-id="sidebar"],
+html .settings-tabs {
   z-index: 0;
   box-shadow: none;
 }
-html[data-theme-translucent-sidebar="true"] [data-od-id="main-panel"],
-html[data-theme-translucent-sidebar="true"] .settings-content {
+html [data-od-id="main-panel"],
+html .settings-content {
   position: relative;
   z-index: 1;
   box-shadow: -8px 0 28px -8px color-mix(in oklch, var(--fg) 18%, transparent);
@@ -32,8 +32,8 @@ html[data-theme-translucent-sidebar="true"] .settings-content {
 html[data-theme-translucent-sidebar="true"][data-theme-mode="dark"] body {
   --sidebar-vibrancy-tint: color-mix(in oklch, var(--sidebar-bg) 58%, transparent);
 }
-html[data-theme-translucent-sidebar="true"][data-theme-mode="dark"] [data-od-id="main-panel"],
-html[data-theme-translucent-sidebar="true"][data-theme-mode="dark"] .settings-content {
+html[data-theme-mode="dark"] [data-od-id="main-panel"],
+html[data-theme-mode="dark"] .settings-content {
   box-shadow: none;
 }
 html[data-theme-translucent-sidebar="true"] .settings-panel,

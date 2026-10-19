@@ -79,6 +79,17 @@ try {
     assert.equal(await page.evaluate(`saveSetting('appearance_theme_mode','${mode}')`), true);
     assert.equal(await page.evaluate("saveSetting('appearance_translucent_sidebar','false')"), true);
     const mainBackground = await page.evaluate("getComputedStyle(document.querySelector('#mainContentScene')).backgroundColor");
+    const opaque = await page.evaluate(`(()=>{
+      const sidebar=getComputedStyle(document.querySelector('[data-od-id=sidebar]')),main=getComputedStyle(document.querySelector('#mainContentScene'));
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const context=canvas.getContext('2d');context.fillStyle=sidebar.backgroundColor;context.fillRect(0,0,1,1);
+      return {sidebarShadow:sidebar.boxShadow,mainShadow:main.boxShadow,sidebarZ:Number(sidebar.zIndex),mainZ:Number(main.zIndex),alpha:context.getImageData(0,0,1,1).data[3]};
+    })()`);
+    assert.equal(opaque.sidebarShadow, 'none', `${mode} opaque sidebar must use the shared layer rules`);
+    assert.ok(opaque.sidebarZ < opaque.mainZ, 'opaque main panel must be above the sidebar');
+    assert.equal(opaque.alpha, 255, 'disabled translucency must remain fully opaque');
+    if (mode === 'dark') assert.equal(opaque.mainShadow, 'none');
+    else assert.notEqual(opaque.mainShadow, 'none');
+    await screenshot(mode + '-opaque-sidebar');
     assert.equal(await page.evaluate("saveSetting('appearance_translucent_sidebar','true')"), true);
     assert.equal(await page.evaluate("getComputedStyle(document.querySelector('#mainContentScene')).backgroundColor"), mainBackground, 'sidebar translucency must preserve the main theme');
     assert.ok(await page.evaluate(`(()=>{const s=document.querySelector('[data-od-id=sidebar]'),r=s.getBoundingClientRect(),body=getComputedStyle(document.body);return r.top===0&&Math.abs(r.bottom-innerHeight)<1&&getComputedStyle(document.querySelector('[data-od-id=app-body]')).backgroundColor==='rgba(0, 0, 0, 0)'&&body.backgroundImage==='none'&&body.backgroundColor==='rgba(0, 0, 0, 0)'})()`), 'no opaque gradient may crop the native sidebar material');

@@ -168,7 +168,7 @@ try {
         sidebarToggleVisible: !!toggle && getComputedStyle(toggle).display !== 'none',
         sidebarToggleSharesMainHeaderRow: !!toggle && toggle.getBoundingClientRect().top === header.top,
         sidebarHeaderStartsWithWindow: sidebarHeader.top === 0,
-        sidebarHasSoftCastShadow: !shadow.includes('inset') && shadow.includes('px'),
+        sidebarHasNoCastShadow: shadow === 'none',
         mainHeaderKeepsGlassTreatment: headerStyle.backdropFilter !== 'none' && headerStyle.boxShadow !== 'none',
       };
     })()`);
@@ -177,7 +177,7 @@ try {
       sidebarToggleVisible: true,
       sidebarToggleSharesMainHeaderRow: true,
       sidebarHeaderStartsWithWindow: true,
-      sidebarHasSoftCastShadow: true,
+      sidebarHasNoCastShadow: true,
       mainHeaderKeepsGlassTreatment: true,
     });
     const sidebarSetup = await evaluate(`(() => {
