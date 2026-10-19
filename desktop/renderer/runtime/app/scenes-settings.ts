@@ -357,6 +357,7 @@ function toggleSettings() {
   if (panel.classList.contains('visible')) {
     closeSettings();
   } else {
+    document.querySelector('[data-od-id="app-body"]')?.setAttribute('inert', '');
     document.body.classList.add('settings-visible');
     panel.classList.add('visible');
     panel.classList.toggle('settings-sidebar-collapsed', isSidebarCollapsed());
@@ -373,6 +374,7 @@ function closeSettings() {
   }
   const panel = document.getElementById('settingsPanel');
   document.body.classList.remove('settings-visible');
+  document.querySelector('[data-od-id="app-body"]')?.removeAttribute('inert');
   if (panel) panel.classList.remove('visible');
   syncChromeBackgroundGeometry();
 }

@@ -104,6 +104,20 @@ try {
     if (mode === 'light') { lightTintAlpha = layers.alpha; assert.notEqual(layers.mainShadow, 'none'); }
     else { assert.equal(layers.mainShadow, 'none'); assert.ok(layers.alpha < lightTintAlpha && layers.alpha > 0.5, 'dark material must be more transparent while retaining theme tint'); }
     await screenshot(mode + "-sidebar");
+    for (const translucent of [true, false]) {
+      assert.equal(await page.evaluate(`saveSetting('appearance_translucent_sidebar','${translucent}')`), true);
+      const activeSession = await page.evaluate("document.querySelector('#sessionList .session-item.active')?.textContent");
+      await page.evaluate("toggleSettings()");
+      await page.waitFor("document.querySelector('#settingsPanel.visible .settings-tab') && document.body.classList.contains('settings-visible')", "settings scene");
+      assert.ok(await page.evaluate(`(()=>{const app=document.querySelector('[data-od-id=app-body]');return getComputedStyle(app).contentVisibility==='hidden' && app.inert})()`), 'settings must replace the main scene, including descendants with explicit visibility');
+      assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.settings-dialog'),'::before').webkitAppRegion"), 'drag', 'settings titlebar must drag the native window');
+      assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.settings-tab')).webkitAppRegion"), 'no-drag', 'settings navigation must remain clickable');
+      await screenshot(`${mode}-settings-${translucent ? 'translucent' : 'opaque'}`);
+      await click('.settings-back');
+      await page.waitFor("!!document.querySelector('.md-mermaid svg.pele')", 'diagram restored after settings');
+      assert.ok(await page.evaluate(`(()=>{const app=document.querySelector('[data-od-id=app-body]');return app.getClientRects().length>0 && !app.inert})()`), 'returning must restore the main scene');
+      assert.equal(await page.evaluate("document.querySelector('#sessionList .session-item.active')?.textContent"), activeSession, 'returning must preserve the selected session');
+    }
   }
   console.log(`Native layout, sidebar and Mermaid checks passed; screenshots: ${environment.base}`);
 } catch (error) {

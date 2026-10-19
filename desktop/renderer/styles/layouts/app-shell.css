@@ -14,7 +14,8 @@
 body.native-fullscreen { --native-titlebar-offset: 0px; }
 body.native-split-main [data-od-id="app-body"] { padding-top: 0; }
 [data-native-scene-root][hidden] { display: none !important; }
-body.settings-visible [data-od-id="app-body"] { visibility: hidden; }
+/* Skip the inactive scene's subtree without resizing live diagram canvases. */
+body.settings-visible [data-od-id="app-body"] { content-visibility: hidden; }
 #nativeGuiInteractionLayer,
 #nativeSidebarEdgeTrigger { position: fixed; pointer-events: none; }
 

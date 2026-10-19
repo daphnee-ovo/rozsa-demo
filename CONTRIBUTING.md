@@ -240,7 +240,8 @@ messages; ordinary test suites do not run this workload.
 Run `npm --prefix desktop/tests exec -- tsx desktop/tests/native-layout.test.ts`
 after building the desktop app to check viewport coverage at multiple UI scales,
 sidebar collapse/reopen, Mermaid source/diagram switching, Lucide controls,
-the in-app diagram viewer, PNG export and disabled double-click zoom. It uses
+the in-app diagram viewer, PNG export, disabled double-click zoom, and Settings
+scene replacement/return with native titlebar drag regions. It uses
 isolated session/config directories, saves light/dark sidebar screenshots and
 closes its own instance.
 On macOS the sidebar uses the native material behind a transparent window and
