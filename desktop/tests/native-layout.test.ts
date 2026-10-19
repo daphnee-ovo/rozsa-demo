@@ -45,9 +45,7 @@ try {
   assert.equal(await page.evaluate("saveSetting('appearance_font_size','14')"), true);
   await page.waitFor("document.querySelectorAll('.md-mermaid-actions .pele-zoom button svg.lucide').length===3", "Lucide native zoom controls");
   assert.ok(await page.evaluate(`(()=>{const buttons=[document.querySelector('[aria-label="Show source"]'),document.querySelector('[aria-label="Zoom in"]')];return ['width','height','border','borderRadius','backgroundColor'].every(property=>getComputedStyle(buttons[0])[property]===getComputedStyle(buttons[1])[property])})()`));
-  const chart = await page.evaluate("document.querySelector('.md-mermaid svg.pele').getAttribute('viewBox')");
-  await page.evaluate("document.querySelector('.md-mermaid svg.pele').dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true}))");
-  assert.equal(await page.evaluate("document.querySelector('.md-mermaid svg.pele').getAttribute('viewBox')"), chart);
+  assert.ok(await page.evaluate(`(()=>{const svg=document.querySelector('.md-mermaid svg.pele'),before=svg.getAttribute('viewBox');svg.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true}));return svg.getAttribute('viewBox')===before})()`), 'double-click must not zoom');
   await click('[aria-label="Show source"]');
   await page.waitFor("!!document.querySelector('.md-mermaid-source')", "source view");
   assert.ok(await page.evaluate("!document.querySelector('.md-mermaid svg') && document.querySelector('.md-mermaid-return').nextElementSibling.matches('.md-copy')"));
@@ -76,6 +74,7 @@ try {
   // Exercise the real native appearance setting, including its CSS projection.
   assert.equal(await page.evaluate("saveSetting('appearance_translucent_sidebar','true')"), true);
   await page.waitFor("document.documentElement.dataset.themeTranslucentSidebar==='true'", "native material enabled");
+  let lightTintAlpha;
   for (const mode of ["light", "dark"]) {
     assert.equal(await page.evaluate(`saveSetting('appearance_theme_mode','${mode}')`), true);
     assert.equal(await page.evaluate("saveSetting('appearance_translucent_sidebar','false')"), true);
@@ -83,14 +82,16 @@ try {
     assert.equal(await page.evaluate("saveSetting('appearance_translucent_sidebar','true')"), true);
     assert.equal(await page.evaluate("getComputedStyle(document.querySelector('#mainContentScene')).backgroundColor"), mainBackground, 'sidebar translucency must preserve the main theme');
     assert.ok(await page.evaluate(`(()=>{const s=document.querySelector('[data-od-id=sidebar]'),r=s.getBoundingClientRect(),body=getComputedStyle(document.body);return r.top===0&&Math.abs(r.bottom-innerHeight)<1&&getComputedStyle(document.querySelector('[data-od-id=app-body]')).backgroundColor==='rgba(0, 0, 0, 0)'&&body.backgroundImage==='none'&&body.backgroundColor==='rgba(0, 0, 0, 0)'})()`), 'no opaque gradient may crop the native sidebar material');
-    const tintContrast = await page.evaluate(`(()=>{
+    const layers = await page.evaluate(`(()=>{
       const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const context=canvas.getContext('2d');
-      const pixel=color=>{context.clearRect(0,0,1,1);context.fillStyle=color;context.fillRect(0,0,1,1);return [...context.getImageData(0,0,1,1).data]};
-      const root=getComputedStyle(document.documentElement), tint=pixel(getComputedStyle(document.querySelector('[data-od-id=sidebar]')).backgroundColor), background=pixel(root.getPropertyValue('--sidebar-bg'));
-      // Even over a white native material, the tint must stay close to the theme.
-      return Math.max(...background.slice(0,3).map((value,index)=>Math.abs(tint[index]*(tint[3]/255)+255*(1-tint[3]/255)-value)));
+      const sidebar=getComputedStyle(document.querySelector('[data-od-id=sidebar]')),main=getComputedStyle(document.querySelector('#mainContentScene'));
+      context.fillStyle=sidebar.backgroundColor;context.fillRect(0,0,1,1);
+      return {sidebarShadow:sidebar.boxShadow,mainShadow:main.boxShadow,sidebarZ:Number(sidebar.zIndex),mainZ:Number(main.zIndex),alpha:context.getImageData(0,0,1,1).data[3]/255};
     })()`);
-    assert.ok(tintContrast <= 20, `${mode} native material washes out the theme by ${tintContrast} RGB levels`);
+    assert.equal(layers.sidebarShadow, 'none');
+    assert.ok(layers.sidebarZ < layers.mainZ, 'main panel must be above the sidebar');
+    if (mode === 'light') { lightTintAlpha = layers.alpha; assert.notEqual(layers.mainShadow, 'none'); }
+    else { assert.equal(layers.mainShadow, 'none'); assert.ok(layers.alpha < lightTintAlpha && layers.alpha > 0.5, 'dark material must be more transparent while retaining theme tint'); }
     await screenshot(mode + "-sidebar");
   }
   console.log(`Native layout, sidebar and Mermaid checks passed; screenshots: ${environment.base}`);

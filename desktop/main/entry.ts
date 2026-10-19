@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell } from "electron";
+import { app, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 import { BackendService } from "./backend-service.js";
@@ -80,7 +80,7 @@ void app.whenReady().then(async () => {
   startupMark("window-created");
   window.once("focus", () => startupMark("window-focused"));
   window.once("blur", () => startupMark("window-blurred"));
-  installSessionBridge(window, ipcMain, backend, pageURL, url => shell.openExternal(url));
+  installSessionBridge(window, ipcMain, backend, pageURL, url => shell.openExternal(url), mode => { nativeTheme.themeSource = mode; });
   installMessageBridge(window, ipcMain, backend, pageURL);
   window.show();
   startupMark("window-shown");

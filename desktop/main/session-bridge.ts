@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from "electron";
 import type { BackendService } from "./backend-service.js";
+import type { SettingsSnapshot } from "./session-contract.js";
 import { applySidebarVibrancy } from "./native-appearance.js";
 import { MODELS_CHANGED_CHANNEL } from "./session-contract.js";
 import { AUTH_LOGIN_CHANNEL, AUTH_INPUT_CHANNEL, AUTH_NEXT_CHANNEL, AUTH_CANCEL_CHANNEL, AUTH_LOGOUT_CHANNEL, oauthProvider } from "./session-contract.js";
@@ -7,7 +8,7 @@ import { SESSION_LIST_CHANNEL, SESSION_HISTORY_CHANNEL, SESSION_SUBSCRIBE_CHANNE
 
 // One trusted session page, one Go subscription. Navigation invalidates pending
 // delivery before a replacement renderer can subscribe; no product work replay.
-export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backend: BackendService, trustedURL: string, openBrowser?: (url: string) => Promise<void>): void {
+export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backend: BackendService, trustedURL: string, openBrowser?: (url: string) => Promise<void>, syncNativeTheme?: (mode: SettingsSnapshot["appearance"]["themeMode"]) => void): void {
   let generation = 0, revision = 0, current: string | undefined, disposed = false;
   const authOperations = new Set<string>();
   const detachModels = backend.onModelsChanged?.(update => {
@@ -116,18 +117,21 @@ export function installSessionBridge(window: BrowserWindow, ipc: IpcMain, backen
   settingsHandle(SETTINGS_GET_CHANNEL, 1, async scope => {
     if (!validScope(scope)) throw new Error("Invalid settings scope");
     const snapshot = await backend.getSettings(scope);
+    syncNativeTheme?.(snapshot.appearance.themeMode);
     applySidebarVibrancy(window, snapshot.appearance.translucentSidebar);
     return snapshot;
   });
   settingsHandle(SETTINGS_UPDATE_CHANNEL, 3, async (scope, key, value) => {
     if (!validScope(scope) || !validKey(key)) throw new Error("Invalid setting update");
     const snapshot = await backend.updateSetting(scope, key, value);
+    if (key === "appearance_theme_mode") syncNativeTheme?.(snapshot.appearance.themeMode);
     if (key === "appearance_translucent_sidebar") applySidebarVibrancy(window, snapshot.appearance.translucentSidebar);
     return snapshot;
   });
   settingsHandle(SETTINGS_RESET_CHANNEL, 2, async (scope, key) => {
     if (!validScope(scope) || !validKey(key)) throw new Error("Invalid setting reset");
     const snapshot = await backend.resetSetting(scope, key);
+    if (key === "appearance_theme_mode") syncNativeTheme?.(snapshot.appearance.themeMode);
     if (key === "appearance_translucent_sidebar") applySidebarVibrancy(window, snapshot.appearance.translucentSidebar);
     return snapshot;
   });

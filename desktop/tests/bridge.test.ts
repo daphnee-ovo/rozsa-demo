@@ -22,16 +22,27 @@ const settingsSnapshot: SettingsSnapshot = { scope: "global", settings: { appear
 function host(backend: Partial<BackendService>, openBrowser?: (url: string) => Promise<void>) {
   const url = "file:///synthetic/index.html", webContents = Object.assign(new EventEmitter(), { mainFrame: { url } });
   const vibrancyCalls: Array<string | null> = [];
+  const nativeThemeCalls: string[] = [];
   const window = Object.assign(new EventEmitter(), { webContents, isDestroyed: () => false, setVibrancy: (type: string | null) => vibrancyCalls.push(type) });
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<any>>();
   const ipc = { handle: (channel: string, handler: any) => { handlers.set(channel, handler); }, removeHandler: (channel: string) => handlers.delete(channel) };
-  installSessionBridge(window as unknown as BrowserWindow, ipc as unknown as IpcMain, backend as BackendService, url, openBrowser);
+  installSessionBridge(window as unknown as BrowserWindow, ipc as unknown as IpcMain, backend as BackendService, url, openBrowser, mode => nativeThemeCalls.push(mode));
   const event = { sender: webContents, senderFrame: webContents.mainFrame } as unknown as IpcMainInvokeEvent;
   const invoke = async (channel: string, ...args: unknown[]) => {
     const handler = handlers.get(channel); if (!handler) throw new Error("No handler"); return handler(event, ...args);
   };
-  return { window, webContents, handlers, event, invoke, vibrancyCalls, bridge: RozsaBridge.create(invoke) };
+  return { window, webContents, handlers, event, invoke, vibrancyCalls, nativeThemeCalls, bridge: RozsaBridge.create(invoke) };
 }
+
+test("native material follows application light, dark and system theme changes", async () => {
+  const snapshot = (mode: "light" | "dark" | "system") => ({ ...settingsSnapshot, appearance: { ...settingsSnapshot.appearance, themeMode: mode } });
+  const ui = host({ getSettings: async () => snapshot("light"), updateSetting: async () => snapshot("dark"), resetSetting: async () => snapshot("system") });
+  await ui.bridge.getSettings("global");
+  await ui.bridge.updateSetting("global", "appearance_theme_mode", "dark");
+  await ui.bridge.resetSetting("global", "appearance_theme_mode");
+  assert.deepEqual(ui.nativeThemeCalls, ["light", "dark", "system"]);
+  ui.window.emit("closed");
+});
 
 test("main rejects foreign senders, subframes, destinations and arity before dispatch", async () => {
   let calls = 0;

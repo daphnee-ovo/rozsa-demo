@@ -237,6 +237,10 @@ a dominant theme tint across the full pane; the conversation surface remains opa
 The native material is exposed by transparent shell backgrounds; each sidebar
 paints its own tint without a width-dependent background gradient that could
 crop the effect under UI scaling. The existing theme palette stays unchanged.
+With translucency enabled the main pane sits above the sidebar and casts the
+light-mode boundary shadow. Dark mode removes that boundary shadow and exposes
+more of the native material. Native light/dark appearance follows the app's
+theme setting so dark glass does not use the system's light material.
 Main/preload follow Forge's main.cjs/preload.cjs convention. Preload is a single
 sandbox bundle with Electron as the only external runtime require. Strict
 Bundler-resolution TS configs keep Node globals out of renderer and DOM out of
