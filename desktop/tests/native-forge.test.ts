@@ -249,7 +249,7 @@ try {
     assert.equal(surfaces.sidebar, surfaces.sidebarTint);
     assert.doesNotMatch(surfaces.main, /rgba?\(0, 0, 0, 0\)/);
     assert.equal(surfaces.sidebarFilter, "none");
-    assert.match(surfaces.sidebarTint, /\/\s*0?\.76\s*\)/, JSON.stringify(surfaces));
+    assert.match(surfaces.sidebarTint, /\/\s*0?\.92\s*\)/, JSON.stringify(surfaces));
     assert.ok(Math.abs(surfaces.mainLeft - surfaces.sidebarRight) <= 1, JSON.stringify(surfaces));
     const opaque = await evaluate(`(() => {
       document.documentElement.setAttribute('data-theme-translucent-sidebar', 'false');

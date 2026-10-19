@@ -78,7 +78,19 @@ try {
   await page.waitFor("document.documentElement.dataset.themeTranslucentSidebar==='true'", "native material enabled");
   for (const mode of ["light", "dark"]) {
     assert.equal(await page.evaluate(`saveSetting('appearance_theme_mode','${mode}')`), true);
-    assert.ok(await page.evaluate(`(()=>{const s=document.querySelector('[data-od-id=sidebar]'),r=s.getBoundingClientRect();return r.top===0&&Math.abs(r.bottom-innerHeight)<1&&getComputedStyle(s).backgroundColor.includes('0.76')&&getComputedStyle(document.querySelector('[data-od-id=app-body]')).backgroundColor==='rgba(0, 0, 0, 0)'})()`));
+    assert.equal(await page.evaluate("saveSetting('appearance_translucent_sidebar','false')"), true);
+    const mainBackground = await page.evaluate("getComputedStyle(document.querySelector('#mainContentScene')).backgroundColor");
+    assert.equal(await page.evaluate("saveSetting('appearance_translucent_sidebar','true')"), true);
+    assert.equal(await page.evaluate("getComputedStyle(document.querySelector('#mainContentScene')).backgroundColor"), mainBackground, 'sidebar translucency must preserve the main theme');
+    assert.ok(await page.evaluate(`(()=>{const s=document.querySelector('[data-od-id=sidebar]'),r=s.getBoundingClientRect(),body=getComputedStyle(document.body);return r.top===0&&Math.abs(r.bottom-innerHeight)<1&&getComputedStyle(document.querySelector('[data-od-id=app-body]')).backgroundColor==='rgba(0, 0, 0, 0)'&&body.backgroundImage==='none'&&body.backgroundColor==='rgba(0, 0, 0, 0)'})()`), 'no opaque gradient may crop the native sidebar material');
+    const tintContrast = await page.evaluate(`(()=>{
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const context=canvas.getContext('2d');
+      const pixel=color=>{context.clearRect(0,0,1,1);context.fillStyle=color;context.fillRect(0,0,1,1);return [...context.getImageData(0,0,1,1).data]};
+      const root=getComputedStyle(document.documentElement), tint=pixel(getComputedStyle(document.querySelector('[data-od-id=sidebar]')).backgroundColor), background=pixel(root.getPropertyValue('--sidebar-bg'));
+      // Even over a white native material, the tint must stay close to the theme.
+      return Math.max(...background.slice(0,3).map((value,index)=>Math.abs(tint[index]*(tint[3]/255)+255*(1-tint[3]/255)-value)));
+    })()`);
+    assert.ok(tintContrast <= 20, `${mode} native material washes out the theme by ${tintContrast} RGB levels`);
     await screenshot(mode + "-sidebar");
   }
   console.log(`Native layout, sidebar and Mermaid checks passed; screenshots: ${environment.base}`);

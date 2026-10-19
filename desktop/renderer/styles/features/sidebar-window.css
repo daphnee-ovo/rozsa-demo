@@ -9,12 +9,8 @@
   backdrop-filter: none;
 }
 html[data-theme-translucent-sidebar="true"] body {
-  --sidebar-vibrancy-tint: color-mix(in oklch, var(--sidebar-bg) 76%, transparent);
-  background: linear-gradient(
-    90deg,
-    transparent 0 var(--chrome-sidebar-boundary),
-    var(--bg) var(--chrome-sidebar-boundary) 100%
-  );
+  --sidebar-vibrancy-tint: color-mix(in oklch, var(--sidebar-bg) 92%, transparent);
+  background: transparent;
 }
 html[data-theme-translucent-sidebar="true"] [data-od-id="app-body"] {
   background: transparent;
@@ -22,8 +18,14 @@ html[data-theme-translucent-sidebar="true"] [data-od-id="app-body"] {
 html[data-theme-translucent-sidebar="true"] [data-od-id="sidebar"] {
   background: var(--sidebar-vibrancy-tint);
 }
+html[data-theme-translucent-sidebar="true"] .settings-panel,
+html[data-theme-translucent-sidebar="true"] .settings-dialog {
+  background: transparent;
+}
+html[data-theme-translucent-sidebar="true"] .settings-dialog { padding-top: 0; }
 html[data-theme-translucent-sidebar="true"] .settings-tabs {
   background: var(--sidebar-vibrancy-tint);
+  padding-top: var(--native-titlebar-offset);
 }
 [data-theme-translucent-sidebar="true"] [data-od-id="app-body"].sidebar-collapsed.sidebar-edge-visible > [data-od-id="sidebar"] {
   background: var(--bg);

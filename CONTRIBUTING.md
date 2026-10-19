@@ -234,6 +234,9 @@ isolated session/config directories, saves light/dark sidebar screenshots and
 closes its own instance.
 On macOS the sidebar uses the native material behind a transparent window and
 a dominant theme tint across the full pane; the conversation surface remains opaque.
+The native material is exposed by transparent shell backgrounds; each sidebar
+paints its own tint without a width-dependent background gradient that could
+crop the effect under UI scaling. The existing theme palette stays unchanged.
 Main/preload follow Forge's main.cjs/preload.cjs convention. Preload is a single
 sandbox bundle with Electron as the only external runtime require. Strict
 Bundler-resolution TS configs keep Node globals out of renderer and DOM out of
