@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Verify retained Rust/Tauri shared-UI behavior after source cleanup.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

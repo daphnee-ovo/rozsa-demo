@@ -67,7 +67,8 @@ bash devtools/test-desktop.sh
 Go dependencies and Electron/TypeScript/tsx/jsdom versions are defined by their module manifests and lockfiles. Use those files as the single source of version truth.
 
 Do not compile or launch the backend binary directly with `go build` or `go run`.
-Use `devtools/package-desktop.sh` when dependencies are installed, or
+Use `devtools/start-desktop.sh` to launch the development app,
+`devtools/package-desktop.sh` when dependencies are installed, or
 `devtools/build-desktop.sh` for a clean setup. The packaging flow updates
 `BUILTIN_SKILLS` in the embedded `backend/config.yaml` before Forge builds Go.
 Use `go test` for Go package tests.
@@ -97,7 +98,7 @@ dow 0.3.10 does not recognize the tsx TypeScript test runner.
 Launch against explicit synthetic directories in layer order:
 
 ```bash
-npm --prefix desktop start -- -- --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/global --session-dir /absolute/synthetic/project
+bash devtools/start-desktop.sh --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/global --session-dir /absolute/synthetic/project
 ```
 
 The renderer cannot supply paths or arbitrary IPC. No default user session or
@@ -168,7 +169,7 @@ scripts place temporary working files under project `tmp/`.
 
 ```bash
 bash devtools/build-desktop.sh
-npm --prefix desktop start -- -- --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/sessions
+bash devtools/start-desktop.sh --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/sessions
 bash devtools/package-desktop.sh
 bash devtools/package-desktop.sh make
 bash devtools/test-desktop.sh
@@ -179,9 +180,10 @@ the module manifests, packages the current tree and runs the `desktop/tests`
 behavior suite plus Go/resource checks. Run it from a tree containing the
 reviewed task changes and declared dependency inputs.
 
-Forge owns start/package. The trusted launcher runs electron-forge start;
-directly use `npm --prefix desktop start -- -- --session-dir /absolute/synthetic/sessions`
-Hooks first run the local strict noEmit typecheck and build
+Forge owns start/package. `start-desktop.sh` checks the required local tools and
+installed dependencies, updates the built-in skill configuration, forwards app
+arguments to `electron-forge start`, then Forge hooks run the local strict
+noEmit typecheck and build
 the host Go binary. Vite transpiles/bundles main, sandbox preload and
 renderer. There is no TS emit step or separate default build/watch chain.
 Run typecheck separately during TS editing: Vite does not check types on each

@@ -1,0 +1,25 @@
+# Development tools
+
+每个工具必须在文件开头简短说明用途；调用细节只在此处补充，避免在脚本与文档间重复堆积。
+
+## Electron + Go desktop
+
+- `start-desktop.sh`：生成内置技能配置，并通过 Forge/Vite 启动当前 Electron + Go Rózsa 调试应用。应用参数原样跟在脚本后，例如 `bash devtools/start-desktop.sh --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/sessions`。
+- `build-desktop.sh`：全新安装桌面依赖并生成当前主机的应用包；首次设置或依赖变更后使用。
+- `package-desktop.sh`：依赖已安装时生成应用包；传入 `make` 生成当前主机安装包，其余参数传给 Forge。
+- `test-desktop.sh`：运行 Electron + Go 跨语言验收，不启动完整 TEST phase。
+- `update-builtin-skills-config.mjs`：在桌面启动或打包前，把内置技能目录清单写入 backend 配置。
+
+## Retained Rust/Tauri checks and utilities
+
+- `deploy-test-app.sh`：构建、签名并启动一次性 macOS Rust/Tauri 测试应用。
+- `test-gui.sh`：运行 Rust/Tauri GUI 的 JavaScript 与 Rust 测试，可传 `--js` 或 `--rust` 缩小范围。
+- `test-shared-gui-acceptance.sh`：运行 Rust/Tauri 共享 GUI 验收目标。
+- `test-shared-ui-cleanup.sh`：验证共享 UI 源码清理后的 Rust/Tauri 行为。
+- `test-sidebar-dev-flow.sh`：运行侧栏与 Dev Flow 的聚焦行为检查。
+- `test-prompt-path.sh`：使用一次性本地 provider smoke-test Rust prompt path。
+- `fake-anthropic-server.py`：提供可控的 Anthropic Messages API 测试服务；通过 `uv run devtools/fake-anthropic-server.py` 启动。
+- `sync-codex-model-client-version.sh`：从官方 `openai/codex` tag 同步 models endpoint client version；传 `--check` 仅验证。
+- `sync-cargo-version.sh`：把 workspace Cargo 版本同步到指定版本；由 `/iterate` 调用，也可传入版本手动执行。
+- `guard-no-inline-test.sh`：Claude Code 写入前阻止在 Rust 生产源码内嵌测试。
+- `pre-commit-no-inline-test.sh`：提交前检查暂存 Rust 生产源码是否含内嵌测试。

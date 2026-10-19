@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run the combined Electron + Go desktop acceptance suite without entering TEST phase.
 set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"

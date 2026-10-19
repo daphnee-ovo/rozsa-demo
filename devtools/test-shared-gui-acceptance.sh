@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run the retained Rust/Tauri shared-GUI acceptance targets.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

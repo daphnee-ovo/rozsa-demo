@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run the retained Rust/Tauri GUI JavaScript and Rust test suites.
 set -euo pipefail
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"

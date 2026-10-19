@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Install desktop dependencies and produce a host Electron + Go package.
 set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"

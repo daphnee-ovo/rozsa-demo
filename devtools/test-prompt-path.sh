@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Smoke-test the Rust prompt path against a disposable local fake provider.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"

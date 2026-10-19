@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run focused retained Rust/Tauri sidebar and Dev Flow behavior checks.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

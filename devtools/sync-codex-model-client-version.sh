@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Sync the Codex models-endpoint client version from official openai/codex tags.
 
 set -euo pipefail
 

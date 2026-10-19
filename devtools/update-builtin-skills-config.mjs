@@ -1,3 +1,4 @@
+// Record bundled skill directory names in backend/config.yaml before desktop builds.
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
