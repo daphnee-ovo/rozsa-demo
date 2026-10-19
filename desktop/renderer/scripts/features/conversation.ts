@@ -48,9 +48,8 @@ export function messageFrame(role: ConversationRole, body: string, index: number
   if (role !== "user" && role !== "assistant") throw new TypeError("Unsupported conversation role");
   const hiddenIdentity = continuation && role === "assistant";
   const avatar = hiddenIdentity ? "" : '<div class="msg-avatar">' + (role === "user" ? "U" : "R") + "</div>";
-  const identity = hiddenIdentity ? "" : '<div class="msg-role">' + (role === "user" ? "You" : "Rozsa") + "</div>";
   return '<div class="msg msg-' + role + (continuation ? " msg-assistant-continuation" : "") +
-    '" data-od-id="message-' + index + '">' + avatar + '<div class="msg-body">' + identity +
+    '" data-od-id="message-' + index + '">' + avatar + '<div class="msg-body">' +
     '<div class="msg-content markdown-body">' + body + "</div></div></div>";
 }
 
@@ -77,7 +76,7 @@ export function thinkingMarkup(content: string, { expanded = true, active = fals
   return '<div class="thinking-block' + (expanded ? " expanded" : "") + (active ? " active" : "") + '">' +
     '<div class="thinking-header" role="button" tabindex="0" aria-expanded="' + String(expanded) + '">' +
     icon('<path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.7.66-1.22 1.18-1.75A6 6 0 1 0 7.73 12.25c.52.52 1 1.04 1.18 1.75Z"', "thinking-icon") +
-    '<span class="thinking-label">' + (active ? "THINKING" : "THINKED") + "</span>" +
+    '<span class="thinking-label">' + (active ? "THINKING" : "Thought") + "</span>" +
     (duration ? '<span class="thinking-duration">' + escapeDisplayText(duration) + "</span>" : "") +
     '<span class="thinking-chevron">' + icon('<path d="m9 18 6-6-6-6"/>') + "</span></div>" +
     '<div class="thinking-content"' + (active ? ' data-stream-cursor-target="thinking"' : "") +

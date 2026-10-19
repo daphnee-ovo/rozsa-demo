@@ -65,7 +65,7 @@ function Frame({ role, index, continuation, children }: {
   const hiddenIdentity = continuation && role === "assistant";
   return <div className={`msg msg-${role}${continuation ? " msg-assistant-continuation" : ""}`} data-od-id={`message-${index}`}>
     {hiddenIdentity ? null : <div className="msg-avatar">{role === "user" ? "U" : role === "system" ? "S" : "R"}</div>}
-    <div className="msg-body">{hiddenIdentity ? null : <div className="msg-role">{role === "user" ? "You" : role === "system" ? "System" : "Rozsa"}</div>}{children}</div>
+    <div className="msg-body">{children}</div>
   </div>;
 }
 
@@ -83,7 +83,7 @@ function ThinkingBlock({ text, entry }: { text: string; entry: ConversationEntry
       <svg className="lucide thinking-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.7.66-1.22 1.18-1.75A6 6 0 1 0 7.73 12.25c.52.52 1 1.04 1.18 1.75Z"/>
       </svg>
-      <span className="thinking-label">{active ? "THINKING" : "THINKED"}</span>
+      <span className="thinking-label">{active ? "THINKING" : "Thought"}</span>
       {entry.thinkingDuration ? <span className="thinking-duration">{entry.thinkingDuration}</span> : null}
       <span className="thinking-chevron"><svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span>
     </div>

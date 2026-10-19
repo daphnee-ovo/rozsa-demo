@@ -144,6 +144,7 @@ function MermaidDiagram({ source }: { source: string }) {
       if (!active) return;
       try {
         mounted.current = mount(element, source, {
+          fontSize: parseFloat(getComputedStyle(element).fontSize) || 16,
           zoom: { always: true, controls: true },
           onRender: () => {
             recordAdaptation();
