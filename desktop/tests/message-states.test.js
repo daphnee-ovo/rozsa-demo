@@ -60,7 +60,7 @@ test("React messages preserve user, assistant and system roles plus rich Markdow
     assert.equal(rows.length, 3, container.innerHTML);
     assert.match(rows[0].className, /msg-user/);
     assert.equal(rows[0].querySelector(".markdown-body")?.textContent, "用户你好");
-    assert.match(rows[1].querySelector(".msg-role")?.textContent || "", /Rozsa/);
+    assert.equal(rows[1].querySelector(".msg-role"), null, "assistant identity label is intentionally omitted");
     assert.ok(rows[1].querySelector(".md-code-block code")?.textContent.includes("const 答案 = 42;"));
     assert.equal(rows[1].querySelector(".md-copy")?.getAttribute("aria-label"), "Copy code");
     assert.ok(rows[1].querySelector(".md-table th")?.textContent.includes("名称"));
@@ -73,7 +73,7 @@ test("React messages preserve user, assistant and system roles plus rich Markdow
     assert.equal(image?.getAttribute("src"), "https://images.example.test/diagram.png");
     assert.ok(rows[1].textContent?.includes("界".repeat(300)));
     assert.match(rows[2].className, /msg-system/);
-    assert.equal(rows[2].querySelector(".msg-role")?.textContent, "System");
+    assert.equal(rows[2].querySelector(".msg-role"), null, "system identity label is intentionally omitted");
     assert.equal(rows[2].querySelector(".markdown-body")?.textContent, "系统提示");
 
     const policy = readFrontend("index.html").match(/Content-Security-Policy" content="([^"]+)"/)?.[1];
@@ -81,6 +81,29 @@ test("React messages preserve user, assistant and system roles plus rich Markdow
     assert.doesNotMatch(policy || "", /img-src[^;]*https:/);
     const css = readFrontend("styles/features/conversation.css");
     assert.match(css, /\.msg-content,\s*\.markdown-body[^}]*overflow-wrap:\s*anywhere/s);
+  });
+});
+
+test("user and assistant streaming Markdown highlights an open fence and commits the latest closed source", async () => {
+  await withMessageApp(async app => {
+    const container = app.document.getElementById("chatMessages");
+    const streaming = { kind: "standard", entryId: "highlight-stream", message: { role: "assistant", content: [{ type: "text", text: "```ts\nconst answer = 4" }] } };
+    app.window.__messages = [
+      { kind: "standard", entryId: "highlight-user", message: { role: "user", content: [{ type: "text", text: "```ts\nconst value = 1\n```" }] } },
+      streaming,
+    ];
+    await render(app, 'renderMessages(window.__messages, true, "session-highlight")');
+    assert.deepEqual(Array.from(container.querySelectorAll(".md-code-block code"), code => code.textContent?.trimEnd()), ["const value = 1", "const answer = 4"]);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    assert.ok(container.querySelectorAll(".md-code-block code")[1]?.querySelector("span"), "open fence should highlight before a closing fence arrives");
+
+    const complete = { ...streaming, message: { role: "assistant", content: [{ type: "text", text: "```ts\nconst answer = 42\n```" }] } };
+    app.window.__messages = [app.window.__messages[0], complete];
+    await render(app, 'renderMessages(window.__messages, false, "session-highlight")');
+    const assistantCode = container.querySelectorAll(".md-code-block code")[1];
+    assert.equal(assistantCode?.textContent?.trimEnd(), "const answer = 42");
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.ok(assistantCode?.querySelector("span"));
   });
 });
 

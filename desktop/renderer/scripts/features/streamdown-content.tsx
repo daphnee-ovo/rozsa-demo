@@ -1,10 +1,11 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createPortal } from "react-dom";
 import { CodeXml, Copy, Download, Maximize, Minimize, RotateCcw, Workflow, ZoomIn, ZoomOut } from "lucide-react";
 import { Streamdown, defaultComponents } from "streamdown";
 import type { Mounted } from "pele";
-import { completeMermaidFences } from "./markdown-renderer.tsx";
+import { completeMermaidFences, incompleteCodeFence } from "./markdown-renderer.tsx";
+import { HighlightedCode } from "../components/highlighted-code.tsx";
 
 function recordMarkdownStage(stage: "renderCommit" | "peleMount" | "peleAdapt", duration: number): void {
   const perf = window.__ROZSA_PERF__;
@@ -196,15 +197,24 @@ function MermaidDiagram({ source }: { source: string }) {
 }
 
 type StreamdownProps = ComponentProps<typeof Streamdown>;
-function createComponents(completeMermaid: ReadonlySet<string>, staticMarkup = false): StreamdownProps["components"] {
-  const Pre = ({ children, ...props }: ComponentProps<"pre">) => {
-    const child = React.Children.toArray(children)[0] as ReactElement<{ className?: string; children?: ReactNode }> | undefined;
-    const source = child ? codeText(child.props.children) : codeText(children);
-    const language = /(?:^|\s)language-([\w-]+)/.exec(child?.props.className || "")?.[1]?.toLowerCase() || "text";
-    if (language === "mermaid" && completeMermaid.has(normalizedCode(source))) return <MermaidDiagram source={source} />;
-    return <div className="md-code-block"><div className="md-code-head"><span className="md-code-lang">{language}</span><CopyButton source={source} staticMarkup={staticMarkup} /></div>
-      <pre {...props}><code className={child?.props.className}>{source}</code></pre></div>;
-  };
+const CompleteMermaidContext = createContext<ReadonlySet<string>>(new Set());
+const StaticMarkupContext = createContext(false);
+const IncompleteCodeContext = createContext<{ language: string; source: string } | undefined>(undefined);
+
+function MarkdownCodeBlock({ children, ...props }: ComponentProps<"pre">) {
+  const completeMermaid = useContext(CompleteMermaidContext);
+  const staticMarkup = useContext(StaticMarkupContext);
+  const incompleteCode = useContext(IncompleteCodeContext);
+  const child = React.Children.toArray(children)[0] as ReactElement<{ className?: string; children?: ReactNode }> | undefined;
+  const source = child ? codeText(child.props.children) : codeText(children);
+  const language = /(?:^|\s)language-([\w-]+)/.exec(child?.props.className || "")?.[1]?.toLowerCase() || "text";
+  const isIncomplete = incompleteCode?.language === language && incompleteCode.source === normalizedCode(source);
+  if (language === "mermaid" && completeMermaid.has(normalizedCode(source))) return <MermaidDiagram source={source} />;
+  return <div className="md-code-block"><div className="md-code-head"><span className="md-code-lang">{language}</span><CopyButton source={source} staticMarkup={staticMarkup} /></div>
+    <pre {...props}><HighlightedCode code={source} language={language} isIncomplete={isIncomplete} /></pre></div>;
+}
+
+const markdownComponents: StreamdownProps["components"] = (() => {
   const plain = (tag: "a" | "blockquote" | "code" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "hr" | "img" | "li" | "ol" | "p" | "section" | "strong" | "sub" | "sup" | "tbody" | "td" | "th" | "thead" | "tr" | "ul") => {
     const Element = tag;
     return function PlainMarkdownElement(props: { children?: ReactNode; node?: unknown; [key: string]: unknown }) {
@@ -220,21 +230,21 @@ function createComponents(completeMermaid: ReadonlySet<string>, staticMarkup = f
     strong: plain("strong"), sub: plain("sub"), sup: plain("sup"), tbody: plain("tbody"), td: plain("td"), th: plain("th"),
     thead: plain("thead"), tr: plain("tr"), ul: plain("ul"),
     table: ({ children, ...props }: ComponentProps<"table">) => <div className="md-table-wrap"><table className="md-table" {...props}>{children}</table></div>,
-    pre: Pre,
+    pre: MarkdownCodeBlock,
   } as unknown as StreamdownProps["components"];
-}
+})();
 
 export function StreamdownMessage({ value, active, cursor }: { value: string; active: boolean; cursor: boolean }) {
   const renderStartedAt = performance.now();
   const completeMermaid = useMemo(() => completeMermaidFences(value), [value]);
-  const components = useMemo(() => createComponents(completeMermaid), [completeMermaid]);
+  const incompleteCode = useMemo(() => incompleteCodeFence(value), [value]);
   useLayoutEffect(() => {
     recordMarkdownStage("renderCommit", Math.max(0, performance.now() - renderStartedAt));
   }, [value]);
-  return <>
-    <Streamdown className="markdown-streamdown" components={components} parseIncompleteMarkdown isAnimating={active} controls={false} skipHtml>{value}</Streamdown>
+  return <CompleteMermaidContext.Provider value={completeMermaid}><IncompleteCodeContext.Provider value={active ? incompleteCode : undefined}>
+    <Streamdown className="markdown-streamdown" components={markdownComponents} parseIncompleteMarkdown isAnimating={active} controls={false} skipHtml>{value}</Streamdown>
     {cursor ? <span className="stream-cursor">▌</span> : null}
-  </>;
+  </IncompleteCodeContext.Provider></CompleteMermaidContext.Provider>;
 }
 
 export function renderMarkdownStaticContent(source: string): string {
@@ -251,7 +261,7 @@ export function renderMarkdownStaticContent(source: string): string {
       }).catch(error => window.showError?.(`Could not copy code: ${String(error)}`));
     });
   }
-  const element = <Streamdown className="markdown-streamdown" components={createComponents(new Set(), true)} mode="static" parseIncompleteMarkdown={false} controls={false} skipHtml>{source}</Streamdown>;
+  const element = <StaticMarkupContext.Provider value><Streamdown className="markdown-streamdown" components={markdownComponents} mode="static" parseIncompleteMarkdown={false} controls={false} skipHtml>{source}</Streamdown></StaticMarkupContext.Provider>;
   return renderToStaticMarkup(element);
 }
 

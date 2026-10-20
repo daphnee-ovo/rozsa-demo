@@ -111,6 +111,8 @@ UI 功能按 TASK 所属切片迁移，不要求一次性重写整个 renderer�
 
 流式与历史消息更新按 session/message 粒度提交。已完成消息保持稳定身份，避免无关流式更新重复渲染或解析 Markdown；批量合并 UI 更新时保留业务事件顺序及 error/completed/canceled 终态。候选具备真实 Electron 链路后，按流式输出、长历史滚动和连续输入进行针对性性能观测，再依据观测选择优化。
 
+Markdown 消息代码块通过 `@streamdown/code` 的公开高亮接口共享配置、语言别名、按需语言加载和有界缓存。代码围栏打开期间即时显示最新源码并提交逐步高亮；异步结果只可更新仍匹配的代码与挂载实例。代码组件身份保持稳定，已完成消息继续由消息级 memoization 与 `react-virtual` 隔离普通流更新。审批 Bash、代码文件和 diff 后续复用同一入口，各消费者保留自身布局、复制和交互，不在此切片宣称已接入或验收。
+
 共享领域输入、command/result、事件变体用明确 interface/discriminated union；不把原有动态对象一律标成 any。TypeScript 类型不替代跨进程 payload 的运行时校验。只为当前功能建立 IPC 类型、Go struct/tag 和实际用例；以同一小输入验证字段与错误语义。后续切片增补自己的契约，不先建立全方法 schema 或通用生成器。
 
 TASK-T064 将本地 TypeScript compiler 设为默认工具链；TASK-T065 将默认开发/package 流程切换为 Electron Forge + Vite。严格类型检查与 bundling 分开；Forge 管理 start/package，Vite 构建 main/preload/renderer 资源。单 sandbox preload、Node/DOM 类型边界、共享 CSS/HTML 同源与无第二套 emit/watch 链属于已批准的设计约束。TASK-T060 先将共享前端源码与前端测试迁入 `desktop/renderer/` 和 `desktop/tests/`；TASK-T013 随后在最终目录转换 core/port 与原型 TS 装载。新原型与 Electron 共用 `desktop/renderer/` 资源。旧 Rust/Tauri 保有 `crates/rozsa-gui/frontend/`、crate 内 JS/Rust 测试及入口；其构建、运行和测试不得读取 desktop、backend 或新原型资源，也不依赖 Node/Vite。Electron+Go 同样不依赖旧工程源码、资源或生成产物。T014 负责 installer，平台任务负责发行验收。具体命令、依赖版本与产物路径见 CONTRIBUTING；真实验收及边界见 [M065](../../../docs/migration/evidence/M065.md)。

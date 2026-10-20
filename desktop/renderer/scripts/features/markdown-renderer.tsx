@@ -22,6 +22,23 @@ export function completeMermaidFences(markdown: string): Set<string> {
   return sources;
 }
 
+export function incompleteCodeFence(markdown: string): { language: string; source: string } | undefined {
+  let fence: { marker: "`" | "~"; length: number; language: string; lines: string[] } | undefined;
+  for (const line of markdown.replace(/\r\n/g, "\n").split("\n")) {
+    const trimmed = line.replace(/^ {0,3}/, "");
+    if (!fence) {
+      const open = /^(\`{3,}|~{3,})(.*)$/.exec(trimmed);
+      if (!open) continue;
+      fence = { marker: open[1]![0] as "`" | "~", length: open[1]!.length,
+        language: open[2]!.trim().split(/[\t ]+/, 1)[0]!.toLowerCase() || "text", lines: [] };
+      continue;
+    }
+    if (new RegExp(`^${fence.marker}{${fence.length},}[\\t ]*$`).test(trimmed)) fence = undefined;
+    else fence.lines.push(line);
+  }
+  return fence ? { language: fence.language, source: normalizedCode(fence.lines.join("\n")) } : undefined;
+}
+
 const StreamdownMessage = lazy(async () => {
   const module = await import("./streamdown-content.tsx");
   return { default: module.StreamdownMessage as ComponentType<{ value: string; active: boolean; cursor: boolean }> };

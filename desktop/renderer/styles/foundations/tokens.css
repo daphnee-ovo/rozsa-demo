@@ -28,6 +28,13 @@
   --user-bg: var(--accent-soft) !important;
   --code-bg: oklch(22% 0.024 55) !important;
   --code-border: oklch(34% 0.022 55) !important;
+  --code-syntax-base: #eee8de;
+  --code-syntax-comment: #b3a99a;
+  --code-syntax-keyword: #d9a7ae;
+  --code-syntax-string: #c5c49a;
+  --code-syntax-number: #c3ad91;
+  --code-syntax-function: #d3b6a0;
+  --code-syntax-type: #c4b9a8;
   --sidebar-bg: var(--bg) !important;
   --titlebar-bg: color-mix(in oklch, var(--surface) 88%, transparent) !important;
   --on-accent: oklch(98% 0.010 82) !important;
@@ -86,6 +93,13 @@ html[data-theme-mode="dark"] {
   --user-bg: var(--accent-soft) !important;
   --code-bg: oklch(14% 0.018 55) !important;
   --code-border: oklch(32% 0.022 55) !important;
+  --code-syntax-base: #e6dfd3;
+  --code-syntax-comment: #9e9588;
+  --code-syntax-keyword: #d49aa2;
+  --code-syntax-string: #b9b98f;
+  --code-syntax-number: #c5a98a;
+  --code-syntax-function: #cda991;
+  --code-syntax-type: #b9b0a3;
   --sidebar-bg: var(--bg) !important;
   --titlebar-bg: color-mix(in oklch, var(--surface) 88%, transparent) !important;
   --on-accent: oklch(24% 0.026 55) !important;

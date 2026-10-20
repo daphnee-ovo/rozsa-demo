@@ -452,6 +452,14 @@
     white-space: pre;
 }
 
+.md-highlighted-code span {
+    color: var(--code-token-light, inherit);
+}
+
+html[data-theme-mode="dark"] .md-highlighted-code span {
+    color: var(--code-token-dark, var(--code-token-light, inherit));
+}
+
 .code-line,
 .diff-line {
     display: flex;
