@@ -11,6 +11,7 @@ import { ProductClient } from "../renderer/product-client.ts";
 import { ProductFailure, remoteFault, validatedBridgeFault, bridgeFault } from "../../contracts/ipc/session.ts";
 import { historyReply, sessionReply, sessionSnapshot, type ProductBridge, type SessionSnapshot } from "../main/session-contract.ts";
 import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
+import { assertProductBridgeCapabilities } from "./helpers/bridge-capabilities.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
@@ -87,6 +88,7 @@ test("typed errors survive main, preload, and renderer without recategorizing", 
   ]) {
     const reply = { ok: false, error: fault };
     const bridge = RozsaBridge.create(async () => reply);
+    assertProductBridgeCapabilities(bridge, { events: false });
     const client = new ProductClient(bridge);
     await assert.rejects(() => client.getSessions(), error => error instanceof ProductFailure && JSON.stringify(error.failure) === JSON.stringify(fault));
     assert.deepEqual(bridgeFault(new ProductFailure(fault)), fault);
@@ -138,7 +140,9 @@ test("late rejected UI work is consumed, transport failures keep their type", as
 test("real backend typed errors remain usable; exit rejects without replay", async () => {
   const backend = new BackendService(binary, [], { env: backendEnvironment });
   try {
-    await assert.rejects(backend.getSessions(), error => error instanceof RPCFailure && error.remote.kind === "not_initialized");
+    await assert.rejects(backend.getSessions(), error => error instanceof ProductFailure
+      && error.failure.kind === "transport" && error.failure.reason === "protocol"
+      && error.message === "Backend initialize has not started");
     await backend.initialize();
     assert.deepEqual(await backend.getSessions(), []);
     await assert.rejects(backend.switchSession(target), error => error instanceof RPCFailure && error.remote.kind === "session");
@@ -152,6 +156,30 @@ test("real backend typed errors remain usable; exit rejects without replay", asy
   } finally { await brokenCatalog.stop(); }
 });
 
+test("Go reports not_initialized over JSON-RPC before initialize", { timeout: 15000 }, async () => {
+  const child = spawn(binary, ["--session-dir", writableSessions], { stdio: "pipe", env: { ...process.env, ...backendEnvironment } });
+  const reader = new StreamMessageReader(child.stdout), writer = new StreamMessageWriter(child.stdin);
+  type RpcResponse = { id: string; error?: { code: number; data?: { kind?: string } } };
+  const response = Promise.withResolvers<RpcResponse>();
+  const closed = new Promise<number | null>(resolve => child.once("close", resolve));
+  reader.listen(message => {
+    if (message && "id" in message && message.id === "before-init") response.resolve(message as RpcResponse);
+  });
+  try {
+    await writer.write({ jsonrpc: "2.0", id: "before-init", method: "get_sessions", params: {} } as Message);
+    const timer = setTimeout(() => response.reject(new Error("Missing not_initialized response")), 3000);
+    let result: RpcResponse;
+    try { result = await response.promise; } finally { clearTimeout(timer); }
+    assert.equal(result.id, "before-init");
+    assert.equal(result.error?.code, -32002);
+    assert.equal(result.error?.data?.kind, "not_initialized");
+    writer.end();
+    await closed;
+  } finally {
+    reader.dispose(); writer.dispose(); child.kill();
+  }
+});
+
 test("timeout, pipe exit and malformed typed error never resend an uncertain request", {skip:process.platform === "win32",timeout:20000}, async () => {
  for (const mode of ["timeout", "exit", "invalid-error"]) {
   const base = join(root,"tmp/session-contract-tests"); await mkdir(base,{recursive:true}); const dir = await mkdtemp(join(base,"timeout-"));
@@ -162,7 +190,7 @@ test("timeout, pipe exit and malformed typed error never resend an uncertain req
     `const {createMessageConnection,ResponseError}=require(${JSON.stringify(join(root,"desktop/node_modules/vscode-jsonrpc/lib/node/main.js"))});`,
     "const {appendFileSync}=require('node:fs');",
     "const conn=createMessageConnection(process.stdin,process.stdout);",
-    "conn.onRequest('initialize',()=>({protocolVersion:1,capabilities:['get_sessions','switch_session','subscribe_sessions','next_session_event','unsubscribe_sessions','runtime_status','start_message','continue_message','subscribe_message_events','next_message_event','unsubscribe_message_events','cancel_message','get_settings','update_setting','reset_setting','list_themes','get_theme','save_theme']}));",
+    "conn.onRequest('initialize',()=>({protocolVersion:1,capabilities:['get_sessions','switch_session','subscribe_sessions','next_session_event','unsubscribe_sessions','runtime_status','start_message','continue_message','subscribe_message_events','next_message_event','unsubscribe_message_events','cancel_message','get_interruption_state','respond_permission','respond_user_question','cancel_user_question','get_settings','autocomplete_input','update_setting','reset_setting','list_themes','get_theme','save_theme']}));",
     "conn.onRequest('shutdown',()=>true);",
     `conn.onRequest('get_sessions',()=>{appendFileSync(${JSON.stringify(marker)},'one\\n');${mode === "exit" ? "process.exit(0);" : mode === "invalid-error" ? "throw new ResponseError(-32001,'Missing product error kind');" : "return new Promise(()=>{});"}});`,
     "conn.listen(); console.error('synthetic ready');", "",

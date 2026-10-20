@@ -11,6 +11,7 @@ import type { SessionUpdate, SettingsSnapshot, ThemeDefinition } from "../../con
 import { setTimeout as delay } from "node:timers/promises";
 import { JSDOM } from "jsdom";
 import { SessionHistory } from "../renderer/features/session-history.ts";
+import { assertProductBridgeCapabilities, assertProductBridgeCapabilityKeys } from "./helpers/bridge-capabilities.ts";
 
 const target = { path: "/synthetic/a.jsonl", catalogId: "header-a" };
 const active: SessionSnapshot = { ...target, sessionId: "a", cwd: "/synthetic", messages: [], contextMessageCount: 0 };
@@ -101,10 +102,27 @@ test("navigation cancels OAuth and discards a pending authorization URL", async 
 
 test("settings and theme calls cross the trusted IPC bridge with runtime validation", async () => {
   const calls: unknown[][] = [];
+  let fontSize = 14;
+  const snapshotForScope = (scope: "global" | "project") => ({
+    ...settingsSnapshot,
+    scope,
+    settings: { appearance: { fontSize } },
+    appearance: { ...settingsSnapshot.appearance, fontSize },
+  });
   const ui = host({
-    getSettings: async scope => { calls.push(["get", scope]); return { ...settingsSnapshot, scope }; },
-    updateSetting: async (scope, key, value) => { calls.push(["update", scope, key, value]); return { ...settingsSnapshot, scope }; },
-    resetSetting: async (scope, key) => { calls.push(["reset", scope, key]); return { ...settingsSnapshot, scope }; },
+    getSettings: async scope => { calls.push(["get", scope]); return snapshotForScope(scope); },
+    updateSetting: async (scope, key, value) => {
+      if (key !== "appearance_font_size") throw new Error(`unknown setting: ${key}`);
+      fontSize = value as number;
+      calls.push(["update", scope, key, value]);
+      return snapshotForScope(scope);
+    },
+    resetSetting: async (scope, key) => {
+      if (key !== "appearance_font_size") throw new Error(`unknown setting: ${key}`);
+      fontSize = 14;
+      calls.push(["reset", scope, key]);
+      return snapshotForScope(scope);
+    },
     listThemes: async () => [
       { id: "rozsa", name: "Rozsa", mode: "light" }, { id: "rozsa-dark", name: "Rozsa Dark", mode: "dark" },
     ],
@@ -116,14 +134,17 @@ test("settings and theme calls cross the trusted IPC bridge with runtime validat
   await assert.rejects(settingsHandle(ui.event, "global", "extra"), /Unauthorized settings request/);
   await assert.rejects(ui.bridge.getSettings("local" as "global"), /Invalid settings scope/);
   assert.equal((await ui.bridge.getSettings("project")).scope, "project");
-  assert.equal((await ui.bridge.updateSetting("global", "appearance.fontSize", 18)).scope, "global");
-  assert.equal((await ui.bridge.resetSetting("project", "appearance.fontSize")).scope, "project");
+  await assert.rejects(ui.bridge.updateSetting("global", "appearance.fontSize", 18), /unknown setting: appearance\.fontSize/);
+  const updated = await ui.bridge.updateSetting("global", "appearance_font_size", 18);
+  assert.equal(updated.appearance.fontSize, 18);
+  const reset = await ui.bridge.resetSetting("project", "appearance_font_size");
+  assert.equal(reset.appearance.fontSize, 14);
   assert.deepEqual(await ui.bridge.listThemes("global"), [
     { id: "rozsa", name: "Rozsa", mode: "light" }, { id: "rozsa-dark", name: "Rozsa Dark", mode: "dark" },
   ]);
   assert.equal((await ui.bridge.getTheme("rozsa", "light")).id, "rozsa");
   await ui.bridge.saveTheme(lightTheme);
-  assert.deepEqual(calls, [["get", "project"], ["update", "global", "appearance.fontSize", 18], ["reset", "project", "appearance.fontSize"], ["save"]]);
+  assert.deepEqual(calls, [["get", "project"], ["update", "global", "appearance_font_size", 18], ["reset", "project", "appearance_font_size"], ["save"]]);
   ui.window.emit("closed");
 });
 
@@ -153,7 +174,14 @@ test("preload exposes validated session and message capabilities and rejects mal
   const calls: unknown[][] = [];
   const bridge = RozsaBridge.create(async (...args) => { calls.push(args); return { ok: true, update: snapshot("1") }; });
   assert.ok(Object.isFrozen(bridge));
-  assert.deepEqual(Object.keys(bridge), ["startAuth", "submitAuth", "nextAuthEvent", "cancelAuth", "logoutAuth", "getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage", "getSettings", "updateSetting", "resetSetting", "listThemes", "getTheme", "saveTheme"]);
+  assertProductBridgeCapabilities(bridge, { events: false });
+  assertProductBridgeCapabilities(RozsaBridge.create(async () => undefined, () => () => {}), { events: true });
+  const reorderedBridge = Object.fromEntries(Object.entries(bridge).reverse()) as typeof bridge;
+  assert.doesNotThrow(() => assertProductBridgeCapabilityKeys(Object.keys(reorderedBridge), { events: false }));
+  const missingCapability = Object.fromEntries(Object.entries(bridge).filter(([name]) => name !== "cancelMessage")) as typeof bridge;
+  assert.throws(() => assertProductBridgeCapabilityKeys(Object.keys(missingCapability), { events: false }), /exactly the approved product capabilities/);
+  const extraCapability = { ...bridge, arbitraryIPC: async () => undefined } as typeof bridge;
+  assert.throws(() => assertProductBridgeCapabilityKeys(Object.keys(extraCapability), { events: false }), /exactly the approved product capabilities/);
   await assert.rejects((bridge.subscribeSessions as Function)("arbitrary"));
   await assert.rejects((bridge.nextSessionEvent as Function)("1", "extra"));
   await assert.rejects((bridge.nextSessionEvent as Function)({ subscriptionId: "1" }));
