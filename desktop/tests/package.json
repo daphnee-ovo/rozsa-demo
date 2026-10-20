@@ -3,22 +3,27 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tsx --test *.test.js session-list.test.ts session-history.test.ts session-contract.test.ts bridge.test.ts lifecycle.test.ts",
-    "test:ui": "tsx --test *.test.js",
-    "test:performance": "node --test --test-concurrency=1 performance/message-performance.test.js performance/startup.test.js performance/stress.test.js",
-    "test:performance:calibrate": "ROZSA_PERF_CALIBRATION=1 ROZSA_PERF_ROUNDS=30 node --test --test-concurrency=1 performance/message-performance.test.js performance/startup.test.js performance/stress.test.js",
+    "test": "npm run test:ui && npm run test:process && npm run test:vitest && tsx --test --test-concurrency=1 session-message-routing.test.ts input-bridge.test.ts code-highlighter.test.ts native-appearance.test.ts",
+    "test:ui": "tsx --test --test-concurrency=1 agent-session-avatar.test.js approval-question-lifecycle.test.js conversation-components.test.js dev-flow-settings.test.js dev-flow-sidebar.test.js dev-flow-tool-presentation.test.js electron-product-entry.test.js error-notification-routing.test.js ime-input.test.js ime-runtime.test.js input-model.test.js message-states.test.js notification-position.test.js prototype-contract.test.js prototype-gallery.test.js shared-dev-flow.test.js shared-interruption.test.js shared-settings.test.js shared-sidebar.test.js shared-suspension.test.js shared-tools.test.js shared-ui-host-contract.test.js shared-ui-source.test.js shared-viewport.test.js",
+    "test:process": "tsx --test --test-concurrency=1 debug-sessions.test.js general-settings.test.js session-list.test.ts session-history.test.ts session-contract.test.ts bridge.test.ts lifecycle.test.ts",
+    "test:vitest": "vitest run --config vitest.config.ts",
+    "test:performance": "node --test --test-concurrency=1 performance/*.test.js",
+    "test:performance:calibrate": "ROZSA_PERF_CALIBRATION=1 ROZSA_PERF_ROUNDS=30 node --test --test-concurrency=1 performance/*.test.js",
     "test:sessions": "tsx run-session-tests.ts",
     "test:native": "tsx native-session-list.test.ts",
+    "test:native-lifecycle": "ROZSA_APPROVAL_NATIVE=1 tsx --test --test-concurrency=1 approval-question-lifecycle*.test.js",
     "test:session-list": "tsx session-list.test.ts",
     "test:session-history": "tsx session-history.test.ts",
     "test:session-contract": "tsx session-contract.test.ts",
     "test:native-history": "tsx native-session-history.test.ts",
-    "test:resources": "tsx build-resources.test.ts",
-    "test:native-resources": "tsx native-forge.test.ts"
+    "test:resources": "tsx --test --test-concurrency=1 build-resources.test.ts project-independence.test.js ts-resource-loading.test.js",
+    "test:native-resources": "tsx --test --test-concurrency=1 native-forge.test.ts package-resources.test.ts"
   },
   "devDependencies": {
+    "@testing-library/dom": "10.4.2",
+    "jsdom": "27.1.0",
     "tsx": "4.20.6",
-    "jsdom": "27.1.0"
+    "vitest": "5.0.5"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

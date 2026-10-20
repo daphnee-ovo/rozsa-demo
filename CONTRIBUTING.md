@@ -218,10 +218,35 @@ candidate reload behavior, not additional cross-reload UI persistence.
 
 Generated bundles/maps live in desktop/.vite/; Forge packages in desktop/out/.
 `npm --prefix desktop run build:renderer` builds the production renderer for
-resource inspection; `npm --prefix desktop/tests run test:ui` includes the
-shared host-contract and HTTP prototype resource checks.
+resource inspection; `npm --prefix desktop/tests run test:ui` runs legacy
+Node-based DOM/React behavior tests, while `test:process` runs service/process
+integration checks, including the launcher fixture. The default test entry runs
+both, the Vitest suite, and session message routing, input bridge, code
+highlighter and native appearance behavior. Native Electron, resource/build and
+performance acceptance remain separate. The UI inventory in `package.json`
+excludes the notification-center Vitest file to prevent double execution; the
+approval lifecycle file runs its ordinary DOM/IPC cases by default, while its
+real Electron case is gated off. Vitest only selects
+`notification-center.test.js`, `session-ui.test.ts`, and
+`*.vitest.test.{js,ts,tsx}`. New Electron-independent business tests should use
+Vitest and accessible role/text queries:
+
+```bash
+npm --prefix desktop/tests run test:vitest
+npm --prefix desktop/tests exec -- vitest run --config desktop/tests/vitest.config.ts <files>
+```
+
+`npm --prefix` makes the tests package available but keeps the caller's working
+directory; pass the config and test paths from the repository root as shown.
+The Vitest config uses the tests directory as its root, the Node environment,
+single-worker execution and disabled globals. `test:native-lifecycle` sets
+`ROZSA_APPROVAL_NATIVE=1` to enable the real Electron/Go lifecycle case;
+`test:resources` runs resource/build checks; `test:performance` runs performance
+checks. No native or performance workload is part of `test`.
+DOM tests can import `@testing-library/dom` for accessible role and visible text
+queries without a React-specific wrapper.
 Electron+Go startup, session-rendering and interaction performance checks are
-isolated from both wildcard UI suites and run independently with
+isolated from the default UI, process and Vitest suites and run independently with
 `npm --prefix desktop/tests run test:performance`. Cold and warm end-to-end
 startup to a fully rendered latest viewport over the complete 1200-message
 history (including decoded images visible in that viewport) each have a hard
