@@ -542,6 +542,32 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			definition := settingsArguments.(themes.Definition)
 			err = server.settings.SaveTheme(definition)
 			result = true
+		case types.AutocompleteInput:
+			state, snapshotErr := server.app.Snapshot(work)
+			if snapshotErr != nil {
+				err = types.Error(types.Session, snapshotErr.Error())
+				break
+			}
+			if state.Active == nil {
+				err = types.Error(types.Session, "There is no active session")
+				break
+			}
+			var dynamicSkills []skills.Skill
+			if appinput.IsSlashCompletion(inputCompletionParams.Text, inputCompletionParams.Cursor) ||
+				appinput.HasSkillToken(inputCompletionParams.Text) {
+				dynamicSkills, err = server.settings.EnabledSkills(work, state.Active.Cwd)
+				if err != nil {
+					err = types.SettingsError(err.Error())
+					break
+				}
+			}
+			result, err = server.inputService.Complete(appinput.Request{
+				Text: inputCompletionParams.Text, Cursor: inputCompletionParams.Cursor,
+				CWD: state.Active.Cwd, Skills: dynamicSkills,
+			})
+			if err != nil {
+				err = types.SettingsError(err.Error())
+			}
 		case types.StartMessage, types.ContinueMessage, types.SubscribeMessage, types.NextMessageEvent, types.CancelMessage:
 			result, err = server.messageSync.handle(work, method, startParams, operationParams, messageSubscriptionParams)
 		}
