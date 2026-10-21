@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { attachPage, createEnvironment, outputRoot, sampleProcessMemory, startElectron } from "./harness.js";
 import { writeConversationFixture } from "./fixtures.js";
+import { checkStartupThresholds, requireFormalThresholds, validateRounds, validateThresholds } from "./validation.js";
 
-const rounds = Math.max(1, Number(process.env.ROZSA_PERF_ROUNDS || 1));
 const calibration = process.env.ROZSA_PERF_CALIBRATION === "1";
 const requiredRegions = ["main-panel", "conversation", "composer", "message-input", "input-toolbar", "send-button"];
 const mainStageNames = ["main-entry", "backend-process-started", "backend-initialize-started", "backend-initialize-response-received", "electron-ready", "backend-ready", "runtime-ready", "catalog-prefetch-started", "catalog-prefetch-ready", "latest-history-prefetch-started", "latest-history-prefetch-ready", "startup-session-ready", "window-created", "document-loaded", "window-shown", "window-focused"];
@@ -172,7 +172,9 @@ function modeReport(samples) {
 }
 
 test("cold and warm Electron startup measure shell, conversation, images and visible-region timing", async () => {
-  const thresholds = JSON.parse(await readFile(join(import.meta.dirname, "thresholds.json"), "utf8"));
+  const thresholds = validateThresholds(JSON.parse(await readFile(join(import.meta.dirname, "thresholds.json"), "utf8")));
+  const rounds = validateRounds(process.env.ROZSA_PERF_ROUNDS ?? thresholds.roundsRequired, thresholds.roundsRequired);
+  requireFormalThresholds(thresholds, calibration);
   const startupLimitMs = thresholds.startup.fullyReadyMaxMs;
   const byMode = { cold: [], warm: [] };
   const progressPath = join(outputRoot, `startup-${calibration ? "calibration" : "test"}-progress.json`);
@@ -224,18 +226,8 @@ test("cold and warm Electron startup measure shell, conversation, images and vis
   }
 
   if (!calibration) {
-    assert.equal(thresholds.status, "fixed", "performance thresholds are awaiting calibration");
     for (const mode of ["cold", "warm"]) {
-      for (const [stage, stats] of Object.entries(report[mode].mainStages)) {
-        const maximum = thresholds.startup[mode]?.mainStagesMs?.[stage];
-        if (maximum !== undefined) assert.ok(stats.p95 <= maximum, `${mode} ${stage} P95 ${stats.p95}ms exceeds ${maximum}ms`);
-      }
-      const maximumHistory = thresholds.startup[mode]?.loadedHistoryReadyP95Ms;
-      if (maximumHistory !== undefined) assert.ok(report[mode].loadedHistoryReadyMs.p95 <= maximumHistory, `${mode} history P95 exceeds ${maximumHistory}ms`);
-      const maximumFullyReady = thresholds.startup[mode]?.fullyReadyP95Ms;
-      if (maximumFullyReady !== undefined) assert.ok(report[mode].fullyReadyMs.p95 <= maximumFullyReady, `${mode} fully-ready P95 exceeds ${maximumFullyReady}ms`);
-      const maximumSwitch = thresholds.startup[mode]?.historySwitchP95Ms;
-      if (maximumSwitch !== undefined) assert.ok(report[mode].historySwitchMs.p95 <= maximumSwitch, `${mode} history-switch P95 exceeds ${maximumSwitch}ms`);
+      checkStartupThresholds(thresholds, mode, report);
     }
   }
 });

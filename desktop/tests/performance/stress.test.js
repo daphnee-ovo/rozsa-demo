@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { attachPage, createEnvironment, outputRoot, sampleProcessMemory, startElectron } from "./harness.js";
 import { writeConversationFixture } from "./fixtures.js";
+import { checkStressThresholds, requireFormalThresholds, validateRounds, validateThresholds } from "./validation.js";
 
-const rounds = Math.max(1, Number(process.env.ROZSA_PERF_ROUNDS || 1));
 const calibration = process.env.ROZSA_PERF_CALIBRATION === "1";
 const pairsPerSession = Math.max(1, Number(process.env.ROZSA_PERF_STRESS_PAIRS || 3000));
 const expectedRows = pairsPerSession * 2;
@@ -410,6 +410,9 @@ async function measureRound(index, longFixture, provider) {
 }
 
 test("complex session stress measures rendering, images, expansion, input, streaming and resource pressure", async () => {
+  const thresholds = validateThresholds(JSON.parse(await readFile(join(import.meta.dirname, "thresholds.json"), "utf8")));
+  const rounds = validateRounds(process.env.ROZSA_PERF_ROUNDS ?? thresholds.roundsRequired, thresholds.roundsRequired);
+  requireFormalThresholds(thresholds, calibration);
   const fixtureDirectory = join(outputRoot, "stress-fixture");
   await mkdir(fixtureDirectory, { recursive: true });
   const longFixture = await writeConversationFixture(fixtureDirectory, "long-session", { pairs: pairsPerSession, imageEvery: 24, toolEvery: 20, toolAtEnd: true, complexMarkdown: true });
@@ -454,12 +457,7 @@ test("complex session stress measures rendering, images, expansion, input, strea
 
   if (!calibration) {
     assert.equal(failedAttempts.length, 0, `${failedAttempts.length} failed attempts occurred during stress sampling`);
-    const thresholds = JSON.parse(await readFile(join(import.meta.dirname, "thresholds.json"), "utf8"));
-    assert.equal(thresholds.status, "fixed", "performance thresholds are awaiting calibration");
-    for (const [metric, measured] of Object.entries(summary)) {
-      const maximum = thresholds.stress[metric];
-      if (maximum !== undefined) assert.ok(measured.p95 <= maximum, `${metric} P95 ${measured.p95} exceeds ${maximum}`);
-    }
+    checkStressThresholds(thresholds, summary);
   }
 });
 

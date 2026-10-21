@@ -16,11 +16,31 @@
     "memoryPeakMB": null
   },
   "stress": {
-    "historyRows": 0,
-    "renderMs": null,
-    "interactionP95Ms": null,
+    "loadedHistoryMs": null,
+    "historyReachabilityMs": null,
+    "markdownRenderCommitP95Ms": null,
+    "peleMountP95Ms": null,
+    "peleAdaptP95Ms": null,
+    "switchOutMs": null,
+    "switchOutPreparationMs": null,
+    "switchOutRpcMs": null,
+    "switchOutRenderAfterRpcMs": null,
+    "switchBackMs": null,
+    "switchBackPreparationMs": null,
+    "switchBackRpcMs": null,
+    "switchBackRenderAfterRpcMs": null,
+    "toolToggleP95Ms": null,
+    "thinkingToggleP95Ms": null,
+    "scrollMs": null,
+    "typingMs": null,
+    "firstDeltaMs": null,
+    "jsHeapMB": null,
+    "maxRSSMB": null,
+    "maxRendererRSSMB": null,
     "longTaskP95Ms": null,
     "frameGapP95Ms": null,
-    "memoryPeakMB": null
+    "frameGapMaxMs": null,
+    "frameGapsOver50Ms": null,
+    "longestTaskMs": null
   }
 }
