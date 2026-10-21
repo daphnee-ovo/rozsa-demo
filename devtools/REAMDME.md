@@ -9,6 +9,7 @@
 - `build-desktop.sh`：全新安装桌面依赖并生成当前主机的应用包；首次设置或依赖变更后使用。
 - `package-desktop.sh`：依赖已安装时生成应用包；传入 `make` 生成当前主机安装包，其余参数传给 Forge。
 - `test-desktop.sh`：运行 Electron + Go 跨语言验收，不启动完整 TEST phase。
+- `check-error-display.sh`：列出指定源码中可能直接展示异常的位置供人工复核；候选结果不是违规结论，通知与状态文案需结合上下文判断。调用示例：`bash devtools/check-error-display.sh desktop/renderer/scripts/features/settings.tsx desktop/renderer/runtime/app/capability-permissions.ts`。
 - `update-builtin-skills-config.mjs`：在桌面启动或打包前，把内置技能目录清单写入 backend 配置。
 
 ## Retained Rust/Tauri checks and utilities

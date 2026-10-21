@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# List possible error-to-UI source locations in caller-specified files for manual review.
 set -u
 
 if (($# == 0)); then
