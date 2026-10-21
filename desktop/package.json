@@ -1,5 +1,6 @@
 {
   "name": "rozsa-desktop",
+  "productName": "Rózsa",
   "version": "0.0.0",
   "description": "Rózsa desktop application",
   "private": true,
@@ -31,6 +32,7 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "3.14.21",
+    "lucide-react": "1.59.0",
     "pele": "1.6.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

@@ -3,9 +3,14 @@ import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { backendPath, prepareDesktopBuild, projectRoot } from "./scripts/backend.mjs";
 
+const appIcon = process.platform === "darwin"
+  ? resolve(import.meta.dirname, "assets/icon")
+  : process.platform === "linux" ? resolve(import.meta.dirname, "assets/icon.png") : undefined;
+
 export default {
   packagerConfig: {
-    name: "Rózsa", executableName: "rozsa",
+    name: "Rózsa", executableName: "Rózsa", appBundleId: "dev.rozsa.electron",
+    ...(appIcon ? { icon: appIcon } : {}),
     asar: true, extraResource: [backendPath],
     // Packager scratch files stay in the project; tool caches use defaults.
     tmpdir: resolve(projectRoot, "tmp/packager"),
