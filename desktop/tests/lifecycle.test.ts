@@ -188,6 +188,8 @@ if (process.argv.includes("--native") || process.env.ROZSA_LIFECYCLE_NATIVE === 
       "globalThis.candidateElectron=require('electron');",
       "candidateElectron.dialog.showErrorBox=(title,message)=>console.error('Native startup error:',title,message);",
       "const childProcess=require('node:child_process'),spawn=childProcess.spawn;childProcess.spawn=(...args)=>{const child=spawn(...args);if(String(args[0]).includes('rozsa-backend'))globalThis.candidateOwnedBackend=child;return child;};",
+      "const ipcMain=candidateElectron.ipcMain,handle=ipcMain.handle.bind(ipcMain),pending=new Map();let requestId=0;globalThis.lifecycleIpcTraceEnabled=false;globalThis.lifecycleIpcTraceTarget=0;ipcMain.handle=function(channel,listener){return handle(channel,async(event,...args)=>{const id=++requestId,senderId=event.sender.id,started=Date.now(),frame=event.senderFrame?.url;pending.set(id,{senderId,channel});const active=()=>[...pending.entries()].filter(([,item])=>item.senderId===senderId).map(([requestId,item])=>({id:requestId,channel:item.channel}));if(globalThis.lifecycleIpcTraceEnabled&&senderId===globalThis.lifecycleIpcTraceTarget)console.error('LIFECYCLE_IPC_START',JSON.stringify({id,channel,senderId,frame,inFlight:active().length,open:active()}));try{const result=await listener(event,...args);if(globalThis.lifecycleIpcTraceEnabled&&senderId===globalThis.lifecycleIpcTraceTarget)console.error('LIFECYCLE_IPC_END',JSON.stringify({id,channel,senderId,frame,durationMs:Date.now()-started,inFlight:active().length-1,open:active().filter(item=>item.id!==id),failure:result?.ok===false?result.error:undefined}));return result;}catch(error){if(globalThis.lifecycleIpcTraceEnabled&&senderId===globalThis.lifecycleIpcTraceTarget)console.error('LIFECYCLE_IPC_THROW',JSON.stringify({id,channel,senderId,frame,durationMs:Date.now()-started,inFlight:active().length-1,open:active().filter(item=>item.id!==id),error:String(error)}));throw error;}finally{pending.delete(id);}});};",
+      "candidateElectron.app.on('browser-window-created',(_event,window)=>{if(!globalThis.lifecycleIpcTraceTarget){globalThis.lifecycleIpcTraceTarget=window.webContents.id;globalThis.lifecycleIpcTraceEnabled=true;}});",
       "require('./main.cjs');", "",
     ].join("\n"));
     let source = binary;
@@ -226,9 +228,12 @@ if (process.argv.includes("--native") || process.env.ROZSA_LIFECYCLE_NATIVE === 
       const socket = new WebSocket(url); sockets.push(socket);
       await new Promise<void>((resolve, reject) => { socket.addEventListener("open", () => resolve(), { once: true }); socket.addEventListener("error", reject, { once: true }); });
       let serial = 0;
+      const protocolEvents: Array<{ method: string; sessionId?: string; params: unknown }> = [];
       const pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
       socket.addEventListener("message", event => {
-        const value = JSON.parse(String(event.data)), item = pending.get(value.id); if (!item) return;
+        const value = JSON.parse(String(event.data)), item = pending.get(value.id);
+        if (typeof value.method === "string") protocolEvents.push({ method: value.method, sessionId: value.sessionId, params: value.params });
+        if (!item) return;
         pending.delete(value.id); clearTimeout(item.timer);
         if (value.error) item.reject(new Error(JSON.stringify(value.error))); else item.resolve(value.result);
       });
@@ -241,7 +246,7 @@ if (process.argv.includes("--native") || process.env.ROZSA_LIFECYCLE_NATIVE === 
         const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sessionId);
         if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails)); return result.result.value;
       };
-      return { send, evaluate, socket };
+      return { send, evaluate, socket, protocolEvents };
     };
     const finish = async () => {
       const timer = setTimeout(() => { child.kill("SIGKILL"); }, 18000);
@@ -264,6 +269,8 @@ if (process.argv.includes("--native") || process.env.ROZSA_LIFECYCLE_NATIVE === 
         const attached = await browser.send("Target.attachToTarget", { targetId: target.targetId, flatten: true });
         let rendererSessionId = attached.sessionId;
         const evaluate = (expression: string) => browser.evaluate(expression, rendererSessionId);
+        await browser.send("Page.enable", {}, rendererSessionId);
+        await browser.send("Runtime.enable", {}, rendererSessionId);
         const expectedRows = mode === "shutdown-timeout" ? 0 : 1;
         await wait(async () => await evaluate(`document.querySelectorAll('#sessionList .session-item').length===${expectedRows} && !!document.querySelector('#chatMessages')`) ? true : undefined, "current product session catalog");
         const pid = Number(/Backend started: (\d+)/.exec(logs)?.[1]); assert.ok(pid > 0);
@@ -295,27 +302,58 @@ if (process.argv.includes("--native") || process.env.ROZSA_LIFECYCLE_NATIVE === 
           const denied = await main.evaluate(`(async()=>{const owner=${window};const other=new candidateElectron.BrowserWindow({show:false,webPreferences:{preload:${JSON.stringify(join(app, ".vite/build/preload.cjs"))},contextIsolation:true,sandbox:true,nodeIntegration:false}});try{await other.loadURL(owner.webContents.getURL());return await other.webContents.executeJavaScript("window.rozsa.getSessions().then(()=>false,error=>error.message)");}finally{other.destroy();}})()`);
           assert.match(denied, /Unauthorized session request/);
           for (let reload = 0; reload < 2; reload++) {
-            await browser.send("Page.reload", {}, rendererSessionId);
-            await delay(100);
+            const previousTimeOrigin = await evaluate("performance.timeOrigin");
+            await main.evaluate(`new Promise((resolve,reject)=>{const contents=${window}.webContents;const timer=setTimeout(()=>reject(new Error('reload did not finish')),20000);contents.once('did-finish-load',()=>{clearTimeout(timer);resolve(true);});contents.reload();})`);
+            const reloadedTarget = await wait(async () => (await browser.send("Target.getTargets")).targetInfos.find((item: any) => item.targetId === target.targetId && item.type === "page" && item.url.endsWith("/index.html")), "same product renderer target after reload");
+            rendererSessionId = (await browser.send("Target.attachToTarget", { targetId: reloadedTarget.targetId, flatten: true })).sessionId;
+            await browser.send("Page.enable", {}, rendererSessionId);
+            await browser.send("Runtime.enable", {}, rendererSessionId);
             await wait(async () => {
               try { return await evaluate("document.querySelectorAll('#sessionList .session-item').length===1 && document.querySelector('#chatMessages')?.textContent.includes('Native lifecycle history marker')") ? true : undefined; }
               catch (error) { if (/context|navigat/i.test(String(error))) return undefined; throw error; }
             }, "reload snapshot");
+            assert.notEqual(await evaluate("performance.timeOrigin"), previousTimeOrigin, "reload must inspect a new document");
           }
-          // Crash only this candidate's renderer, then explicitly reload it.
-          await main.evaluate(`${window}.webContents.forcefullyCrashRenderer()`);
-          await delay(100); await main.evaluate(`${window}.webContents.reload()`); await delay(150);
+          // Wait for Electron to report the renderer exit before requesting a
+          // reload, then wait for that navigation's completed document.
+          const originalDocument = await evaluate("({timeOrigin:performance.timeOrigin,url:location.href})");
+          const crashDetails = await main.evaluate(`(async()=>{const contents=${window}.webContents;const gone=new Promise(resolve=>contents.once('render-process-gone',(_event,details)=>resolve(details)));contents.forcefullyCrashRenderer();return await gone;})()`);
+          const reloadResult = await main.evaluate(`new Promise((resolve,reject)=>{const contents=${window}.webContents;const timer=setTimeout(()=>reject(new Error('reload did not finish')),20000);contents.once('did-finish-load',()=>{clearTimeout(timer);resolve({url:contents.getURL(),processId:contents.getProcessId()});});contents.reload();})`);
           const recoveredTarget = await wait(async () => (await browser.send("Target.getTargets")).targetInfos.find((item: any) => item.targetId === target.targetId && item.type === "page" && item.url.endsWith("/index.html")), "same product renderer target after crash");
           rendererSessionId = (await browser.send("Target.attachToTarget", { targetId: recoveredTarget.targetId, flatten: true })).sessionId;
+          await browser.send("Page.enable", {}, rendererSessionId);
+          await browser.send("Runtime.enable", {}, rendererSessionId);
+          const recoveryDiagnostics = "(async()=>{const requests=await Promise.allSettled([Promise.resolve().then(()=>window.rozsa.getSessions()),Promise.resolve().then(()=>window.RozsaUIHost.port.request('get_state'))]);return {ready:document.readyState,rows:document.querySelectorAll('#sessionList .session-item').length,chat:document.querySelector('#chatMessages')?.textContent||'',frame:location.href,context:performance.timeOrigin,requests:requests.map(value=>value.status==='fulfilled'?{status:value.status,value:value.value}:{status:value.status,error:String(value.reason)})};})()";
           const recoveredView = await wait(async () => {
             const value = await evaluate("({ready:document.readyState,sidebar:!!document.querySelector('#sessionList'),conversation:!!document.querySelector('#chatMessages'),rows:document.querySelectorAll('#sessionList .session-item').length,chat:document.querySelector('#chatMessages')?.textContent||''})");
             return value.ready === "complete" && value.sidebar && value.conversation
               && value.rows === 1 && value.chat.includes("Native lifecycle history marker") ? value : undefined;
           }, "session catalog and history restored after renderer crash").catch(async error => {
-            const state = await evaluate("({ready:document.readyState,rows:document.querySelectorAll('#sessionList .session-item').length,chat:document.querySelector('#chatMessages')?.textContent||''})");
-            throw new Error(`${String(error)}\nRenderer state after crash recovery: ${JSON.stringify(state)}`);
+            const state = await evaluate(recoveryDiagnostics);
+            const requestSummary = state.requests.map((request: any, index: number) => request.status === "fulfilled"
+              ? { index, status: request.status, keys: Object.keys(request.value), sessionIds: request.value.sessions?.map((session: any) => session.id), activeSessionId: request.value.sessionId, historyMarker: JSON.stringify(request.value).includes("Native lifecycle history marker") }
+              : { index, status: request.status, error: request.error });
+            const requestTrace = logs.split("\n").filter(line => line.startsWith("LIFECYCLE_IPC_")).join("\n");
+            const rendererFailures = logs.split("\n").filter(line => /get_sessions failed|get_state failed|Concurrent request capacity reached/.test(line)).slice(-20).join("\n");
+            const protocolEvents = [...browser.protocolEvents, ...main.protocolEvents];
+            const eventSummary = protocolEvents.filter(event => /Target\.(targetCrashed|targetCreated|targetDestroyed)|Page\.(frameStartedLoading|frameNavigated|loadEventFired)|Runtime\.(executionContextCreated|consoleAPICalled|exceptionThrown)/.test(event.method)).map(event => {
+              if (event.method !== "Runtime.consoleAPICalled") return { method: event.method, sessionId: event.sessionId, params: event.params };
+              const params = event.params as { type?: string; args?: Array<{ value?: unknown; description?: string }> };
+              const message = params.args?.map(argument => argument.value ?? argument.description ?? "").join(" ");
+              return /get_sessions failed|get_state failed|Concurrent request capacity reached/.test(message || "")
+                ? { method: event.method, sessionId: event.sessionId, type: params.type, message: message?.slice(0, 500) } : undefined;
+            }).filter(Boolean).slice(-20);
+            throw new Error(`${String(error).split("\n")[0]}\nCrash event: ${JSON.stringify(crashDetails)}\nReload completion: ${JSON.stringify(reloadResult)}\nOriginal document: ${JSON.stringify(originalDocument)}\nRenderer recovery probe: ${JSON.stringify({ ready: state.ready, rows: state.rows, chat: state.chat, frame: state.frame, context: state.context, requests: requestSummary })}\nLifecycle IPC trace:\n${requestTrace}\nRenderer failures:\n${rendererFailures}\nCDP events: ${JSON.stringify(eventSummary)}`);
           });
+          assert.equal(await evaluate("location.href"), originalDocument.url);
+          assert.notEqual(await evaluate("performance.timeOrigin"), originalDocument.timeOrigin, "crash recovery must inspect a new renderer document");
           assert.equal(recoveredView.rows, 1);
+          const recoveryProbe = await evaluate(recoveryDiagnostics);
+          assert.equal(recoveryProbe.requests.length, 2, "recovery probe must return both product requests");
+          assert.deepEqual(recoveryProbe.requests.map((request: any) => request.status), ["fulfilled", "fulfilled"]);
+          assert.equal(recoveryProbe.requests[0].value.ok, true);
+          assert.ok(recoveryProbe.requests[0].value.sessions.some((session: any) => session.id === "native"));
+          assert.match(JSON.stringify(recoveryProbe.requests[1].value), /Native lifecycle history marker/);
           assert.equal((logs.match(/Backend started:/g) || []).length, 1);
         } else if (mode === "crash" || mode === "pipe") {
           if (mode === "crash") process.kill(pid, "SIGKILL");
