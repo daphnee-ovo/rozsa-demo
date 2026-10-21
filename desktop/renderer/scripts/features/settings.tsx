@@ -87,8 +87,11 @@ function SettingsPane({ client, pane, report }: Props) {
   useEffect(() => {
     if (pane !== "general") return;
     const current = new Set((snapshot?.modelDiagnostics ?? []).map(item => `${item.provider}: ${item.message}`));
-    for (const message of current) if (!reported.current.has(message)) report?.(message);
-    reported.current = current;
+    for (const message of current) {
+      if (reported.current.has(message)) continue;
+      reported.current.add(message);
+      reportError(report, message);
+    }
   }, [snapshot, pane, report]);
 
   useEffect(() => {
@@ -99,7 +102,7 @@ function SettingsPane({ client, pane, report }: Props) {
       setSnapshot(value);
       setThemes(value.themes);
       if (pane === "appearance") applyAppearance(value);
-    }).catch(reason => { if (active) { setError(errorText(reason)); if (pane === "general") report?.(errorText(reason)); } })
+    }).catch(reason => { if (active) { setError(errorText(reason)); reportError(report, errorText(reason)); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [client, pane, scope]);
@@ -123,7 +126,7 @@ function SettingsPane({ client, pane, report }: Props) {
       const next = await client.updateSetting(scope, key, value);
       setSnapshot(next); setThemes(next.themes);
       if (pane === "appearance") applyAppearance(next);
-    } catch (reason) { setError(errorText(reason)); report?.(errorText(reason)); }
+    } catch (reason) { setError(errorText(reason)); reportError(report, errorText(reason)); }
     finally { setSaving(false); }
   }
 
@@ -134,7 +137,7 @@ function SettingsPane({ client, pane, report }: Props) {
       const next = await client.resetSetting(scope, key);
       setSnapshot(next); setThemes(next.themes);
       if (pane === "appearance") applyAppearance(next);
-    } catch (reason) { setError(errorText(reason)); report?.(errorText(reason)); }
+    } catch (reason) { setError(errorText(reason)); reportError(report, errorText(reason)); }
     finally { setSaving(false); }
   }
 
@@ -157,12 +160,12 @@ function SettingsPane({ client, pane, report }: Props) {
       const refreshed = await client.getSettings(scope);
       setSnapshot(refreshed); setThemes(refreshed.themes);
       applyAppearance(refreshed);
-    } catch (reason) { setError(errorText(reason)); }
+    } catch (reason) { setError(errorText(reason)); reportError(report, errorText(reason)); }
     finally { setSaving(false); }
   }
 
   if (loading) return <Pane status="Loading settings…" pane={pane} scope={scope} setScope={setScope} />;
-  if (error && !snapshot) return <Pane status="Settings could not be loaded." pane={pane} scope={scope} setScope={setScope} error={error} />;
+  if (error && !snapshot) return <Pane status="Settings could not be loaded." pane={pane} scope={scope} setScope={setScope} />;
   if (!snapshot) return <Pane status="No settings are available." pane={pane} scope={scope} setScope={setScope} />;
   const settings = snapshot.settings;
   return <>
@@ -172,20 +175,18 @@ function SettingsPane({ client, pane, report }: Props) {
         <option value="global">Global</option><option value="project">Project</option>
       </select></label>
     </header>
-    {error && <p className="settings-error" role="alert">{error}</p>}
-    {pane === "general" && snapshot.modelDiagnostics?.map(item => <p className="settings-error" role="alert" key={`${item.provider}:${item.message}`}>{item.provider}: {item.message}</p>)}
     {validation && <p className="settings-error" role="alert">{validation}</p>}
     {pane === "general" ? <General settings={settings} models={snapshot.models} saving={saving} update={update} reset={reset} /> :
       <Appearance snapshot={snapshot} themes={themes} saving={saving} update={update} reset={reset} saveTheme={saveTheme} />}
   </>;
 }
 
-function Pane({ pane, scope, setScope, status, error = "" }: { pane: Props["pane"]; scope: SettingsScope; setScope(scope: SettingsScope): void; status: string; error?: string }) {
+function Pane({ pane, scope, setScope, status }: { pane: Props["pane"]; scope: SettingsScope; setScope(scope: SettingsScope): void; status: string }) {
   return <>
     <header className="settings-pane-header"><div className="settings-pane-title" role="heading" aria-level={1}>{pane === "general" ? "General" : "Appearance"}</div>
       <label className="setting-scope-control">Save to <select aria-label="Settings scope" value={scope} onChange={event => setScope(event.currentTarget.value as SettingsScope)}><option value="global">Global</option><option value="project">Project</option></select></label>
     </header>
-    <p role={error ? "alert" : "status"}>{error || status}</p>
+    <p role="status">{status}</p>
   </>;
 }
 
@@ -348,6 +349,10 @@ function numberValue(value: unknown, fallback: number): number { return typeof v
 function booleanValue(value: unknown, fallback = false): boolean { return typeof value === "boolean" ? value : fallback; }
 function object(value: unknown): Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function reportError(report: Props["report"], message: string): void {
+  if (report) report(message);
+  else console.error(message);
+}
 function applyAppearance(snapshot: SettingsSnapshot): void {
   const root = document.documentElement;
   const mode = snapshot.appearance.themeMode;
