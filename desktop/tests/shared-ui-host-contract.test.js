@@ -1,5 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import { getByRole } from '@testing-library/dom';
+import { test } from 'vitest';
 import { createUIHost } from '../renderer/scripts/core/renderer.ts';
 import { resolveTemplateRoot } from '../renderer/scripts/core/shell.ts';
 import { clearTemplateCache, loadTemplate } from '../renderer/scripts/core/template-loader.ts';
@@ -98,17 +99,20 @@ test('the actual Electron entry assembles one window from shared UI sources', ()
   assert(!electronEntry.includes('prototype/mock'));
 });
 
-test('popover positioning accounts for host zoom in CSS coordinates', async () => {
-  const dom = createDOM('<button id="thinkingEffort"></button><div id="thinkingEffortPopover"><input id="thinkingEffortSlider"></div>');
+test('opening the thinking effort control keeps its dialog within the visible viewport', async () => {
+  const dom = createDOM('<button id="thinkingEffort" aria-label="Thinking effort"></button><div id="thinkingEffortPopover" role="dialog" aria-labelledby="thinkingEffortLabel" hidden><h2 id="thinkingEffortLabel">Thinking effort options</h2><input id="thinkingEffortSlider" aria-label="Effort"></div>');
   try {
     await withDOM(dom, () => {
       window.innerWidth = 896; window.innerHeight = 720;
       const scale = 16 / 14;
-      const popover = document.getElementById('thinkingEffortPopover');
+      const popover = getByRole(document, 'dialog', { hidden: true });
       Object.defineProperty(popover, 'offsetWidth', { value: 320 });
       popover.getBoundingClientRect = () => ({ width: 320 * scale, height: 106 * scale });
-      document.getElementById('thinkingEffort').getBoundingClientRect = () => ({ left: 790, bottom: 694 });
-      bindPopover({ boundModules: new Set(), byId: id => document.getElementById(id) }).position();
+      getByRole(document, 'button', { name: 'Thinking effort' }).getBoundingClientRect = () => ({ left: 790, bottom: 694 });
+      bindPopover({ boundModules: new Set(), byId: id => document.getElementById(id) });
+      getByRole(document, 'button', { name: 'Thinking effort' }).click();
+      assert.equal(getByRole(document, 'button', { name: 'Thinking effort' }).getAttribute('aria-expanded'), 'true');
+      assert.equal(getByRole(document, 'dialog', { name: 'Thinking effort options' }).hidden, false);
       assert(parseFloat(popover.style.left) * scale + 320 * scale <= window.innerWidth);
       assert(parseFloat(popover.style.top) * scale + 106 * scale <= window.innerHeight);
     });

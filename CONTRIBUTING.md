@@ -47,6 +47,7 @@ bash devtools/test-gui.sh
 # New frontend and prototype, independently:
 npm ci --prefix desktop/tests
 npm --prefix desktop/tests run test:ui
+npm --prefix desktop/tests run test:vitest
 ```
 
 Prefer shell scripts in `devtools/` to coordinate whole-module integration
@@ -230,10 +231,11 @@ candidate reload behavior, not additional cross-reload UI persistence.
 
 Generated bundles/maps live in desktop/.vite/; Forge packages in desktop/out/.
 `npm --prefix desktop run build:renderer` builds the production renderer for
-resource inspection; `test:ui` runs Node-based DOM and process-independent UI
-checks, while `test:process` runs service/process integration checks, including
-the launcher fixture. The default test entry runs both, the Vitest suite, and
-the Node input-bridge check. Session-message routing and the pure native-
+resource inspection; `test:ui` runs the shared template resource check, while
+`test:process` runs service/process integration checks, including the launcher
+fixture. Prototype UI, component behavior and Electron-independent host logic
+run in Vitest with accessible role/text queries. The default test entry runs
+these suites and the Node input-bridge check. Session-message routing and the pure native-
 appearance adapter run in Vitest. Native
 Electron, resource/build and performance acceptance remain separate. Each test
 file belongs to one runner: `package.json` lists Node suites, and

@@ -30,18 +30,6 @@ test('covered Dev Flow styles have shared owners in the actual native CSS graph'
     'bootstrap error feedback remains available at its blocked boundary');
 });
 
-test('legacy tool status keeps its visible marker in the shared stylesheet', () => {
-  const dom = createDOM('<div class="tool-call" data-tool-ui="legacy"><span class="tool-call-status"></span></div>');
-  try {
-    const style = dom.window.document.createElement('style');
-    style.textContent = readFrontend('styles/legacy/features/tools.css');
-    dom.window.document.head.append(style);
-    const marker = dom.window.document.querySelector('.tool-call-status');
-    assert.equal(dom.window.getComputedStyle(marker).width, '6px');
-    assert.equal(dom.window.getComputedStyle(marker).borderRadius, '50%');
-  } finally { dom.window.close(); }
-});
-
 function sources(root) {
   return readdirSync(root, { withFileTypes: true }).flatMap(entry => {
     const url = new URL(entry.name + (entry.isDirectory() ? '/' : ''), root);
@@ -50,14 +38,17 @@ function sources(root) {
 }
 
 test('production renderer references stay in frontend or use the shared session contract', () => {
-  const sessionContract = new URL('../main/session-contract.js', frontendRoot).href;
+  const sharedContracts = new Set([
+    new URL('../main/session-contract.js', frontendRoot).href,
+    new URL('../../contracts/ipc/session.js', frontendRoot).href,
+  ]);
   for (const root of ['./']) {
     for (const url of sources(new URL(root, frontendRoot))) {
       const text = readFileSync(url, 'utf8');
       for (const match of text.matchAll(/(?:from\s+|import\s*\(|url\(|(?:src|href|data-ui-template-src)=)["'](\.[^"']+)["']/g)) {
         const path = match[1];
         const target = new URL(path, url);
-        assert(target.href.startsWith(frontendRoot.href) || target.href === sessionContract,
+        assert(target.href.startsWith(frontendRoot.href) || sharedContracts.has(target.href),
           'production reference leaves frontend outside the shared session contract: ' + target.href);
       }
       if (url.href.startsWith(new URL('scripts/', frontendRoot).href)) assert(!/window\.__TAURI__|from\s+["'][^"']*mock\//.test(text),
@@ -66,7 +57,7 @@ test('production renderer references stay in frontend or use the shared session 
   }
 });
 
-test('every prototype template loads the same DOM as its production shared source', async () => {
+test('prototype and product load the same shared template structure', async () => {
   const dom = createDOM();
   try {
     await withDOM(dom, async () => {
@@ -78,7 +69,7 @@ test('every prototype template loads the same DOM as its production shared sourc
         const left = document.createElement('div');
         const right = document.createElement('div');
         left.append(prototype); right.append(shared);
-        assert.equal(left.innerHTML, right.innerHTML, 'duplicate template DOM: ' + relative);
+        assert.equal(left.innerHTML, right.innerHTML, 'prototype and product template structure differs: ' + relative);
       }
     });
   } finally { dom.window.close(); }

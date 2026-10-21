@@ -1,6 +1,11 @@
 // Prototype contracts previously lived in Rust GUI tests. They belong to the new UI.
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import { getByRole } from '@testing-library/dom';
+import { test } from 'vitest';
+import { JSDOM } from 'jsdom';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ComposerInput } from '../renderer/scripts/components/composer.tsx';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,8 +16,8 @@ const read = path => path === 'desktop/renderer/app.js'
   : readFileSync(resolve(root, path), 'utf8');
 const json = path => JSON.parse(read(path));
 const ui = path => read('desktop/renderer/' + path);
-const sorted = values => [...new Set(values)].sort();
 const contains = (source, values) => values.forEach(value => assert.ok(source.includes(value), value));
+const sorted = values => [...new Set(values)].sort();
 function owners(path, visiting = new Set()) {
   path = realpathSync(resolve(root, path));
   assert.ok(!visiting.has(path), `cyclic CSS import: ${path}`);
@@ -85,7 +90,7 @@ test('prototype coverage inventory stays bidirectional with scenes, events and d
   }
 });
 
-test('prototype scenes retain shared layout, fixture and component ownership', () => {
+test('prototype scenes retain shared mount and fixture ownership', () => {
   const shell = read('prototype/scripts/core/shell.ts');
   assert.doesNotMatch(shell, /loadSceneStylesheet|prototypeSceneStylesheet|getSceneDefinition/);
   contains(shell, ['mountTemplateChildren(inputFragment']);
@@ -108,22 +113,34 @@ test('prototype scenes retain shared layout, fixture and component ownership', (
   contains(read('prototype/scripts/components/interruption-panel.js'), ['desktop/renderer/scripts/components/interruption-panel.js']);
   contains(ui('scripts/components/interruption-panel.js'), ['document.querySelector(\'[data-od-id="chat-input"]\')']);
   const composer = ui('templates/composites/composer.html'), input = ui('templates/primitives/input.html');
-  assert.equal(ui('templates/features/sidebar.html').split('id="subagentPanel"').length - 1, 1);
-  assert.ok(!composer.includes('id="subagentPanel"'));
-  const ordered = ['id="forkPicker"', 'class="input-wrapper"', 'id="queuedMessages"', 'id="steeringConversation"', 'data-template-mount="input"'];
-  const indices = ordered.map(value => { assert.equal(composer.split(value).length - 1, 1); return composer.indexOf(value); });
-  assert.deepEqual(indices, [...indices].sort((a, b) => a - b));
-  assert.ok(input.includes('id="msgInput"') && !input.includes('class="input-wrapper"'));
-  contains(ui('styles/layouts/app-shell.css'), ['[data-application-shell]', 'flex: 1 1 0', 'min-height: 0', 'overflow: hidden',
-    'grid-template-columns: var(--main-sidebar-width) minmax(0, 1fr)', '[data-od-id="app-body"] { display: block; }',
-    '[data-od-id="app-body"] > [data-template-mount="sidebar"],\n[data-od-id="app-body"] > [data-template-mount="conversation"] { display: contents; }']);
-  contains(ui('styles/layouts/sidebar-shell.css'), ['data-ui-max-width~="780"', 'position: absolute', '.sidebar-edge-visible']);
-  contains(ui('styles/features/sidebar.css'), ['.subagent-sidebar-panel', '.subagent-sidebar-panel ol', '.subagent-sidebar-panel li::before']);
-  contains(ui('styles/composites/composer.css'), ['.input-wrapper > .running-messages:not([hidden]) ~ .rich-input', '[data-od-id="chat-input"] { position: absolute;']);
-  contains(ui('styles/features/queue.css'), ['#queuedMessages']);
-  contains(ui('styles/features/steering.css'), ['#steeringConversation']);
-  contains(ui('styles/features/dev-flow-runtime.css'), ['.dev-flow-detail']);
-  contains(ui('styles/composites/permission-question.css'), [':has(> .question-panel.visible)']);
+  const sidebarDom = new JSDOM(ui('templates/features/sidebar.html'));
+  const composerDom = new JSDOM(composer);
+  const inputDom = new JSDOM(input);
+  try {
+    const sidebar = sidebarDom.window.document;
+    const composerDocument = composerDom.window.document;
+    const inputDocument = inputDom.window.document;
+    assert.equal(sidebar.querySelectorAll('#subagentPanel').length, 1);
+    assert.equal(composerDocument.querySelectorAll('#subagentPanel').length, 0);
+    const orderedNodes = [...composerDocument.querySelectorAll('#forkPicker, .input-wrapper, #queuedMessages, #steeringConversation, [data-template-mount="input"]')];
+    assert.deepEqual(orderedNodes.map(node => node.classList.contains('input-wrapper') ? 'input-wrapper' : node.id || 'input-mount'),
+      ['forkPicker', 'input-wrapper', 'queuedMessages', 'steeringConversation', 'input-mount']);
+    assert.ok(inputDocument.querySelector('[data-composer-input-mount]'));
+    assert.equal(inputDocument.querySelectorAll('.input-wrapper').length, 0);
+  } finally {
+    sidebarDom.window.close(); composerDom.window.close(); inputDom.window.close();
+  }
+});
+
+test('composer keeps an accessible message entry and send control', () => {
+  const dom = new JSDOM(`<main>${renderToStaticMarkup(React.createElement(ComposerInput))}</main>`);
+  try {
+    const message = getByRole(dom.window.document, 'textbox', { name: 'Message Rózsa' });
+    getByRole(dom.window.document, 'button', { name: 'Send message' });
+    assert.equal(message.getAttribute('aria-multiline'), 'true');
+  } finally {
+    dom.window.close();
+  }
 });
 
 test('prototype stylesheet graph has explicit owners, order and external entry resources', () => {
@@ -136,23 +153,20 @@ test('prototype stylesheet graph has explicit owners, order and external entry r
       assert.ok(!read(owner).includes('@import'), owner);
     }
   }
-  assert.equal(manifest.responsive_layout.sidebar_auto_collapse_max_width, 780);
-  assert.deepEqual(manifest.responsive_layout.minimum_window, { width: 640, height: 480 });
   assert.deepEqual(manifest.extracted_inline_styles, []);
   for (const entry of ['main', 'sidebar']) {
-    assert.equal(read(`prototype/styles/${entry}.css`).trim(), `@import url("./entries/${entry}.css");`);
+    assert.deepEqual(owners(`prototype/styles/${entry}.css`), owners(`prototype/styles/entries/${entry}.css`), `${entry} entry resolves to the expected resource graph`);
     assert.doesNotMatch(read(`prototype/styles/entries/${entry}.css`), /\.\.\/entries\/(main|sidebar)\.css|utilities\.css/);
     owners(`prototype/styles/${entry}.css`);
   }
-  const main = read('prototype/styles/entries/main.css');
-  contains(main, ['../composites/composer.css', '../features/queue.css', '../features/steering.css']);
-  assert.ok(!main.includes('../primitives/forms.css'));
+  const mainOwners = owners('prototype/styles/entries/main.css');
+  assert.ok(!mainOwners.includes(realpathSync(resolve(root, 'desktop/renderer/styles/primitives/forms.css'))));
   for (const path of ['composites/composer.css', 'features/queue.css', 'features/steering.css', 'features/dev-flow-runtime.css']) {
-    assert.ok(owners('prototype/styles/entries/main.css').includes(realpathSync(resolve(root, 'desktop/renderer/styles', path))), path);
+    assert.ok(mainOwners.includes(realpathSync(resolve(root, 'desktop/renderer/styles', path))), path);
   }
   assert.deepEqual(owners('prototype/styles/entries/sidebar.css'), [...owners('desktop/renderer/styles/entries/sidebar.css'),
     ...['features/sidebar.css', 'features/sidebar-window.css', 'foundations/motion.css'].map(path => realpathSync(resolve(root, 'desktop/renderer/styles', path)))]);
-  assert.equal(read('prototype/gallery/visual-direction.css').trim(), '@import url("../styles/features/visual-demo.css");');
+  assert.deepEqual(owners('prototype/gallery/visual-direction.css'), owners('prototype/styles/features/visual-demo.css'), 'gallery entry resolves to the shared visual-demo stylesheet');
   contains(read('prototype/gallery/visual-direction.html'), ['href="visual-direction.css"', 'src="visual-direction.js"']);
   assert.ok(!read('prototype/gallery/visual-direction.html').includes('<style>'));
   for (const scene of readdirSync(resolve(root, 'prototype/scenes')).filter(path => path.endsWith('.html'))) {

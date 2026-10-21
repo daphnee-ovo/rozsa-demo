@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { test } from 'node:test';
+import { test } from 'vitest';
+import { getByRole, queryByRole } from '@testing-library/dom';
 import { JSDOM } from 'jsdom';
 
 test('gallery HTML loads its script and switches views and theme', () => {
@@ -14,13 +15,21 @@ test('gallery HTML loads its script and switches views and theme', () => {
       const source = script.getAttribute('src');
       dom.window.eval(source ? readFileSync(new URL(source, entry), 'utf8') : script.textContent);
     }
-    for (const scene of ['empty', 'active', 'settings']) {
-      dom.window.document.querySelector(`.scene-tab[data-scene="${scene}"]`).click();
-      assert.equal(dom.window.document.querySelector('.scene-tab[aria-selected="true"]').dataset.scene, scene);
-      assert.deepEqual([...dom.window.document.querySelectorAll('[data-scene-panel]')]
-        .filter(panel => !panel.hidden).map(panel => panel.dataset.scenePanel), [scene]);
+    const scenes = [
+      ['Empty', 'Make room for the next thought.'],
+      ['Active', 'Refine the release flow.'],
+      ['Appearance', 'A softer edge for serious work.'],
+    ];
+    for (const [label, heading] of scenes) {
+      const button = getByRole(dom.window.document, 'button', { name: label });
+      button.click();
+      assert.equal(button.getAttribute('aria-selected'), 'true');
+      assert.ok(getByRole(dom.window.document, 'heading', { name: heading }));
+      for (const [, otherHeading] of scenes.filter(([otherLabel]) => otherLabel !== label)) {
+        assert.equal(queryByRole(dom.window.document, 'heading', { name: otherHeading }), null);
+      }
     }
-    const toggle = dom.window.document.getElementById('themeToggle');
+    const toggle = getByRole(dom.window.document, 'button', { name: 'Switch to dark theme' });
     assert.equal(dom.window.document.documentElement.dataset.theme, 'light');
     toggle.click();
     assert.equal(dom.window.document.documentElement.dataset.theme, 'dark');
