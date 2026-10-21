@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rózsa — 权限与问题流程审阅</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: oklch(96.8% 0.018 82);
+      --surface: oklch(98.6% 0.010 82);
+      --fg: oklch(24% 0.026 55);
+      --muted: oklch(43% 0.024 68);
+      --border: oklch(87.5% 0.022 78);
+      --accent: oklch(43% 0.085 355);
+      --accent-soft: color-mix(in oklch, var(--accent) 13%, transparent);
+      --warning: oklch(44% 0.09 78);
+      --success: oklch(48% 0.085 155);
+      --success-bg: color-mix(in oklch, var(--success) 12%, transparent);
+      --warning-bg: color-mix(in oklch, var(--warning) 14%, var(--surface));
+      --error: oklch(46% 0.11 28);
+      --error-soft: color-mix(in oklch, var(--error) 10%, var(--surface));
+      --code-bg: oklch(22% 0.025 50);
+      --on-accent: oklch(98% 0.01 82);
+      --shadow-1: 0 8px 24px oklch(24% 0.026 55 / 0.10);
+      --shadow-2: 0 18px 54px oklch(24% 0.026 55 / 0.14);
+      --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+      --font-display: "Iowan Old Style", Baskerville, "Songti SC", Georgia, serif;
+      --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --radius-control: 12px;
+      --radius-panel: 20px;
+      --radius-dialog: 24px;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: oklch(18% 0.018 55);
+      --surface: oklch(23% 0.022 55);
+      --fg: oklch(92% 0.018 78);
+      --muted: oklch(76% 0.022 72);
+      --border: oklch(35% 0.022 55);
+      --accent: oklch(76% 0.085 355);
+      --accent-soft: color-mix(in oklch, var(--accent) 16%, transparent);
+      --warning: oklch(82% 0.08 78);
+      --success: oklch(72% 0.085 155);
+      --success-bg: color-mix(in oklch, var(--success) 16%, transparent);
+      --warning-bg: color-mix(in oklch, var(--warning) 12%, var(--surface));
+      --error: oklch(76% 0.10 28);
+      --error-soft: color-mix(in oklch, var(--error) 12%, var(--surface));
+      --code-bg: oklch(14% 0.018 50);
+      --on-accent: oklch(18% 0.018 55);
+      --shadow-1: 0 8px 24px oklch(0% 0 0 / 0.20);
+      --shadow-2: 0 18px 54px oklch(0% 0 0 / 0.34);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--font-ui); }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .page { width: min(1480px, 100%); margin: 0 auto; padding: 30px clamp(16px, 3.5vw, 48px) 52px; }
+    .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding-bottom: 22px; border-bottom: 1px solid var(--border); }
+    h1 { margin: 0 0 8px; font: 36px/1.1 var(--font-display); letter-spacing: -.02em; }
+    .lead { max-width: 820px; margin: 0; color: var(--muted); }
+    .review-status { flex: none; padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted); }
+    .review-tools { display: grid; gap: 12px; margin: 22px 0 14px; }
+    .tool-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+    .tool-title { margin: 0; font: 18px/1.25 var(--font-display); }
+    .tool-buttons { display: flex; flex-wrap: wrap; gap: 7px; }
+    .review-button { min-height: 38px; padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); cursor: pointer; }
+    .review-button:hover, .review-button[aria-pressed="true"] { border-color: color-mix(in oklch, var(--accent) 48%, var(--border)); background: var(--accent-soft); }
+    .state-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .state-list .review-button { min-height: 36px; padding-inline: 10px; }
+    .review-note { margin: 0; color: var(--muted); font-size: 12px; }
+    .preview-wrap { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: color-mix(in oklch, var(--surface) 42%, var(--bg)); }
+    .app-window { height: min(80vh, 1080px); min-height: 780px; overflow: hidden; border: 1px solid color-mix(in oklch, var(--border) 80%, var(--fg)); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-2); }
+    .window-chrome { height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: var(--bg); }
+    .traffic-lights { display: flex; gap: 8px; }
+    .traffic-light { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 1px oklch(0% 0 0 / .12); }
+    .traffic-light.red { background: #f16c61; }
+    .traffic-light.yellow { background: #f3bd4f; }
+    .traffic-light.green { background: #60bd60; }
+    .window-sidebar-toggle { width: 28px; height: 28px; display: grid; place-items: center; margin-left: 5px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+    .window-sidebar-toggle:hover { background: var(--accent-soft); color: var(--fg); }
+    .window-sidebar-toggle svg { width: 19px; height: 19px; }
+    .product-layout { height: calc(100% - 48px); min-height: 732px; display: grid; grid-template-columns: minmax(240px, 25%) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+    .sidebar { min-width: 0; display: flex; flex-direction: column; padding: 4px 0 10px; background: var(--bg); box-shadow: 8px 0 24px -12px color-mix(in oklch, var(--fg) 24%, transparent); z-index: 1; }
+    .sidebar-section { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .sessions-section { flex: 1 1 auto; min-height: 180px; }
+    .sidebar-header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 18px 6px 22px; color: var(--muted); font: 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+    .icon-button { width: 38px; height: 38px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--muted); cursor: pointer; }
+    .icon-button:hover { background: var(--accent-soft); color: var(--fg); }
+    .icon-button svg { width: 18px; height: 18px; }
+    .session-list { display: grid; align-content: start; gap: 4px; overflow: auto; padding: 0 10px 12px; }
+    .session-item { min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+    .session-item:hover { background: color-mix(in oklch, var(--surface) 66%, transparent); }
+    .session-item[aria-current="page"] { border-color: color-mix(in oklch, var(--accent) 24%, var(--border)); background: color-mix(in oklch, var(--accent) 9%, var(--surface)); color: var(--fg); }
+    .session-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: color-mix(in oklch, var(--accent) 54%, var(--border)); }
+    .session-dot.pending { background: var(--warning); }
+    .session-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .status-section { flex: 0 0 auto; margin-top: auto; padding-top: 10px; }
+    .status-card { display: grid; gap: 8px; margin: 0 10px; padding: 12px 12px 13px; border-radius: var(--radius-panel); background: color-mix(in oklch, var(--surface) 42%, transparent); box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface) 45%, transparent), var(--shadow-1); }
+    .branch-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .branch-row svg { width: 17px; height: 17px; flex: none; color: var(--muted); }
+    .branch-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .diff-stats { display: flex; gap: 10px; color: var(--muted); font: 12px/1.4 var(--font-mono); }
+    .empty-tools { color: var(--muted); }
+    .sidebar-bottom { flex: 0 0 auto; padding: 12px 10px 4px; }
+    .settings-button { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+    .settings-button:hover { border-color: var(--border); background: var(--accent-soft); color: var(--fg); }
+    .settings-button svg { width: 18px; height: 18px; }
+    .main-panel { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); box-shadow: -8px 0 28px -8px color-mix(in oklch, var(--fg) 14%, transparent); }
+    .main-header { min-height: 70px; display: flex; align-items: center; padding: 10px clamp(22px, 4vw, 54px) 12px; border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent); color: var(--muted); font-size: 14px; }
+    .conversation { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; padding: 28px clamp(18px, 4vw, 54px) 24px; }
+    .demo-message { min-height: 132px; display: flex; align-items: center; gap: 16px; padding: 22px 34px; background: color-mix(in oklch, var(--accent) 12%, var(--surface)); color: var(--fg); }
+    .demo-mark { color: color-mix(in oklch, var(--accent) 76%, var(--fg)); font: 76px/.9 var(--font-display); }
+    .demo-title { font: 22px/1.3 var(--font-display); overflow-wrap: anywhere; }
+    .alert-count { position: absolute; top: 18px; right: 22px; min-width: 72px; min-height: 60px; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 8px 13px; border: 1px solid color-mix(in oklch, var(--error) 38%, var(--border)); border-radius: 18px; background: var(--surface); color: var(--error); box-shadow: var(--shadow-1); font-size: 18px; }
+    .alert-count svg { width: 21px; height: 21px; }
+    .panel-slot { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: auto; padding-top: 24px; }
+    .panel-slot:has(> .perm-panel, > .question-panel) { height: 66.666%; max-height: 66.666%; min-height: 0; justify-content: flex-end; }
+    .perm-panel, .question-panel { width: min(100%, 900px); margin: 0 auto; padding: 20px; border: 1px solid color-mix(in oklch, var(--border) 58%, transparent); border-radius: var(--radius-dialog); background: color-mix(in oklch, var(--surface) 72%, transparent); box-shadow: var(--shadow-2); -webkit-backdrop-filter: blur(26px) saturate(1.10); backdrop-filter: blur(26px) saturate(1.10); }
+    .perm-panel { container: permission-card / inline-size; min-width: 0; min-height: 0; max-height: 100%; display: flex; flex: 0 1 auto; flex-direction: column; overflow: hidden; }
+    .question-panel { min-width: 0; min-height: 0; max-height: 100%; display: flex; flex: 0 1 auto; flex-direction: column; overflow: hidden; }
+    .perm-context { display: grid; flex: 0 0 auto; gap: 9px; min-width: 0; width: 100%; }
+    .tool-row { display: block; }
+    .tool-pill { float: left; margin: 0 8px 4px 0; }
+    .tool-pill { padding: 5px 8px; border-radius: var(--radius-control); background: var(--warning-bg); color: var(--warning); font: 10px/1.4 var(--font-mono); }
+    .command { padding: 11px 12px; border-radius: var(--radius-control); background: var(--code-bg); color: var(--on-accent); font: 11px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .fold-collapsed { display: none; }
+    .fold-full { display: block; }
+    .fold[data-overflow="true"] { cursor: pointer; }
+    .fold[data-overflow="true"]:not([data-expanded="true"]) .fold-collapsed { display: block; }
+    .fold[data-overflow="true"]:not([data-expanded="true"]) .fold-full { display: none; }
+    .fold[data-expanded="true"] .fold-full { max-height: 180px; overflow: auto; }
+    .fold-head, .fold-tail { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .fold-tail { direction: rtl; text-align: left; }
+    .fold-tail > span { unicode-bidi: plaintext; }
+    .tool-row .fold { min-width: 0; padding-left: 8px; font: 12px/1.5 var(--font-ui); color: var(--muted); }
+    .fold-clamp { display: block; }
+    .fold[data-kind="clamp"][data-overflow="true"]:not([data-expanded="true"]) .fold-clamp { max-height: 4.5em; overflow: hidden; }
+    .perm-option-viewport { min-width: 0; min-height: 0; display: grid; flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr) 8px; gap: 8px; margin-top: 14px; }
+    .perm-actions { min-width: 0; min-height: 0; display: grid; align-content: start; grid-auto-rows: max-content; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+    .perm-panel .perm-option-viewport { margin-top: 9px; }
+    .perm-actions::-webkit-scrollbar { display: none; }
+    .scroll-options:focus-visible { outline-offset: 2px; }
+    .perm-actions:not(.trust-options) .perm-option:not(.back-option), .trust-options .perm-option:not(.back-option) { display: grid; width: 100%; min-width: 0; box-sizing: border-box; grid-template-columns: 24px minmax(0, 1fr); align-items: center; justify-content: stretch; text-align: left; }
+    .perm-option .option-key { width: 24px; height: 24px; display: grid; place-items: center; justify-self: start; align-self: center; border-radius: 7px; background: color-mix(in oklch, var(--fg) 7%, var(--surface)); color: var(--muted); font: 400 12px/1 var(--font-mono); }
+    .trust-options .perm-option:not(.back-option) > span:not(.option-key), .perm-actions:not(.trust-options) .perm-option:not(.back-option) > span:not(.option-key) { display: block; width: auto; min-width: 0; justify-self: stretch; align-self: center; padding-block: 0; overflow-wrap: anywhere; line-height: 1.5; }
+    .question-cancel, .trust-options .back-option { width: 48px; height: 48px; min-width: 48px; min-height: 48px; display: inline-grid; grid-template-columns: minmax(0, 1fr); place-items: center; justify-self: center; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; }
+    .question-cancel:hover { border-color: var(--fg); background: color-mix(in oklch, var(--fg) 5%, var(--surface)); color: var(--fg); }
+    .trust-options .back-option:hover { border-color: var(--border); background: color-mix(in oklch, var(--fg) 5%, var(--surface)); }
+    .question-cancel:focus-visible, .trust-options .back-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .question-cancel svg, .trust-options .back-option svg { width: 20px; height: 20px; }
+    .trust-scrollbar { position: relative; min-height: 0; width: 8px; align-self: stretch; border-radius: 999px; background: color-mix(in oklch, var(--border) 75%, transparent); }
+    .trust-scrollbar-thumb { position: absolute; top: 0; left: 0; width: 100%; min-height: 28px; border-radius: inherit; background: color-mix(in oklch, var(--accent) 34%, var(--border)); }
+    .approval-dots { min-height: 8px; display: flex; flex: 0 0 auto; justify-content: center; gap: 7px; margin-top: 10px; }
+    .approval-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--warning); }
+    .perm-option, .hint-cancel, .hint-submit, .question-submit { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--fg); font-size: 11px; cursor: pointer; }
+    .hint-cancel:hover { border-color: var(--fg); background: color-mix(in oklch, var(--fg) 5%, var(--surface)); }
+    .perm-actions .perm-option:not(.back-option), .perm-actions .perm-option:not(.back-option):hover { min-height: 0; padding: 12px 10px; background: color-mix(in oklch, var(--surface) 74%, transparent); border-width: 1px; border-style: solid; border-color: transparent; font-size: 12px; font-weight: 600; text-align: left; }
+    .perm-actions .perm-option:not(.back-option):hover { border-color: var(--border); }
+    .perm-actions.trust-options .back-option { border-color: var(--border); }
+    .option-key { color: var(--accent); font: 10px/1 var(--font-mono); }
+    .question-submit:disabled { cursor: default; opacity: .45; }
+    .hint-form { display: grid; gap: 12px; margin-top: 14px; }
+    .hint-input, .other-input { width: 100%; min-height: 46px; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--fg); }
+    .hint-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .hint-submit, .question-submit { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+    .question-title { margin: 0; color: var(--fg); font: 500 24px/1.12 var(--font-display); }
+    .question-options { min-width: 0; min-height: 0; display: grid; grid-auto-rows: max-content; align-content: start; gap: 7px; margin: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+    .question-options::-webkit-scrollbar { display: none; }
+    .question-option { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 10px; padding: 10px; padding-block: 10px; border: 1px solid transparent; border-radius: var(--radius-control); background: color-mix(in oklch, var(--surface) 74%, transparent); cursor: pointer; }
+    .question-option:hover { border-color: var(--border); }
+    .question-option:has(input:checked) .question-option-key { background: color-mix(in oklch, var(--accent) 22%, transparent); color: var(--fg); }
+    .question-option:has(input:checked) .other-input { border-color: color-mix(in oklch, var(--accent) 35%, var(--border)); }
+    .question-option:focus-within, .perm-option:focus-visible, .question-option .other-input:focus, .question-option .other-input:focus-visible { outline: none; }
+    .question-option > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .question-option .other-input { min-height: 38px; padding: 6px 10px; font-size: 12px; }
+    .question-option:has(.other-input:not([hidden])) .question-option-description { display: none; }
+    .question-option-key { width: 24px; height: 24px; display: grid; place-items: center; align-self: center; border-radius: 7px; background: color-mix(in oklch, var(--fg) 7%, var(--surface)); color: var(--muted); font: 12px/1 var(--font-mono); }
+    .question-option-copy { display: grid; align-self: center; gap: 3px; min-width: 0; }
+    .question-option-label { font-size: 12px; font-weight: 600; line-height: 1.35; }
+    .question-option-description { color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .question-bottom { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+    .question-cancel { width: 48px; height: 48px; min-width: 48px; min-height: 48px; display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; }
+    .question-cancel:hover { border-color: var(--fg); background: color-mix(in oklch, var(--fg) 5%, var(--surface)); color: var(--fg); }
+    .question-cancel:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .question-cancel svg { width: 20px; height: 20px; }
+    .question-dots { flex: 1; display: flex; justify-content: center; align-items: center; gap: 7px; }
+    .question-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--muted); opacity: .3; }
+    .question-dot.answered { opacity: 1; }
+    .question-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .question-head .question-cancel { flex: none; }
+    .question-back { width: 48px; height: 48px; min-width: 48px; min-height: 48px; display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; }
+    .question-back:hover { border-color: var(--fg); background: color-mix(in oklch, var(--fg) 5%, var(--surface)); color: var(--fg); }
+    .question-back svg { width: 20px; height: 20px; }
+    .question-slot { width: 48px; flex: none; }
+    .question-spacer { flex: 1; }
+    .tool-call { width: min(100%, 820px); display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 10px; padding: 10px 0; border-radius: var(--radius-card); color: var(--muted); cursor: pointer; transition: background-color 150ms ease, box-shadow 150ms ease; }
+    .tool-call:hover { background: color-mix(in oklch, var(--fg) 4%, transparent); }
+    .tool-call.expanded { background: color-mix(in oklch, var(--surface) 36%, transparent); box-shadow: var(--shadow-1); }
+    .tool-track { min-height: 24px; display: flex; align-items: flex-start; justify-content: center; padding-top: 2px; }
+    .tool-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--radius-control); color: var(--accent); font: 16px/1 var(--font-ui); }
+    .tool-icon svg { width: 16px; height: 16px; place-self: center; }
+    .tool-content { min-width: 0; }
+    .tool-header { min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 28px; }
+    .tool-header .tool-call-status { flex: 0 0 7px; }
+    .tool-call-status { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--muted); }
+    .tool-call-status.s-success { background: var(--success); }
+    .tool-name { flex: 0 0 auto; color: var(--fg); font: 11px/1.4 var(--font-mono); font-weight: 560; }
+    .tool-call-args { min-width: 0; overflow: hidden; color: var(--muted); font: 10.5px/1.4 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+    .tool-call-toggle { width: 18px; height: 18px; flex: 0 0 18px; display: inline-grid; place-items: center; margin-left: auto; color: var(--muted); transition: transform 150ms ease; }
+    .tool-call-toggle svg { width: 15px; height: 15px; }
+    .tool-call.expanded .tool-call-toggle { transform: rotate(90deg); }
+    .tool-call-body { grid-column: 2; display: none; min-width: 0; margin-top: 8px; padding: 13px 14px; border-radius: var(--radius-card); background: var(--code-bg); color: var(--on-accent); }
+    .tool-call.expanded .tool-call-body { display: block; }
+    .tool-evidence { display: grid; gap: 12px; }
+    .tool-evidence-section { display: grid; gap: 5px; min-width: 0; }
+    .tool-evidence-label { color: color-mix(in oklch, var(--on-accent) 66%, transparent); font: 10px/1.4 var(--font-mono); text-transform: uppercase; }
+    .tool-evidence-value { color: color-mix(in oklch, var(--on-accent) 64%, transparent); font-size: 11px; }
+    .tool-evidence-list { display: grid; gap: 5px; }
+    .tool-evidence-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    .tool-evidence-key { flex: 0 0 auto; color: var(--on-accent); font: 11px/1.4 var(--font-mono); }
+    .question-submit { width: 48px; height: 48px; min-width: 48px; min-height: 48px; padding: 0; border-radius: 50%; }
+    .question-submit svg { width: 20px; height: 20px; }
+    .empty-state { flex: 1; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 40px; text-align: center; color: var(--muted); }
+    .empty-mark { color: var(--accent); font: 84px/.9 var(--font-display); }
+    .empty-title { color: var(--fg); font: 24px/1.2 var(--font-display); }
+    .composer { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: min(100%, 900px); min-height: 56px; margin: 16px auto 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); color: var(--muted); }
+    .composer kbd { padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; font: 12px/1.3 var(--font-mono); }
+    .behavior-notes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 22px; }
+    .note-card { min-width: 0; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); }
+    .note-card h2 { margin: 0 0 9px; font: 20px/1.2 var(--font-display); }
+    .note-card p { margin: 0; color: var(--muted); }
+    .note-card ul { display: grid; gap: 7px; margin: 0; padding-left: 20px; }
+    .note-card li { padding-left: 2px; }
+    code { color: var(--fg); font: 12px/1.5 var(--font-mono); overflow-wrap: anywhere; }
+    [hidden] { display: none !important; }
+    .scroll-options { margin: -4px; padding: 4px; }
+    @media (max-width: 900px) {
+      .page { padding-inline: 16px; }
+      .product-layout { grid-template-columns: 240px minmax(0, 1fr); }
+      .conversation { padding-inline: 20px; }
+      .behavior-notes { grid-template-columns: 1fr; }
+    }
+    .app-window[data-width="narrow"] { width: min(100%, 700px); height: 760px; min-height: 760px; margin-inline: auto; }
+    .app-window[data-width="narrow"] .product-layout { position: relative; display: block; height: 712px; min-height: 712px; }
+    .app-window[data-width="narrow"] .sidebar { position: absolute; inset: 0 auto 0 0; z-index: 3; width: min(78%, 300px); height: 100%; transform: translateX(-105%); visibility: hidden; transition: transform 180ms ease, visibility 180ms ease; }
+    .app-window[data-width="narrow"].sidebar-open .sidebar { transform: translateX(0); visibility: visible; box-shadow: var(--shadow-2); }
+    .app-window[data-width="narrow"] .main-panel { min-height: 712px; }
+    .app-window[data-width="narrow"] .conversation { padding: 20px 12px; }
+    .app-window[data-width="narrow"] .perm-panel, .app-window[data-width="narrow"] .question-panel { padding: 14px; border-radius: var(--radius-panel); }
+    .app-window[data-width="narrow"] .main-header { min-height: 58px; padding-inline: 16px; }
+    .app-window[data-width="narrow"] .demo-message { min-height: 90px; padding: 14px; }
+    .app-window[data-width="narrow"] .demo-mark { font-size: 58px; }
+    .app-window[data-width="narrow"] .demo-title { font-size: 16px; }
+    .app-window[data-width="narrow"] .alert-count { top: 10px; right: 10px; min-width: 58px; min-height: 48px; padding: 5px 8px; font-size: 14px; }
+    .app-window[data-width="narrow"] .session-item { min-height: 44px; }
+    @container permission-card (max-width: 560px) {
+      .perm-context, .tool-row, .command { min-width: 0; max-width: 100%; }
+      .perm-option-viewport { min-width: 0; grid-template-columns: minmax(0, 1fr) 8px; gap: 8px; }
+      .perm-actions .perm-option:not(.back-option) { width: 100%; min-width: 0; grid-template-columns: 24px minmax(0, 1fr); column-gap: 10px; }
+      .perm-actions .perm-option:not(.back-option) > span:not(.option-key) { display: block; width: auto; min-width: 0; justify-self: stretch; align-self: center; overflow-wrap: anywhere; }
+    }
+    .app-window.sidebar-collapsed:not([data-width="narrow"]) .product-layout { grid-template-columns: minmax(0, 1fr); }
+    .app-window.sidebar-collapsed:not([data-width="narrow"]) .sidebar { display: none; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-head">
+      <div>
+        <h1>权限请求与用户问题流程</h1>
+        <p class="lead">这是 T006 的设计审阅页。下面的应用窗口按 Rózsa 现有桌面结构与权限组件实现复刻；窗口内保留产品当前英文文案，页面说明与审阅控制使用中文。</p>
+      </div>
+      <div class="review-status">修订稿 · 待审阅</div>
+    </header>
+
+    <section class="review-tools" aria-label="设计审阅控制">
+      <div class="tool-row">
+        <h2 class="tool-title">状态预览</h2>
+        <div class="tool-buttons">
+          <button class="review-button" id="widthToggle" type="button" aria-pressed="false">窄窗口</button>
+          <button class="review-button" id="themeToggle" type="button" aria-pressed="false">深色主题</button>
+        </div>
+      </div>
+      <nav class="state-list" id="stateList" aria-label="审阅状态">
+        <button class="review-button" type="button" data-state="permission-trust" data-permission-type="file" aria-pressed="true">权限 · 文件写入</button>
+        <button class="review-button" type="button" data-state="permission-command" data-permission-type="command" aria-pressed="false">权限 · Bash 命令</button>
+        <button class="review-button" type="button" data-state="permission-main" data-permission-type="tool-call" aria-pressed="false">权限 · 工具调用</button>
+        <button class="review-button" type="button" data-state="permission-main" data-permission-type="file" aria-pressed="false">权限 · 主操作</button>
+        <button class="review-button" type="button" data-state="permission-hint" aria-pressed="false">权限 · 提示</button>
+        <button class="review-button" type="button" data-state="permission-dismissed" aria-pressed="false">权限 · 操作后关闭</button>
+        <button class="review-button" type="button" data-state="question-single" aria-pressed="false">问题 · 单选未选</button>
+        <button class="review-button" type="button" data-state="question-only" aria-pressed="false">问题 · 单个问题</button>
+        <button class="review-button" type="button" data-state="question-multi" aria-pressed="false">问题 · 多选未选</button>
+        <button class="review-button" type="button" data-state="question-other" aria-pressed="false">问题 · 自定义回答</button>
+        <button class="review-button" type="button" data-state="question-selected" aria-pressed="false">问题 · 已选择</button>
+        <button class="review-button" type="button" data-state="question-complete" aria-pressed="false">问题 · 回答后关闭</button>
+        <button class="review-button" type="button" data-state="empty" aria-pressed="false">无待处理请求</button>
+        <button class="review-button" type="button" data-state="cancelled" aria-pressed="false">取消后恢复</button>
+      </nav>
+      <p class="review-note">以上状态切换仅供审阅，不属于 Rózsa 产品控件。应用窗口内的会话、状态卡片、内容区、权限卡片和输入框按现有界面结构呈现。</p>
+      <p class="review-note" id="stateDescription" aria-live="polite">点选信任范围后，审批面板立即关闭。</p>
+    </section>
+
+    <section class="preview-wrap" aria-label="Rózsa 应用界面预览" lang="en">
+      <div class="app-window" id="appWindow" data-width="wide">
+        <div class="window-chrome" aria-label="Native window controls">
+          <div class="traffic-lights" aria-hidden="true"><span class="traffic-light red"></span><span class="traffic-light yellow"></span><span class="traffic-light green"></span></div>
+          <button class="window-sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+          </button>
+        </div>
+        <div class="product-layout">
+          <aside class="sidebar" aria-label="Workspace sidebar">
+            <section class="sidebar-section sessions-section">
+              <div class="sidebar-header"><span>Sessions</span><button class="icon-button" type="button" aria-label="New session" title="New session"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+              <div class="session-list">
+                <button class="session-item" id="permissionSession" type="button" aria-current="page"><span class="session-dot pending" aria-hidden="true"></span><span class="session-name">(no messages)</span></button>
+                <button class="session-item" id="questionSession" type="button"><span class="session-dot pending" aria-hidden="true"></span><span class="session-name">(no messages)</span></button>
+              </div>
+            </section>
+            <section class="sidebar-section status-section">
+              <div class="sidebar-header"><span>Status</span></div>
+              <div class="status-card">
+                <div class="branch-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span class="branch-name">run-HdHEYs</span></div>
+                <div class="diff-stats"><span>—</span><span>—</span><span>—</span></div>
+                <div class="empty-tools">No tool calls yet</div>
+              </div>
+            </section>
+            <div class="sidebar-bottom"><button class="settings-button" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9M14 17H5M20 17h-3M9 7H5"/><circle cx="17" cy="17" r="2"/><circle cx="7" cy="7" r="2"/></svg><span>Settings</span></button></div>
+          </aside>
+
+          <main class="main-panel" aria-label="Conversation workspace">
+            <div class="main-header"><span id="currentSessionName">(no messages)</span></div>
+            <div class="conversation">
+              <div class="demo-message" id="demoMessage"><span class="demo-mark" aria-hidden="true">S</span><span class="demo-title" id="demoTitle">HOW_PERMISSION_DEMO</span></div>
+              <div class="tool-call expanded" id="questionToolCall" hidden><div class="tool-track"><div class="tool-icon"><svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg></div></div><div class="tool-content"><div class="tool-header"><span class="tool-call-status s-success"></span><span class="tool-name">AskUserQuestion</span><span class="tool-call-args">2 questions answered</span><span class="tool-call-toggle"><svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span></div></div><div class="tool-call-body"><div class="tool-evidence"><div class="tool-evidence-section"><span class="tool-evidence-label">Answers</span><div class="tool-evidence-list"><div class="tool-evidence-row"><span class="tool-evidence-key">Which mode should this session use?</span><span class="tool-evidence-value">Careful</span></div><div class="tool-evidence-row"><span class="tool-evidence-key">Which checks should run?</span><span class="tool-evidence-value">Focused tests</span></div></div></div></div></div></div>
+              <div class="alert-count" id="alertCount" aria-label="2 alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg><span>2</span></div>
+              <div class="empty-state" id="emptyState" hidden><span class="empty-mark" aria-hidden="true">R</span><span class="empty-title">Start a new conversation</span><span>Describe your coding task to Rózsa</span><span><kbd>Enter</kbd> Send　<kbd>⇧ Enter</kbd> New line</span></div>
+              <div class="panel-slot" id="panelSlot" aria-live="polite" aria-atomic="true"></div>
+              <div class="composer" id="composer" hidden><span>Message Rózsa, supports Markdown…</span><span><kbd>Enter</kbd> Send</span></div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </section>
+
+    <section class="behavior-notes" aria-label="交互与实现边界">
+      <article class="note-card">
+        <h2>与现有界面对齐</h2>
+        <ul>
+          <li>不再虚构会话标题、对话气泡或新的产品文案；会话区、Status 卡片、Settings、聊天头部和正文示例按当前界面呈现。</li>
+          <li>权限卡片沿用同一界面结构，按请求类型展示文件路径、Bash 命令或工具名与参数。信任选项仍是逐行直接操作；最终授权、拒绝或信任选择后立即关闭审批面板。</li>
+          <li>Permission Request 与 AskUserQuestion 的选项行静止时不显示边框，hover 时显示边框；返回圆形图标按钮保留自己的边框。</li>
+          <li>Permission Request 选项容器本身上下各留 12px；多行只增加整行高度，不压缩下方留白；快捷键块仍在整行垂直居中。AskUserQuestion 保持现有选项留白。Permission Request 选项内容左对齐并加粗，主操作快捷键 Y/T/N/H 显示在方框中且不加粗。</li>
+          <li>Permission Request 卡片变窄时，请求摘要和选项文字在卡片内部换行并完整显示，不得横向溢出或裁切；固定 24px 快捷键列始终在每一行内垂直居中，选项文字列占用剩余宽度。选项过多时只滚动选项区。</li>
+          <li>正常与 hover 状态均不出现预期外的元素重叠；通知等明确设计的浮层允许遮挡。hover 边框不推动相邻内容，主操作与路径摘要之间保留明确间距。</li>
+          <li>审阅说明和状态控件使用中文；产品窗口内保留现有英文文案，避免把翻译误作产品改动。</li>
+        </ul>
+      </article>
+      <article class="note-card">
+        <h2>行为与恢复</h2>
+        <ul>
+          <li>权限目标显示为 <code>tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt</code>；信任范围从文件、run-HdHEYs 目录、showcase 目录到 <code>tmp/</code> 逐级扩大，末项去掉矩形边框，改用与 AskUserQuestion 操作按钮相同的圆形图标控件，Lucide ArrowLeft 居中并返回主操作。</li>
+          <li>圆点表示待审批的权限请求数量，只剩一个待审批请求时不显示；每完成一个审批减少一个圆点。</li>
+          <li>Bash 请求展示完整命令与按命令前缀逐步放宽的 trust；选项超出可视高度时，只滚动选项区域，显示滚动条并支持 J/K。</li>
+          <li>通用工具调用展示工具名、JSON 参数摘要、风险级别和该工具调用的 trust。</li>
+          <li>权限最终操作点击后立即关闭面板并恢复输入框；这里不展示提交中或重试界面。T/H 进入提示或信任选项页不算最终操作。</li>
+          <li>问题确认按钮在没有有效选择时置灰；选择 Other 后需填写回答才可确认，不出现校验错误提示。</li>
+        </ul>
+      </article>
+      <article class="note-card">
+        <h2>键盘、焦点和请求身份</h2>
+        <ul>
+          <li>权限主操作使用左对齐的 Y/T/N/H 方框快捷键；字母方框不加粗，右侧选项内容加粗。信任范围使用同款数字方框，文字左对齐。提示输入使用 Enter 提交、Escape 返回或取消；选项区聚焦时 J/K 上下滚动。</li>
+          <li>Permission Request 选项容器本身上下各保留 12px padding；文字按自然行高换行，换行只增加整行高度，不挤压下方留白。快捷键块独立垂直居中；选项行不设固定最小高度，行高由 12px padding 与内容（24px 快捷键列）决定，列表行不被压缩，超出时只滚动选项区。hover 状态保持相同的上下 padding 与 1px 边框宽度，不改变选项高度或文字留白。AskUserQuestion 保持现有选项留白。</li>
+          <li>Permission Request 在窄卡片中以 24px 固定快捷键列和可收缩文案列排版；长路径、命令与选项文案在面板内换行，保持完整。布局变化不能拉宽选项按钮、挤出或裁切文字，也不能移动快捷键的垂直中心。</li>
+          <li>问题选项数字块在选项行内垂直居中并使用数字键；N/Enter 前进，D 完成。取消按钮为圆形 X 图标，与圆形确认按钮成对；无障碍名称仍为 Cancel。选择自定义回答后焦点进入输入框。</li>
+          <li>切换 session 后再收到旧请求结果时，按原 sessionId 与 requestId 归属处理；它不能关闭或改动当前会话的面板。这是请求归属规则，不是一个界面状态。</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+
+  <template id="icon-arrow-left"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg></template>
+  <template id="template-permission-trust">
+    <section class="perm-panel" aria-label="Permission Request">
+      <div class="perm-context"><div class="tool-row"><span class="tool-pill">write</span></div><div class="command" data-fold-text="tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt"></div></div>
+      <div class="perm-option-viewport">
+        <div class="perm-actions trust-options scroll-options" id="trustOptions" tabindex="0" aria-label="Trust options">
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">1</span><span>Trust tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt</span></button>
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">2</span><span>Trust tmp/interruption-state-showcase/run-HdHEYs/</span></button>
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">3</span><span>Trust tmp/interruption-state-showcase/</span></button>
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">4</span><span>Trust tmp/</span></button>
+        <button class="perm-option back-option" data-permission-action="back" type="button" aria-label="Back"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg></button>
+        </div>
+        <div class="trust-scrollbar" aria-hidden="true" hidden><span class="trust-scrollbar-thumb"></span></div>
+      </div>
+    </section>
+  </template>
+  <template id="template-permission-command">
+    <section class="perm-panel" aria-label="Permission Request" data-command-group-index="0">
+      <div class="perm-context"><div class="tool-row"><span class="tool-pill">Bash</span></div><div class="command" data-fold-text="$ npm install lodash --workspace desktop --save-dev &amp;&amp; git status --short"></div></div>
+      <div class="perm-option-viewport">
+        <div class="perm-actions trust-options scroll-options" id="trustOptions" tabindex="0" aria-label="Trust options">
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">1</span><span>Trust npm install lodash --workspace desktop --save-dev</span></button>
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">2</span><span>Trust npm install lodash --workspace desktop *</span></button>
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">3</span><span>Trust npm install lodash --workspace *</span></button>
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">4</span><span>Trust npm install lodash *</span></button>
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">5</span><span>Trust npm install *</span></button>
+        <button class="perm-option" data-permission-action="trust-scope" type="button"><span class="option-key">6</span><span>Trust npm *</span></button>
+        <button class="perm-option back-option" data-permission-action="back" type="button" aria-label="Back"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg></button>
+        </div>
+        <div class="trust-scrollbar" aria-hidden="true" hidden><span class="trust-scrollbar-thumb"></span></div>
+      </div>
+    </section>
+  </template>
+  <template id="template-permission-main">
+    <section class="perm-panel" aria-label="Permission Request">
+      <div class="perm-context"><div class="tool-row"><span class="tool-pill" data-permission-tool>write</span><div class="fold" data-kind="clamp" data-permission-description hidden></div></div><div class="command" data-permission-summary data-fold-text="tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt"></div></div>
+      <div class="perm-option-viewport"><div class="perm-actions scroll-options"><button class="perm-option" data-permission-action="allow" type="button"><span class="option-key">Y</span><span>Allow Once</span></button><button class="perm-option" data-permission-action="trust" type="button"><span class="option-key">T</span><span>Trust in project</span></button><button class="perm-option" data-permission-action="deny" type="button"><span class="option-key">N</span><span>Deny Execute</span></button><button class="perm-option" data-permission-action="hint" type="button"><span class="option-key">H</span><span>Deny and hints</span></button></div><div class="trust-scrollbar" aria-hidden="true" hidden><span class="trust-scrollbar-thumb"></span></div></div>
+    </section>
+  </template>
+  <template id="template-permission-hint">
+    <section class="perm-panel" aria-label="Permission Request">
+      <div class="perm-context"><div class="tool-row"><span class="tool-pill" data-permission-tool>write</span><div class="fold" data-kind="clamp" data-permission-description hidden></div></div><div class="command" data-permission-summary data-fold-text="tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt"></div></div>
+      <div class="hint-form"><input class="hint-input" value="Deny, " aria-label="Deny reason"><div class="hint-actions"><button class="hint-cancel" data-permission-action="cancel-hint" type="button">Cancel</button><button class="hint-submit" data-permission-action="submit-hint" type="button">Deny</button></div></div>
+    </section>
+  </template>
+  <template id="template-question-only">
+    <section class="question-panel" aria-labelledby="questionTitle">
+      <div class="question-head"><h2 class="question-title" id="questionTitle">Which branch should this session start from?</h2></div>
+      <div class="perm-option-viewport question-viewport"><div class="question-options scroll-options">
+        <label class="question-option"><span class="question-option-key">1</span><input type="radio" name="answer"><span class="question-option-copy"><span class="question-option-label">main</span><span class="question-option-description">Start from the latest main branch.</span></span></label>
+        <label class="question-option"><span class="question-option-key">2</span><input type="radio" name="answer"><span class="question-option-copy"><span class="question-option-label">Current branch</span><span class="question-option-description">Continue from the checked-out branch.</span></span></label>
+        <label class="question-option"><span class="question-option-key">3</span><input type="radio" name="answer" data-other-option><span class="question-option-copy"><span class="question-option-label">Other</span><span class="question-option-description">Write a custom answer</span><input class="other-input" placeholder="Type your own answer…" aria-label="Your answer" hidden></span></label>
+      </div><div class="trust-scrollbar" aria-hidden="true" hidden><span class="trust-scrollbar-thumb"></span></div></div>
+      <div class="question-bottom"><button class="question-cancel" type="button" aria-label="Cancel" title="Cancel"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button><div class="question-spacer"></div><button class="question-submit" type="button" disabled aria-label="Done (D)" title="Done"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></button></div>
+    </section>
+  </template>
+  <template id="template-question-single">
+    <section class="question-panel" aria-labelledby="questionTitle">
+      <div class="question-head"><h2 class="question-title" id="questionTitle">Which mode should this session use?</h2><button class="question-cancel" type="button" aria-label="Cancel" title="Cancel"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div>
+      <div class="perm-option-viewport question-viewport"><div class="question-options scroll-options">
+        <label class="question-option"><span class="question-option-key">1</span><input type="radio" name="answer"><span class="question-option-copy"><span class="question-option-label">Careful</span><span class="question-option-description">Review each change before continuing.</span></span></label>
+        <label class="question-option"><span class="question-option-key">2</span><input type="radio" name="answer"><span class="question-option-copy"><span class="question-option-label">Fast</span><span class="question-option-description">Make the change directly.</span></span></label>
+        <label class="question-option"><span class="question-option-key">3</span><input type="radio" name="answer" data-other-option><span class="question-option-copy"><span class="question-option-label">Other</span><span class="question-option-description">Write a custom answer</span><input class="other-input" placeholder="Type your own answer…" aria-label="Your answer" hidden></span></label>
+      </div><div class="trust-scrollbar" aria-hidden="true" hidden><span class="trust-scrollbar-thumb"></span></div></div>
+      <div class="question-bottom"><div class="question-slot"></div><div class="question-dots" role="img" aria-label="2 questions, 0 answered"><span class="question-dot"></span><span class="question-dot"></span></div><button class="question-submit" type="button" disabled aria-label="Next question (N)" title="Next question"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></button></div>
+    </section>
+  </template>
+  <template id="template-question-multi">
+    <section class="question-panel" aria-labelledby="questionTitle">
+      <div class="question-head"><h2 class="question-title" id="questionTitle">Which checks should run?</h2><button class="question-cancel" type="button" aria-label="Cancel" title="Cancel"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div>
+      <div class="perm-option-viewport question-viewport"><div class="question-options scroll-options">
+        <label class="question-option"><span class="question-option-key">1</span><input type="checkbox" name="answer"><span class="question-option-copy"><span class="question-option-label">Focused tests</span><span class="question-option-description">Run only the related checks.</span></span></label>
+        <label class="question-option"><span class="question-option-key">2</span><input type="checkbox" name="answer"><span class="question-option-copy"><span class="question-option-label">Documentation</span><span class="question-option-description">Review the changed docs.</span></span></label>
+        <label class="question-option"><span class="question-option-key">3</span><input type="checkbox" name="answer" data-other-option><span class="question-option-copy"><span class="question-option-label">Other</span><span class="question-option-description">Write a custom answer</span><input class="other-input" placeholder="Type your own answer…" aria-label="Your answer" hidden></span></label>
+      </div><div class="trust-scrollbar" aria-hidden="true" hidden><span class="trust-scrollbar-thumb"></span></div></div>
+      <div class="question-bottom"><button class="question-back" type="button" aria-label="Back" title="Back"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg></button><div class="question-dots" role="img" aria-label="2 questions, 1 answered"><span class="question-dot answered"></span><span class="question-dot"></span></div><button class="question-submit" type="button" disabled aria-label="Done (D)" title="Done"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></button></div>
+    </section>
+  </template>
+  <template id="template-question-other">
+    <section class="question-panel" aria-labelledby="questionTitle">
+      <div class="question-head"><h2 class="question-title" id="questionTitle">Which checks should run?</h2><button class="question-cancel" type="button" aria-label="Cancel" title="Cancel"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div>
+      <div class="perm-option-viewport question-viewport"><div class="question-options scroll-options">
+        <label class="question-option"><span class="question-option-key">1</span><input type="checkbox" name="answer"><span class="question-option-copy"><span class="question-option-label">Focused tests</span><span class="question-option-description">Run only the related checks.</span></span></label>
+        <label class="question-option"><span class="question-option-key">2</span><input type="checkbox" name="answer"><span class="question-option-copy"><span class="question-option-label">Documentation</span><span class="question-option-description">Review the changed docs.</span></span></label>
+        <label class="question-option"><span class="question-option-key">3</span><input type="checkbox" name="answer" data-other-option checked><span class="question-option-copy"><span class="question-option-label">Other</span><span class="question-option-description">Write a custom answer</span><input class="other-input" placeholder="Type your own answer…" aria-label="Your answer"></span></label>
+      </div><div class="trust-scrollbar" aria-hidden="true" hidden><span class="trust-scrollbar-thumb"></span></div></div>
+      <div class="question-bottom"><button class="question-back" type="button" aria-label="Back" title="Back"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg></button><div class="question-dots" role="img" aria-label="2 questions, 1 answered"><span class="question-dot answered"></span><span class="question-dot"></span></div><button class="question-submit" type="button" disabled aria-label="Done (D)" title="Done"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></button></div>
+    </section>
+  </template>
+  <template id="template-question-selected">
+    <section class="question-panel" aria-labelledby="questionTitle">
+      <div class="question-head"><h2 class="question-title" id="questionTitle">Which checks should run?</h2><button class="question-cancel" type="button" aria-label="Cancel" title="Cancel"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div>
+      <div class="perm-option-viewport question-viewport"><div class="question-options scroll-options">
+        <label class="question-option"><span class="question-option-key">1</span><input type="checkbox" name="answer" checked><span class="question-option-copy"><span class="question-option-label">Focused tests</span><span class="question-option-description">Run only the related checks.</span></span></label>
+        <label class="question-option"><span class="question-option-key">2</span><input type="checkbox" name="answer"><span class="question-option-copy"><span class="question-option-label">Documentation</span><span class="question-option-description">Review the changed docs.</span></span></label>
+        <label class="question-option"><span class="question-option-key">3</span><input type="checkbox" name="answer"><span class="question-option-copy"><span class="question-option-label">Other</span><span class="question-option-description">Write a custom answer</span><input class="other-input" placeholder="Type your own answer…" aria-label="Your answer" hidden></span></label>
+      </div><div class="trust-scrollbar" aria-hidden="true" hidden><span class="trust-scrollbar-thumb"></span></div></div>
+      <div class="question-bottom"><button class="question-back" type="button" aria-label="Back" title="Back"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg></button><div class="question-dots" role="img" aria-label="2 questions, 1 answered"><span class="question-dot answered"></span><span class="question-dot"></span></div><button class="question-submit" type="button" aria-label="Done (D)" title="Done"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></button></div>
+    </section>
+  </template>
+  <script>
+    const stateToTemplate = {
+      "permission-trust": "template-permission-trust",
+      "permission-command": "template-permission-command",
+      "permission-main": "template-permission-main",
+      "permission-hint": "template-permission-hint",
+      "question-single": "template-question-single",
+      "question-only": "template-question-only",
+      "question-multi": "template-question-multi",
+      "question-other": "template-question-other",
+      "question-selected": "template-question-selected",
+      empty: "",
+      cancelled: "",
+      "permission-dismissed": "",
+      "question-complete": "",
+    };
+    const closedStates = new Set(["permission-dismissed", "question-complete", "cancelled"]);
+    const panelSlot = document.getElementById("panelSlot");
+    const appWindow = document.getElementById("appWindow");
+    let activeSession = "permission";
+    let activePermissionType = "file";
+    let pendingPermissions = 3;
+    let activeState = "permission-trust";
+    const permissionExamples = {
+      file: { tool: "write", summary: "tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt" },
+      command: { tool: "Bash", summary: "$ npm install lodash --workspace desktop --save-dev && git status --short" },
+      "tool-call": { tool: "subagent", summary: '{"action":"spawn","name":"permission-review","system_prompt":"Inspect permission flow","scope":"readonly"}', description: "Inspect the permission flow read-only and report which trust scopes apply to each request type before any change is made." },
+    };
+    const commandTrustGroups = [
+      [
+        "npm install lodash --workspace desktop --save-dev",
+        "npm install lodash --workspace desktop *",
+        "npm install lodash --workspace *",
+        "npm install lodash *",
+        "npm install *",
+        "npm *",
+      ],
+      ["git status --short", "git status *", "git *"],
+    ];
+    const stateDescriptions = {
+      "permission-trust": "信任选择后结束当前请求；若仍有待审批请求，面板显示下一个并更新圆点数量。",
+      "permission-command": "复合命令的两段信任选择依次显示在同一请求内，不计入圆点；圆点只表示待审批的权限请求数量。",
+      "question-only": "只有一个问题时，Cancel 位于左下角，不显示进度圆点。",
+      "permission-main": "Y/N 点击后立即关闭面板；文件与 Bash 的 T 进入信任范围，工具调用的 T 直接 Trust in project；H 进入提示输入。",
+      "permission-hint": "Enter 提交 Deny 后立即关闭；Cancel 或 Escape 返回主操作。",
+      "permission-dismissed": "审批面板已关闭，原会话内容和输入框恢复。",
+      "question-single": "没有选择时 Next 置灰；选择答案后才可前进。",
+      "question-multi": "没有选择时 Done 置灰；选择至少一个答案后才可完成。",
+      "question-other": "选择 Other 后显示输入框；输入非空内容前 Done 保持置灰。",
+      "question-selected": "已有有效选择，Done 可用。",
+      "question-complete": "回答完成后问题面板关闭，并以普通工具调用样式显示 AskUserQuestion 结果。",
+      empty: "无待处理请求时恢复空会话和输入框。",
+      cancelled: "取消后关闭当前审批或问题面板，底部输入框重新出现；其他会话里的待审批请求和已作答问题保持不变。",
+    };
+    function render(state) {
+      activeState = state;
+      const templateId = stateToTemplate[state];
+      panelSlot.replaceChildren();
+      if (templateId) panelSlot.append(document.getElementById(templateId).content.cloneNode(true));
+      if (state === "permission-command") renderCommandTrustGroup(0);
+      if (state === "permission-main" || state === "permission-hint") applyPermissionExample();
+      hydrateFolds(panelSlot);
+      renderApprovalDots();
+      document.querySelectorAll("[data-state]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.state === state)));
+      const empty = state === "empty";
+      const closed = closedStates.has(state);
+      document.getElementById("emptyState").hidden = !empty;
+      document.getElementById("questionToolCall").hidden = state !== "question-complete";
+      document.getElementById("composer").hidden = !empty && !closed;
+      document.getElementById("demoMessage").hidden = empty;
+      document.getElementById("alertCount").hidden = empty || closed || state.startsWith("question");
+      document.getElementById("currentSessionName").textContent = "(no messages)";
+      document.getElementById("demoTitle").textContent = activeSession === "question" ? "HOW_QUESTION_DEMO" : "HOW_PERMISSION_DEMO";
+      document.getElementById("stateDescription").textContent = stateDescriptions[state] ?? "";
+      syncQuestionControls();
+      requestAnimationFrame(refreshTrustScrollbar);
+      if (state === "question-other") panelSlot.querySelector(".other-input")?.focus();
+    }
+    function applyPermissionExample() {
+      const example = permissionExamples[activePermissionType];
+      if (!example) return;
+      const tool = panelSlot.querySelector("[data-permission-tool]");
+      const summary = panelSlot.querySelector("[data-permission-summary]");
+      const description = panelSlot.querySelector("[data-permission-description]");
+      if (tool) tool.textContent = example.tool;
+      if (summary) summary.dataset.foldText = example.summary;
+      if (description) {
+        description.dataset.foldText = example.description ?? "";
+        description.hidden = !example.description;
+      }
+    }
+    function hydrateFolds(root) {
+      root.querySelectorAll("[data-fold-text]").forEach(el => {
+        const text = el.dataset.foldText;
+        if (!text) return;
+        el.classList.add("fold");
+        if (el.dataset.kind === "clamp") {
+          el.replaceChildren(Object.assign(document.createElement("span"), { className: "fold-clamp", textContent: text }));
+        } else {
+          const full = Object.assign(document.createElement("span"), { className: "fold-full", textContent: text });
+          const head = Object.assign(document.createElement("span"), { className: "fold-head", textContent: text });
+          const tail = Object.assign(document.createElement("span"), { className: "fold-tail" });
+          tail.append(Object.assign(document.createElement("span"), { textContent: text }));
+          const collapsed = Object.assign(document.createElement("span"), { className: "fold-collapsed" });
+          collapsed.append(head, tail);
+          el.replaceChildren(full, collapsed);
+        }
+        measureFold(el);
+      });
+    }
+    function measureFold(el) {
+      if (el.dataset.kind === "clamp") {
+        el.dataset.overflow = "true";
+        const clamp = el.querySelector(".fold-clamp");
+        el.dataset.overflow = String(clamp.scrollHeight > clamp.clientHeight + 1);
+      } else {
+        el.dataset.expanded = "true";
+        const full = el.querySelector(".fold-full");
+        const lineHeight = Number.parseFloat(getComputedStyle(full).lineHeight) || 17;
+        const overflow = full.offsetHeight > 2 * lineHeight + 1;
+        delete el.dataset.expanded;
+        el.dataset.overflow = String(overflow);
+      }
+      el.title = el.dataset.overflow === "true" ? foldHint(false) : "";
+    }
+    function foldHint(expanded) {
+      return expanded ? "Click or press Z to collapse" : "Click or press Z to expand";
+    }
+    function toggleFold(el) {
+      const expanded = el.dataset.expanded !== "true";
+      el.dataset.expanded = String(expanded);
+      el.title = foldHint(expanded);
+      requestAnimationFrame(refreshTrustScrollbar);
+    }
+    function createTrustOption(index, text) {
+      const button = document.createElement("button");
+      button.className = "perm-option";
+      button.dataset.permissionAction = "trust-scope";
+      button.type = "button";
+      const key = document.createElement("span");
+      key.className = "option-key";
+      key.textContent = String(index + 1);
+      const label = document.createElement("span");
+      label.textContent = `Trust ${text}`;
+      button.append(key, label);
+      return button;
+    }
+    function createBackOption() {
+      const button = document.createElement("button");
+      button.className = "perm-option back-option";
+      button.dataset.permissionAction = "back";
+      button.type = "button";
+      button.setAttribute("aria-label", "Back");
+      const icon = document.getElementById("icon-arrow-left").content.firstElementChild;
+      button.append(icon.cloneNode(true));
+      return button;
+    }
+    function renderCommandTrustGroup(index) {
+      const panel = panelSlot.querySelector(".perm-panel");
+      const options = panelSlot.querySelector(".scroll-options");
+      const group = commandTrustGroups[index];
+      if (!panel || !options || !group) return;
+      panel.dataset.commandGroupIndex = String(index);
+      options.replaceChildren(...group.map((text, optionIndex) => createTrustOption(optionIndex, text)), createBackOption());
+      requestAnimationFrame(refreshTrustScrollbar);
+    }
+    function completeTrustDecision() {
+      if (activeState === "permission-command") {
+        const panel = panelSlot.querySelector(".perm-panel");
+        const current = Number(panel?.dataset.commandGroupIndex ?? 0);
+        if (current + 1 < commandTrustGroups.length) {
+          renderCommandTrustGroup(current + 1);
+          panelSlot.querySelector(".scroll-options")?.focus();
+          return;
+        }
+      }
+      completePermission();
+    }
+    function completePermission() {
+      pendingPermissions -= 1;
+      render(pendingPermissions > 0 ? "permission-main" : "permission-dismissed");
+    }
+    function renderApprovalDots() {
+      const panel = panelSlot.querySelector(".perm-panel");
+      panel?.querySelector(".approval-dots")?.remove();
+      if (!panel || pendingPermissions <= 1) return;
+      const dots = document.createElement("div");
+      dots.className = "approval-dots";
+      dots.setAttribute("aria-label", `${pendingPermissions} pending approvals`);
+      dots.append(...Array.from({ length: pendingPermissions }, () => Object.assign(document.createElement("span"), { className: "approval-dot" })));
+      panel.append(dots);
+    }
+    function refreshTrustScrollbar() {
+      const options = panelSlot.querySelector(".scroll-options");
+      const track = panelSlot.querySelector(".trust-scrollbar");
+      const thumb = track?.querySelector(".trust-scrollbar-thumb");
+      if (!options || !track || !thumb) return;
+      const overflow = options.scrollHeight > options.clientHeight + 1;
+      track.hidden = !overflow;
+      if (!overflow) return;
+      const trackHeight = track.clientHeight;
+      const thumbHeight = Math.max(28, trackHeight * options.clientHeight / options.scrollHeight);
+      const maxScroll = options.scrollHeight - options.clientHeight;
+      const maxThumbTravel = trackHeight - thumbHeight;
+      thumb.style.height = `${thumbHeight}px`;
+      thumb.style.transform = `translateY(${maxScroll > 0 ? options.scrollTop / maxScroll * maxThumbTravel : 0}px)`;
+    }
+    function syncQuestionControls() {
+      const options = [...panelSlot.querySelectorAll('.question-option input[name="answer"]')];
+      if (options.length === 0) return;
+      const otherSelected = options.some(option => option.dataset.otherOption !== undefined && option.checked);
+      const otherInput = panelSlot.querySelector(".other-input");
+      if (otherInput) otherInput.hidden = !otherSelected;
+      const hasSelection = options.some(option => option.checked);
+      const hasCustomAnswer = !otherSelected || Boolean(otherInput?.value.trim());
+      const submit = panelSlot.querySelector(".question-submit");
+      if (submit) submit.disabled = !hasSelection || !hasCustomAnswer;
+    }
+    document.getElementById("stateList").addEventListener("click", event => {
+      const button = event.target.closest("[data-state]");
+      if (!button) return;
+      if (button.dataset.permissionType) activePermissionType = button.dataset.permissionType;
+      activeSession = button.dataset.state.startsWith("question") ? "question" : "permission";
+      document.getElementById("permissionSession").setAttribute("aria-current", activeSession === "permission" ? "page" : "false");
+      document.getElementById("questionSession").setAttribute("aria-current", activeSession === "question" ? "page" : "false");
+      render(button.dataset.state);
+    });
+    document.getElementById("permissionSession").addEventListener("click", () => {
+      activeSession = "permission";
+      activePermissionType = "file";
+      pendingPermissions = 3;
+      document.getElementById("permissionSession").setAttribute("aria-current", "page");
+      document.getElementById("questionSession").removeAttribute("aria-current");
+      render("permission-trust");
+    });
+    document.getElementById("questionSession").addEventListener("click", () => {
+      activeSession = "question";
+      document.getElementById("questionSession").setAttribute("aria-current", "page");
+      document.getElementById("permissionSession").removeAttribute("aria-current");
+      render("question-multi");
+    });
+    panelSlot.addEventListener("click", event => {
+      const fold = event.target.closest(".fold[data-overflow='true']");
+      if (fold) {
+        toggleFold(fold);
+        return;
+      }
+      const permissionAction = event.target.closest("[data-permission-action]")?.dataset.permissionAction;
+      if (["allow", "deny", "submit-hint"].includes(permissionAction)) {
+        completePermission();
+        return;
+      }
+      if (permissionAction === "trust-scope") {
+        completeTrustDecision();
+        return;
+      }
+      if (permissionAction === "back") {
+        render("permission-main");
+        return;
+      }
+      if (permissionAction === "trust") {
+        const level = { file: "permission-trust", command: "permission-command" }[activePermissionType];
+        if (level) render(level);
+        else render("permission-dismissed");
+        return;
+      }
+      if (permissionAction === "hint") {
+        render("permission-hint");
+        panelSlot.querySelector(".hint-input")?.focus();
+        return;
+      }
+      if (permissionAction === "cancel-hint") {
+        render("permission-main");
+        return;
+      }
+      if (event.target.closest(".question-back")) {
+        render("question-single");
+        return;
+      }
+      if (event.target.closest(".question-cancel")) {
+        render("cancelled");
+        return;
+      }
+      const submit = event.target.closest(".question-submit");
+      if (submit && !submit.disabled) render(activeState === "question-single" ? "question-multi" : "question-complete");
+    });
+    panelSlot.addEventListener("change", event => {
+      if (!event.target.matches('.question-option input[name="answer"]')) return;
+      syncQuestionControls();
+      if (event.target.dataset.otherOption !== undefined && event.target.checked) panelSlot.querySelector(".other-input")?.focus();
+    });
+    panelSlot.addEventListener("input", event => {
+      if (event.target.matches(".other-input")) syncQuestionControls();
+    });
+    panelSlot.addEventListener("keydown", event => {
+      if (event.target.matches(".hint-input")) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          render("permission-dismissed");
+        } else if (event.key === "Escape") {
+          render("permission-main");
+        }
+        return;
+      }
+      if (event.target.matches(".other-input") || event.altKey || event.ctrlKey || event.metaKey) return;
+      const key = event.key.toLowerCase();
+      if (event.target.matches("button") && !/^[ytnhd1-9]$/.test(key)) return;
+      if (activeState === "permission-main") {
+        const action = { y: "allow", t: "trust", n: "deny", h: "hint" }[key];
+        if (action) panelSlot.querySelector(`[data-permission-action="${action}"]`)?.click();
+        return;
+      }
+      if (["permission-trust", "permission-command"].includes(activeState) && /^[1-9]$/.test(key)) {
+        const scopes = panelSlot.querySelectorAll('[data-permission-action="trust-scope"]');
+        const index = Number(key) - 1;
+        if (index < scopes.length) scopes[index]?.click();
+        return;
+      }
+      if (activeState.startsWith("question")) {
+        if (/^[1-9]$/.test(key)) panelSlot.querySelectorAll(".question-option input[name=answer]")[Number(key) - 1]?.click();
+        if ((key === "n" || key === "enter" || key === "d") && !panelSlot.querySelector(".question-submit")?.disabled) panelSlot.querySelector(".question-submit")?.click();
+      }
+    });
+    panelSlot.addEventListener("keydown", event => {
+      const key = event.key.toLowerCase();
+      if (!["permission-trust", "permission-command"].includes(activeState) || !["j", "k"].includes(key)) return;
+      const options = panelSlot.querySelector(".scroll-options");
+      if (!options || options.scrollHeight <= options.clientHeight + 1) return;
+      event.preventDefault();
+      const firstOption = options.querySelector(".perm-option");
+      const gap = Number.parseFloat(getComputedStyle(options).rowGap) || 0;
+      const step = (firstOption?.getBoundingClientRect().height || 44) + gap;
+      options.scrollBy({ top: key === "j" ? step : -step, behavior: "auto" });
+      requestAnimationFrame(refreshTrustScrollbar);
+    });
+    panelSlot.addEventListener("scroll", event => {
+      if (event.target.matches(".scroll-options")) refreshTrustScrollbar();
+    }, true);
+    panelSlot.addEventListener("pointerdown", event => {
+      const track = event.target.closest(".trust-scrollbar");
+      if (!track) return;
+      const options = panelSlot.querySelector(".scroll-options");
+      if (!options) return;
+      const rect = track.getBoundingClientRect();
+      const position = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+      options.scrollTop = Math.max(0, position * options.scrollHeight - options.clientHeight / 2);
+      requestAnimationFrame(refreshTrustScrollbar);
+    });
+    panelSlot.addEventListener("keydown", event => {
+      if (event.key.toLowerCase() !== "z" || event.target.matches("input") || event.altKey || event.ctrlKey || event.metaKey) return;
+      panelSlot.querySelectorAll(".fold[data-overflow='true']").forEach(toggleFold);
+    });
+    document.getElementById("widthToggle").addEventListener("click", event => {
+      const narrow = appWindow.dataset.width !== "narrow";
+      appWindow.dataset.width = narrow ? "narrow" : "wide";
+      appWindow.classList.remove("sidebar-open");
+      event.currentTarget.setAttribute("aria-pressed", String(narrow));
+      event.currentTarget.textContent = narrow ? "标准窗口" : "窄窗口";
+      requestAnimationFrame(refreshTrustScrollbar);
+    });
+    document.getElementById("themeToggle").addEventListener("click", event => {
+      const dark = document.documentElement.dataset.theme !== "dark";
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      event.currentTarget.setAttribute("aria-pressed", String(dark));
+      event.currentTarget.textContent = dark ? "浅色主题" : "深色主题";
+    });
+    document.getElementById("sidebarToggle").addEventListener("click", () => {
+      if (appWindow.dataset.width === "narrow") appWindow.classList.toggle("sidebar-open");
+      else appWindow.classList.toggle("sidebar-collapsed");
+    });
+    render("permission-trust");
+  </script>
+</body>
+</html>
