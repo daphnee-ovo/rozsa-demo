@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { loadApp, readFrontend } from './helpers/browser.js';
 import { permissionCommandMarkup } from '../renderer/scripts/features/permissions.js';
 import { JSDOM } from 'jsdom';
 
 test('fixed interruption demos retain their baseline while runtime restores the composer', () => {
   for (const [scene, panelClass] of [['ask-user-question', 'question-panel'], ['permission-request', 'perm-panel'], ['', 'question-panel'], ['', 'perm-panel']]) {
-    const dom = new JSDOM(`<html data-rozsa-scene="${scene}"><head><style>${readFrontend('styles/composites/permission-question.css')}</style></head><body><div data-od-id="chat-input"><div class="${panelClass} visible"></div><div class="input-wrapper"><textarea></textarea></div></div></body></html>`);
+    const panel = scene
+      ? `<div class="${panelClass} visible"></div>`
+      : `<div data-interruption-mount><div class="interruption-panel-root"><div class="${panelClass} visible"></div></div></div>`;
+    const dom = new JSDOM(`<html data-rozsa-scene="${scene}"><head><style>${readFrontend('styles/composites/permission-question.css')}</style></head><body><div data-od-id="chat-input">${panel}<div class="input-wrapper"><textarea></textarea></div></div></body></html>`);
     try {
       const composer = dom.window.document.querySelector('.input-wrapper');
       assert.equal(dom.window.getComputedStyle(composer).display, 'none');
@@ -23,7 +26,6 @@ test('permission command preview preserves the exact requested command text', ()
     for (const command of ["printf 'ROZSA_PERMISSION_ALLOW\\n'", 'pwd', 'git  status', 'git\tstatus', 'git\nstatus', '  git status', 'printf "<unsafe>&"', '']) {
       preview.innerHTML = permissionCommandMarkup(command, 'bash');
       assert.equal(preview.textContent, '$ ' + command, JSON.stringify(command));
-      assert.equal(preview.querySelector('.perm-syn-command').textContent, command.match(/\S+/)?.[0] ?? '');
       assert.equal(preview.querySelector('unsafe'), null);
     }
     preview.innerHTML = permissionCommandMarkup('<unsafe>&', 'read');

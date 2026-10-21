@@ -1,5 +1,6 @@
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
+import { getByText } from "@testing-library/dom";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { createDOM, withDOM } from "./helpers/browser.js";
@@ -41,15 +42,16 @@ test("late and post-unmount highlights cannot replace current source", async () 
     };
     const render = async (code: string) => act(async () => root.render(React.createElement(HighlightedCode, { code, language: "typescript", isIncomplete: true, requestHighlight: requestHighlight as never })));
     await render("first");
-    assert.equal(rootElement.querySelector("code")?.textContent, "first");
+    getByText(rootElement, "first");
     await render("second");
     await act(async () => callbacks[0]!(fakeResult("stale")));
-    assert.equal(rootElement.querySelector("code")?.textContent, "second");
+    getByText(rootElement, "second");
     await act(async () => callbacks[1]!(fakeResult("second")));
-    assert.equal(rootElement.querySelector("code span")?.textContent, "second");
+    const highlighted = getByText(rootElement, "second");
+    assert.equal(highlighted.style.color, "var(--code-syntax-base)");
     await render("<img src=x onerror=alert(1)>");
     assert.equal(rootElement.querySelector("img"), null);
-    assert.equal(rootElement.querySelector("code")?.textContent, "<img src=x onerror=alert(1)>");
+    getByText(rootElement, "<img src=x onerror=alert(1)>");
     const latest = callbacks.at(-1)!;
     await act(async () => root.unmount());
     await act(async () => latest(fakeResult("after unmount")));

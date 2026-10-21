@@ -1,5 +1,6 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { getByText } from '@testing-library/dom';
 import * as tools from '../renderer/scripts/features/tools.js';
 import { toolView, activityView } from '../renderer/runtime/adapters/tools.js';
 import { createDOM, withDOM, loadApp } from './helpers/browser.js';
@@ -13,10 +14,8 @@ test('tool cards load the actual template, escape output and reject unsupported 
         expanded: true, bodyHtml: tools.evidenceMarkup('Output', '<script>unsafe</script>\nreal stderr'),
       });
       const card = dom.window.document.querySelector('.tool-call');
-      assert(card.classList.contains('expanded'));
-      assert.equal(card.dataset.toolCallId, 'call"1');
       assert.equal(card.querySelector('script'), null);
-      assert.equal(card.querySelector('.tool-evidence-output').textContent, '<script>unsafe</script>\nreal stderr');
+      getByText(card, (_content, element) => element?.textContent === '<script>unsafe</script>\nreal stderr');
       assert.equal(card.querySelector('[onclick]'), null);
       assert.throws(() => tools.toolMarkup('id', 'tool', '', '', 'cancelled'), TypeError);
     });

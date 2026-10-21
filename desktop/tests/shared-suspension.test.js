@@ -1,68 +1,144 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { loadApp } from './helpers/browser.js';
+import { getByRole, queryByRole } from '@testing-library/dom';
+import React, { act } from 'react';
+import { test } from 'vitest';
+import { loadApp, withDOM } from './helpers/browser.js';
+
+async function withRendererDOM(dom, action) {
+  return withDOM(dom, async () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'IS_REACT_ACT_ENVIRONMENT');
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    try { return await action(); }
+    finally {
+      if (previous) Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', previous);
+      else delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+    }
+  });
+}
 
 async function createRuntime() {
   const calls = [];
+  const errors = [];
   const app = await loadApp({ html: `<div id="composer"><div id="msgInput" contenteditable="true">未发送 draft</div></div>
-    <div id="autocomplete" hidden></div><div id="forkPicker" hidden></div><div id="subagentPanel" hidden></div>`, globals: { testCalls: calls, assert } });
-  app.evaluate("invoke=async command=>{testCalls.push(command);throw Error('unexpected IPC: '+command);};");
+    <div id="autocomplete" role="listbox" aria-label="Command suggestions"></div><div id="forkPicker" hidden></div><div id="subagentPanel" hidden></div>`, globals: { testCalls: calls, testErrors: errors, assert } });
+  const { mountSuggestionPopup } = await import('../renderer/scripts/components/composer.js');
+  const suggestionPopup = await withRendererDOM(app.dom, () => mountSuggestionPopup(app.document.getElementById('autocomplete')));
+  app.window.RozsaComposer = {
+    renderSuggestions: suggestionPopup.render.bind(suggestionPopup),
+    clearSuggestions: suggestionPopup.clear.bind(suggestionPopup),
+    scrollSuggestionTo: suggestionPopup.scrollTo.bind(suggestionPopup),
+  };
+  app.evaluate("showError=message=>testErrors.push(message);invoke=async command=>{testCalls.push(command);throw Error('unexpected IPC: '+command);};");
   const run = code => app.evaluate('(async()=>{' + code + '})()');
   const input = app.document.getElementById('msgInput');
   const popup = app.document.getElementById('autocomplete');
-  return { app, run, input, popup, calls };
+  const close = async () => {
+    await withRendererDOM(app.dom, () => act(() => suggestionPopup.dispose()));
+    app.close();
+  };
+  return { app, run, input, popup, calls, errors, close };
 }
 
 test('suspended mouse, slash, native and selection paths do not call IPC or change draft', async () => {
-  const { app, run, input, popup, calls } = await createRuntime();
+  const { app, run, input, popup, calls, errors, close } = await createRuntime();
   try {
-    await run(`await attachFileReference();await attachDirectoryReference();await attachReference('file');
-      insertFileReferences(['/tmp/file']);handleNativeFileDrag('enter');handleNativeFileDrag('drop',{paths:['/tmp/file']});
-      await updateAutocomplete();acHighlight(1);selectAutocomplete(0);assert.equal(navigateAutocomplete('down'),false);assert.equal(confirmAutocomplete(),false);
-      await showModelPicker();selectModel(0);await showForkPicker();await forkAtMessage(0);await showSubagentPanel();
-      await handleSlashAction('modelPicker');await handleSlashAction('forkPicker');await handleSlashAction('subagentPanel');
-      await dispatchSlashCommand('/model actual-model');await dispatchSlashCommand('/fork');await dispatchSlashCommand('/subagents');isStreaming=true;await sendMessage();`);
-    const composer = await import('../renderer/scripts/components/composer.js');
-    composer.init({ boundModules: new Set(), byId: id => app.document.getElementById(id), attachFileReference() {}, attachDirectoryReference() {}, insertSlashCommandPrefix() {}, showModelPicker() {}, addMessage() {}, updateAbortButton() {} });
-    for (const action of ['attach-file', 'attach-directory', 'model-picker', 'send']) {
+    for (const action of ['attach-file', 'attach-directory', 'running-send-mode']) {
       const button = app.document.createElement('button');
       button.dataset.action = action;
       app.document.getElementById('composer').append(button);
+    }
+    await run(`configureConversationSuspensions();
+      await attachFileReference();await attachDirectoryReference();await attachReference('file');
+      insertFileReferences(['/tmp/file']);handleNativeFileDrag('enter');handleNativeFileDrag('drop',{paths:['/tmp/file']});
+      await showForkPicker();await forkAtMessage(0);await showSubagentPanel();
+      await handleSlashAction('forkPicker');await handleSlashAction('subagentPanel');
+      await dispatchSlashCommand('/fork');await dispatchSlashCommand('/subagents');isStreaming=true;await sendMessage();`);
+    const composer = await import('../renderer/scripts/components/composer.js');
+    composer.init({ boundModules: new Set(), byId: id => app.document.getElementById(id), attachFileReference() {}, attachDirectoryReference() {}, insertSlashCommandPrefix() {}, showModelPicker() {}, addMessage() {}, updateAbortButton() {} });
+    for (const action of ['attach-file', 'attach-directory', 'running-send-mode']) {
+      const button = app.document.querySelector(`[data-action="${action}"]`);
       button.click();
     }
     assert.equal(input.textContent, '未发送 draft');
-    assert.equal(popup.innerHTML, '');
-    assert.equal(popup.hidden, true);
+    assert.equal(queryByRole(popup, 'option'), null);
     assert.deepEqual(calls, []);
-    await run(`assert.equal(suspendedConversationCommand('a /model model-id'),true);assert.equal(suspendedConversationCommand('/MODEL'),true);assert.equal(suspendedConversationCommand('/model-name'),false);assert.equal(suspendedConversationCommand('https://example.test/model'),false);`);
-  } finally { app.close(); }
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });
 
-test('late autocomplete, picker and panel results cannot restore suspended UI', async () => {
-  const { app, run, input, popup } = await createRuntime();
+test('late autocomplete and model results cannot replace active-session suggestions', async () => {
+  const { app, run, input, popup, calls, errors, close } = await createRuntime();
   try {
-    for (const [operation, start, result] of [
-      ['attachments', "attachReference('file')", '/tmp/late'],
-      ['autocomplete', 'updateAutocomplete()', { items: [{ value: '/late' }], prefix: '/', highlightRanges: [] }],
-      ['modelPicker', 'showModelPicker()', [{ id: 'late' }]],
-      ['fork', 'showForkPicker()', [{ messageIndex: 0, label: 'late' }]],
-      ['subagents', 'showSubagentPanel()', [{ name: 'late' }]],
-    ]) {
-      let release;
-      app.window.pending = new Promise(resolve => { release = resolve; });
-      await run('conversationOperationSuspended=()=>false;invoke=()=>pending;getInputText=()=>document.getElementById("msgInput").textContent;getInputCursor=()=>0;renderModelSelector=()=>{};');
-      const pending = run('await ' + start + ';');
-      await run('conversationOperationSuspended=operation=>Object.hasOwn(conversationSuspensions,operation);');
-      release(result);
-      await pending;
-      assert.equal(input.textContent, '未发送 draft', operation);
-      assert.equal(popup.innerHTML, '', operation);
-    }
-  } finally { app.close(); }
+    const pending = [];
+    app.window.testPending = pending;
+    app.window.testCalls = calls;
+    await run(`
+      showError=message=>testErrors.push(message);
+      activeSessionId='session-a';activeSessionIdx=0;models=[];
+      sessions=[{id:'session-a',path:'/a'},{id:'session-b',path:'/b'}];
+      getInputText=()=>document.getElementById('msgInput').textContent;getInputCursor=()=>0;
+      renderModelSelector=()=>{};
+      displayPermPanelIfNeeded=()=>{};
+      invoke=(command,args)=>{
+        testCalls.push([command,args]);
+        if(command==='switch_session'){activeSessionId='session-b';return Promise.resolve();}
+        return new Promise(resolve=>testPending.push({command,args,resolve}));
+      };
+    `);
+
+    let autocompleteA;
+    await withRendererDOM(app.dom, () => act(() => { autocompleteA = run('return await updateAutocomplete();'); }));
+    assert.equal(calls.at(-1)[0], 'autocomplete_input');
+    assert.equal(calls.at(-1)[1].text, '未发送 draft');
+    assert.equal(calls.at(-1)[1].cursor, 0);
+    await withRendererDOM(app.dom, () => act(async () => { await run('await doSwitchSession(1);'); }));
+    let autocompleteB;
+    await withRendererDOM(app.dom, () => act(() => { autocompleteB = run('return await updateAutocomplete();'); }));
+    assert.equal(calls.at(-1)[0], 'autocomplete_input');
+    assert.equal(calls.at(-1)[1].text, '未发送 draft');
+    assert.equal(calls.at(-1)[1].cursor, 0);
+    await withRendererDOM(app.dom, async () => {
+      await act(async () => {
+        pending[1].resolve({ items: [{ value: '/current', label: 'Current command', description: 'session B' }], prefix: '/' });
+        await autocompleteB;
+      });
+      getByRole(popup, 'option', { name: /Current command/ });
+      await act(async () => {
+        pending[0].resolve({ items: [{ value: '/stale', label: 'Stale command' }], prefix: '/' });
+        await autocompleteA;
+      });
+      getByRole(popup, 'option', { name: /Current command/ });
+      assert.equal(queryByRole(popup, 'option', { name: /Stale command/ }), null);
+    });
+
+    await run('models=[];activeSessionId="session-a";activeSessionIdx=0;');
+    let pickerA;
+    await withRendererDOM(app.dom, () => act(() => { pickerA = run('return await showModelPicker();'); }));
+    assert.equal(calls.at(-1)[0], 'list_models');
+    await withRendererDOM(app.dom, () => act(async () => { await run('await doSwitchSession(1);'); }));
+    let pickerB;
+    await withRendererDOM(app.dom, () => act(() => { pickerB = run('return await showModelPicker();'); }));
+    assert.equal(calls.at(-1)[0], 'list_models');
+    await withRendererDOM(app.dom, async () => {
+      await act(async () => {
+        pending[3].resolve([{ id: 'model-b', name: 'Current model', provider: 'provider-b' }]);
+        await pickerB;
+      });
+      getByRole(popup, 'option', { name: /Current model.*provider-b/ });
+      await act(async () => {
+        pending[2].resolve([{ id: 'model-a', name: 'Stale model', provider: 'provider-a' }]);
+        await pickerA;
+      });
+      getByRole(popup, 'option', { name: /Current model.*provider-b/ });
+      assert.equal(queryByRole(popup, 'option', { name: /Stale model/ }), null);
+    });
+    assert.equal(input.textContent, '未发送 draft');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });
 
 test('running stop preserves draft and passive queue state while keyboard send is paused', async () => {
-  const { app, run, input, calls } = await createRuntime();
+  const { app, run, input, calls, close } = await createRuntime();
   try {
     const button = app.document.createElement('button');
     const mode = app.document.createElement('div');
@@ -78,7 +154,6 @@ test('running stop preserves draft and passive queue state while keyboard send i
     input.focus();
     const keydown = new app.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
     input.dispatchEvent(keydown);
-    input.dispatchEvent(new app.window.KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }));
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(input.textContent, '未发送 draft');
     assert.deepEqual(calls, []);
@@ -87,28 +162,40 @@ test('running stop preserves draft and passive queue state while keyboard send i
     const steering = app.document.createElement('div');
     steering.id = 'steeringConversation'; steering.hidden = true;
     app.document.body.append(queued, steering);
-    app.window.RozsaConversation = { runningPanelMarkup: panel => JSON.stringify(panel) };
+    app.window.RozsaConversation = { runningPanelMarkup: panel => panel?.items?.join('\n') || '' };
     await run("renderRunningMessages(['existing queue'],[{text:'existing steer'}]);");
-    assert.match(queued.innerHTML, /existing queue/);
-    assert.match(steering.innerHTML, /existing steer/);
+    assert.equal(queued.textContent, 'existing queue');
+    assert.equal(steering.textContent, 'existing steer · Awaiting tool result');
     await run('renderRunningMessages([],[]);');
     assert.equal(queued.hidden, true);
     assert.equal(steering.hidden, true);
-  } finally { app.close(); }
+  } finally { await close(); }
 });
 
 test('idle submit and slash prefix remain available', async () => {
-  const { app, run, input } = await createRuntime();
+  const { app, run, input, close } = await createRuntime();
   try {
     app.window.sent = [];
-    await run(`nativeSplitMode=true;getInputText=input=>input.textContent;setInputText=(input,text)=>{input.textContent=text;};updateInputHighlight=()=>{};invoke=async(command,args)=>{sent.push([command,args]);};await sendMessage();`);
+    await withRendererDOM(app.dom, () => act(async () => {
+      await run(`nativeSplitMode=true;getInputText=input=>input.textContent;setInputText=(input,text)=>{input.textContent=text;};updateInputHighlight=()=>{};invoke=async(command,args)=>{sent.push([command,args]);};await sendMessage();`);
+    }));
     assert.deepEqual(app.window.sent.map(([command, args]) => [command, args.message]), [['send_message', '未发送 draft']]);
     assert.equal(input.textContent, '');
     await run('insertInputText=text=>{document.getElementById("msgInput").textContent+=text;};insertSlashCommandPrefix();');
     assert.equal(input.textContent, '/');
-    input.textContent = '/model selected';
-    await run('await sendMessage();');
-    assert.equal(app.window.sent.length, 1);
-    assert.equal(input.textContent, '/model selected');
-  } finally { app.close(); }
+    input.textContent = '/unknown selected';
+    await withRendererDOM(app.dom, () => act(async () => {
+      await run(`invoke=async(command,args)=>{
+        sent.push([command,args]);
+        if(command==='dispatch_slash_command')return {handled:false};
+      };
+      await sendMessage();`);
+    }));
+    assert.deepEqual(app.window.sent.map(([command, args]) => [command, args.message ?? args.text]), [
+      ['send_message', '未发送 draft'],
+      ['dispatch_slash_command', '/unknown selected'],
+      ['send_message', '/unknown selected'],
+    ]);
+    assert.equal(input.textContent, '');
+  } finally { await close(); }
 });

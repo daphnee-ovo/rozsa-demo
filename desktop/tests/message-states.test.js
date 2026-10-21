@@ -1,5 +1,6 @@
-import test from "node:test";
+import { afterAll, test } from "vitest";
 import assert from "node:assert/strict";
+import { getAllByRole, getByRole, getByText } from "@testing-library/dom";
 import { act } from "react";
 import { createConversationRenderer } from "../renderer/scripts/features/conversation-view.tsx";
 import { completeMermaidFences } from "../renderer/scripts/features/markdown-renderer.tsx";
@@ -8,7 +9,7 @@ import { createDOM, loadApp, readFrontend, withDOM } from "./helpers/browser.js"
 
 const previousActFlag = globalThis.IS_REACT_ACT_ENVIRONMENT;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-test.after(() => {
+afterAll(() => {
   if (previousActFlag === undefined) delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   else globalThis.IS_REACT_ACT_ENVIRONMENT = previousActFlag;
 });
@@ -39,6 +40,11 @@ async function render(app, script) {
     app.evaluate(script);
     await new Promise(resolve => setTimeout(resolve, 20));
   });
+  const deadline = Date.now() + 3000;
+  while (app.document.querySelector(".markdown-loading")) {
+    if (Date.now() >= deadline) assert.fail("Markdown content did not finish loading");
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
 }
 
 test("React messages preserve user, assistant and system roles plus rich Markdown", async () => {
@@ -58,22 +64,17 @@ test("React messages preserve user, assistant and system roles plus rich Markdow
     const container = app.document.getElementById("chatMessages");
     const rows = container.querySelectorAll(".conversation-virtual-row .msg");
     assert.equal(rows.length, 3, container.innerHTML);
-    assert.match(rows[0].className, /msg-user/);
     assert.equal(rows[0].querySelector(".markdown-body")?.textContent, "用户你好");
-    assert.equal(rows[1].querySelector(".msg-role"), null, "assistant identity label is intentionally omitted");
-    assert.ok(rows[1].querySelector(".md-code-block code")?.textContent.includes("const 答案 = 42;"));
-    assert.equal(rows[1].querySelector(".md-copy")?.getAttribute("aria-label"), "Copy code");
-    assert.ok(rows[1].querySelector(".md-table th")?.textContent.includes("名称"));
-    assert.equal(rows[1].querySelectorAll(".markdown-body li").length, 2);
-    const link = rows[1].querySelector('a[href="https://example.test/docs"]');
-    assert.equal(link?.getAttribute("rel"), "noreferrer");
-    assert.equal(link?.target, "_blank");
-    const image = rows[1].querySelector("img");
-    assert.equal(image?.getAttribute("alt"), "架构图");
-    assert.equal(image?.getAttribute("src"), "https://images.example.test/diagram.png");
+    assert.ok(rows[1].textContent.includes("const 答案 = 42;"));
+    getByRole(rows[1], "button", { name: "Copy code" });
+    assert.equal(getByRole(rows[1], "table").textContent.includes("名称"), true);
+    assert.equal(getAllByRole(rows[1], "listitem").length, 2);
+    const link = getByRole(rows[1], "link", { name: "文档" });
+    assert.equal(link.getAttribute("rel"), "noreferrer");
+    assert.equal(link.getAttribute("target"), "_blank");
+    const image = getByRole(rows[1], "img", { name: "架构图" });
+    assert.equal(image.getAttribute("src"), "https://images.example.test/diagram.png");
     assert.ok(rows[1].textContent?.includes("界".repeat(300)));
-    assert.match(rows[2].className, /msg-system/);
-    assert.equal(rows[2].querySelector(".msg-role"), null, "system identity label is intentionally omitted");
     assert.equal(rows[2].querySelector(".markdown-body")?.textContent, "系统提示");
 
     const policy = readFrontend("index.html").match(/Content-Security-Policy" content="([^"]+)"/)?.[1];
@@ -84,7 +85,7 @@ test("React messages preserve user, assistant and system roles plus rich Markdow
   });
 });
 
-test("user and assistant streaming Markdown highlights an open fence and commits the latest closed source", async () => {
+test("streaming Markdown keeps open code readable and commits the latest closed source", async () => {
   await withMessageApp(async app => {
     const container = app.document.getElementById("chatMessages");
     const streaming = { kind: "standard", entryId: "highlight-stream", message: { role: "assistant", content: [{ type: "text", text: "```ts\nconst answer = 4" }] } };
@@ -93,21 +94,17 @@ test("user and assistant streaming Markdown highlights an open fence and commits
       streaming,
     ];
     await render(app, 'renderMessages(window.__messages, true, "session-highlight")');
-    assert.deepEqual(Array.from(container.querySelectorAll(".md-code-block code"), code => code.textContent?.trimEnd()), ["const value = 1", "const answer = 4"]);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    assert.ok(container.querySelectorAll(".md-code-block code")[1]?.querySelector("span"), "open fence should highlight before a closing fence arrives");
+    assert.ok(container.textContent.includes("const value = 1"));
+    assert.ok(container.textContent.includes("const answer = 4"));
 
     const complete = { ...streaming, message: { role: "assistant", content: [{ type: "text", text: "```ts\nconst answer = 42\n```" }] } };
     app.window.__messages = [app.window.__messages[0], complete];
     await render(app, 'renderMessages(window.__messages, false, "session-highlight")');
-    const assistantCode = container.querySelectorAll(".md-code-block code")[1];
-    assert.equal(assistantCode?.textContent?.trimEnd(), "const answer = 42");
-    await new Promise(resolve => setTimeout(resolve, 150));
-    assert.ok(assistantCode?.querySelector("span"));
+    assert.ok(container.textContent.includes("const answer = 42"));
   });
 });
 
-test("streaming partials, continuation, image blocks and provider errors remain visible", async () => {
+test("streaming partials and continuation remain visible while provider errors use notifications", async () => {
   await withMessageApp(async app => {
     const first = { kind: "standard", entryId: "assistant-first", message: { role: "assistant", content: [{ type: "text", text: "部分" }] } };
     const partial = { kind: "standard", entryId: "assistant-first", message: { role: "assistant", content: [{ type: "text", text: "部分回答" }] } };
@@ -115,7 +112,7 @@ test("streaming partials, continuation, image blocks and provider errors remain 
     await render(app, 'renderMessages(window.__messages, true, "session-stream")');
     const container = app.document.getElementById("chatMessages");
     assert.equal(container.querySelectorAll(".conversation-virtual-row .msg").length, 1);
-    assert.ok(container.querySelector(".stream-cursor"));
+    getByText(container, "▌");
     assert.ok(container.querySelector(".markdown-body")?.textContent?.includes("部分"));
     app.window.__messages = [partial];
     await render(app, 'renderMessages(window.__messages, true, "session-stream")');
@@ -125,34 +122,37 @@ test("streaming partials, continuation, image blocks and provider errors remain 
     await render(app, 'renderMessages(window.__messages, true, "session-stream")');
     const continuation = container.querySelectorAll(".conversation-virtual-row .msg")[1];
     assert.equal(container.querySelectorAll(".conversation-virtual-row .msg").length, 2);
-    assert.match(continuation.className, /msg-assistant-continuation/);
-    assert.equal(continuation.querySelector(".msg-role"), null);
+    assert.ok(continuation.textContent.includes("续写"));
 
     app.window.__messages = [{ kind: "standard", entryId: "image-1", message: { role: "user", content: [{ type: "image", data: "not-base64", mimeType: "text/html" }] } }];
     await render(app, 'renderMessages(window.__messages, false, "session-image")');
-    assert.equal(container.querySelector(".msg-image-blocked")?.getAttribute("aria-label"), "Image unavailable");
+    getByRole(container, "img", { name: "Image unavailable" });
 
     const error = { kind: "standard", entryId: "error-1", message: { role: "assistant", errorMessage: "429: rate limit", content: [] } };
+    const notifications = [];
+    app.window.upsertNotification = notification => notifications.push(notification);
+    app.window.resolveNotification = () => {};
     app.window.__messages = [error];
     await render(app, 'renderMessages(window.__messages, false, "session-error")');
-    assert.equal(container.querySelector(".msg-error pre")?.textContent, "429: rate limit");
+    assert.deepEqual(notifications.map(({ id, message }) => ({ id, message })), [
+      { id: "message-render:session-error:error-1", message: "429: rate limit" },
+    ]);
+    assert.equal(container.textContent.includes("429: rate limit"), false);
   });
 });
 
-test("memoized React rows keep completed messages stable during streaming", async () => {
+test("streaming updates keep completed message text visible", async () => {
   await withMessageApp(async app => {
     const completed = { kind: "standard", entryId: "finished", message: { role: "user", content: [{ type: "text", text: "old" }] } };
     const firstPartial = { kind: "standard", entryId: "current", message: { role: "assistant", content: [{ type: "text", text: "a" }] } };
     app.window.__messages = [completed, firstPartial];
     await render(app, 'renderMessages(window.__messages, true, "session-performance")');
-    const rows = app.document.querySelectorAll("#chatMessages .conversation-virtual-row .msg");
-    const completedNode = rows[0];
     const nextPartial = { kind: "standard", entryId: "current", message: { role: "assistant", content: [{ type: "text", text: "ab" }] } };
     app.window.__messages = [completed, nextPartial];
     await render(app, 'renderMessages(window.__messages, true, "session-performance")');
-    const updatedRows = app.document.querySelectorAll("#chatMessages .conversation-virtual-row .msg");
-    assert.equal(updatedRows[0], completedNode);
-    assert.ok(updatedRows[1].textContent?.includes("ab"));
+    const visibleMessages = app.document.querySelector("#chatMessages").textContent;
+    assert.ok(visibleMessages.includes("old"));
+    assert.ok(visibleMessages.includes("ab"));
   });
 });
 

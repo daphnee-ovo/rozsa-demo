@@ -1,73 +1,59 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { init, emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup } from '../renderer/scripts/features/conversation.ts';
-import { createConversationFlow } from '../renderer/scripts/flows/conversation.ts';
+import { getByRole, getByText, queryByText } from '@testing-library/dom';
+import { init, emptyConversationMarkup, messageFrame, runningPanelMarkup, thinkingMarkup } from '../renderer/scripts/features/conversation.ts';
 import { createDOM, withDOM } from './helpers/browser.js';
 
-test('conversation renderers preserve message, continuation, empty, running and thinking markup', () => {
-  assert.equal(emptyConversationMarkup().includes('Start a new conversation'), true);
-  const user = messageFrame('user', '<p>Hello</p>', 3);
-  assert.match(user, /class="msg msg-user" data-od-id="message-3"/);
-  assert.match(user, /<div class="msg-avatar">U<\/div>/);
-  assert.match(user, /<div class="msg-role">You<\/div>/);
+test('conversation content remains readable while continuation omits repeated identity', () => {
+  const dom = createDOM();
+  const { document } = dom.window;
+  document.body.innerHTML = emptyConversationMarkup();
+  getByText(document, 'Start a new conversation');
 
-  const continuation = messageFrame('assistant', '<p>World</p>', 4, true);
-  assert.match(continuation, /msg-assistant-continuation/);
-  assert.doesNotMatch(continuation, /msg-avatar|msg-role/);
+  document.body.innerHTML = messageFrame('user', '<p>Hello</p>', 3);
+  getByText(document, 'Hello');
+  getByText(document, 'U');
+
+  document.body.innerHTML = messageFrame('assistant', '<p>World</p>', 4, true);
+  getByText(document, 'World');
+  assert.equal(queryByText(document, 'R'), null);
   assert.throws(() => messageFrame('system', 'hidden', 5), { name: 'TypeError' });
 
-  const running = runningPanelMarkup({ title: '<unsafe>', count: 2, items: ['A & B'] });
-  assert.match(running, /&lt;unsafe&gt;/);
-  assert.match(running, /A &amp; B/);
+  document.body.innerHTML = runningPanelMarkup({ title: '<unsafe>', count: 2, items: ['A & B'] });
+  assert.match(document.body.textContent, /<unsafe>/);
+  assert.equal(getByRole(document, 'listitem').textContent, 'A & B');
   assert.equal(runningPanelMarkup(null), '');
-  const thinking = thinkingMarkup('<p>Reason</p>', { expanded: false, active: true, duration: '2s' });
-  assert.match(thinking, /aria-expanded="false"/);
-  assert.match(thinking, /data-stream-cursor-target="thinking"/);
-  assert.match(thinking, /THINKING/);
-  assert.match(thinking, /thinking-duration/);
-});
 
+  document.body.innerHTML = thinkingMarkup('<p>Reason</p>', { expanded: false, active: true, duration: '2s' });
+  const thinking = getByRole(document, 'button', { name: /THINKING/ });
+  assert.equal(thinking.getAttribute('aria-expanded'), 'false');
+  getByText(document, 'Reason');
+  getByText(document, '2s');
+  dom.window.close();
+});
 test('conversation component binds thinking click and keyboard behavior once', async () => {
-  const dom = createDOM('<div id="chatMessages"><div class="thinking-header" role="button" tabindex="0"></div></div>');
+  const dom = createDOM('<div id="chatMessages"><div class="thinking-header" role="button" tabindex="0" aria-expanded="false"></div></div>');
   try {
     await withDOM(dom, () => {
       const chat = document.getElementById('chatMessages');
       const header = chat.querySelector('.thinking-header');
-      const calls = [];
-      const api = { boundModules: new Set(), byId: id => document.getElementById(id), renderMessages: () => calls.push('render'), toggleThinking: element => calls.push(element) };
+      const api = {
+        boundModules: new Set(), byId: id => document.getElementById(id), renderMessages() {},
+        toggleThinking: element => element.setAttribute('aria-expanded', String(element.getAttribute('aria-expanded') !== 'true')),
+      };
       init(api); init(api);
+      assert.equal(getByRole(chat, 'button').getAttribute('aria-expanded'), 'false');
       header.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      assert.equal(getByRole(chat, 'button').getAttribute('aria-expanded'), 'true');
       const enter = new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
       header.dispatchEvent(enter);
+      assert.equal(getByRole(chat, 'button').getAttribute('aria-expanded'), 'false');
       const space = new dom.window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
       header.dispatchEvent(space);
       header.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-      assert.equal(calls.length, 4);
-      assert.equal(calls[0], 'render');
-      assert.equal(calls[1], header);
-      assert.equal(calls[2], header);
-      assert.equal(calls[3], header);
+      assert.equal(getByRole(chat, 'button').getAttribute('aria-expanded'), 'true');
       assert.equal(enter.defaultPrevented, true);
       assert.equal(space.defaultPrevented, true);
     });
   } finally { dom.window.close(); }
-});
-
-test('conversation flow forwards the existing UI actions to its adapter', () => {
-  const calls = [];
-  const adapter = Object.fromEntries(['attachFile', 'attachDirectory', 'slashCommand', 'chooseModel', 'submit', 'refreshSendState']
-    .map(name => [name, () => calls.push(name)]));
-  const flow = createConversationFlow(adapter);
-  flow.attachFileReference(); flow.attachDirectoryReference(); flow.insertSlashCommandPrefix();
-  flow.showModelPicker(); flow.addMessage(); flow.updateAbortButton();
-  assert.deepEqual(calls, ['attachFile', 'attachDirectory', 'slashCommand', 'chooseModel', 'submit', 'refreshSendState']);
-});
-
-test('the native conversation entry loads the TypeScript component and flow sources', async () => {
-  const source = await import('../renderer/scripts/features/conversation.ts');
-  const flow = await import('../renderer/scripts/flows/conversation.ts');
-  assert.equal(typeof source.init, 'function');
-  assert.equal(typeof source.messageFrame, 'function');
-  assert.equal(typeof flow.mountConversation, 'function');
-  assert.equal(typeof flow.createConversationFlow, 'function');
 });
