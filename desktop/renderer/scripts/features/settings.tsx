@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ProductClient } from "../../product-client.js";
+import { reportError } from "../../error-reporting.ts";
 import type { ModelOption, ProductBridge, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../../main/session-contract.js";
 
-type Props = { client: ProductClient; pane: "general" | "appearance"; report?: (message: string) => void };
+type Props = { client: ProductClient; pane: "general" | "appearance" };
 type Settings = Record<string, unknown>;
 type SettingsRuntimeApi = {
   boundModules: Set<string>;
@@ -56,20 +57,20 @@ export function init(api: SettingsRuntimeApi): void {
   });
 }
 
-export function mountSettingsPanes(documentRoot: ParentNode, bridge: ProductBridge, report?: (message: string) => void): () => void {
+export function mountSettingsPanes(documentRoot: ParentNode, bridge: ProductBridge): () => void {
   const roots: Root[] = [];
   const client = new ProductClient(bridge);
   for (const pane of ["general", "appearance"] as const) {
     const target = documentRoot.querySelector<HTMLElement>(`#pane-${pane}`);
     if (!target) throw new Error(`Settings pane is missing: ${pane}`);
     const root = createRoot(target);
-    root.render(<SettingsPane client={client} pane={pane} report={report} />);
+    root.render(<SettingsPane client={client} pane={pane} />);
     roots.push(root);
   }
   return () => roots.forEach(root => root.unmount());
 }
 
-function SettingsPane({ client, pane, report }: Props) {
+function SettingsPane({ client, pane }: Props) {
   const [scope, setScope] = useState<SettingsScope>("global");
   const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null);
   const [themes, setThemes] = useState(initialThemes);
@@ -90,9 +91,9 @@ function SettingsPane({ client, pane, report }: Props) {
     for (const message of current) {
       if (reported.current.has(message)) continue;
       reported.current.add(message);
-      reportError(report, message);
+      reportError(message);
     }
-  }, [snapshot, pane, report]);
+  }, [snapshot, pane]);
 
   useEffect(() => {
     let active = true;
@@ -102,7 +103,7 @@ function SettingsPane({ client, pane, report }: Props) {
       setSnapshot(value);
       setThemes(value.themes);
       if (pane === "appearance") applyAppearance(value);
-    }).catch(reason => { if (active) { setError(errorText(reason)); reportError(report, errorText(reason)); } })
+    }).catch(reason => { if (active) { setError(errorText(reason)); reportError(reason); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [client, pane, scope]);
@@ -126,7 +127,7 @@ function SettingsPane({ client, pane, report }: Props) {
       const next = await client.updateSetting(scope, key, value);
       setSnapshot(next); setThemes(next.themes);
       if (pane === "appearance") applyAppearance(next);
-    } catch (reason) { setError(errorText(reason)); reportError(report, errorText(reason)); }
+    } catch (reason) { setError(errorText(reason)); reportError(reason); }
     finally { setSaving(false); }
   }
 
@@ -137,7 +138,7 @@ function SettingsPane({ client, pane, report }: Props) {
       const next = await client.resetSetting(scope, key);
       setSnapshot(next); setThemes(next.themes);
       if (pane === "appearance") applyAppearance(next);
-    } catch (reason) { setError(errorText(reason)); reportError(report, errorText(reason)); }
+    } catch (reason) { setError(errorText(reason)); reportError(reason); }
     finally { setSaving(false); }
   }
 
@@ -160,7 +161,7 @@ function SettingsPane({ client, pane, report }: Props) {
       const refreshed = await client.getSettings(scope);
       setSnapshot(refreshed); setThemes(refreshed.themes);
       applyAppearance(refreshed);
-    } catch (reason) { setError(errorText(reason)); reportError(report, errorText(reason)); }
+    } catch (reason) { setError(errorText(reason)); reportError(reason); }
     finally { setSaving(false); }
   }
 
@@ -349,10 +350,6 @@ function numberValue(value: unknown, fallback: number): number { return typeof v
 function booleanValue(value: unknown, fallback = false): boolean { return typeof value === "boolean" ? value : fallback; }
 function object(value: unknown): Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-function reportError(report: Props["report"], message: string): void {
-  if (report) report(message);
-  else console.error(message);
-}
 function applyAppearance(snapshot: SettingsSnapshot): void {
   const root = document.documentElement;
   const mode = snapshot.appearance.themeMode;
