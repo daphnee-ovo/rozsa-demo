@@ -29,6 +29,7 @@ export class BackendService {
   private readonly modelListeners = new Set<(update: ModelUpdate) => void>();
   private lastModelUpdate: ModelUpdate | undefined;
   private modelWatch: Promise<unknown> | undefined;
+  private readonly settingsReads = new Map<SettingsScope, Promise<SettingsSnapshot>>();
 
   constructor(binary: string, directories: string[], options: BackendOptions = {}) {
     this.timeoutMs = options.requestTimeoutMs ?? 10000;
@@ -268,12 +269,26 @@ export class BackendService {
   }
   async getSettings(scope: SettingsScope): Promise<SettingsSnapshot> {
     if (scope !== "global" && scope !== "project") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid settings scope" });
-    await this.watchModels();
-    return settingsSnapshot(await this.request("get_settings", { scope }));
+    const active = this.settingsReads.get(scope);
+    if (active) return active;
+    const read = (async () => {
+      await this.watchModels();
+      return settingsSnapshot(await this.request("get_settings", { scope }));
+    })();
+    this.settingsReads.set(scope, read);
+    const clear = (): void => { if (this.settingsReads.get(scope) === read) this.settingsReads.delete(scope); };
+    void read.then(clear, clear);
+    return read;
+  }
+  private invalidateSettingsReads(): void {
+    this.settingsReads.delete("global");
+    this.settingsReads.delete("project");
   }
   async updateSetting(scope: SettingsScope, key: string, value: unknown): Promise<SettingsSnapshot> {
     if ((scope !== "global" && scope !== "project") || typeof key !== "string" || !key) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid setting update" });
-    return settingsSnapshot(await this.request("update_setting", { scope, key, value }));
+    this.invalidateSettingsReads();
+    try { return settingsSnapshot(await this.request("update_setting", { scope, key, value })); }
+    finally { this.invalidateSettingsReads(); }
   }
   async startAuth(provider: import("../../contracts/ipc/session.js").OAuthProvider): Promise<MessageOperation> {
     return messageOperation(await this.request("auth_login", { provider: oauthProvider(provider) }));
@@ -292,7 +307,9 @@ export class BackendService {
   }
   async resetSetting(scope: SettingsScope, key: string): Promise<SettingsSnapshot> {
     if ((scope !== "global" && scope !== "project") || typeof key !== "string" || !key) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid setting reset" });
-    return settingsSnapshot(await this.request("reset_setting", { scope, key }));
+    this.invalidateSettingsReads();
+    try { return settingsSnapshot(await this.request("reset_setting", { scope, key })); }
+    finally { this.invalidateSettingsReads(); }
   }
   async listThemes(scope: SettingsScope): Promise<ThemeSummary[]> {
     const value = await this.request("list_themes", { scope });
@@ -308,8 +325,11 @@ export class BackendService {
     }
   }
   async saveTheme(theme: ThemeDefinition): Promise<void> {
-    const value = await this.request("save_theme", theme);
-    if (value !== true) { const failure = transportFailure("protocol", "Invalid theme save response"); this.fail(failure); throw failure; }
+    this.invalidateSettingsReads();
+    try {
+      const value = await this.request("save_theme", theme);
+      if (value !== true) { const failure = transportFailure("protocol", "Invalid theme save response"); this.fail(failure); throw failure; }
+    } finally { this.invalidateSettingsReads(); }
   }
   stop(): Promise<void> { this.stopPromise ??= this.close(); return this.stopPromise; }
   private async close(): Promise<void> {
