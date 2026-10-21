@@ -1,87 +1,102 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Script } from 'node:vm';
-import { frontendRoot, readFrontend } from './helpers/browser.js';
-import { createDOM } from './helpers/browser.js';
+import { getAllByRole, getByRole } from '@testing-library/dom';
+import { test } from 'vitest';
+import { claimedMarkup } from '../renderer/scripts/features/dev-flow.js';
+import { sessionsMarkup } from '../renderer/scripts/features/sidebar.js';
+import { readFrontend, createDOM } from './helpers/browser.js';
 
-test('sidebar adapts Dev Flow rows, hover preview, and Dashboard state to available space', async () => {
-  const { claimedMarkup } = await import(new URL('scripts/features/dev-flow.js', frontendRoot));
-  const dom = createDOM('<main id="mainSidebarScene"><section data-od-id="sidebar-status"><div id="devFlowSidebarClaimed"></div><button id="devFlowSidebarMore" hidden></button></section></main><footer class="sidebar-bottom"></footer><button id="sidebarDevFlowDashboard"></button>');
+test('Dev Flow sidebar keeps visible rows responsive and delays hover detail until intent is clear', async () => {
+  const dom = createDOM('<main id="mainSidebarScene"><section data-od-id="sidebar-status"><div id="devFlowSidebarGroup" hidden><button id="devFlowSidebarSummary"></button><div id="devFlowSidebarClaimed"></div><button id="devFlowSidebarMore" hidden></button></div></section><ul id="sessionList"></ul></main><footer class="sidebar-bottom"></footer><button id="sidebarDevFlowDashboard">Dashboard</button>');
   const { window } = dom;
+  const handlers = new Map();
+  const calls = [];
+  const events = [];
+  let fontsLoaded;
   let rowHeight = 20;
-  window.RozsaSidebar = { claimedMarkup };
+  let initialize;
+  window.RozsaSidebar = { claimedMarkup, sessionsMarkup };
+  window.RozsaUIReady = Promise.resolve();
+  window.RozsaUIHost = { port: {
+    async request(name, args) {
+      if (name === 'gui_webview_ready') return { revision: 0, scene: 'main', selectedPane: null };
+      calls.push({ name, args });
+    },
+    async subscribe(name, handler) { handlers.set(name, handler); return () => {}; },
+  } };
+  window.RozsaGuiShared = { applySceneSnapshot(state, snapshot, render) { Object.assign(state, snapshot); render(snapshot); } };
+  window.RozsaSidebarEmit = async name => events.push(name);
   window.innerHeight = 300;
-  window.ResizeObserver = class { constructor(callback) { this.callback = callback; } observe(element) { element.observed = true; } };
+  window.ResizeObserver = class { constructor(callback) { this.callback = callback; } observe() {} };
   window.requestAnimationFrame = callback => callback();
+  Object.defineProperty(window.document, 'fonts', { value: { addEventListener: (_name, callback) => { fontsLoaded = callback; } } });
   const timers = new Map();
   let timerId = 0;
   window.setTimeout = (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; };
   window.clearTimeout = id => timers.delete(id);
   Object.defineProperty(window.HTMLElement.prototype, 'getBoundingClientRect', { configurable: true, value() {
     if (this.matches('[data-od-id="sidebar-status"]')) return { height: 100 + window.document.getElementById('devFlowSidebarClaimed').children.length * rowHeight + (window.document.getElementById('devFlowSidebarMore').hidden ? 0 : rowHeight) };
-    if (this.id === 'devFlowSidebarClaimed') return { height: this.children.length * rowHeight };
-    if (this.id === 'devFlowSidebarMore' || this.classList.contains('dev-flow-claimed-row')) return { height: rowHeight };
+    if (this.id === 'devFlowSidebarClaimed' || this.id === 'devFlowSidebarMore' || this.classList.contains('dev-flow-claimed-row')) return { height: this.id === 'devFlowSidebarClaimed' ? this.children.length * rowHeight : rowHeight };
     if (this.matches('.sidebar-bottom')) return { height: 40 };
     return { height: 0 };
   } });
   const addWindowListener = window.addEventListener.bind(window);
-  window.addEventListener = (name, callback, options) => { if (name !== 'DOMContentLoaded') addWindowListener(name, callback, options); };
-  new Script(readFrontend('sidebar.js'), { filename: 'sidebar.js' }).runInContext(dom.getInternalVMContext());
-  const calls = [];
-  const events = [];
-  window.sidebarInvocations = calls;
-  window.sidebarEvents = events;
-  const items = count => Array.from({ length: count }, (_, index) => ({ id: `TASK-T${String(index + 1).padStart(3, '0')}`, shortId: `T${String(index + 1).padStart(3, '0')}`, title: `A very long claimed task title ${index}` }));
-  window.__items = items;
-  window.eval("sidebarInvoke = async (name, args) => sidebarInvocations.push({name,args}); sidebarEmit = async name => sidebarEvents.push(name); sidebarDevFlow = {availability:'ready',claimed:__items(5),project:{projectKey:'test-project'},revision:7}; renderDevFlowClaimedRows();");
-  const claimed = window.document.getElementById('devFlowSidebarClaimed');
-  const more = window.document.getElementById('devFlowSidebarMore');
-  const dashboard = window.document.getElementById('sidebarDevFlowDashboard');
-  assert.equal(claimed.children.length, 1, '300px height must leave 96px for Sessions and show one row');
-  assert.equal(more.hidden, false);
-  assert.equal(more.textContent, 'more 4', 'remaining rows must be summarized exactly');
-  assert.ok(claimed.children[0].children[2].textContent.includes('very long'), 'title content remains intact for CSS ellipsis');
-  claimed.children[0].onpointerenter();
-  assert.equal(calls.length, 0, 'hover must wait before requesting detail');
-  const runDelayed = milliseconds => {
-    for (const [id, timer] of [...timers]) if (timer.delay <= milliseconds) { timers.delete(id); timer.callback(); }
+  window.addEventListener = (name, callback, options) => {
+    if (name === 'DOMContentLoaded') initialize = callback;
+    else addWindowListener(name, callback, options);
   };
-  runDelayed(179);
-  assert.equal(calls.length, 0, 'hover duration must filter pointer sweeps');
-  runDelayed(180);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].name, 'dev_flow_detail', 'sustained hover requests item detail');
-  claimed.children[0].onpointerleave();
-  assert.ok(events.includes('dev-flow-detail-dismiss'), 'hover preview closes when the pointer leaves');
-  claimed.children[0].onclick();
-  assert.equal(calls.length, 2, 'click requests detail immediately');
-  claimed.children[0].onpointerleave();
-  assert.equal(events.length, 1, 'click pins detail across pointer leave');
+  new Script(readFrontend('sidebar.js'), { filename: 'sidebar.js' }).runInContext(dom.getInternalVMContext());
+  try {
+    await initialize();
+    const items = count => Array.from({ length: count }, (_, index) => ({ id: `TASK-T${String(index + 1).padStart(3, '0')}`, shortId: `T${String(index + 1).padStart(3, '0')}`, title: `A very long claimed task title ${index}` }));
+    const publish = devFlow => handlers.get('sidebar-state')({
+      devFlow, showDevFlowDashboard: true, sessions: [], activeSessionId: null,
+    });
+    publish({ availability: 'ready', showSidebarStatus: true, claimed: items(5), project: { projectKey: 'test-project' }, revision: 7, openTasks: 5, openIssues: 0 });
 
-  window.innerHeight = 360;
-  window.eval('invalidateDevFlowRowMetrics()');
-  assert.equal(claimed.children.length, 5, 'taller windows consume all available row slots');
-  assert.equal(more.hidden, true);
-  window.eval("sidebarDevFlow.claimed = []; sidebarLastDevFlowLayoutKey = ''; renderDevFlowClaimedRows()");
-  assert.equal(claimed.children.length, 0, 'zero claimed work renders no rows');
-  assert.equal(more.hidden, true);
-  rowHeight = 30;
-  window.eval('sidebarDevFlow.claimed = __items(5); invalidateDevFlowRowMetrics()');
-  assert.equal(claimed.children.length, 2, 'font metric changes invalidate cached row height');
-  assert.equal(more.textContent, 'more 3');
-  assert.equal([...window.document.getElementById('mainSidebarScene').children].filter(element => element.style.visibility === 'hidden').length, 1, 'one persistent measurement probe is reused');
+    const claimed = window.document.getElementById('devFlowSidebarClaimed');
+    const more = getByRole(window.document, 'button', { name: 'more 4' });
+    assert.equal(getAllByRole(claimed, 'button').length, 1);
+    assert.equal(more.textContent, 'more 4');
+    const row = getByRole(claimed, 'button', { name: /T001A very long claimed task title 0/ });
+    row.dispatchEvent(new window.Event('pointerenter'));
+    const runDelayed = milliseconds => {
+      for (const [id, timer] of [...timers]) if (timer.delay <= milliseconds) { timers.delete(id); timer.callback(); }
+    };
+    runDelayed(179);
+    assert.equal(calls.length, 0);
+    runDelayed(180);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].name, 'dev_flow_detail');
+    assert.equal(calls[0].args.request.target.id, 'TASK-T001');
+    row.dispatchEvent(new window.Event('pointerleave'));
+    assert.deepEqual(events, ['dev-flow-detail-dismiss']);
+    row.click();
+    assert.equal(calls.length, 2);
+    row.dispatchEvent(new window.Event('pointerleave'));
+    assert.deepEqual(events, ['dev-flow-detail-dismiss']);
 
-  window.eval('updateDevFlowDashboardButton(null)');
-  assert.equal(dashboard.disabled, true);
-  assert.equal(dashboard.title, 'Dev-flow is disabled');
-  for (const availability of ['starting', 'loading', 'error']) {
-    window.__availability = availability;
-    window.eval("updateDevFlowDashboardButton({availability:__availability,availabilityMessage:__availability+' state'})");
-    assert.equal(dashboard.disabled, true);
-    assert.equal(dashboard.title, `${availability} state`);
-  }
-  window.eval("updateDevFlowDashboardButton({availability:'ready'})");
-  assert.equal(dashboard.disabled, false);
-  assert.equal(dashboard.title, 'Open dev-flow dashboard');
-  window.close();
+    window.innerHeight = 360;
+    publish({ availability: 'ready', showSidebarStatus: true, claimed: items(5), project: { projectKey: 'test-project' }, revision: 8, openTasks: 5, openIssues: 0 });
+    assert.equal(getAllByRole(claimed, 'button').length, 5);
+    assert.equal(window.document.getElementById('devFlowSidebarMore').hidden, true);
+    publish({ availability: 'ready', showSidebarStatus: true, claimed: [], project: { projectKey: 'test-project' }, revision: 9, openTasks: 0, openIssues: 0 });
+    assert.equal(claimed.textContent, '');
+
+    rowHeight = 30;
+    fontsLoaded();
+    publish({ availability: 'ready', showSidebarStatus: true, claimed: items(5), project: { projectKey: 'test-project' }, revision: 10, openTasks: 5, openIssues: 0 });
+    assert.equal(getAllByRole(claimed, 'button').length, 2);
+    assert.equal(window.document.getElementById('devFlowSidebarMore').textContent, 'more 3');
+
+    const dashboard = getByRole(window.document, 'button', { name: 'Dashboard' });
+    for (const [devFlow, title] of [[null, 'Dev-flow is disabled'], [{ availability: 'starting', availabilityMessage: 'starting state' }, 'starting state'], [{ availability: 'loading', availabilityMessage: 'loading state' }, 'loading state'], [{ availability: 'error', availabilityMessage: 'error state' }, 'error state']]) {
+      publish(devFlow);
+      assert.equal(dashboard.disabled, true);
+      assert.equal(dashboard.title, title);
+    }
+    publish({ availability: 'ready', showSidebarStatus: false, claimed: [], project: { projectKey: 'test-project' }, revision: 11, openTasks: 0, openIssues: 0 });
+    assert.equal(dashboard.disabled, false);
+    assert.equal(dashboard.title, 'Open dev-flow dashboard');
+  } finally { dom.window.close(); }
 });

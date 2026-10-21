@@ -233,7 +233,8 @@ Generated bundles/maps live in desktop/.vite/; Forge packages in desktop/out/.
 resource inspection; `test:ui` runs Node-based DOM and process-independent UI
 checks, while `test:process` runs service/process integration checks, including
 the launcher fixture. The default test entry runs both, the Vitest suite, and
-session message routing, input bridge and native appearance checks. Native
+the Node input-bridge check. Session-message routing and the pure native-
+appearance adapter run in Vitest. Native
 Electron, resource/build and performance acceptance remain separate. Each test
 file belongs to one runner: `package.json` lists Node suites, and
 `vitest.config.ts` lists Vitest suites. Electron-independent business and

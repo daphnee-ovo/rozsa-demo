@@ -1,5 +1,6 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { getByRole } from '@testing-library/dom';
 import { init as bindSidebar } from '../renderer/scripts/features/sidebar.js';
 import { init as bindDevFlow } from '../renderer/scripts/features/dev-flow.js';
 import { createDOM, withDOM, loadApp, readFrontend } from './helpers/browser.js';
@@ -25,7 +26,7 @@ test('Dashboard click dispatches once when Sidebar and Dev Flow share the page',
       const api = { boundModules: new Set(), byId: id => document.getElementById(id),
         openDevFlowDashboard: () => { opened++; }, closeDevFlowDetail() {} };
       bindSidebar(api); bindDevFlow(api);
-      document.getElementById('sidebarDevFlowDashboard').click();
+      getByRole(document, 'button', { name: 'Dashboard' }).click();
       assert.equal(opened, 1);
     });
   } finally { dom.window.close(); }
@@ -36,7 +37,7 @@ test('native detail opens with the prototype Close focus instead of selecting th
   try {
     app.evaluate('openDevFlowDetailPanel()');
     assert.equal(app.document.getElementById('devFlowDetail').hidden, false);
-    assert.equal(app.document.activeElement.id, 'devFlowDetailClose');
+    assert.equal(app.document.activeElement, getByRole(app.document, 'button', { name: 'Close' }));
   } finally { app.close(); }
 });
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { createElectronAdapter } from "../renderer/runtime/adapters/electron.ts";
 import type { ProductBridge, SessionSnapshot } from "../main/session-contract.ts";
 import type { MessageEvent } from "../../contracts/ipc/session.ts";

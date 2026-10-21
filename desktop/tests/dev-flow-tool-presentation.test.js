@@ -1,7 +1,10 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
+import { getByText } from '@testing-library/dom';
 import { createConversationRenderer } from '../renderer/scripts/features/conversation-view.tsx';
+import { evidenceMarkup, evidenceViewMarkup, loadToolTemplate, toolMarkup } from '../renderer/scripts/features/tools.js';
+import { toolView } from '../renderer/runtime/adapters/tools.js';
 import { loadApp, readFrontend, withDOM } from './helpers/browser.js';
 
 function appWithSettings(html) {
@@ -10,7 +13,7 @@ function appWithSettings(html) {
   return app;
 }
 
-test('successful Dev Flow bash mutations get semantic presentations', () => {
+test('successful Dev Flow bash mutations get semantic presentations', async () => {
   const app = appWithSettings();
   try {
     const parse = (command, output = 'claim output\nstderr evidence') => app.evaluate(`parseDevFlowBashPresentation(${JSON.stringify({ name: 'bash', arguments: { command } })}, ${JSON.stringify({ isError: false, output, details: { success: true, exit_code: 0, duration_ms: 42, timeout_ms: 120000, truncated: false } })})`);
@@ -39,8 +42,13 @@ test('successful Dev Flow bash mutations get semantic presentations', () => {
     assert.equal(app.evaluate(`parseDevFlowBashPresentation(${JSON.stringify({ name: 'bash', arguments: { command: 'dow claim TASK-T001' } })}, {isError:true,output:'',details:{success:false,exit_code:1}})`), null);
     assert.equal(app.evaluate("devFlowTitleEndpoint('task', 'TASK-T001').pathname"), '/api/v1/tasks/TASK-T001');
     assert.equal(app.evaluate("devFlowTitleEndpoint('issue', 'ISSUE-I003').pathname"), '/api/v1/issues/ISSUE-I003');
-    assert.match(app.evaluate('fetchDevFlowTitle.toString()'), /method: 'GET'/);
-    assert.doesNotMatch(app.evaluate('fetchDevFlowTitle.toString()'), /payload\?\.items/);
+    const requests = [];
+    app.window.fetch = async (url, options) => {
+      requests.push({ url, method: options.method });
+      return { ok: true, text: async () => JSON.stringify({ title: 'Resolved Dev Flow title' }) };
+    };
+    assert.equal(await app.evaluate("fetchDevFlowTitle(devFlowTitleEndpoint('task', 'TASK-T001'))"), 'Resolved Dev Flow title');
+    assert.deepEqual(requests, [{ url: 'http://127.0.0.1:9800/api/v1/tasks/TASK-T001', method: 'GET' }]);
   } finally { app.close(); }
 });
 
@@ -81,19 +89,18 @@ test('covered Dev Flow calls use semantic titles and shared output evidence', as
   const app = appWithSettings('<div id="chatMessages"></div>');
   try {
     await withDOM(app.dom, async () => {
+      await loadToolTemplate();
       globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-      const renderer = createConversationRenderer(app.document.getElementById('chatMessages'));
+      const container = app.document.getElementById('chatMessages');
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 600 });
+      container.getBoundingClientRect = () => ({ width: 800, height: 600, top: 0, left: 0, right: 800, bottom: 600 });
+      const renderer = createConversationRenderer(container);
       app.window.RozsaConversation = { renderView: renderer.render };
+      app.window.RozsaTools = { toolView, evidenceMarkup, evidenceViewMarkup, toolMarkup };
       try {
         await act(async () => app.evaluate(`
-      window.requests = []; window.cards = []; window.evidenceCalls = [];
-      window.RozsaTools = {
-        toolView() { return {disposition:'covered',kind:'output',label:'Output',output:'Claim accepted',status:'s-success'}; },
-        evidenceMarkup(label, output) { window.evidenceCalls.push([label, output]); return 'SHARED OUTPUT'; },
-        evidenceViewMarkup() { throw new Error('wrong evidence renderer'); },
-        toolMarkup(id, name, arg, output, status, options) { window.cards.push({id,name,arg,status,options}); return '<div tabindex="0"></div>'; },
-      };
       devFlowTitleForItem = () => 'Keep shared title';
+      window.requests = [];
       requestDevFlowTitles = (id, presentation) => window.requests.push([id, presentation]);
       activeSessionId = 'session-1';
       window.result = {isError:false,output:'Claim accepted',details:{success:true,exit_code:0}};
@@ -102,13 +109,13 @@ test('covered Dev Flow calls use semantic titles and shared output evidence', as
       renderToolChips = () => {};
       renderMessages([window.rawMessage,window.toolResult], false, 'session-1');
     `));
-        const card = app.window.cards[0];
-        assert.equal(card.name, 'Claimed');
-        assert.equal(card.arg, 'Task T001 Keep shared title');
-        assert.equal(card.status, 's-success');
-        assert.equal(card.options.bodyHtml, 'SHARED OUTPUT');
-        assert.equal(card.options.className, 'dev-flow-tool-call');
-        assert.deepEqual(JSON.parse(JSON.stringify(app.window.evidenceCalls)), [['Output', 'Claim accepted']]);
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+        const card = app.document.querySelector('#chatMessages .tool-call[data-session-id="session-1"]');
+        assert.ok(card, 'the completed Dev Flow call remains visible in its session');
+        assert.equal(getByText(card, 'Claimed').textContent, 'Claimed');
+        assert.equal(getByText(card, 'Task T001 Keep shared title').textContent, 'Task T001 Keep shared title');
+        assert.equal(getByText(card, 'Claim accepted').textContent, 'Claim accepted');
+        assert.match(card.querySelector('.tool-call-status').className, /s-success/);
         assert.equal(app.window.requests.length, 1);
         assert.equal(app.window.requests[0][0], 'call-1');
         assert.equal(app.window.requests[0][1].items[0].id, 'TASK-T001');

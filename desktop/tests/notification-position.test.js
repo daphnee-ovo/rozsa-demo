@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { createSidebarFeedback } from '../renderer/runtime/adapters/notifications.js';
 
 test('sidebar feedback forwards messages and preserves bridge failures', async () => {

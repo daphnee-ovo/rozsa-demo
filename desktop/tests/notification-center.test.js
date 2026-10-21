@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
+import { getByRole, getByText, queryByRole } from '@testing-library/dom';
 import {
   applyNotificationPresentation, createNotificationElement, errorItemMarkup,
   notificationIcon, notificationMarkup,
@@ -29,10 +30,10 @@ function setupApp() {
     clearTimeout(id) { timers.delete(id); },
   } });
   app.window.showError = reportError;
+  app.evaluate('setupNotificationErrorTray()');
   Object.defineProperty(app.window, 'performance', { value: { now: () => clock } });
   return {
     ...app,
-    state: () => app.evaluate('({ toasts: notificationToasts, errors: unresolvedErrors })'),
     advance(milliseconds) {
       const target = clock + milliseconds;
       while (true) {
@@ -56,37 +57,36 @@ test('stable IDs update in place and toast timers remain independent across hove
         upsertNotification({id:'changing',severity:'error',title:'First',message:'old',timeoutMs:6000});
         upsertNotification({id:'changing',severity:'warning',title:'Second',message:'new',timeoutMs:6000});
       `);
-      let state = app.state();
-      const changed = state.toasts.get('changing');
-      assert.equal(state.toasts.size, 1);
-      assert.equal(changed.severity, 'warning');
-      assert.match(changed.element.className, /notification-warning$/);
-      assert.equal(changed.element.getAttribute('role'), 'status');
-      assert.match(changed.element.querySelector('.notification-icon').innerHTML, /triangle-alert/);
+      const changed = app.document.querySelector('#notificationStack [data-notification-id="changing"]');
+      assert.ok(changed);
+      assert.equal(app.document.querySelectorAll('#notificationStack [data-notification-id="changing"]').length, 1);
+      assert.equal(getByRole(app.document, 'status'), changed);
+      assert.equal(getByText(changed, 'new').textContent, 'new');
       app.advance(5999);
-      assert.equal(app.state().toasts.has('changing'), true);
+      assert.ok(app.document.querySelector('#notificationStack [data-notification-id="changing"]'));
       app.advance(1);
-      assert.equal(app.state().toasts.has('changing'), false);
+      assert.equal(app.document.querySelector('#notificationStack [data-notification-id="changing"]'), null);
 
       app.evaluate(`upsertNotification({id:'first',severity:'error',title:'First',message:'a',timeoutMs:6000})`);
       app.advance(1000);
       app.evaluate(`upsertNotification({id:'second',severity:'error',title:'Second',message:'b',timeoutMs:6000})`);
-      const second = app.state().toasts.get('second');
-      second.element.dispatchEvent(new app.window.Event('pointerenter'));
+      const stack = app.document.getElementById('notificationStack');
+      const second = stack.querySelector('[data-notification-id="second"]');
+      second.dispatchEvent(new app.window.Event('pointerenter'));
       app.evaluate(`upsertNotification({id:'second',severity:'error',title:'Updated',message:'updated',timeoutMs:6000})`);
       app.advance(5000);
-      assert.equal(app.state().toasts.has('first'), false);
-      assert.equal(app.state().toasts.has('second'), true);
+      assert.equal(stack.querySelector('[data-notification-id="first"]'), null);
+      assert.ok(stack.querySelector('[data-notification-id="second"]'));
       app.advance(1000);
-      assert.equal(app.state().toasts.has('second'), true);
-      assert.equal(app.document.querySelector('#notificationStack').firstElementChild, second.element);
-      second.element.dispatchEvent(new app.window.Event('pointerleave'));
+      assert.ok(stack.querySelector('[data-notification-id="second"]'));
+      assert.equal(stack.firstElementChild, second);
+      assert.equal(getByText(second, 'updated').textContent, 'updated');
+      second.dispatchEvent(new app.window.Event('pointerleave'));
       app.advance(5999);
-      assert.equal(app.state().toasts.has('second'), true);
+      assert.ok(stack.querySelector('[data-notification-id="second"]'));
       app.advance(1);
-      state = app.state();
-      assert.equal(state.toasts.has('second'), false);
-      assert.equal(state.errors.size, 2);
+      assert.equal(stack.querySelector('[data-notification-id="second"]'), null);
+      assert.equal(app.document.getElementById('notificationErrorCount').textContent, '2');
     });
   } finally { app.close(); }
 });
@@ -97,10 +97,13 @@ test('dismiss leaves an error unresolved until backend resolution', async () => 
     await withDOM(app.dom, () => {
       app.evaluate(`upsertNotification({id:'dismiss',severity:'error',title:'Dismiss',message:'still failing',timeoutMs:6000})`);
       app.document.querySelector('.notification-close').click();
-      assert.equal(app.state().toasts.has('dismiss'), false);
-      assert.equal(app.state().errors.has('dismiss'), true);
+      assert.equal(app.document.querySelector('#notificationStack [data-notification-id="dismiss"]'), null);
+      assert.equal(app.document.getElementById('notificationErrorCount').textContent, '1');
+      app.document.getElementById('notificationErrorTrayButton').click();
+      assert.equal(getByText(app.document.getElementById('notificationErrorList'), 'still failing').textContent, 'still failing');
       app.evaluate(`resolveNotification('dismiss')`);
-      assert.equal(app.state().errors.has('dismiss'), false);
+      assert.equal(app.document.getElementById('notificationErrorCount').textContent, '0');
+      assert.equal(queryByRole(app.document.getElementById('notificationErrorList'), 'listitem'), null);
     });
   } finally { app.close(); }
 });
@@ -169,10 +172,10 @@ test('runtime initialization errors are presented through the internal notificat
   try {
     await withDOM(app.dom, () => {
       reportError('Codex OAuth runtime initialization failed', { id: 'runtime-error-1' });
-      const toast = app.state().toasts.get('runtime-error-1');
+      const toast = app.document.querySelector('#notificationStack [data-notification-id="runtime-error-1"]');
       assert.ok(toast);
-      assert.equal(toast.severity, 'error');
-      assert.equal(toast.element.querySelector('.notification-message').textContent, 'Codex OAuth runtime initialization failed');
+      assert.equal(getByRole(app.document, 'alert'), toast);
+      assert.equal(getByText(toast, 'Codex OAuth runtime initialization failed').textContent, 'Codex OAuth runtime initialization failed');
     });
   } finally { app.close(); }
 });
@@ -184,9 +187,9 @@ test('runtime errors use the application notification and never enter conversati
   try {
     await withDOM(app.dom, () => {
       app.evaluate(`showError('request failed')`);
-      const toast = app.state().toasts.get('runtime-error-1');
+      const toast = app.document.querySelector('#notificationStack [data-notification-id="runtime-error-1"]');
       assert.ok(toast);
-      assert.equal(toast.element.querySelector('.notification-message').textContent, 'request failed');
+      assert.equal(getByText(toast, 'request failed').textContent, 'request failed');
       assert.deepEqual(consoleErrors, [['request failed']]);
       assert.equal(app.document.querySelector('#chatMessages').textContent, '');
     });

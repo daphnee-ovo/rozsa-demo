@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { applySidebarVibrancy } from "../main/native-appearance.ts";
 
 test("sidebar vibrancy applies and clears the macOS sidebar material", () => {

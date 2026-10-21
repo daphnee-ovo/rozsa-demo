@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { createElectronAdapter } from "../renderer/runtime/adapters/electron.ts";
 
 function fixtureBridge(events) {
@@ -66,7 +66,8 @@ test("Electron adapter connects message start, ordered stream, persisted history
     await adapter.request("send_message", { message: "hello" });
     await until(() => states.some(state => state.messages.some(message => message.entryId === "stream:operation-1" && message.message.content[0]?.text === "partial")));
     await until(() => states.some(state => state.messages.some(message => message.entryId === "entry-assistant" && message.message.content[0]?.text === "reply")));
-    assert.ok(states.findIndex(state => state.messages.some(message => message.entryId === "stream:operation-1")) < states.length - 1);
+    const streaming = states.find(state => state.messages.some(message => message.entryId === "stream:operation-1"));
+    assert.equal(streaming?.isStreaming, true);
     assert.equal(states.at(-1).isStreaming, false);
     assert.equal(states.at(-1).messages.at(-1).message.content[0].text, "reply");
   } finally { dispose(); }
