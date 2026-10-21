@@ -13,10 +13,7 @@ function renderSessionList() {
 }
 
 function showSidebarError(id, message) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.innerHTML = '<div style="padding:12px;font-size:11px;color:var(--danger);line-height:1.4">' +
-    escapeHtml(message) + '</div>';
+  showError(message);
 }
 
 function formatSessionDate(dateStr) {

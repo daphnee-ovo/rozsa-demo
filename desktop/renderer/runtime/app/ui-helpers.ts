@@ -177,7 +177,11 @@ document.addEventListener('keydown', function(e) {
       if (e.key === 'ArrowDown') { e.preventDefault(); navigateAutocomplete('down'); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); navigateAutocomplete('up'); return; }
       if (e.key === 'Tab') { e.preventDefault(); confirmAutocomplete(); return; }
-      if (e.key === 'Enter' && acSelectedIndex >= 0) { e.preventDefault(); confirmAutocomplete(); return; }
+      if (e.key === 'Enter' && (acSelectedIndex >= 0 || acMode === 'models')) {
+        e.preventDefault();
+        confirmAutocomplete();
+        return;
+      }
     }
 
     if (matchesKeyBinding(e, 'sendMessage')) {
@@ -271,18 +275,32 @@ function toggleThinking(header) {
 }
 
 function showError(message) {
-  if (window.RozsaNotifications) {
-    window.RozsaNotifications.showRuntimeError(message, { upsertNotification, nextErrorId: () => 'runtime-error-' + (++legacyNotificationCounter) });
-    return;
+  console.error(message);
+  if (!window.RozsaNotifications) return;
+  try {
+    window.RozsaNotifications.showRuntimeError(message, {
+      upsertNotification,
+      nextErrorId: () => 'runtime-error-' + (++legacyNotificationCounter),
+    });
+  } catch (error) {
+    console.error('Could not deliver runtime error notification:', error);
   }
-  const container = document.getElementById('chatMessages');
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = 'msg msg-assistant';
-  div.innerHTML = '<div class="msg-avatar">!</div><div class="msg-body"><div class="msg-role">Error</div>' +
-    '<div class="msg-content" style="color:var(--error)"><p>' + escapeHtml(message) + '</p></div></div>';
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
 }
+
+window.addEventListener('rozsa:runtime-notification', function(event) {
+  const notification = event.detail;
+  if (notification?.type === 'upsert' && typeof notification.id === 'string' && notification.id &&
+      typeof notification.message === 'string') {
+    upsertNotification({
+      id: notification.id,
+      severity: 'error',
+      title: typeof notification.title === 'string' ? notification.title : 'Error',
+      message: notification.message,
+      timeoutMs: 6000,
+    });
+  } else if (notification?.type === 'resolve' && typeof notification.id === 'string' && notification.id) {
+    resolveNotification(notification.id);
+  }
+});
 
 // ============ 通知中心：主视图全局 toast 层 ============

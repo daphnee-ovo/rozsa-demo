@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import {
   applyNotificationPresentation, createNotificationElement, errorItemMarkup,
   notificationIcon, notificationMarkup,
@@ -17,7 +17,7 @@ function setupApp() {
   let clock = 0;
   let nextTimer = 1;
   const timers = new Map();
-  const html = `<!doctype html><html><body><section id="notificationCenter">
+  const html = `<!doctype html><html><body><div id="chatMessages"></div><ul id="sessionList"><li>Existing session</li></ul><section id="notificationCenter">
     <div id="notificationStack"></div><div id="notificationErrorTray" hidden>
       <button id="notificationErrorTrayButton" aria-expanded="false"></button>
       <span id="notificationErrorCount">0</span><div id="notificationErrorList" hidden></div>
@@ -160,4 +160,61 @@ test('runtime adapter accepts structured events and preserves legacy notificatio
   assert.equal(result.errors.length, 2);
   assert.match(result.errors[0], /Invalid app-notification event/);
   assert.deepEqual(result.legacy, ['legacy message']);
+});
+
+test('runtime errors use the application notification and never enter conversation content', async () => {
+  const app = setupApp();
+  const consoleErrors = [];
+  app.window.console.error = (...values) => consoleErrors.push(values);
+  try {
+    await withDOM(app.dom, () => {
+      app.evaluate(`showError('request failed')`);
+      const toast = app.state().toasts.get('runtime-error-1');
+      assert.ok(toast);
+      assert.equal(toast.element.querySelector('.notification-message').textContent, 'request failed');
+      assert.deepEqual(consoleErrors, [['request failed']]);
+      assert.equal(app.document.querySelector('#chatMessages').textContent, '');
+    });
+  } finally { app.close(); }
+});
+
+test('runtime errors stay in the console when notifications are unavailable or delivery fails', async () => {
+  const app = setupApp();
+  const consoleErrors = [];
+  app.window.console.error = (...values) => consoleErrors.push(values);
+  try {
+    await withDOM(app.dom, () => {
+      app.evaluate(`delete window.RozsaNotifications; showError('notifications unavailable')`);
+      assert.deepEqual(consoleErrors, [['notifications unavailable']]);
+      assert.equal(app.document.querySelector('#chatMessages').textContent, '');
+      assert.equal(app.document.querySelector('#notificationStack').textContent, '');
+
+      app.evaluate(`window.RozsaNotifications = { showRuntimeError() { throw new Error('delivery failed'); } }; showError('delivery attempted')`);
+      assert.deepEqual(consoleErrors.slice(1).map(([message, error]) => [message, error && String(error)]), [
+        ['delivery attempted', undefined],
+        ['Could not deliver runtime error notification:', 'Error: delivery failed'],
+      ]);
+      assert.equal(app.document.querySelector('#chatMessages').textContent, '');
+      assert.equal(app.document.querySelector('#notificationStack').textContent, '');
+    });
+  } finally { app.close(); }
+});
+
+test('failed session catalog requests report globally and a later successful render recovers the sidebar', async () => {
+  const app = setupApp();
+  const consoleErrors = [];
+  app.window.console.error = (...values) => consoleErrors.push(values);
+  try {
+    await withDOM(app.dom, () => {
+      app.evaluate(`showSidebarError('sessionList', 'get_sessions failed: offline')`);
+      assert.deepEqual(consoleErrors, [['get_sessions failed: offline']]);
+      assert.ok(app.state().toasts.has('runtime-error-1'));
+      assert.equal(app.document.querySelector('#sessionList').textContent, 'Existing session');
+      assert.equal(app.document.querySelector('#chatMessages').textContent, '');
+
+      app.evaluate(`window.RozsaSidebar = { sessionsMarkup(items) { return items.map(item => '<li>' + item.name + '</li>').join(''); } }; sessions = [{id:'recovered',name:'Recovered',modified:'2026-10-20T10:00:00Z'}]; renderSessionList()`);
+      assert.match(app.document.querySelector('#sessionList').textContent, /Recovered/);
+      assert.doesNotMatch(app.document.querySelector('#sessionList').textContent, /offline|get_sessions failed/);
+    });
+  } finally { app.close(); }
 });
