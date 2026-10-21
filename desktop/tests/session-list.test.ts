@@ -3,11 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, stat } from "node:fs/promises";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { JSDOM } from "jsdom";
 import { BackendService, RPCFailure } from "../main/backend-service.ts";
 import { sessionEntries, type ProductBridge } from "../main/session-contract.ts";
 import { ProductClient } from "../renderer/product-client.ts";
-import { SessionList } from "../renderer/features/session-list.ts";
+import { assertProductBridgeCapabilities } from "./helpers/bridge-capabilities.ts";
 import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
 
 if (process.argv[2] && process.argv[2] !== "session-list") throw new Error("Only the session-list slice is available");
@@ -16,7 +15,7 @@ const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.
 const backendEnvironment = await createIsolatedBackendEnvironment();
 const entry = { id: "synthetic", path: "/isolated/example.jsonl", name: "<img src=x onerror=alert(1)>", modified: "2026-10-13T00:00:00Z", message_count: 2 };
 
-test("session-list controlled preload retains the no-argument list method", async () => {
+test("session-list controlled preload exposes only approved capabilities and retains the no-argument list method", async () => {
   const vm = await import("node:vm");
   const preload = await readFile(join(root, "desktop/.vite/build/preload.cjs"), "utf8");
   let bridge: ProductBridge | undefined;
@@ -25,27 +24,11 @@ test("session-list controlled preload retains the no-argument list method", asyn
     assert.equal(name, "electron");
     return { contextBridge: { exposeInMainWorld: (key: string, value: ProductBridge) => { assert.equal(key, "rozsa"); bridge = value; } }, ipcRenderer: { invoke: async (channel: string) => { calls.push(channel); return { ok: true, sessions: [] }; } } };
   } });
-  assert.deepEqual(Object.keys(bridge!), ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage"]);
+  assertProductBridgeCapabilities(bridge!, { events: true });
   assert.equal(Object.isFrozen(bridge), true);
   assert.deepEqual(await new ProductClient(bridge!).getSessions(), []);
   await assert.rejects(() => (bridge!.getSessions as (arg: string) => Promise<unknown>)("/private"), /no arguments/);
   assert.deepEqual(calls, ["product:get-sessions"]);
-});
-
-test("session-list renderer: content is text, empty/error/loading states and retry", async () => {
-  const dom = new JSDOM('<ul id="list"></ul><p id="status"></p><button id="refresh">Refresh</button>');
-  const doc = dom.window.document;
-  let response: "valid" | "empty" | "error" = "valid";
-  const client = new ProductClient({ getSessions: async () => response === "error" ? { ok: false, error: { kind: "catalog", code: -32001, message: "Failed to read session dir: /isolated" } } : { ok: true, sessions: response === "empty" ? [] : [entry] } });
-  const feature = new SessionList(client, doc.querySelector("#list")!, doc.querySelector("#status")!, doc.querySelector("button")!);
-  const loading = feature.load(); assert.equal(doc.querySelector("button")!.disabled, true); assert.match(doc.querySelector("#status")!.textContent!, /Loading/); await loading;
-  assert.equal(doc.querySelector(".session-name")!.textContent, entry.name);
-  assert.equal(doc.querySelectorAll("img").length, 0);
-  assert.match(doc.querySelector(".session-meta")!.textContent!, /2 messages/);
-  response = "empty"; await feature.load(); assert.equal(doc.querySelectorAll("li").length, 0); assert.equal(doc.querySelector("#status")!.textContent, "No sessions yet.");
-  response = "error"; await feature.load(); assert.equal(doc.querySelector("#status")!.getAttribute("role"), "alert"); assert.match(doc.querySelector("#status")!.textContent!, /Failed to read session dir/); assert.equal(doc.querySelector("button")!.disabled, false);
-  response = "valid"; doc.querySelector("button")!.click(); await new Promise(resolve => setImmediate(resolve)); assert.equal(doc.querySelector("#status")!.getAttribute("role"), "status"); assert.equal(doc.querySelectorAll("li").length, 1);
-  dom.window.close();
 });
 
 test("session-list validates runtime payload and rejects transport failures", async () => {

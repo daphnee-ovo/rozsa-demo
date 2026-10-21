@@ -10,11 +10,12 @@ import { RPCFailure } from "../main/backend-service.ts";
 import { RozsaBridge } from "../preload/bridge.ts";
 import { ProductClient } from "../renderer/product-client.ts";
 import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
+import { assertProductBridgeCapabilityKeys } from "./helpers/bridge-capabilities.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const binary = join(root, "dist", process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend");
 const backendEnvironment = await createIsolatedBackendEnvironment();
-const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions", "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message", "get_settings", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"];
+const capabilities = ["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions", "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message", "get_interruption_state", "respond_permission", "respond_user_question", "cancel_user_question", "get_settings", "autocomplete_input", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"];
 async function poll(check: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 6000;
   while (Date.now() < deadline) { if (await check()) return; await delay(20); }
@@ -172,9 +173,12 @@ test("pipe loss and unresponsive shutdown terminate and reap the owned process",
 // Explicit native acceptance uses a generated copy of Forge's candidate output.
 // Only the test bootstrap suppresses the modal startup error box; the actual
 // bundled entry, preload, renderer and owned subprocess lifecycle all run.
-if (process.argv.includes("--native")) test("actual Electron candidate lifecycle and runtime security boundaries", { timeout: 150000 }, async () => {
+if (process.argv.includes("--native") || process.env.ROZSA_LIFECYCLE_NATIVE === "1") test("actual Electron candidate lifecycle and runtime security boundaries", { timeout: 150000 }, async () => {
   const electron = join(root, "desktop/node_modules/electron/dist", (await readFile(join(root, "desktop/node_modules/electron/path.txt"), "utf8")).trim());
-  for (const mode of ["normal", "crash", "pipe", "version", "missing", "handshake-timeout", "shutdown-timeout", "quit-startup"]) {
+  const modes = ["normal", "crash", "pipe", "version", "missing", "handshake-timeout", "shutdown-timeout", "quit-startup"];
+  const requestedMode = process.env.ROZSA_LIFECYCLE_NATIVE_MODE;
+  if (requestedMode && !modes.includes(requestedMode)) throw new Error(`Unknown native lifecycle mode: ${requestedMode}`);
+  for (const mode of requestedMode ? [requestedMode] : modes) {
     const base = join(root, "tmp/migration-lifecycle-native"); await mkdir(base, { recursive: true });
     const directory = await mkdtemp(join(base, `${mode}-`)), app = join(directory, "desktop"), backendDirectory = join(directory, "dist");
     await mkdir(app); await mkdir(backendDirectory, { recursive: true });
@@ -202,7 +206,7 @@ if (process.argv.includes("--native")) test("actual Electron candidate lifecycle
     if (mode !== "missing") await cp(source, join(backendDirectory, process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"));
     const sessions = join(directory, "sessions"); await mkdir(sessions);
     const path = join(sessions, "native.jsonl"), original = JSON.stringify({ type: "session", version: 3, id: "native", timestamp: "t", cwd: "/synthetic" }) + "\n"
-      + JSON.stringify({ type: "message", id: "entry", parentId: null, timestamp: "t", message: { role: "user", content: '<img src=x onerror="window.pwned=true"><script>window.pwned=true</script>' } }) + "\n";
+      + JSON.stringify({ type: "message", id: "entry", parentId: null, timestamp: "t", message: { role: "user", content: 'Native lifecycle history marker <img src=x onerror="window.pwned=true"><script>window.pwned=true</script>' } }) + "\n";
     await writeFile(path, original); const before = await stat(path);
     let logs = "";
     const child = spawn(electron, [app, "--remote-debugging-port=0", "--inspect=0", `--user-data-dir=${join(directory, "profile")}`, "--session-dir", sessions], { cwd: directory, env: { ...process.env, ...backendEnvironment }, stdio: ["ignore", "pipe", "pipe"] });
@@ -256,24 +260,33 @@ if (process.argv.includes("--native")) test("actual Electron candidate lifecycle
         const main = await connect(inspectorURL);
         const browserURL = await wait(async () => /DevTools listening on (ws:\/\/\S+)/.exec(logs)?.[1], "renderer DevTools");
         const browser = await connect(browserURL);
-        const target = await wait(async () => (await browser.send("Target.getTargets")).targetInfos.find((item: any) => item.type === "page" && item.url.endsWith("/sessions/index.html")), "page");
+        const target = await wait(async () => (await browser.send("Target.getTargets")).targetInfos.find((item: any) => item.type === "page" && item.url.endsWith("/index.html")), "current product page");
         const attached = await browser.send("Target.attachToTarget", { targetId: target.targetId, flatten: true });
-        const evaluate = (expression: string) => browser.evaluate(expression, attached.sessionId);
-        await wait(async () => await evaluate("document.querySelector('#status')?.textContent==='1 sessions' || document.querySelector('#status')?.textContent==='No sessions yet.'") ? true : undefined, "session catalog");
+        let rendererSessionId = attached.sessionId;
+        const evaluate = (expression: string) => browser.evaluate(expression, rendererSessionId);
+        const expectedRows = mode === "shutdown-timeout" ? 0 : 1;
+        await wait(async () => await evaluate(`document.querySelectorAll('#sessionList .session-item').length===${expectedRows} && !!document.querySelector('#chatMessages')`) ? true : undefined, "current product session catalog");
         const pid = Number(/Backend started: (\d+)/.exec(logs)?.[1]); assert.ok(pid > 0);
         const window = "candidateElectron.BrowserWindow.getAllWindows()[0]";
         const preferences = await main.evaluate(`(()=>{const p=${window}.webContents.getLastWebPreferences();return {contextIsolation:p.contextIsolation,sandbox:p.sandbox,nodeIntegration:p.nodeIntegration};})()`);
         assert.deepEqual(preferences, { contextIsolation: true, sandbox: true, nodeIntegration: false });
-        assert.deepEqual(await evaluate("({require:typeof require,process:typeof process,Buffer:typeof Buffer,keys:Object.keys(window.rozsa)})"), { require: "undefined", process: "undefined", Buffer: "undefined", keys: ["getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage"] });
+        const boundary = await evaluate("({require:typeof require,process:typeof process,Buffer:typeof Buffer,keys:Object.keys(window.rozsa)})");
+        assert.deepEqual({ require: boundary.require, process: boundary.process, Buffer: boundary.Buffer }, { require: "undefined", process: "undefined", Buffer: "undefined" });
+        assertProductBridgeCapabilityKeys(boundary.keys, { events: true });
         if (mode !== "shutdown-timeout") {
-          await evaluate("document.querySelector('.session-select').click()");
-          await wait(async () => await evaluate("document.querySelector('#history').dataset.sessionId==='native'") ? true : undefined, "history");
+          await evaluate("document.querySelector('#sessionList .session-item').click()");
+          await wait(async () => await evaluate("document.querySelector('#chatMessages')?.textContent.includes('Native lifecycle history marker')") ? true : undefined, "current conversation history");
         }
         if (mode === "normal") {
-          assert.equal(await evaluate("document.querySelector('#history').querySelectorAll('img,script').length"), 0);
-          assert.match(await evaluate("document.querySelector('#history').textContent"), /<img src=x/);
-          await evaluate("(()=>{const s=document.createElement('script');s.textContent='window.pwned=true';document.body.append(s);})()");
-          await delay(100); assert.equal(await evaluate("window.pwned===true"), false);
+          assert.equal(await evaluate("document.querySelector('#chatMessages').querySelectorAll('img,script').length"), 0);
+          assert.match(await evaluate("document.querySelector('#chatMessages').textContent"), /Native lifecycle history marker/);
+          assert.equal(await evaluate("window.pwned===true"), false, "untrusted session markup must not execute in the current conversation UI");
+          await evaluate("window.__blockedScriptRan=false;window.__cspViolations=[];window.addEventListener('securitypolicyviolation',event=>window.__cspViolations.push({directive:event.effectiveDirective,blockedURI:event.blockedURI}),{once:true});const script=document.createElement('script');script.src='https://example.com/blocked-csp.js';script.onload=()=>window.__blockedScriptRan=true;document.head.append(script)");
+          await wait(async () => await evaluate("window.__cspViolations.length===1") ? true : undefined, "external script blocked by the current CSP");
+          const cspViolation = await evaluate("window.__cspViolations[0]");
+          assert.match(cspViolation.directive, /^script-src/);
+          assert.match(cspViolation.blockedURI, /example\.com/);
+          assert.equal(await evaluate("window.__blockedScriptRan"), false);
           assert.equal(await evaluate("fetch('https://example.com/').then(()=>false,()=>true)"), true);
           assert.equal(await evaluate("window.open('https://example.com/')===null"), true);
           const url = await evaluate("location.href");
@@ -282,17 +295,27 @@ if (process.argv.includes("--native")) test("actual Electron candidate lifecycle
           const denied = await main.evaluate(`(async()=>{const owner=${window};const other=new candidateElectron.BrowserWindow({show:false,webPreferences:{preload:${JSON.stringify(join(app, ".vite/build/preload.cjs"))},contextIsolation:true,sandbox:true,nodeIntegration:false}});try{await other.loadURL(owner.webContents.getURL());return await other.webContents.executeJavaScript("window.rozsa.getSessions().then(()=>false,error=>error.message)");}finally{other.destroy();}})()`);
           assert.match(denied, /Unauthorized session request/);
           for (let reload = 0; reload < 2; reload++) {
-            await browser.send("Page.reload", {}, attached.sessionId);
+            await browser.send("Page.reload", {}, rendererSessionId);
             await delay(100);
             await wait(async () => {
-              try { return await evaluate("document.querySelector('#history')?.dataset.sessionId==='native' && document.querySelector('#status')?.textContent==='1 sessions'") ? true : undefined; }
+              try { return await evaluate("document.querySelectorAll('#sessionList .session-item').length===1 && document.querySelector('#chatMessages')?.textContent.includes('Native lifecycle history marker')") ? true : undefined; }
               catch (error) { if (/context|navigat/i.test(String(error))) return undefined; throw error; }
             }, "reload snapshot");
           }
           // Crash only this candidate's renderer, then explicitly reload it.
           await main.evaluate(`${window}.webContents.forcefullyCrashRenderer()`);
           await delay(100); await main.evaluate(`${window}.webContents.reload()`); await delay(150);
-          await wait(async () => await evaluate("document.querySelector('#history')?.dataset.sessionId==='native'") ? true : undefined, "renderer crash recovery");
+          const recoveredTarget = await wait(async () => (await browser.send("Target.getTargets")).targetInfos.find((item: any) => item.targetId === target.targetId && item.type === "page" && item.url.endsWith("/index.html")), "same product renderer target after crash");
+          rendererSessionId = (await browser.send("Target.attachToTarget", { targetId: recoveredTarget.targetId, flatten: true })).sessionId;
+          const recoveredView = await wait(async () => {
+            const value = await evaluate("({ready:document.readyState,sidebar:!!document.querySelector('#sessionList'),conversation:!!document.querySelector('#chatMessages'),rows:document.querySelectorAll('#sessionList .session-item').length,chat:document.querySelector('#chatMessages')?.textContent||''})");
+            return value.ready === "complete" && value.sidebar && value.conversation
+              && value.rows === 1 && value.chat.includes("Native lifecycle history marker") ? value : undefined;
+          }, "session catalog and history restored after renderer crash").catch(async error => {
+            const state = await evaluate("({ready:document.readyState,rows:document.querySelectorAll('#sessionList .session-item').length,chat:document.querySelector('#chatMessages')?.textContent||''})");
+            throw new Error(`${String(error)}\nRenderer state after crash recovery: ${JSON.stringify(state)}`);
+          });
+          assert.equal(recoveredView.rows, 1);
           assert.equal((logs.match(/Backend started:/g) || []).length, 1);
         } else if (mode === "crash" || mode === "pipe") {
           if (mode === "crash") process.kill(pid, "SIGKILL");
@@ -302,9 +325,10 @@ if (process.argv.includes("--native")) test("actual Electron candidate lifecycle
             // end through the child handle recorded only by this test bootstrap.
             await main.evaluate("candidateOwnedBackend.stdout.destroy()");
           }
-          await wait(async () => await evaluate("document.querySelector('#history-status')?.getAttribute('role')==='alert'") ? true : undefined, "visible transport failure");
-          assert.match(await evaluate("document.querySelector('#history-status').textContent"), /Session sync failed/);
-          await wait(async () => absent(pid) ? true : undefined, "owned backend cleanup");
+          await wait(async () => absent(pid) ? true : undefined, "owned backend cleanup after transport failure");
+          await evaluate("document.querySelector('#sessionList .session-item').click()");
+          await wait(async () => await evaluate("document.querySelector('#notificationStack')?.textContent.trim().length>0") ? true : undefined, "visible current-UI transport error after session retry");
+          assert.match(await evaluate("document.querySelector('#notificationStack').textContent"), /Backend|pipe|closed|EPIPE|ECONNRESET/i);
           assert.equal((logs.match(/Backend started:/g) || []).length, 1);
         }
         assert.equal(await readFile(path, "utf8"), original); assert.equal((await stat(path)).mtimeMs, before.mtimeMs);

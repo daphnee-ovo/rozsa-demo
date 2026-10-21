@@ -1,4 +1,4 @@
-// Native Electron acceptance for the assembled legacy UI and real session catalog.
+// Native Electron acceptance for the current product UI and real session catalog.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, writeFile, readFile, stat, rename } from "node:fs/promi
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createIsolatedBackendEnvironment } from "./helpers/backend-config.ts";
+import { assertProductBridgeCapabilityKeys } from "./helpers/bridge-capabilities.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const backendEnvironment = await createIsolatedBackendEnvironment();
@@ -141,7 +142,7 @@ try {
     const restoredBoundary = await evaluate(`document.querySelector('body > .sidebar-toggle-button').click(); getComputedStyle(document.documentElement).getPropertyValue('--chrome-sidebar-boundary').trim()`);
     assert.equal(restoredBoundary, `${snapshot.sidebar.width}px`);
   }
-  assert.equal(snapshot.node, "undefined"); assert.deepEqual(snapshot.bridge, ["startAuth", "submitAuth", "nextAuthEvent", "cancelAuth", "logoutAuth", "onModelsChanged", "onRuntimeInitializationError", "getSessions", "switchSession", "subscribeSessions", "nextSessionEvent", "unsubscribeSessions", "startMessage", "continueMessage", "getActiveMessage", "subscribeMessageEvents", "nextMessageEvent", "unsubscribeMessageEvents", "cancelMessage", "getInterruptionState", "respondPermission", "respondUserQuestion", "cancelUserQuestion", "getSettings", "autocompleteInput", "updateSetting", "resetSetting", "listThemes", "getTheme", "saveTheme"]); assert.equal(snapshot.windows, 0);
+  assert.equal(snapshot.node, "undefined"); assertProductBridgeCapabilityKeys(snapshot.bridge, { events: true }); assert.equal(snapshot.windows, 0);
   assert.equal(await evaluate(`window.rozsa.getSessions('/forbidden').then(()=>false,error=>error.message)`), "getSessions accepts no arguments");
   assert.equal(await evaluate(`window.RozsaUIHost.port.request('get_sessions').then(value=>value.length)`), 2);
   await clickSession(0);
@@ -208,14 +209,19 @@ try {
   assert.ok(slashLatency.maxMs <= 200, `complete slash menu latency exceeded 200 ms: ${JSON.stringify(slashLatency)}`);
   await writeFile(join(output, "slash-latency.json"), JSON.stringify(slashLatency, null, 2));
   await beginComposerInput();
+  await evaluate("hideAutocomplete()");
   await send("Input.insertText", { text: "/skill:page" }, attached.sessionId);
   await poll(async () => evaluate(`document.querySelector('#autocomplete .ac-item')?.textContent.includes('/skill:page-check') ? true : undefined`), "Go-backed skill suggestion in the Composer");
   await beginComposerInput();
+  await evaluate("hideAutocomplete()");
   await send("Input.insertText", { text: "/skill:page" }, attached.sessionId);
   await poll(async () => evaluate(`document.querySelector('#autocomplete .ac-item')?.textContent.includes('/skill:page-check') ? true : undefined`), "Go-backed skill suggestion in the Composer");
   await pressKey("ArrowDown", "ArrowDown", 40);
   const highlightedSkill = await poll(async () => evaluate(`document.querySelector('#autocomplete .ac-item.active .ac-cmd')?.textContent`)
-    .then(value => value === "/skill:page-check" ? value : undefined), "highlighting the Go-backed skill suggestion");
+    .then(value => value === "/skill:page-check" ? value : undefined), "highlighting the Go-backed skill suggestion").catch(async error => {
+      const state = await evaluate(`({input:document.querySelector('#msgInput')?.textContent,focused:document.activeElement?.id,visible:document.querySelector('#autocomplete')?.classList.contains('visible'),items:[...document.querySelectorAll('#autocomplete .ac-item')].map(item=>({text:item.textContent,active:item.classList.contains('active')})),selectedIndex:typeof acSelectedIndex==='number'?acSelectedIndex:null,acVisible:typeof acVisible==='boolean'?acVisible:null})`);
+      throw new Error(`${String(error)}\nSuggestion state: ${JSON.stringify(state)}`);
+    });
   assert.equal(highlightedSkill, "/skill:page-check");
   await pressKey("Enter", "Enter", 13);
   const selectedSkill = await poll(async () => {
@@ -241,7 +247,10 @@ try {
   assert.match(serializedProviderRequest, /PAGE_CHECK_SKILL_BODY_7f31/);
   assert.match(serializedProviderRequest, /<name>page-check<\/name>/);
   assert.doesNotMatch(serializedProviderRequest, /"content":"\/skill:page-check"/);
-  const updatedFixture = await readFile(fixture, "utf8");
+  const updatedFixture = await poll(async () => {
+    const value = await readFile(fixture, "utf8");
+    return value.includes("controlled reply") ? value : undefined;
+  }, "assistant response persisted to the selected JSONL session");
   assert.ok(updatedFixture.startsWith(fixtureText), "sending the skill prompt must preserve the existing session records");
   assert.notEqual((await stat(fixture)).mtimeMs, before.mtimeMs, "the selected session must persist the submitted skill prompt");
   assert.match(updatedFixture, /PAGE_CHECK_SKILL_BODY_7f31/);
