@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
+import { getByRole, getByText } from '@testing-library/dom';
 import { JSDOM } from 'jsdom';
 import { act } from 'react';
 import { mountSettingsPanes } from '../renderer/scripts/features/settings.tsx';
@@ -94,16 +95,19 @@ test('settings panes show configured model metadata, save selection and expose d
   try {
     await app.mount();
     const { document } = app.dom.window;
-    assert.equal(document.querySelector('#pane-general [aria-label="Model"]').value, 'anthropic\u0000claude-test');
-    assert.equal(document.querySelector('#pane-general [aria-label="Model"]').disabled, false);
-    const rows = [...document.querySelectorAll('#pane-general .setting-item')];
-    assert.equal(rows.find(row => row.querySelector('.setting-label')?.textContent === 'Provider')?.querySelector('.setting-value')?.textContent, 'anthropic');
-    assert.equal(rows.find(row => row.querySelector('.setting-label')?.textContent === 'Context window')?.querySelector('.setting-value')?.textContent, '64,000');
-    assert.equal(document.querySelector('#pane-appearance [aria-label="Font size (px)"]').value, '14');
-    assert.equal(document.querySelector('#pane-appearance [aria-label="Show hourly limit"]').disabled, true);
-    await app.flush(() => { document.querySelector('#pane-general [aria-label="Settings scope"]').value = 'project'; document.querySelector('#pane-general [aria-label="Settings scope"]').dispatchEvent(new app.dom.window.Event('change', { bubbles: true })); });
-    await app.flush(() => document.querySelector('#pane-general [aria-label="Auto compact"]').click());
-    await app.flush(() => { document.querySelector('#pane-general [aria-label="Model"]').value = 'anthropic\u0000haiku-test'; document.querySelector('#pane-general [aria-label="Model"]').dispatchEvent(new app.dom.window.Event('change', { bubbles: true })); });
+    const generalPane = document.querySelector('#pane-general');
+    const model = getByRole(generalPane, 'combobox', { name: 'Model' });
+    assert.equal(model.value, 'anthropic\u0000claude-test');
+    assert.equal(model.disabled, false);
+    assert.ok(getByText(generalPane, 'anthropic'));
+    assert.ok(getByText(generalPane, '64,000'));
+    assert.equal(getByRole(document.querySelector('#pane-appearance'), 'spinbutton', { name: 'Font size (px)' }).value, '14');
+    assert.equal(getByRole(document.querySelector('#pane-appearance'), 'switch', { name: 'Show hourly limit' }).disabled, true);
+    const scope = getByRole(generalPane, 'combobox', { name: 'Settings scope' });
+    await app.flush(() => { scope.value = 'project'; scope.dispatchEvent(new app.dom.window.Event('change', { bubbles: true })); });
+    await app.flush(() => getByRole(generalPane, 'switch', { name: 'Auto compact' }).click());
+    model.value = 'anthropic\u0000haiku-test';
+    await app.flush(() => model.dispatchEvent(new app.dom.window.Event('change', { bubbles: true })));
     assert.ok(app.calls.some(call => call[0] === 'get' && call[1] === 'project'));
     assert.ok(app.calls.some(call => call[0] === 'update' && call[1] === 'project' && call[2] === 'auto_compact' && call[3] === true));
     assert.ok(app.calls.some(call => call[0] === 'update' && call[1] === 'project' && call[2] === 'model' && call[3].id === 'haiku-test'));
@@ -114,13 +118,13 @@ test('transport exposes SSE and visibly disables unimplemented WebSocket modes',
   const app = harness();
   try {
     await app.mount();
-    const select = document.querySelector('[aria-label="Transport"]');
-    for (const value of ['websocket', 'websocket-cached']) {
-      const option = select.querySelector(`option[value="${value}"]`);
+    const select = getByRole(document, 'combobox', { name: 'Transport' });
+    for (const [value, label] of [['websocket', 'WebSocket (not implemented)'], ['websocket-cached', 'WebSocket (cached) (not implemented)']]) {
+      const option = getByRole(select, 'option', { name: label });
       assert.equal(option.disabled, true);
       assert.match(option.textContent, /not implemented/i);
     }
-    assert.equal(select.querySelector('option[value="sse"]').disabled, false);
+    assert.equal(getByRole(select, 'option', { name: 'SSE' }).disabled, false);
     await app.flush(() => { select.value = 'sse'; select.dispatchEvent(new app.dom.window.Event('change', { bubbles: true })); });
     assert.ok(app.calls.some(call => call[0] === 'update' && call[2] === 'transport' && call[3] === 'sse'));
   } finally { await app.close(); }
@@ -131,7 +135,7 @@ test('a saved WebSocket preference remains visible without being rewritten', asy
   app.bridge.getSettings = scope => Promise.resolve({ ...snapshot(scope), settings: { ...snapshot(scope).settings, transport: 'websocket-cached' } });
   try {
     await app.mount();
-    const select = document.querySelector('[aria-label="Transport"]');
+    const select = getByRole(document, 'combobox', { name: 'Transport' });
     assert.equal(select.value, 'websocket-cached');
     assert.equal(select.selectedOptions[0].disabled, true);
     assert.equal(app.calls.some(call => call[0] === 'update'), false);
@@ -146,7 +150,7 @@ test('provider updates refresh both model selectors and report diagnostics witho
     const models = [{ id: 'remote', provider: 'codex-oauth', name: 'Remote', contextWindow: 64000, reasoning: true }];
     await app.flush(() => app.emitModels({ models, diagnostics: [{ provider: 'anthropic', message: 'refresh failed' }] }));
     for (const label of ['Model', 'Small model']) {
-      const select = document.querySelector(`[aria-label="${label}"]`);
+      const select = getByRole(document, 'combobox', { name: label });
       assert.match(select.textContent, /Remote/);
       assert.doesNotMatch(select.textContent, /Claude Test|Haiku Test/);
     }
@@ -163,9 +167,10 @@ test('an empty model catalog is visible and disables only model selection', asyn
   try {
     await app.mount();
     const { document } = app.dom.window;
-    assert.equal(document.querySelector('#pane-general [aria-label="Model"]').disabled, true);
-    assert.match(document.querySelector('#pane-general [aria-label="Model"]').textContent, /No configured models/);
-    assert.equal(document.querySelector('#pane-general [aria-label="Auto compact"]').disabled, false);
+    const pane = document.querySelector('#pane-general');
+    assert.equal(getByRole(pane, 'combobox', { name: 'Model' }).disabled, true);
+    assert.match(getByRole(pane, 'combobox', { name: 'Model' }).textContent, /No configured models/);
+    assert.equal(getByRole(pane, 'switch', { name: 'Auto compact' }).disabled, false);
   } finally { await app.close(); }
 });
 
@@ -175,33 +180,36 @@ test('hide thinking updates the conversation display class after the setting is 
     await app.mount();
     const { document } = app.dom.window;
     assert.equal(document.body.classList.contains('hide-thinking'), false);
-    await app.flush(() => document.querySelector('#pane-general [aria-label="Hide thinking blocks"]').click());
+    await app.flush(() => getByRole(document.querySelector('#pane-general'), 'switch', { name: 'Hide thinking blocks' }).click());
     assert.equal(document.body.classList.contains('hide-thinking'), true);
   } finally { await app.close(); }
 });
 
-test('settings keep save failures visible without discarding the previous value', async () => {
-  const app = harness({ failUpdate: true });
+test('settings report save failures and keep the previous value', async () => {
+  const reported = [];
+  const app = harness({ failUpdate: true, report: message => reported.push(message) });
   try {
     await app.mount();
     const { document } = app.dom.window;
-    await app.flush(() => document.querySelector('#pane-general [aria-label="Auto compact"]').click());
-    assert.match(document.querySelector('#pane-general [role="alert"]').textContent, /write denied/);
-    assert.equal(document.querySelector('#pane-general [aria-label="Auto compact"]').getAttribute('aria-checked'), 'false');
+    await app.flush(() => getByRole(document.querySelector('#pane-general'), 'switch', { name: 'Auto compact' }).click());
+    assert.deepEqual(reported, ['write denied']);
+    assert.equal(getByRole(document.querySelector('#pane-general'), 'switch', { name: 'Auto compact' }).getAttribute('aria-checked'), 'false');
     assert.equal(app.calls.filter(call => call[0] === 'update').length, 1);
   } finally { await app.close(); }
 });
 
 test('settings loading and read errors are represented explicitly', async () => {
   let rejectRead;
+  const reported = [];
   const loading = new Promise((_, reject) => { rejectRead = reject; });
-  const app = harness({ loading });
+  const app = harness({ loading, report: message => reported.push(message) });
   try {
     await app.mount();
-    assert.match(app.dom.window.document.querySelector('#pane-general [role="status"]').textContent, /Loading settings/);
+    assert.match(getByRole(app.dom.window.document.querySelector('#pane-general'), 'status').textContent, /Loading settings/);
     rejectRead(new Error('settings file unreadable'));
     await app.flush(() => {});
-    assert.match(app.dom.window.document.querySelector('#pane-general [role="alert"]').textContent, /settings file unreadable/);
+    assert.match(getByRole(app.dom.window.document.querySelector('#pane-general'), 'status').textContent, /Settings could not be loaded/);
+    assert.ok(reported.includes('settings file unreadable'));
   } finally { await app.close(); }
 });
 

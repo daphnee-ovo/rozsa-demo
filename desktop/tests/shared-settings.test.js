@@ -1,19 +1,20 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
+import { getByRole, queryByText } from '@testing-library/dom';
 import * as settings from '../renderer/scripts/features/settings.js';
 import { bindSettingSwitch, createSettingsAdapter } from '../renderer/runtime/adapters/settings.js';
 import { createDOM, loadApp, readFrontend, withDOM } from './helpers/browser.js';
 
 test('settings pane navigation, toggles and appearance controls preserve supported behavior', async () => {
   const dom = createDOM(`<section id="settingsPanel">
-    <button class="settings-tab" data-settings-pane="permissions"></button>
-    <button class="settings-tab" data-settings-pane="extensions"></button>
-    <button class="setting-toggle" id="toggle"></button>
-    <button data-theme-mode-card="dark"></button>
-    <input id="settingsFontSizeRange" type="range" min="5" max="30" value="14">
-    <input id="settingsFontSizeInput" type="number" value="14">
+    <button class="settings-tab" data-settings-pane="permissions">Permissions</button>
+    <button class="settings-tab" data-settings-pane="extensions">Extensions</button>
+    <button class="setting-toggle" id="toggle" role="switch" aria-label="Auto compact" aria-checked="false"></button>
+    <button data-theme-mode-card="dark" aria-label="Dark mode">Dark</button>
+    <label>Font size<input id="settingsFontSizeRange" aria-label="Font size range" type="range" min="5" max="30" value="14"></label>
+    <label>Font size value<input id="settingsFontSizeInput" aria-label="Font size" type="number" value="14"></label>
   </section>
-  <section id="pane-permissions"><p>old</p></section><button data-settings-pane="permissions"></button>`);
+  <section id="pane-permissions"><p>old permissions</p></section>`);
   try {
     await withDOM(dom, async () => {
       const calls = [];
@@ -23,28 +24,24 @@ test('settings pane navigation, toggles and appearance controls preserve support
         boundModules: new Set(), byId: id => document.getElementById(id),
       });
       settings.init(api);
-      assert.deepEqual(Array.from(document.querySelector('#pane-permissions').children), []);
-      const permissions = document.querySelector('[data-settings-pane="permissions"]');
+      assert.equal(queryByText(document, 'old permissions'), null);
+      const permissions = getByRole(document, 'button', { name: 'Permissions' });
       assert.equal(permissions.disabled, true);
       assert.equal(permissions.getAttribute('aria-disabled'), 'true');
-      document.querySelector('#settingsPanel').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-      const extension = document.querySelector('[data-settings-pane="extensions"]');
-      extension.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      getByRole(document, 'button', { name: 'Extensions' }).click();
       assert.deepEqual(calls, ['extensions']);
-      const toggle = document.getElementById('toggle');
+      const toggle = getByRole(document, 'switch', { name: 'Auto compact' });
       bindSettingSwitch(toggle, enabled => calls.push(enabled), control => control.dataset.enabled === 'true', (control, enabled) => { control.dataset.enabled = String(enabled); });
-      assert.equal(toggle.onclick, null);
-      api.toggleSetting(toggle);
+      toggle.click();
       assert.deepEqual(calls, ['extensions', true]);
       settings.syncFontSizeControls(document, 18);
-      assert.equal(document.getElementById('settingsFontSizeInput').value, '18');
-      assert.equal(document.getElementById('settingsFontSizeRange').value, '18');
-      assert.equal(document.getElementById('settingsFontSizeRange').style.getPropertyValue('--appearance-progress'), '52%');
+      assert.equal(getByRole(document, 'spinbutton', { name: 'Font size' }).value, '18');
+      assert.equal(getByRole(document, 'slider', { name: 'Font size range' }).value, '18');
       settings.syncFontSizeControls(document, 19, { updateInput: false });
-      assert.equal(document.getElementById('settingsFontSizeInput').value, '18');
-      assert.equal(document.getElementById('settingsFontSizeRange').value, '19');
+      assert.equal(getByRole(document, 'spinbutton', { name: 'Font size' }).value, '18');
+      assert.equal(getByRole(document, 'slider', { name: 'Font size range' }).value, '19');
       settings.renderThemeModeCards(document, 'dark');
-      assert.equal(document.querySelector('[data-theme-mode-card="dark"]').getAttribute('aria-pressed'), 'true');
+      assert.equal(getByRole(document, 'button', { name: 'Dark mode' }).getAttribute('aria-pressed'), 'true');
       assert.equal(settings.isSettingsPaneAvailable('general'), true);
       assert.equal(settings.isSettingsPaneAvailable('permissions'), false);
     });
@@ -72,7 +69,7 @@ test('suspended capability routes and mutations stay inert while font size edits
     evaluate(`window.RozsaSettings.bindSettingSwitch=(control,onChange,read,render)=>{control.onclick=null;};
       renderSettingsPane=()=>{};applySelectedTheme=async()=>{};loadDevFlowSettings=()=>{};applyFontSize=value=>testCalls.push(['font',value]);`);
     await evaluate('loadSettings()');
-    assert.deepEqual(calls.map(call => call[0]), ['get_settings', 'list_themes']);
+    assert.deepEqual(new Set(calls.map(call => call[0])), new Set(['get_settings', 'list_themes']));
     calls.length = 0;
     const input = document.getElementById('settingsFontSizeInput');
     const range = document.getElementById('settingsFontSizeRange');

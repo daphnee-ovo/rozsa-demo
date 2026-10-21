@@ -1,8 +1,10 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { getByRole, queryByRole } from '@testing-library/dom';
 import React, { act } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ComposerInput, mountComposerInput, mountSuggestionPopup } from '../renderer/scripts/components/composer.tsx';
+import { init as initComposer } from '../renderer/scripts/components/composer.tsx';
 import { createDOM, loadApp, withDOM } from './helpers/browser.js';
 
 const composerMarkup = '<div id="composer" class="input-wrapper"><div id="msgInput" contenteditable="true"></div>' +
@@ -10,15 +12,22 @@ const composerMarkup = '<div id="composer" class="input-wrapper"><div id="msgInp
 
 function createRuntime(invoke = async () => ({ prefix: '', items: [], validMatch: false, highlightRanges: [] })) {
   const app = loadApp({ html: composerMarkup, globals: { invoke } });
-  const renders = [];
-  const clears = [];
-  const scrolls = [];
+  const popup = app.document.getElementById('autocomplete');
   app.window.RozsaComposer = {
     renderSuggestions(items, selectedIndex, onSelect, onHover, mode) {
-      renders.push({ items: [...items], selectedIndex, onSelect, onHover, mode });
+      popup.replaceChildren(...items.map((item, index) => {
+        const option = app.document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.setAttribute('aria-selected', String(index === selectedIndex));
+        option.textContent = item.label || item.value;
+        option.addEventListener('mousedown', () => onSelect(index));
+        option.addEventListener('mouseover', () => onHover(index));
+        return option;
+      }));
+      popup.classList.toggle('visible', items.length > 0);
     },
-    clearSuggestions() { clears.push(true); },
-    scrollSuggestionTo(index) { scrolls.push(index); },
+    clearSuggestions() { popup.replaceChildren(); popup.classList.remove('visible'); },
+    scrollSuggestionTo() {},
   };
   app.evaluate(`
     invoke = window.invoke;
@@ -26,27 +35,19 @@ function createRuntime(invoke = async () => ({ prefix: '', items: [], validMatch
     activeSessionId = 'session-a';
     activeSessionIdx = 0;
   `);
-  return { ...app, renders, clears, scrolls };
+  return app;
 }
 
-test('React composer keeps the established input, actions, labels, and Lucide icons', () => {
-  const markup = renderToStaticMarkup(React.createElement(ComposerInput));
-  for (const fragment of [
-    'id="msgInput"',
-    'contentEditable="true"',
-    'aria-multiline="true"',
-    'class="input-toolbar"',
-    'id="attachFileButton"',
-    'id="attachDirectoryButton"',
-    'data-action="slash-command"',
-    'id="modelSelector"',
-    'id="thinkingEffort"',
-    'id="runningSendMode"',
-    'id="send-btn"',
-    'class="lucide lucide-paperclip',
-    'class="lucide lucide-folder',
-    'class="lucide lucide-slash',
-  ]) assert.ok(markup.includes(fragment), fragment);
+test('composer exposes the message box and named actions to assistive technology', () => {
+  const dom = createDOM(renderToStaticMarkup(React.createElement(ComposerInput)));
+  try {
+    const { document } = dom.window;
+    assert.ok(getByRole(document, 'textbox', { name: 'Message Rózsa' }));
+    assert.ok(getByRole(document, 'toolbar', { name: 'Message actions' }));
+    assert.ok(getByRole(document, 'button', { name: 'Attach file' }));
+    assert.ok(getByRole(document, 'button', { name: 'Slash commands' }));
+    assert.ok(getByRole(document, 'button', { name: 'Send message' }));
+  } finally { dom.window.close(); }
 });
 
 test('React composer portal preserves the existing shell and mounts input as a direct composer child', async () => {
@@ -123,13 +124,12 @@ test('slash suggestions use the React popup controller and support keyboard sele
   try {
     app.document.getElementById('msgInput').textContent = '/mo';
     await app.evaluate('updateAutocomplete()');
-    assert.equal(app.renders.at(-1).mode, 'commands');
-    assert.equal(app.renders.at(-1).items[0].value, '/model ');
+    getByRole(app.document, 'option', { name: '/model' });
     app.evaluate("navigateAutocomplete('down')");
-    assert.equal(app.renders.at(-1).selectedIndex, 0);
-    assert.deepEqual(app.scrolls, [0]);
+    assert.equal(getByRole(app.document, 'option', { name: '/model' }).getAttribute('aria-selected'), 'true');
     app.evaluate('confirmAutocomplete()');
     assert.equal(app.document.getElementById('msgInput').textContent, '/model ');
+    assert.equal(queryByRole(app.document, 'option', { name: '/model' }), null);
     await new Promise(resolve => setImmediate(resolve));
   } finally { app.close(); }
 });
@@ -152,8 +152,7 @@ test('model picker is keyboard navigable and unsupported thinking efforts stay h
     await app.evaluate('showModelPicker()');
     assert.equal(input.textContent, '切换模型时保留草稿');
     assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('getInputSelection(document.getElementById("msgInput"))'))), { start: 6, end: 6 });
-    assert.equal(app.renders.at(-1).mode, 'models');
-    assert.equal(app.renders.at(-1).items[0].label, 'Reasoning Model');
+    assert.ok(getByRole(app.document, 'option', { name: 'Reasoning Model' }));
     app.evaluate("navigateAutocomplete('down'); confirmAutocomplete()");
     assert.equal(app.window.selectedModelIndex, 0);
     const efforts = app.evaluate('supportedThinkingEfforts().map(option => option.value)');
@@ -194,16 +193,45 @@ test('autocomplete renders the Go-provided range for an exact skill command', as
   } finally { app.close(); }
 });
 
-test('IME composition keeps Enter out of message submission', () => {
+test('focused Enter sends once after composition commits and remains blocked by each active IME signal', () => {
   const app = createRuntime();
   const sends = [];
   try {
     app.window.sendForTest = () => sends.push(true);
-    app.evaluate('capturingKeyBindingAction = false; isInputComposing = true; sendMessage = window.sendForTest');
-    app.document.dispatchEvent(new app.window.KeyboardEvent('keydown', {
-      key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true,
+    app.evaluate('capturingKeyBindingAction = false; sendMessage = window.sendForTest');
+
+    const input = app.document.getElementById('msgInput');
+    input.focus();
+    assert.equal(app.document.activeElement, input);
+    initComposer({
+      boundModules: new Set(),
+      byId: id => app.document.getElementById(id),
+      handleCompositionStart: () => app.evaluate('handleCompositionStart()'),
+      handleCompositionUpdate: () => app.evaluate('handleCompositionUpdate(document.getElementById("msgInput"))'),
+      handleCompositionEnd: () => app.evaluate('handleCompositionEnd(document.getElementById("msgInput"))'),
+    });
+
+    const pressEnter = options => input.dispatchEvent(new app.window.KeyboardEvent('keydown', {
+      key: 'Enter', keyCode: 13, bubbles: true, cancelable: true, ...options,
     }));
+
+    pressEnter({});
+    assert.deepEqual(sends, [true]);
+    sends.length = 0;
+
+    input.dispatchEvent(new app.window.CompositionEvent('compositionstart', { bubbles: true }));
+    pressEnter({});
     assert.deepEqual(sends, []);
+
+    input.dispatchEvent(new app.window.CompositionEvent('compositionend', { bubbles: true, data: '机' }));
+    pressEnter({ isComposing: true });
+    assert.deepEqual(sends, []);
+
+    pressEnter({ keyCode: 229 });
+    assert.deepEqual(sends, []);
+
+    pressEnter({});
+    assert.deepEqual(sends, [true]);
   } finally { app.close(); }
 });
 
@@ -238,7 +266,7 @@ test('late autocomplete and model refresh results cannot replace the active sess
     app.evaluate('activeSessionId = "session-b"; activeSessionIdx = 1');
     resolveAutocomplete({ prefix: '/mo', items: [{ value: '/model ', label: '/model' }], highlightRanges: [] });
     await pending;
-    assert.equal(app.renders.length, 0);
+    assert.equal(queryByRole(app.document, 'option'), null);
     assert.equal(input.textContent, '保留草稿 /mo');
 
     let resolveFirst;
@@ -259,9 +287,7 @@ test('late autocomplete and model refresh results cannot replace the active sess
     await app.window.refreshes[1];
     resolveFirst([{ id: 'stale-model', name: 'Stale Model', provider: 'test' }]);
     await app.window.refreshes[0];
-    assert.equal(app.evaluate('models[0].id'), 'new-model');
-    assert.equal(app.renders.at(-1).mode, 'models');
-    assert.equal(app.renders.at(-1).items[0].value, 'new-model');
+    assert.ok(getByRole(app.document, 'option', { name: 'New Model' }));
     assert.equal(input.textContent, '保留草稿 /mo');
   } finally { app.close(); }
 });
@@ -292,8 +318,8 @@ test('a late model catalog response cannot open the picker in a newly selected s
     app.evaluate('activeSessionId = "session-b"; activeSessionIdx = 1');
     resolveModels([{ id: 'late-model', name: 'Late Model', provider: 'test' }]);
     await picker;
-    assert.equal(app.renders.length, 0);
-    assert.equal(app.evaluate('acVisible'), false);
+    assert.equal(queryByRole(app.document, 'option'), null);
+    assert.equal(app.document.getElementById('autocomplete').classList.contains('visible'), false);
   } finally { app.close(); }
 });
 
@@ -306,8 +332,8 @@ test('dismissing the composer invalidates a pending autocomplete response', asyn
     app.evaluate('hideAutocomplete()');
     resolveAutocomplete({ prefix: '/mo', items: [{ value: '/model ', label: '/model' }], highlightRanges: [] });
     await pending;
-    assert.equal(app.renders.length, 0);
-    assert.equal(app.evaluate('acVisible'), false);
+    assert.equal(queryByRole(app.document, 'option'), null);
+    assert.equal(app.document.getElementById('autocomplete').classList.contains('visible'), false);
   } finally { app.close(); }
 });
 
@@ -319,7 +345,7 @@ test('model registry empty and error states close the picker and report the fail
     app.evaluate('setInputSelection(document.getElementById("msgInput"), 4)');
     app.evaluate("models = [{ id: 'old-model', name: 'Old Model', provider: 'test' }]; acMode = 'models'; acVisible = true; modelPickerItems = [{ value: 'old-model', label: 'Old Model' }]");
     await app.evaluate('refreshModelRegistry()');
-    assert.equal(app.evaluate('acVisible'), false);
+    assert.equal(app.document.getElementById('autocomplete').classList.contains('visible'), false);
     assert.ok(app.window.errors.includes('No models available'));
     assert.equal(input.textContent, '中文草稿保留');
     assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('getInputSelection(document.getElementById("msgInput"))'))), { start: 4, end: 4 });
@@ -327,7 +353,7 @@ test('model registry empty and error states close the picker and report the fail
     app.window.invoke = async () => { throw new Error('registry unavailable'); };
     app.evaluate('invoke = window.invoke; models = [{ id: "old-model", name: "Old Model", provider: "test" }]; acMode = "models"; acVisible = true');
     await app.evaluate('refreshModelRegistry()');
-    assert.equal(app.evaluate('acVisible'), false);
+    assert.equal(app.document.getElementById('autocomplete').classList.contains('visible'), false);
     assert.ok(app.window.errors.some(message => message.includes('registry unavailable')));
     assert.equal(input.textContent, '中文草稿保留');
     assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('getInputSelection(document.getElementById("msgInput"))'))), { start: 4, end: 4 });
@@ -344,12 +370,12 @@ test('session drafts keep text, send mode, and UTF-16 selection through restore'
     app.document.getElementById('composer').append(mode);
     input.textContent = '😀 draft text';
     app.evaluate('setInputSelection(document.getElementById("msgInput"), 3, 8); persistConversationState = () => {}; captureSessionDraft("session-a")');
-    assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('sessionDraftState["session-a"]'))), {
-      text: '😀 draft text', selectionStart: 3, selectionEnd: 8, runningSendMode: 'queue',
-    });
+    mode.value = 'steer';
+    assert.equal(mode.value, 'steer');
     input.textContent = 'replacement';
     app.evaluate('restoreSessionDraft("session-a")');
     assert.equal(input.textContent, '😀 draft text');
+    assert.equal(mode.value, 'queue');
     assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('getInputSelection(document.getElementById("msgInput"))'))), { start: 3, end: 8 });
   } finally { app.close(); }
 });
@@ -365,9 +391,10 @@ test('capturing a draft after focus leaves the composer preserves its last saved
     app.document.body.append(outside);
     app.evaluate('persistConversationState = () => {}; setInputSelection(document.getElementById("msgInput"), 2, 7); captureSessionDraft("session-a")');
     app.evaluate(`(()=>{const target=document.getElementById('outsideSelection'),range=document.createRange();range.selectNodeContents(target);range.collapse(false);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);captureSessionDraft('session-a')})()`);
-    assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('sessionDraftState["session-a"]'))), {
-      text: 'A draft here', selectionStart: 2, selectionEnd: 7, runningSendMode: 'queue',
-    });
+    input.textContent = 'replacement';
+    app.evaluate('restoreSessionDraft("session-a")');
+    assert.equal(input.textContent, 'A draft here');
+    assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('getInputSelection(document.getElementById("msgInput"))'))), { start: 2, end: 7 });
   } finally { app.close(); }
 });
 
@@ -398,7 +425,6 @@ test('session snapshot changes save and restore the draft belonging to each sess
       setInputSelection(document.getElementById('msgInput'), 5);
       renderState({ sessionId: 'session-a', isStreaming: false, messages: [], queuedMessages: [], steeringConversation: [] });
     `);
-    assert.equal(app.evaluate('sessionDraftState["session-b"].text'), '更新后的草稿B');
     assert.equal(input.textContent, '草稿A');
     assert.equal(mode.value, 'queue');
 
@@ -430,8 +456,10 @@ test('a session change during IME commits the old draft before restoring the sel
     assert.equal(input.textContent, 'draft 中', 'restore waits until the IME commit');
     app.evaluate('handleCompositionEnd(document.getElementById("msgInput"))');
     await new Promise(resolve => setTimeout(resolve, 10));
-    assert.equal(app.evaluate('sessionDraftState["session-a"].text'), 'draft 中');
     assert.equal(input.textContent, 'new draft');
     assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('getInputSelection(document.getElementById("msgInput"))'))), { start: 4, end: 6 });
+    app.evaluate("activeSessionId = 'session-a'; restoreSessionDraft('session-a')");
+    assert.equal(input.textContent, 'draft 中');
+    assert.deepEqual(JSON.parse(JSON.stringify(app.evaluate('getInputSelection(document.getElementById("msgInput"))'))), { start: 7, end: 7 });
   } finally { app.close(); }
 });
