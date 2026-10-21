@@ -274,19 +274,6 @@ function toggleThinking(header) {
   }
 }
 
-function showError(message) {
-  console.error(message);
-  if (!window.RozsaNotifications) return;
-  try {
-    window.RozsaNotifications.showRuntimeError(message, {
-      upsertNotification,
-      nextErrorId: () => 'runtime-error-' + (++legacyNotificationCounter),
-    });
-  } catch (error) {
-    console.error('Could not deliver runtime error notification:', error);
-  }
-}
-
 window.addEventListener('rozsa:runtime-notification', function(event) {
   const notification = event.detail;
   if (notification?.type === 'upsert' && typeof notification.id === 'string' && notification.id &&

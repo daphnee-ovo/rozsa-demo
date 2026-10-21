@@ -2,6 +2,7 @@ import React, { Fragment, memo, useEffect, useLayoutEffect, useRef, type ReactNo
 import { createRoot, type Root } from "react-dom/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { MarkdownContent } from "./markdown-renderer.tsx";
+import { reportError, resolveError } from "../../error-reporting.ts";
 
 export type ConversationRole = "user" | "assistant" | "system" | "toolResult";
 export interface ConversationBlock { type: string; text?: string; id?: string; name?: string; [key: string]: unknown }
@@ -47,18 +48,6 @@ interface MessageRowProps {
 
 function textBlocks(content: ConversationBlock[], type: "text" | "thinking"): string {
   return content.filter(block => block.type === type && typeof block.text === "string").map(block => block.text!).join("\n");
-}
-
-const reportedMessageErrors = new Map<string, string>();
-
-function reportMessageError(identity: string, message: string): void {
-  if (reportedMessageErrors.get(identity) === message) return;
-  reportedMessageErrors.set(identity, message);
-  console.error("Application message error:", message);
-  if (!window.RozsaNotifications?.showRuntimeError) return;
-  window.dispatchEvent(new CustomEvent("rozsa:runtime-notification", {
-    detail: { type: "upsert", id: `message-render:${identity}`, title: "Message error", message },
-  }));
 }
 
 function ImageBlock({ block }: { block: ConversationBlock }) {
@@ -111,8 +100,8 @@ const MessageRow = memo(function MessageRow({ entry }: MessageRowProps) {
   const error = typeof message.errorMessage === "string" ? message.errorMessage : message.error;
   useEffect(() => {
     if (message.role === "assistant" && typeof error === "string" && error.length > 0) {
-      reportMessageError(entry.id, error);
-    }
+      reportError(error, { id: `message-render:${entry.id}`, title: "Message error" });
+    } else resolveError(`message-render:${entry.id}`);
   }, [entry.id, error, message.role]);
   if (entry.kind === "custom") {
     const custom = entry.message as Record<string, unknown>;

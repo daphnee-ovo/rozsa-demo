@@ -1,6 +1,6 @@
 # 共享 UI 脚本
 
-`core/renderer.ts` 是共享 UI 模块入口，提供 template mount 和 host 生命周期；`core/ports.ts` 规定异步 request、事件订阅清理及单调 revision 提交。Vite 负责将这些 TypeScript 模块转换为浏览器 JavaScript；不维护手写 JavaScript 副本。
+`core/renderer.ts` 是共享 UI 模块入口，提供 template mount 和 host 生命周期；`core/ports.ts` 规定异步 request、事件订阅清理及单调 revision 提交。`../error-reporting.ts` 是 renderer 公共错误实现，导出 `reportError(error, options?)` 与 `resolveError(id)`；TypeScript 调用点直接导入，runtime 入口将同一函数绑定到 `showError`/`resolveError` 全局名，供组合后的经典 runtime 调用。通知投递直接使用现有通知中心的 upsert/resolve 函数。Vite 负责将这些 TypeScript 模块转换为浏览器 JavaScript；不维护手写 JavaScript 副本。
 
 Prototype shell 创建 mock adapter，场景数据通过 port 读取 `prototype/mock/`。当前 Electron 产品入口是 `index.html`/`entry.ts`，通过 `ProductClient` 使用受控 preload bridge。单独的 runtime main/sidebar 模块不属于当前打包入口；Rust/Tauri 产品继续从 `crates/rozsa-gui/frontend/` 启动，不加载此目录资源。
 

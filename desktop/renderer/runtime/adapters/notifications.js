@@ -10,10 +10,6 @@ export async function subscribeNotifications(port, api) {
   await port.subscribe('notification', payload => api.showNotification(typeof payload === 'string' ? payload : JSON.stringify(payload)));
 }
 
-export function showRuntimeError(message, api) {
-  api.upsertNotification({ id: api.nextErrorId(), severity: 'error', title: 'Error', message: String(message), timeoutMs: 6000 });
-}
-
 // Sidebar feedback is displayed by the single global center in the main WebView.
 export function createSidebarFeedback(adapter) {
   return message => adapter.emit('error', String(message));

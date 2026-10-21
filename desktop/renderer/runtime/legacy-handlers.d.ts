@@ -9,7 +9,7 @@ declare global {
     RozsaUIReady: Promise<void>;
     RozsaSidebarEmit: (event: string, payload?: unknown) => Promise<void>;
     RozsaSidebar: typeof import('../scripts/features/sidebar.js') & Partial<typeof import('../scripts/features/dev-flow.js')>;
-    RozsaNotifications: typeof import('../scripts/features/notifications.js') & Omit<typeof import('../scripts/components/notification.js'), 'init'> & Pick<typeof import('./adapters/notifications.js'), 'subscribeNotifications' | 'showRuntimeError'>;
+    RozsaNotifications: typeof import('../scripts/features/notifications.js') & Omit<typeof import('../scripts/components/notification.js'), 'init'> & Pick<typeof import('./adapters/notifications.js'), 'subscribeNotifications'>;
     RozsaSettings: Partial<typeof import('../scripts/features/settings.js')> & Partial<typeof import('./adapters/settings.js')>;
     RozsaDevFlow: typeof import('../scripts/features/dev-flow.js') & typeof import('./adapters/sidebar-dev-flow.js');
     RozsaTools: typeof import('../scripts/features/tools.js') & typeof import('./adapters/tools.js');
@@ -21,8 +21,10 @@ declare global {
     RozsaComposer: Pick<typeof import('../scripts/components/composer.js'), 'renderSendState'>;
     RozsaPopover: ReturnType<typeof import('../scripts/components/popover.js')['init']>;
     RozsaSidebarFeedback: ReturnType<typeof import('./adapters/notifications.js')['createSidebarFeedback']>;
+    resolveError: typeof import('../error-reporting.ts').resolveError;
   }
   const isStreaming: boolean;
+  const showError: typeof import('../error-reporting.ts').reportError;
   const sidebarSessions: { path: string }[];
   function switchSidebarSession(path: string): Promise<void>;
   function newSidebarSession(): Promise<void>;

@@ -19,13 +19,14 @@ import * as settings from '../../scripts/features/settings.tsx';
 import { createSettingsAdapter, bindSettingSwitch } from '../adapters/settings.js';
 import * as notifications from '../../scripts/features/notifications.js';
 import { bindToast, bindErrorTray } from '../../scripts/components/notification.js';
-import { subscribeNotifications, showRuntimeError } from '../adapters/notifications.js';
+import { subscribeNotifications } from '../adapters/notifications.js';
 import * as sidebar from '../../scripts/features/sidebar.js';
 import { loadTemplate } from '../../scripts/core/template-loader.ts';
 import { renderMarkdownStatic } from '../../scripts/features/markdown-renderer.tsx';
 import * as devFlow from '../../scripts/features/dev-flow.js';
 import { devFlowSettingsView, devFlowDetailView } from '../adapters/sidebar-dev-flow.js';
 
+import { reportError, resolveError } from '../../error-reporting.ts';
 declare global {
   interface Window {
     RozsaSessionCatalogReady: Promise<unknown>;
@@ -40,6 +41,8 @@ const renderMarkdown = (source: string): Promise<string> => import('../../script
   .then(module => module.renderMarkdownStatic(source));
 window.RozsaMarkdownRenderer = renderMarkdown;
 window.renderMarkdown = renderMarkdown;
+window.showError = reportError;
+window.resolveError = resolveError;
 
 const performanceCapture = new URLSearchParams(location.search).get("rozsa_perf") === "1";
 const startupAnchors = [
@@ -140,7 +143,7 @@ window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(docum
   const conversationRoot = document.getElementById("chatMessages");
   if (!conversationRoot) throw new Error("Conversation React root not found after mounting the conversation template");
   conversationRenderer = createConversationRenderer(conversationRoot);
-  window.RozsaNotifications = Object.freeze({ ...notifications, bindToast, bindErrorTray, subscribeNotifications, showRuntimeError });
+  window.RozsaNotifications = Object.freeze({ ...notifications, bindToast, bindErrorTray, subscribeNotifications });
   window.RozsaSettings = Object.freeze({ ...settings, bindSettingSwitch });
   window.RozsaDevFlow = Object.freeze({ ...devFlow, devFlowSettingsView, devFlowDetailView });
   devFlow.init({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), closeDevFlowDetail });

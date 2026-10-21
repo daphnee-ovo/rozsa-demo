@@ -6,6 +6,7 @@ import { Streamdown, defaultComponents } from "streamdown";
 import type { Mounted } from "pele";
 import { completeMermaidFences, incompleteCodeFence } from "./markdown-renderer.tsx";
 import { HighlightedCode } from "../components/highlighted-code.tsx";
+import { reportError, resolveError } from "../../error-reporting.ts";
 
 function recordMarkdownStage(stage: "renderCommit" | "peleMount" | "peleAdapt", duration: number): void {
   const perf = window.__ROZSA_PERF__;
@@ -15,25 +16,13 @@ function recordMarkdownStage(stage: "renderCommit" | "peleMount" | "peleAdapt", 
 }
 
 function normalizedCode(source: string): string { return source.replace(/\r\n/g, "\n").replace(/\n+$/, ""); }
-const reportedMermaidErrors = new Map<string, string>();
-const mermaidNotificationIds = new Map<string, string>();
-let nextMermaidNotificationId = 0;
 
-function reportMermaidError(identity: string | undefined, source: string, error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  const sourceIdentity = identity ? `${identity}\u0000${source}` : undefined;
-  let notificationId = sourceIdentity ? mermaidNotificationIds.get(sourceIdentity) : undefined;
-  if (sourceIdentity && !notificationId) {
-    notificationId = `mermaid-render:${identity}:${++nextMermaidNotificationId}`;
-    mermaidNotificationIds.set(sourceIdentity, notificationId);
+function mermaidSourceId(source: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = Math.imul(hash ^ source.charCodeAt(index), 16777619);
   }
-  if (notificationId && reportedMermaidErrors.get(notificationId) === message) return;
-  if (notificationId) reportedMermaidErrors.set(notificationId, message);
-  console.error("Mermaid rendering failed:", error);
-  if (!notificationId || !window.RozsaNotifications?.showRuntimeError) return;
-  window.dispatchEvent(new CustomEvent("rozsa:runtime-notification", {
-    detail: { type: "upsert", id: notificationId, title: "Diagram error", message },
-  }));
+  return (hash >>> 0).toString(36);
 }
 
 function iconMarkup(Icon: typeof CodeXml) {
@@ -131,6 +120,10 @@ function MermaidDiagram({ source }: { source: string }) {
     const element = target.current;
     if (!element) return;
     const messageIdentity = wrap.current?.closest<HTMLElement>(".msg")?.dataset.renderErrorId;
+    const errorOptions = {
+      id: messageIdentity ? `mermaid-render:${messageIdentity}:${mermaidSourceId(source)}` : undefined,
+      title: "Diagram error",
+    };
     const blockDoubleClickZoom = (event: MouseEvent) => {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -174,16 +167,20 @@ function MermaidDiagram({ source }: { source: string }) {
             styleZoomControls();
             element.dataset.peleReady = "true";
           },
-          onError: value => { if (active) { reportMermaidError(messageIdentity, source, value); setError(value instanceof Error ? value.message : String(value)); } },
+          onError: value => { if (active) { reportError(value, errorOptions); setError(value instanceof Error ? value.message : String(value)); } },
         });
         styleZoomControls();
         if (window.__ROZSA_PERF__) {
           window.__ROZSA_PERF__.activePeleMounts = Number(window.__ROZSA_PERF__.activePeleMounts || 0) + 1; mountCounted = true;
         }
         recordMarkdownStage("peleMount", performance.now() - started);
-        if (mounted.current.error) { reportMermaidError(messageIdentity, source, mounted.current.error); setError(String(mounted.current.error)); }
-      } catch (value) { if (active) { reportMermaidError(messageIdentity, source, value); setError(value instanceof Error ? value.message : String(value)); } }
-    }).catch(value => { if (active) { reportMermaidError(messageIdentity, source, value); setError(value instanceof Error ? value.message : String(value)); } });
+        if (mounted.current.error) { reportError(mounted.current.error, errorOptions); setError(String(mounted.current.error)); }
+        else {
+          if (errorOptions.id) resolveError(errorOptions.id);
+          setError(undefined);
+        }
+      } catch (value) { if (active) { reportError(value, errorOptions); setError(value instanceof Error ? value.message : String(value)); } }
+    }).catch(value => { if (active) { reportError(value, errorOptions); setError(value instanceof Error ? value.message : String(value)); } });
     return () => {
       active = false; resizeObserver?.disconnect();
       mutationObserver?.disconnect();

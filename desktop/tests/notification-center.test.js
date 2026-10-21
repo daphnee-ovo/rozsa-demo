@@ -5,12 +5,13 @@ import {
   notificationIcon, notificationMarkup,
 } from '../renderer/scripts/features/notifications.js';
 import { bindErrorTray, bindToast } from '../renderer/scripts/components/notification.js';
-import { showRuntimeError, subscribeNotifications } from '../renderer/runtime/adapters/notifications.js';
+import { reportError } from '../renderer/error-reporting.ts';
+import { subscribeNotifications } from '../renderer/runtime/adapters/notifications.js';
 import { loadApp, withDOM } from './helpers/browser.js';
 
 const notifications = {
   applyNotificationPresentation, bindErrorTray, bindToast, createNotificationElement,
-  notificationIcon, notificationMarkup, showRuntimeError, subscribeNotifications, errorItemMarkup,
+  notificationIcon, notificationMarkup, subscribeNotifications, errorItemMarkup,
 };
 
 function setupApp() {
@@ -27,6 +28,7 @@ function setupApp() {
     setTimeout(callback, delay) { const id = nextTimer++; timers.set(id, { callback, at: clock + delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
   } });
+  app.window.showError = reportError;
   Object.defineProperty(app.window, 'performance', { value: { now: () => clock } });
   return {
     ...app,
@@ -162,6 +164,19 @@ test('runtime adapter accepts structured events and preserves legacy notificatio
   assert.deepEqual(result.legacy, ['legacy message']);
 });
 
+test('runtime initialization errors are presented through the internal notification center', async () => {
+  const app = setupApp();
+  try {
+    await withDOM(app.dom, () => {
+      reportError('Codex OAuth runtime initialization failed', { id: 'runtime-error-1' });
+      const toast = app.state().toasts.get('runtime-error-1');
+      assert.ok(toast);
+      assert.equal(toast.severity, 'error');
+      assert.equal(toast.element.querySelector('.notification-message').textContent, 'Codex OAuth runtime initialization failed');
+    });
+  } finally { app.close(); }
+});
+
 test('runtime errors use the application notification and never enter conversation content', async () => {
   const app = setupApp();
   const consoleErrors = [];
@@ -184,12 +199,12 @@ test('runtime errors stay in the console when notifications are unavailable or d
   app.window.console.error = (...values) => consoleErrors.push(values);
   try {
     await withDOM(app.dom, () => {
-      app.evaluate(`delete window.RozsaNotifications; showError('notifications unavailable')`);
+      app.evaluate(`window.upsertNotification = undefined; showError('notifications unavailable')`);
       assert.deepEqual(consoleErrors, [['notifications unavailable']]);
       assert.equal(app.document.querySelector('#chatMessages').textContent, '');
       assert.equal(app.document.querySelector('#notificationStack').textContent, '');
 
-      app.evaluate(`window.RozsaNotifications = { showRuntimeError() { throw new Error('delivery failed'); } }; showError('delivery attempted')`);
+      app.evaluate(`window.upsertNotification = () => { throw new Error('delivery failed'); }; showError('delivery attempted')`);
       assert.deepEqual(consoleErrors.slice(1).map(([message, error]) => [message, error && String(error)]), [
         ['delivery attempted', undefined],
         ['Could not deliver runtime error notification:', 'Error: delivery failed'],
@@ -208,7 +223,7 @@ test('failed session catalog requests report globally and a later successful ren
     await withDOM(app.dom, () => {
       app.evaluate(`showSidebarError('sessionList', 'get_sessions failed: offline')`);
       assert.deepEqual(consoleErrors, [['get_sessions failed: offline']]);
-      assert.ok(app.state().toasts.has('runtime-error-1'));
+      assert.match(app.document.querySelector('#notificationStack').textContent, /get_sessions failed: offline/);
       assert.equal(app.document.querySelector('#sessionList').textContent, 'Existing session');
       assert.equal(app.document.querySelector('#chatMessages').textContent, '');
 
