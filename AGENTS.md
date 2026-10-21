@@ -7,7 +7,8 @@
 
 # Development Rules
 > JSON-RPC 禁止手动实现：Go 一律使用 `go.lsp.dev/jsonrpc2` 的原生 Conn/Stream；Electron main 使用 `vscode-jsonrpc`。配置需求只使用库公开支持的配置；仍不支持时送回主会话重新考量，不用自定义 Stream、framing 或额外协议解析器补齐。
-**IMPORTANT: 修改路径下存放的`AGENTS.md`是必读项。**同一路径只需阅读一次。 例如：编辑`./backend/*`，必先阅读`./backend/AGENTS.md`
+**IMPORTANT: 修改路径下存放的`AGENTS.md`、`README.md`是必读项。**同一路径只需阅读一次。 例如：编辑`./backend/*`，必先阅读`./backend/AGENTS.md`。上下文压缩后需要重新读取。
+- 凡是需要运行 `eletron` 桌面应用的， 都必须先提权
 - Linux/Windows 实机验证暂时不在当前开发计划内
 - 单个代码文件代码部分长度不得超过1000行
 
@@ -26,12 +27,13 @@
 
 
 ## Overview
-> Use `CONTRIBUTING.md` to document development guidelines shared by both human contributors and agents.
+> Read `CONTRIBUTING.md`.
 
 @CONTRIBUTING.md
 
 ## Project Scope
 
+<!--TODO:对于 rust版本的结构移动到 `crates/` 下面，然后将此处更新为最新的 eletron + go 的结构-->
 | Crate | Responsibility |
 |---|---|
 | `rozsa-model` | LLM providers, streaming, credentials, and model types |
@@ -41,6 +43,8 @@
 | `rozsa-cli` | CLI entry point |
 
 The active product is implemented entirely in the five Rust crates above. Do not introduce dependencies on retired terminal, TypeScript, or process-bridge implementations.
+<!--TODO:对于 rust版本的结构移动到 `crates/` 下面，然后将此处更新为最新的 eletron + go 的结构-->
+
 
 On the migration branch, Rust/Tauri owns `crates/rozsa-gui/frontend/`, its Rust
 integration tests and `crates/rozsa-gui/js-tests/`. Electron+Go owns `desktop/renderer/`
@@ -95,17 +99,17 @@ active dow task scope. Candidate commands and verification limits are in
 
 ## Git
 > 用户已经授权，并且是本项目的固定规则：完成一个task 就commit一次。
-> Dev-flow 的task,issue文件直接随commit一并提交，***禁止*通过git diff等方式检查或查看**。使用 `git add .dev-doc/<branch>/<name>/{tasks,issue}/` 快速staged。
-> codex: 写入 git 前需要先提权
+> 优先于共享改动保护：Dev-flow 的task,issue文件直接随commit一并提交，***禁止*通过git diff等方式检查或查看**。使用 `git add .dev-doc/<branch>/<name>/{tasks,issue}/` 快速staged。
+> For codex: 写入 git 前需要先提权
 
-Multiple rozsa sessions may be running in this cwd at the same time, each modifying different files. Git operations that touch unstaged, staged, or untracked files outside your own changes will stomp on other sessions' work. Follow these rules:
+**禁止使用交互暂存(`git add -p`)**，这会极大程度拖累项目进度。
+
+Multiple rozsa sessions may be running in this cwd at the same time, each modifying different files. Follow these rules:
 
 Committing:
 
-- Migration task completion and commit sequence are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
-- Only commit files YOU changed in THIS session.
+- Only commit files YOU changed in THIS session and dev-flow task/issue files.
 - Stage explicit paths (`git add <path1> <path2>`); never `git add -A` / `git add .`.
-- Before committing, run `git status` and verify you are only staging your files.
 
 Never run (destroys other agents' work or bypasses checks):
 
@@ -119,6 +123,8 @@ If rebase conflicts occur:
 
 ## GUI
 
+- MUST read `DESIGN.md` before making any UI/UX modifications.
+- All UI icons MUST use the Lucide icon library to maintain consistent stroke styles, proportions, and visual appearance. Do not mix icon libraries or create custom functional icons.
 - Treat `docs/gui/UI_USAGE_GUIDELINES.md`, `docs/gui/ARCHITECTURE.md`, `docs/gui/TERMINOLOGY.md`, and root `prototype/` as the GUI design sources.
 - New GUI elements must preserve the established visual and interaction language.
 - If the prototype conflicts with an explicit user requirement, the user requirement wins. Obtain approval before modifying the prototype to restore product/prototype consistency.
@@ -127,10 +133,27 @@ If rebase conflicts occur:
 - Use Gaussian blur to make hierarchical relationships feel more elegant.
 
 ## Test
-- For codex: `dow task done <ids>` 会自动运行相关测试，因此需要提权运行。
 
-## Test Writing
-- 有效的测试是在验证代码的行为，而不是做硬编码的断言。
+### Write Test
+
+**IMPORTANT：不追求覆盖率，宁缺毋滥，宁缺毋滥！！不要编写无意义的测试！！** “需要验证”不等同于“新增测试”，必须先判断收益和维护成本。
+
+新增加的测试代码必须满足以下条件。
+
+- **只为**新增/变更的行为写*有意义的*测试。注意，这不代表每次改动都必须编写测试。
+- 测试必须用一句话说明该测试要防止的具体 bug 或回归
+- **测试行为，不测试实现**。 测试应该验证"做了什么"（输入输出、可观察的结果），而不是"怎么做的"（内部调用顺序、私有方法）。
+- 只测可观察的行为（返回值、状态变化、对外副作用），禁止测试实现细节和私有方法。
+- 断言必须检查具体值，不能在测试里复刻实现逻辑来计算期望值。
+- 测试失败时不得直接修改测试；先判断是代码错还是预期错，并说明理由。
+- 对于核心模块的改动，需要跑增量变异测试。存活变异体必须补断言杀死，或逐个说明为何是等价变异。
+
+改动新增测试超过3个，或测试代码行数高于源码改动2倍，必须在会话中说明缘由。
+
+对于功能、业务变更导致的代码变化，只需针对变化考虑是否写测试，禁止通过测试来保证旧功能不再出现。
+
+### Execute Test
+- For codex: `dow task done <ids>` 会自动运行相关测试，因此需要*提权*运行。
 
 ## ABOUT TODO
 

@@ -5,6 +5,7 @@
 ## Electron + Go desktop
 
 - `start-desktop.sh`：编译当前代码并通过 Forge/Vite 启动调试应用；默认加载 `tmp/desktop-debug/sessions/` 的 Markdown、Mermaid、工具调用和长历史合成示例。已有示例文件不会覆盖。应用参数原样跟在脚本后；显式传 `--session-dir /absolute/sessions` 或 `--session-dir=/absolute/sessions` 时仅使用指定目录。不生成 `.app` 包。
+- `show-interruption-states.mjs`：启动隔离的 Electron + Go 展示实例；本地合成 provider 会在两个 session 中分别挂起 Permission Request 和 AskUserQuestion，切换侧栏查看同一个 renderer mount 的不同状态。按 Ctrl+C 关闭。
 - `prepare-debug-sessions.mjs`：生成上述示例会话；可传目录作为第一个参数，已有同名文件保留。
 - `build-desktop.sh`：全新安装桌面依赖并生成当前主机的应用包；首次设置或依赖变更后使用。
 - `package-desktop.sh`：依赖已安装时生成应用包；传入 `make` 生成当前主机安装包，其余参数传给 Forge。

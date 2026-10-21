@@ -9,6 +9,18 @@
 
 Development and synchronization tools live in `devtools/`.
 
+Launch the isolated permission/question showcase with:
+
+```bash
+node devtools/show-interruption-states.mjs
+```
+
+It opens the Electron + Go app with a local synthetic provider and leaves both
+interactions pending in separate sessions. Switch between **Permission Request
+Demo** and **Ask User Question Demo** in the sidebar; the same renderer mount
+shows the selected session's interruption. The app uses a temporary profile,
+settings, and session directory under `tmp/` and closes when you press Ctrl+C.
+
 ### Synchronize the Codex models client version
 
 The ChatGPT models endpoint filters its response using Codex CLI version semantics. Rózsa therefore keeps a dedicated `CODEX_MODELS_CLIENT_VERSION`; do not replace it with the Rózsa workspace version.
@@ -332,7 +344,6 @@ existing untracked file modified by this task.
 ## Pull Requests
 
 - Keep changes focused and minimal
-- Include tests for new functionality
 - Do not edit `CHANGELOG.md` — maintainers handle changelog entries
 - Run the full check suite before submitting
 
