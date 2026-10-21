@@ -4,7 +4,9 @@ import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { test } from "node:test";
 
+test("message rendering and streaming performance", async () => {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const base = join(root, "tmp/migration-message-performance");
 await mkdir(base, { recursive: true });
@@ -164,3 +166,4 @@ try {
   provider.close();
   await writeFile(join(output, "electron.log"), logs);
 }
+});
