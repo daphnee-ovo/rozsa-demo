@@ -15,6 +15,27 @@ function recordMarkdownStage(stage: "renderCommit" | "peleMount" | "peleAdapt", 
 }
 
 function normalizedCode(source: string): string { return source.replace(/\r\n/g, "\n").replace(/\n+$/, ""); }
+const reportedMermaidErrors = new Map<string, string>();
+const mermaidNotificationIds = new Map<string, string>();
+let nextMermaidNotificationId = 0;
+
+function reportMermaidError(identity: string | undefined, source: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  const sourceIdentity = identity ? `${identity}\u0000${source}` : undefined;
+  let notificationId = sourceIdentity ? mermaidNotificationIds.get(sourceIdentity) : undefined;
+  if (sourceIdentity && !notificationId) {
+    notificationId = `mermaid-render:${identity}:${++nextMermaidNotificationId}`;
+    mermaidNotificationIds.set(sourceIdentity, notificationId);
+  }
+  if (notificationId && reportedMermaidErrors.get(notificationId) === message) return;
+  if (notificationId) reportedMermaidErrors.set(notificationId, message);
+  console.error("Mermaid rendering failed:", error);
+  if (!notificationId || !window.RozsaNotifications?.showRuntimeError) return;
+  window.dispatchEvent(new CustomEvent("rozsa:runtime-notification", {
+    detail: { type: "upsert", id: notificationId, title: "Diagram error", message },
+  }));
+}
+
 function iconMarkup(Icon: typeof CodeXml) {
   return renderToStaticMarkup(<Icon className="lucide" size={16} strokeWidth={1.7} aria-hidden="true" />);
 }
@@ -109,6 +130,7 @@ function MermaidDiagram({ source }: { source: string }) {
   useLayoutEffect(() => {
     const element = target.current;
     if (!element) return;
+    const messageIdentity = wrap.current?.closest<HTMLElement>(".msg")?.dataset.renderErrorId;
     const blockDoubleClickZoom = (event: MouseEvent) => {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -152,16 +174,16 @@ function MermaidDiagram({ source }: { source: string }) {
             styleZoomControls();
             element.dataset.peleReady = "true";
           },
-          onError: value => { if (active) setError(value instanceof Error ? value.message : String(value)); },
+          onError: value => { if (active) { reportMermaidError(messageIdentity, source, value); setError(value instanceof Error ? value.message : String(value)); } },
         });
         styleZoomControls();
         if (window.__ROZSA_PERF__) {
           window.__ROZSA_PERF__.activePeleMounts = Number(window.__ROZSA_PERF__.activePeleMounts || 0) + 1; mountCounted = true;
         }
         recordMarkdownStage("peleMount", performance.now() - started);
-        if (mounted.current.error) setError(String(mounted.current.error));
-      } catch (value) { if (active) setError(value instanceof Error ? value.message : String(value)); }
-    }).catch(value => { if (active) setError(value instanceof Error ? value.message : String(value)); });
+        if (mounted.current.error) { reportMermaidError(messageIdentity, source, mounted.current.error); setError(String(mounted.current.error)); }
+      } catch (value) { if (active) { reportMermaidError(messageIdentity, source, value); setError(value instanceof Error ? value.message : String(value)); } }
+    }).catch(value => { if (active) { reportMermaidError(messageIdentity, source, value); setError(value instanceof Error ? value.message : String(value)); } });
     return () => {
       active = false; resizeObserver?.disconnect();
       mutationObserver?.disconnect();
@@ -191,7 +213,7 @@ function MermaidDiagram({ source }: { source: string }) {
         {fullscreen ? <Minimize className="lucide" size={16} strokeWidth={1.7} aria-hidden="true" /> : <Maximize className="lucide" size={16} strokeWidth={1.7} aria-hidden="true" />}
       </button>
     </div>
-    {error ? <div className="md-mermaid-error" role="alert"><strong>Diagram could not be rendered.</strong> {error}<pre><code>{source}</code></pre></div> : null}
+    {error ? <div className="md-mermaid-error" role="alert"><strong>Diagram could not be rendered.</strong><pre><code>{source}</code></pre></div> : null}
   </div>;
   return fullscreen ? createPortal(diagram, document.body) : diagram;
 }

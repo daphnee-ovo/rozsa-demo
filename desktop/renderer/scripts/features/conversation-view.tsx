@@ -1,4 +1,4 @@
-import React, { Fragment, memo, useLayoutEffect, useRef, type ReactNode } from "react";
+import React, { Fragment, memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { MarkdownContent } from "./markdown-renderer.tsx";
@@ -49,6 +49,18 @@ function textBlocks(content: ConversationBlock[], type: "text" | "thinking"): st
   return content.filter(block => block.type === type && typeof block.text === "string").map(block => block.text!).join("\n");
 }
 
+const reportedMessageErrors = new Map<string, string>();
+
+function reportMessageError(identity: string, message: string): void {
+  if (reportedMessageErrors.get(identity) === message) return;
+  reportedMessageErrors.set(identity, message);
+  console.error("Application message error:", message);
+  if (!window.RozsaNotifications?.showRuntimeError) return;
+  window.dispatchEvent(new CustomEvent("rozsa:runtime-notification", {
+    detail: { type: "upsert", id: `message-render:${identity}`, title: "Message error", message },
+  }));
+}
+
 function ImageBlock({ block }: { block: ConversationBlock }) {
   const mimeType = typeof block.mimeType === "string" ? block.mimeType.toLowerCase() : "";
   const data = typeof block.data === "string" ? block.data : "";
@@ -59,11 +71,11 @@ function ImageBlock({ block }: { block: ConversationBlock }) {
   return <img className="md-image" alt="Image attachment" src={`data:${mimeType};base64,${data}`} />;
 }
 
-function Frame({ role, index, continuation, children }: {
-  role: ConversationRole; index: number; continuation: boolean; children: ReactNode;
+function Frame({ role, index, continuation, identity, children }: {
+  role: ConversationRole; index: number; continuation: boolean; identity: string; children: ReactNode;
 }) {
   const hiddenIdentity = continuation && role === "assistant";
-  return <div className={`msg msg-${role}${continuation ? " msg-assistant-continuation" : ""}`} data-od-id={`message-${index}`}>
+  return <div className={`msg msg-${role}${continuation ? " msg-assistant-continuation" : ""}`} data-od-id={`message-${index}`} data-render-error-id={identity}>
     {hiddenIdentity ? null : <div className="msg-avatar">{role === "user" ? "U" : role === "system" ? "S" : "R"}</div>}
     <div className="msg-body">{children}</div>
   </div>;
@@ -96,6 +108,12 @@ function ThinkingBlock({ text, entry }: { text: string; entry: ConversationEntry
 const MessageRow = memo(function MessageRow({ entry }: MessageRowProps) {
   const message = entry.message as ConversationMessage;
   const content = Array.isArray(message.content) ? message.content : [];
+  const error = typeof message.errorMessage === "string" ? message.errorMessage : message.error;
+  useEffect(() => {
+    if (message.role === "assistant" && typeof error === "string" && error.length > 0) {
+      reportMessageError(entry.id, error);
+    }
+  }, [entry.id, error, message.role]);
   if (entry.kind === "custom") {
     const custom = entry.message as Record<string, unknown>;
     const body = typeof custom.payload === "string" ? custom.payload : JSON.stringify(custom.payload, null, 2);
@@ -109,7 +127,7 @@ const MessageRow = memo(function MessageRow({ entry }: MessageRowProps) {
 
   if (message.role === "user" || message.role === "system") {
     const text = textBlocks(content, "text");
-    return <Frame role={message.role} index={entry.messageIndex} continuation={false}>
+    return <Frame role={message.role} index={entry.messageIndex} continuation={false} identity={entry.id}>
       <div className="msg-content markdown-body"><MarkdownContent value={text} /></div>
       {content.filter(block => block.type === "image").map((block, index) => <ImageBlock key={`${entry.id}:image:${index}`} block={block} />)}
       {entry.bodyMarkup ? <div dangerouslySetInnerHTML={{ __html: entry.bodyMarkup }} /> : null}
@@ -117,17 +135,15 @@ const MessageRow = memo(function MessageRow({ entry }: MessageRowProps) {
   }
 
   if (message.role === "toolResult") {
-    return <Frame role="assistant" index={entry.messageIndex} continuation={true}>
+    return <Frame role="assistant" index={entry.messageIndex} continuation={true} identity={entry.id}>
       {entry.bodyMarkup ? <div dangerouslySetInnerHTML={{ __html: entry.bodyMarkup }} /> :
         <div className={`msg-content${message.isError ? " msg-error" : ""}`}><pre>{textBlocks(content, "text")}</pre></div>}
     </Frame>;
   }
 
-  const error = typeof message.errorMessage === "string" ? message.errorMessage : message.error;
   const thinking = textBlocks(content, "thinking");
   const text = textBlocks(content, "text");
-  return <Frame role="assistant" index={entry.messageIndex} continuation={entry.continuation === true}>
-    {error ? <div className="msg-content msg-error"><pre>{error}</pre></div> : null}
+  return <Frame role="assistant" index={entry.messageIndex} continuation={entry.continuation === true} identity={entry.id}>
     {thinking ? <ThinkingBlock text={thinking} entry={entry} /> : null}
     {entry.bodyMarkup ? <div dangerouslySetInnerHTML={{ __html: entry.bodyMarkup }} /> : null}
     <div className="msg-content markdown-body" data-stream-cursor-target={entry.activeStream && entry.streamTarget === "text" ? "text" : undefined}>
