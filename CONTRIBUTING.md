@@ -108,17 +108,21 @@ Native acceptance remains separate; it never enters full TEST or starts a GUI
 from the task completion hook. This uses dow's supported Shell adapter because
 dow 0.3.10 does not recognize the tsx TypeScript test runner.
 
-Launch against explicit synthetic directories in layer order:
+Launch with the existing configuration and sessions:
 
 ```bash
-bash devtools/start-desktop.sh --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/global --session-dir /absolute/synthetic/project
+bash devtools/start-desktop.sh
 ```
 
-The renderer cannot supply paths or arbitrary IPC. No default user session or
-credential directories are discovered. Missing configured layers return an
-empty list; no configured layers show the existing `No session directories
-configured` error. Closing the last candidate window shuts down its owned Go
-process. Session rows select Go-owned Loaded tabs via controlled `switch_session`;
+For an isolated configuration root, set `ROZSA_CONFIG_DIR` explicitly:
+
+```bash
+ROZSA_CONFIG_DIR="$PWD/tmp/electron-config" bash devtools/start-desktop.sh
+```
+
+The launcher leaves normal configuration resolution in place and does not
+generate sample sessions. Closing the last candidate window shuts down its
+owned Go process. Session rows select Go-owned Loaded tabs via controlled `switch_session`;
 the renderer shows active-branch display history, separately from effective
 model context, and retains scroll/Thinking expansion on re-entry. The Go session
 module provides read-only `Open`, `Entries`, and `ContextMessages`, plus a writable
@@ -182,16 +186,16 @@ scripts place temporary working files under project `tmp/`.
 
 ```bash
 bash devtools/build-desktop.sh
-bash devtools/start-desktop.sh --user-data-dir="$PWD/tmp/electron-profile" --session-dir /absolute/synthetic/sessions
+bash devtools/start-desktop.sh
+ROZSA_CONFIG_DIR="$PWD/tmp/electron-config" bash devtools/start-desktop.sh
 bash devtools/package-desktop.sh
 bash devtools/package-desktop.sh make
 bash devtools/test-desktop.sh
 ```
 
-With no `--session-dir`, `start-desktop.sh` loads synthetic Markdown, Mermaid,
-tool-call and long-history sessions from `tmp/desktop-debug/sessions/`. Existing
-files are preserved so edits and new turns survive restarts. An explicit
-`--session-dir` selects only the supplied directories. This starts the latest
+`start-desktop.sh` uses existing configuration and sessions by default. Set
+`ROZSA_CONFIG_DIR` before launch to isolate the configuration and session root;
+the launcher does not generate sample sessions. This starts the latest
 development code through Forge; use `package-desktop.sh` to update the app bundle.
 Check fixture generation and argument forwarding with
 `node --test desktop/tests/debug-sessions.test.js`; the separate native check is

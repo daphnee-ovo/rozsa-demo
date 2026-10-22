@@ -39,21 +39,16 @@ test("debug fixtures include readable messages, complete diagrams, tool results 
   assert.equal((await stat(edited)).mtimeMs, modified);
 });
 
-test("launcher adds samples only by default and forwards explicit directories and spaced arguments unchanged", { skip: process.platform === "win32" ? "Requires the POSIX Bash launcher" : false }, async () => {
+test("launcher forwards spaced application arguments unchanged", { skip: process.platform === "win32" ? "Requires the POSIX Bash launcher" : false }, async () => {
   const base = await temporaryDirectory(), bin = join(base, "bin"), result = join(base, "arguments.json");
   await mkdir(bin);
   // Generated command doubles keep this test from starting Forge or changing backend config.
   await writeFile(join(bin, "go"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   await writeFile(join(bin, "npm"), `#!${process.execPath}\nrequire('node:fs').writeFileSync(process.env.DEBUG_ARGUMENTS,JSON.stringify(process.argv.slice(2)));\n`, { mode: 0o755 });
   await writeFile(join(bin, "node"), `#!${process.execPath}\nconst args=process.argv.slice(2);if(args[0].endsWith('update-builtin-skills-config.mjs'))process.exit(0);if(args[0].endsWith('prepare-debug-sessions.mjs'))args.push(process.env.DEBUG_SESSIONS);const child=require('node:child_process').spawnSync(process.execPath,args,{stdio:'inherit'});if(child.error)throw child.error;process.exit(child.status);\n`, { mode: 0o755 });
-  const directory = join(base, "sample sessions");
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, DEBUG_ARGUMENTS: result, DEBUG_SESSIONS: directory };
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, DEBUG_ARGUMENTS: result };
   const script = join(root, "devtools/start-desktop.sh");
   const readArguments = async () => JSON.parse(await readFile(result, "utf8"));
   await execute("/bin/bash", [script, "--user-data-dir", join(base, "custom profile")], { cwd: base, env });
-  assert.deepEqual(await readArguments(), ["--prefix", "desktop", "start", "--", "--", "--user-data-dir", join(base, "custom profile"), "--session-dir", directory]);
-  for (const input of [["--session-dir", "/custom path/sessions"], ["--session-dir=/custom path/sessions"]]) {
-    await execute("/bin/bash", [script, ...input], { cwd: base, env });
-    assert.deepEqual(await readArguments(), ["--prefix", "desktop", "start", "--", "--", ...input]);
-  }
+  assert.deepEqual(await readArguments(), ["--prefix", "desktop", "start", "--", "--", "--user-data-dir", join(base, "custom profile")]);
 });
