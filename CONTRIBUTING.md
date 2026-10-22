@@ -108,13 +108,15 @@ Native acceptance remains separate; it never enters full TEST or starts a GUI
 from the task completion hook. This uses dow's supported Shell adapter because
 dow 0.3.10 does not recognize the tsx TypeScript test runner.
 
-Launch with the existing configuration and sessions:
+Launch with the repository-local development configuration root:
 
 ```bash
 bash devtools/start-desktop.sh
 ```
 
-For an isolated configuration root, set `ROZSA_CONFIG_DIR` explicitly:
+The launcher sets `ROZSA_CONFIG_DIR` to `tmp/desktop-debug` in the repository
+unless the calling environment already sets it. To use a different root, set
+`ROZSA_CONFIG_DIR` for that invocation:
 
 ```bash
 ROZSA_CONFIG_DIR="$PWD/tmp/electron-config" bash devtools/start-desktop.sh
@@ -193,9 +195,9 @@ bash devtools/package-desktop.sh make
 bash devtools/test-desktop.sh
 ```
 
-`start-desktop.sh` uses existing configuration and sessions by default. Set
-`ROZSA_CONFIG_DIR` before launch to isolate the configuration and session root;
-the launcher does not generate sample sessions. This starts the latest
+`start-desktop.sh` defaults `ROZSA_CONFIG_DIR` to the repository's
+`tmp/desktop-debug` directory and preserves an externally supplied value. The
+launcher does not generate sample sessions. This starts the latest
 development code through Forge; use `package-desktop.sh` to update the app bundle.
 Check fixture generation and argument forwarding with
 `node --test desktop/tests/debug-sessions.test.js`; the separate native check is

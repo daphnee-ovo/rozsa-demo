@@ -44,11 +44,16 @@ test("launcher forwards spaced application arguments unchanged", { skip: process
   await mkdir(bin);
   // Generated command doubles keep this test from starting Forge or changing backend config.
   await writeFile(join(bin, "go"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-  await writeFile(join(bin, "npm"), `#!${process.execPath}\nrequire('node:fs').writeFileSync(process.env.DEBUG_ARGUMENTS,JSON.stringify(process.argv.slice(2)));\n`, { mode: 0o755 });
+  await writeFile(join(bin, "npm"), `#!${process.execPath}\nrequire('node:fs').writeFileSync(process.env.DEBUG_ARGUMENTS,JSON.stringify({arguments:process.argv.slice(2),configDir:process.env.ROZSA_CONFIG_DIR}));\n`, { mode: 0o755 });
   await writeFile(join(bin, "node"), `#!${process.execPath}\nconst args=process.argv.slice(2);if(args[0].endsWith('update-builtin-skills-config.mjs'))process.exit(0);if(args[0].endsWith('prepare-debug-sessions.mjs'))args.push(process.env.DEBUG_SESSIONS);const child=require('node:child_process').spawnSync(process.execPath,args,{stdio:'inherit'});if(child.error)throw child.error;process.exit(child.status);\n`, { mode: 0o755 });
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, DEBUG_ARGUMENTS: result };
   const script = join(root, "devtools/start-desktop.sh");
-  const readArguments = async () => JSON.parse(await readFile(result, "utf8"));
+  const readInvocation = async () => JSON.parse(await readFile(result, "utf8"));
+  const expectedArguments = ["--prefix", "desktop", "start", "--", "--", "--user-data-dir", join(base, "custom profile")];
   await execute("/bin/bash", [script, "--user-data-dir", join(base, "custom profile")], { cwd: base, env });
-  assert.deepEqual(await readArguments(), ["--prefix", "desktop", "start", "--", "--", "--user-data-dir", join(base, "custom profile")]);
+  assert.deepEqual(await readInvocation(), { arguments: expectedArguments, configDir: join(root, "tmp", "desktop-debug") });
+
+  const override = join(base, "override config");
+  await execute("/bin/bash", [script, "--user-data-dir", join(base, "custom profile")], { cwd: base, env: { ...env, ROZSA_CONFIG_DIR: override } });
+  assert.deepEqual(await readInvocation(), { arguments: expectedArguments, configDir: override });
 });
