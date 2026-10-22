@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+staged_paths=()
+while IFS= read -r -d '' path; do
+  if git check-ignore -q --no-index -- "$path"; then
+    continue
+  else
+    ignore_status=$?
+    if [[ "$ignore_status" -ne 1 ]]; then
+      printf 'pre-commit: failed to check ignore rules for %s.\n' "$path" >&2
+      exit "$ignore_status"
+    fi
+  fi
+
+  staged_paths+=("$path")
+done < <(git diff --cached --name-only --diff-filter=ACMRT -z -- \
+  '*.js' '*.jsx' '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.mts' '*.cts')
+
+if [[ "${#staged_paths[@]}" -eq 0 ]]; then
+  exit 0
+fi
+
+oxfmt="$repo_root/desktop/node_modules/.bin/oxfmt"
+if [[ ! -x "$oxfmt" ]]; then
+  printf 'pre-commit: Oxfmt is missing; install desktop dependencies with npm ci --prefix desktop.\n' >&2
+  exit 1
+fi
+
+temp_dir="$repo_root/tmp/oxfmt-pre-commit.$$"
+mkdir -p "$repo_root/tmp"
+if ! mkdir "$temp_dir"; then
+  printf 'pre-commit: could not create temporary Oxfmt input directory %s.\n' "$temp_dir" >&2
+  exit 1
+fi
+trap 'rm -rf "$temp_dir"' EXIT
+
+staged_files=()
+for path in "${staged_paths[@]}"; do
+  staged_copy="$temp_dir/index/$path"
+  mkdir -p "$(dirname "$staged_copy")"
+  if ! git show ":$path" > "$staged_copy"; then
+    printf 'pre-commit: failed to read staged content for %s.\n' "$path" >&2
+    exit 1
+  fi
+  staged_files+=("$staged_copy")
+done
+
+printf 'pre-commit: checking %s staged JS/TS file(s) with Oxfmt.\n' "${#staged_files[@]}"
+"$oxfmt" --check --threads=1 "${staged_files[@]}"

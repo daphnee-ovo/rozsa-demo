@@ -32,6 +32,7 @@ The ChatGPT models endpoint filters its response using Codex CLI version semanti
 ## Code Style
 
 - Rust: standard `rustfmt` and `clippy`
+- JavaScript and TypeScript: use Oxfmt with `npm --prefix desktop run format`; check formatting with `npm --prefix desktop run format:check`.
 
 ## Testing
 

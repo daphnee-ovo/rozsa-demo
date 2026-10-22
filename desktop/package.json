@@ -10,6 +10,8 @@
     "node": ">=22.17.0"
   },
   "scripts": {
+    "format": "cd .. && oxfmt --write --ignore-path .gitignore \"**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\"",
+    "format:check": "cd .. && oxfmt --check --ignore-path .gitignore \"**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\"",
     "typecheck": "node scripts/typecheck.mjs",
     "build:renderer": "vite build --config vite.renderer.config.mjs",
     "package": "electron-forge package",
@@ -27,6 +29,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "electron": "44.7.0",
+    "oxfmt": "0.74.0",
     "typescript": "7.0.2",
     "vite": "8.3.4"
   },
