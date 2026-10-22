@@ -64,14 +64,3 @@ func ConfiguredModel(providerOverride, modelOverride string) (types.Model, strin
 	key, _ := registry.APIKey(provider)
 	return selected, key, roots.AuthPath(), nil
 }
-
-// SessionDirectories returns the single writable and catalog directory for the
-// selected project working path.
-func SessionDirectories(projectDir string) (string, []string, error) {
-	roots, err := configpaths.Discover(projectDir)
-	if err != nil {
-		return "", nil, err
-	}
-	directories := roots.SessionDirs(projectDir)
-	return roots.WritableSessionDir(projectDir), directories[:], nil
-}

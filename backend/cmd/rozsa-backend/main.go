@@ -42,15 +42,12 @@ func main() {
 	if err != nil {
 		fail(err.Error())
 	}
-	writeDirectory, catalogDirectories, err := bootstrap.SessionDirectories(cwd)
-	if err != nil {
-		fail(err.Error())
-	}
-	sessions := session.NewService(session.Catalog{Directories: catalogDirectories})
 	roots, err := configpaths.Discover(cwd)
 	if err != nil {
 		fail(err.Error())
 	}
+	sessionDir := roots.WritableSessionDir(cwd)
+	sessions := session.NewService(session.Catalog{Directories: []string{sessionDir}})
 	settingsPaths := roots.SettingsPaths()
 	projectSettingsPath := settingsPaths[1]
 	settingsManager, err := settings.Load(settingsPaths[0], &projectSettingsPath, nil)
@@ -124,7 +121,7 @@ func main() {
 		resolvedSettings := settingsManager.Resolved()
 		thinkingEffort, _ := resolvedSettings["defaultThinkingEffort"].(string)
 		app, initErr := runtime.New(runtime.Config{
-			SessionDir: writeDirectory, SessionDirs: catalogDirectories, ProjectRoot: cwd,
+			SessionDir: sessionDir, SessionDirs: []string{sessionDir}, ProjectRoot: cwd,
 			SessionService: sessions, ModelRegistry: registry, Credentials: authSource,
 			Model: model, ThinkingEffort: modeltypes.ThinkingEffort(thinkingEffort), ResolvedSettings: settingsManager.Resolved, ProjectRuleStore: projectRuleStore, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
 			Skills: skillApplication, ResolveRoots: resolveRoots,

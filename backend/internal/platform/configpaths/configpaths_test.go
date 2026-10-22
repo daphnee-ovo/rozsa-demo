@@ -71,8 +71,8 @@ func TestPathLayoutIsSharedAcrossSupportedPathFamilies(testContext *testing.T) {
 				testContext.Fatalf("project key %q, want %q", actualKey, testCase.expectedKey)
 			}
 			expectedSessionDir := testCase.expectedGlobal + pathSeparator + "sessions" + pathSeparator + testCase.expectedKey
-			if sessionDirs := roots.SessionDirs(testCase.project); sessionDirs != [1]string{expectedSessionDir} {
-				testContext.Fatalf("session directories %q, want %q", sessionDirs, [1]string{expectedSessionDir})
+			if sessionDir := roots.WritableSessionDir(testCase.project); sessionDir != expectedSessionDir {
+				testContext.Fatalf("session directory %q, want %q", sessionDir, expectedSessionDir)
 			}
 			if agentsPath, exists := roots.AgentsSkills(); !exists {
 				testContext.Fatal("missing user-private agents skills directory")

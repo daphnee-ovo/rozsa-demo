@@ -39,10 +39,7 @@ func main() {
 	if err != nil {
 		fail(err.Error(), 1)
 	}
-	sessionDir, _, err := bootstrap.SessionDirectories(cwd)
-	if err != nil {
-		fail(err.Error(), 1)
-	}
+	sessionDir := roots.WritableSessionDir(cwd)
 	settingsPaths := roots.SettingsPaths()
 	projectSettingsPath := settingsPaths[1]
 	settingsManager, err := settings.Load(settingsPaths[0], &projectSettingsPath, nil)
