@@ -80,11 +80,16 @@ bash devtools/test-desktop.sh
 
 Go dependencies and Electron/TypeScript/tsx/jsdom versions are defined by their module manifests and lockfiles. Use those files as the single source of version truth.
 
-Do not compile or launch the backend binary directly with `go build` or `go run`.
+Use `node desktop/scripts/backend.mjs` for a backend-only build. It updates the
+built-in skill configuration, then writes `dist/rozsa-backend` (or
+`dist/rozsa-backend.exe` on Windows). Forge uses the same build logic after its
+desktop typecheck. Do not invoke `go build` or `go run` directly.
+
 Use `devtools/start-desktop.sh` to launch the development app,
 `devtools/package-desktop.sh` when dependencies are installed, or
 `devtools/build-desktop.sh` for a clean setup. The packaging flow updates
-`BUILTIN_SKILLS` in the embedded `backend/config.yaml` before Forge builds Go.
+`BUILTIN_SKILLS` in the embedded `backend/config.yaml` as part of the shared
+backend build before Forge packages the app.
 Use `go test` for Go package tests.
 
 Model configuration is layered from `<global>/models/` and `<project>/models/`;

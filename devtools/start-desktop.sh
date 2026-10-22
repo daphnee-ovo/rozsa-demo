@@ -19,5 +19,4 @@ fi
 
 export ROZSA_CONFIG_DIR="${ROZSA_CONFIG_DIR-$project_root/tmp/desktop-debug}"
 
-node devtools/update-builtin-skills-config.mjs
 exec npm --prefix desktop start -- -- "$@"
