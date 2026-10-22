@@ -94,9 +94,9 @@ func main() {
 	backendStartupMark("session-service-ready")
 	backendStartupMark("runtime-initialization-started")
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-		defer cancel()
-		initial, initErr := registry.Available(ctx)
+		initializationCtx, cancelInitialization := coordinator.initializationContext(25 * time.Second)
+		defer cancelInitialization()
+		initial, initErr := registry.Available(initializationCtx)
 		if initErr != nil {
 			coordinator.complete(nil, initErr)
 			return
@@ -147,20 +147,33 @@ func backendStartupMark(stage string) {
 }
 
 type runtimeCoordinator struct {
-	mu           sync.Mutex
-	sessions     *session.Service
-	runtime      *runtime.Runtime
-	selected     *session.LoadedSnapshot
-	ready        chan struct{}
-	initErr      error
-	finished     bool
-	closing      bool
-	catalogTrace sync.Once
-	historyTrace sync.Once
+	mu                   sync.Mutex
+	sessions             *session.Service
+	runtime              *runtime.Runtime
+	selected             *session.LoadedSnapshot
+	ready                chan struct{}
+	initErr              error
+	cancelInitialization context.CancelFunc
+	finished             bool
+	closing              bool
+	catalogTrace         sync.Once
+	historyTrace         sync.Once
 }
 
 func newRuntimeCoordinator(sessions *session.Service) *runtimeCoordinator {
 	return &runtimeCoordinator{sessions: sessions, ready: make(chan struct{})}
+}
+
+func (coordinator *runtimeCoordinator) initializationContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	coordinator.mu.Lock()
+	coordinator.cancelInitialization = cancel
+	closing := coordinator.closing
+	coordinator.mu.Unlock()
+	if closing {
+		cancel()
+	}
+	return ctx, cancel
 }
 
 func (coordinator *runtimeCoordinator) complete(app *runtime.Runtime, err error) {
@@ -232,7 +245,11 @@ func (coordinator *runtimeCoordinator) SetThinkingEffort(effort modeltypes.Think
 func (coordinator *runtimeCoordinator) Shutdown(ctx context.Context) error {
 	coordinator.mu.Lock()
 	coordinator.closing = true
+	cancelInitialization := coordinator.cancelInitialization
 	coordinator.mu.Unlock()
+	if cancelInitialization != nil {
+		cancelInitialization()
+	}
 	select {
 	case <-coordinator.ready:
 	case <-ctx.Done():

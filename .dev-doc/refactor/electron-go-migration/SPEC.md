@@ -179,7 +179,7 @@ JSONL 特别要求：lazy materialization 的实际触发条件；header/entry �
 
 模型协议在对应 provider 任务中按需添加 request/stream 小输入；真实远端输出不作为完全相同基准。保留 provider 独有语义，不能以通用 SDK 覆盖所有实现。Bedrock event stream、OAuth、权限 regex、process cancellation 和打包依赖随所属实现验证，不以综合 spike 阻挡独立模块。
 
-Electron+Go 启动先创建会话服务并完成 RPC 握手；模型、凭据与 agent runtime 在 Go goroutine 中初始化，不阻塞会话目录和历史读取。`runtime_status` 在完成后返回 ready，初始化失败则返回带诊断的 `runtime_initialization` 错误；Electron 主进程主动等待并显示该错误，不依赖用户发送消息。runtime 初始化期间的 session 切换必须在首次消息启动前同步到 runtime。
+Electron+Go 启动先创建会话服务并完成 RPC 握手；模型、凭据与 agent runtime 在 Go goroutine 中初始化，不阻塞会话目录和历史读取。`runtime_status` 在完成后返回 ready，初始化失败则返回带诊断的 `runtime_initialization` 错误；Electron 主进程主动等待并显示该错误，不依赖用户发送消息。runtime 初始化期间的 session 切换必须在首次消息启动前同步到 runtime。关闭时 coordinator 先标记 closing 并取消其拥有的初始化 context，再按关闭期限等待初始化收尾；支持 context 的初始化工作随取消退出。关闭竞争中若已创建 runtime，完成回调仍使用独立有界 context 清理它。传输层现有 closing 门禁继续拒绝新业务 RPC，初始化错误和关闭收尾错误保持可见。
 
 2026-10-18 批准 T2 + M1：Transport 仅启用 `auto`/`sse`，WebSocket 选项可见、禁用并标明未实现；读取既有配置不静默改写。主模型与小模型共享 `<global>/models/` → `<project>/models/` 目录层级，项目配置优先；凭据路径统一为 `<global>/models/auth.json`。可用性沿用 Rust 的 provider 规则：Anthropic、Codex OAuth、Copilot 读取 auth，Codex 还要求 account ID；其他 provider 使用模型配置或环境凭据。列表读取允许更新过期凭据；仅 OAuth 和已登记动态发现的 provider 参与刷新，远端目录更新只写所属 provider，保留其他 provider 与项目覆盖。登录后出现模型、注销后移除，目录变化自动更新两个选择器；刷新失败保留诊断并进入桌面异常通知，启动时校验所选 provider 可用性。T032–T034 提供 provider 生命周期，T092 负责共享目录及产品接线，T036 依赖 T091/T092。
 
