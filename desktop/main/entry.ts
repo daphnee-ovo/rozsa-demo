@@ -74,7 +74,7 @@ void backendReady.then(async () => {
   startupMark("startup-session-ready");
   if (catalog.length > 0) {
     startupMark("autocomplete-prewarm-started");
-    void backend!.prewarmAutocomplete()
+    void backend!.autocompleteInput("/", 1)
       .then(() => startupMark("autocomplete-prewarm-ready"))
       .catch(error => console.error("Autocomplete prewarm:", error));
   }

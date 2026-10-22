@@ -121,7 +121,7 @@ func main() {
 		resolvedSettings := settingsManager.Resolved()
 		thinkingEffort, _ := resolvedSettings["defaultThinkingEffort"].(string)
 		app, initErr := runtime.New(runtime.Config{
-			SessionDir: sessionDir, SessionDirs: []string{sessionDir}, ProjectRoot: cwd,
+			SessionDir: sessionDir, ProjectRoot: cwd,
 			SessionService: sessions, ModelRegistry: registry, Credentials: authSource,
 			Model: model, ThinkingEffort: modeltypes.ThinkingEffort(thinkingEffort), ResolvedSettings: settingsManager.Resolved, ProjectRuleStore: projectRuleStore, APIKey: apiKey, AuthPath: authPath, Output: io.Discard,
 			Skills: skillApplication, ResolveRoots: resolveRoots,

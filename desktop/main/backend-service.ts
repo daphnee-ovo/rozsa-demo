@@ -340,9 +340,6 @@ export class BackendService {
     try { return inputCompletion(value); }
     catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
   }
-  async prewarmAutocomplete(): Promise<void> {
-    await this.autocompleteInput("/", 1);
-  }
   async updateSetting(scope: SettingsScope, key: string, value: unknown): Promise<SettingsSnapshot> {
     if ((scope !== "global" && scope !== "project") || typeof key !== "string" || !key) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid setting update" });
     this.invalidateSettingsReads();
