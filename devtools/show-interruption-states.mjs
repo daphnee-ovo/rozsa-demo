@@ -12,7 +12,8 @@ await mkdir(runsRoot, { recursive: true });
 const runRoot = await mkdtemp(join(runsRoot, "run-"));
 const config = join(runRoot, "config");
 const projectConfig = join(runRoot, "project-config");
-const sessions = join(runRoot, "sessions");
+const sessionProjectKey = `-${projectRoot.replace(/[\\/]/g, "-").replace(/^-+|-+$/g, "")}-`;
+const sessions = join(config, "sessions", sessionProjectKey);
 const profile = join(runRoot, "profile");
 for (const directory of [join(config, "models"), projectConfig, sessions, profile]) {
   await mkdir(directory, { recursive: true });
@@ -109,7 +110,6 @@ const app = spawn("bash", [
   "devtools/start-desktop.sh",
   "--remote-debugging-port=0",
   `--user-data-dir=${profile}`,
-  "--session-dir", sessions,
 ], {
   cwd: projectRoot,
   detached: process.platform !== "win32",
