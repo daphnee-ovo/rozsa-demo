@@ -65,8 +65,8 @@ func ConfiguredModel(providerOverride, modelOverride string) (types.Model, strin
 	return selected, key, roots.AuthPath(), nil
 }
 
-// SessionDirectories returns the writable global directory and the layered
-// global/project catalog directories for the selected project working path.
+// SessionDirectories returns the single writable and catalog directory for the
+// selected project working path.
 func SessionDirectories(projectDir string) (string, []string, error) {
 	roots, err := configpaths.Discover(projectDir)
 	if err != nil {

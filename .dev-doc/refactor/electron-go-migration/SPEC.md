@@ -171,6 +171,8 @@ Electron `contextIsolation: true`、renderer sandbox、`nodeIntegration: false`�
 
 JSONL 特别要求：lazy materialization 的实际触发条件；header/entry 类型和字段；ID/关联/leaf；追加成功后更新内存；rename 追加 session_info；cwd 修改重写 header；compaction 留存历史且恢复有效上下文。保留当前 header 错误、空行和 malformed entry 的读取规则；当前 `open()` 跳过无法解析的 entry，是否修复另行决策，不在移植时默改。
 
+会话目录唯一来源为已解析的全局配置根：`<global>/sessions/<encoded-project-path>/`。保留既有项目路径编码及未设置 `ROZSA_CONFIG_DIR` 时的全局根默认解析；不从项目配置根读取 sessions。多个会话以该目录中的多个 JSONL 文件提供。此规则只约束会话目录，不改变其他配置项的分层。
+
 跨语言差异必须覆盖 JSON missing/null、空数组/map、整数精度、Unicode/转义、字段别名、时间、浮点、path/case/symlink、UTF-8 分片、shell 引号/分段、regex/glob 方言与进程退出。不能用 Go 默认解析行为替代对契约的确认。随机 ID 和时间通过注入固定值或保持关联的归一化比较；只归一化真正非确定项，不能抹掉事件先后或字段差异。
 
 `model/types` 集中定义公共 `Protocol`：只要求 `API()` 与 `StreamSimple(...)`；公共 `Stream(...)` 将 `StreamOptions` 转成 `SimpleStreamOptions` 后调用该接口。`model` 维护最小 API→实现构造映射，runtime 只在没有显式注入时请求该工厂，不维护协议白名单或直接构造协议实现。显式注入实现由 runtime 直接使用；未登记 API 且无注入实现时，在统一创建入口返回明确错误。`Model.Provider`、endpoint 与认证仍取自实际配置。core agent 可继续消费仅含 `StreamSimple(...)` 的窄接口，模型层不得依赖 core。

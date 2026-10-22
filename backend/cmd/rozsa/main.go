@@ -17,18 +17,14 @@ import (
 )
 
 func main() {
-	var sessionDir, apiKey, baseURL, providerID, modelID string
+	var apiKey, baseURL, providerID, modelID string
 	var continueSession bool
-	flag.StringVar(&sessionDir, "session-dir", "", "directory for the active JSONL session")
 	flag.StringVar(&apiKey, "api-key", "", "override the configured provider API key")
 	flag.StringVar(&baseURL, "base-url", "", "override the configured provider base URL")
 	flag.StringVar(&providerID, "provider", "", "override the configured default provider")
 	flag.StringVar(&modelID, "model", "", "override the configured default model")
 	flag.BoolVar(&continueSession, "continue", false, "continue the latest session")
 	flag.Parse()
-	if sessionDir == "" {
-		fail("--session-dir is required", 2)
-	}
 	if flag.NArg() > 1 {
 		fail("expected at most one prompt argument", 2)
 	}
@@ -40,6 +36,10 @@ func main() {
 		fail(err.Error(), 1)
 	}
 	roots, err := configpaths.Discover(cwd)
+	if err != nil {
+		fail(err.Error(), 1)
+	}
+	sessionDir, _, err := bootstrap.SessionDirectories(cwd)
 	if err != nil {
 		fail(err.Error(), 1)
 	}

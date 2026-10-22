@@ -31,20 +31,8 @@ import (
 	"rozsa/backend/internal/transport/types"
 )
 
-type directories []string
-
-func (directories *directories) String() string { return fmt.Sprint([]string(*directories)) }
-func (directories *directories) Set(value string) error {
-	if value == "" {
-		return fmt.Errorf("session directory cannot be empty")
-	}
-	*directories = append(*directories, value)
-	return nil
-}
 func main() {
 	backendStartupMark("process-entry")
-	var dirs directories
-	flag.Var(&dirs, "session-dir", "session directory; repeat in layer order")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "unexpected positional arguments")
@@ -54,21 +42,9 @@ func main() {
 	if err != nil {
 		fail(err.Error())
 	}
-	writeDirectory := ""
-	catalogDirectories := []string(dirs)
-	if len(catalogDirectories) == 0 {
-		writeDirectory, catalogDirectories, err = bootstrap.SessionDirectories(cwd)
-		if err != nil {
-			fail(err.Error())
-		}
-	} else {
-		for index, directory := range catalogDirectories {
-			catalogDirectories[index], err = filepath.Abs(directory)
-			if err != nil {
-				fail(err.Error())
-			}
-		}
-		writeDirectory = catalogDirectories[0]
+	writeDirectory, catalogDirectories, err := bootstrap.SessionDirectories(cwd)
+	if err != nil {
+		fail(err.Error())
 	}
 	sessions := session.NewService(session.Catalog{Directories: catalogDirectories})
 	roots, err := configpaths.Discover(cwd)

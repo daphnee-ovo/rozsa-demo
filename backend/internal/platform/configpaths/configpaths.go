@@ -114,9 +114,8 @@ func (roots Roots) SkillDirs() [2]string {
 	return [2]string{roots.join(roots.global, "skills"), roots.join(roots.project, "skills")}
 }
 func (roots Roots) ResourceDirs() [2]string { return [2]string{roots.global, roots.project} }
-func (roots Roots) SessionDirs(projectDir string) [2]string {
-	key := ProjectKey(projectDir)
-	return [2]string{roots.join(roots.global, "sessions", key), roots.join(roots.project, "sessions", key)}
+func (roots Roots) SessionDirs(projectDir string) [1]string {
+	return [1]string{roots.WritableSessionDir(projectDir)}
 }
 func (roots Roots) WritableSessionDir(projectDir string) string {
 	return roots.join(roots.global, "sessions", ProjectKey(projectDir))
