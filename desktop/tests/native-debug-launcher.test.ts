@@ -1,9 +1,11 @@
 // Exercise a copied Forge project so the user's active development window is untouched.
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {execFile,spawn} from 'node:child_process';
 import {join,basename} from 'node:path';
+import {promisify} from 'node:util';
 import {writeFile,mkdir,cp,symlink} from 'node:fs/promises';
 import {createEnvironment,attachPage,projectRoot} from './performance/harness.js';
+const execute=promisify(execFile);
 const env=await createEnvironment('debug-launcher');
 const fixture=join(env.base,'project');await mkdir(fixture);
 await cp(join(projectRoot,'contracts'),join(fixture,'contracts'),{recursive:true});
@@ -11,6 +13,7 @@ await cp(join(projectRoot,'desktop'),join(fixture,'desktop'),{recursive:true,fil
 await cp(join(projectRoot,'devtools'),join(fixture,'devtools'),{recursive:true});
 await symlink(join(projectRoot,'desktop/node_modules'),join(fixture,'desktop/node_modules'),process.platform==='win32'?'junction':'dir');
 await symlink(join(projectRoot,'backend'),join(fixture,'backend'),process.platform==='win32'?'junction':'dir');
+await execute(process.execPath,[join(fixture,'devtools/prepare-debug-sessions.mjs')],{cwd:fixture,env:{...process.env,ROZSA_CONFIG_DIR:env.config}});
 const child=spawn('bash',[join(fixture,'devtools/start-desktop.sh'),'--user-data-dir',env.profile,'--remote-debugging-port=0'],{cwd:env.base,env:{...process.env,ROZSA_CONFIG_DIR:env.config,ROZSA_PROJECT_CONFIG_DIR:env.projectConfig,ROZSA_PERF_TRACE:'0'},detached:true,stdio:['ignore','pipe','pipe']});
 let logs='',page;child.stdout.on('data',chunk=>logs+=chunk);child.stderr.on('data',chunk=>logs+=chunk);
 const closed=new Promise(resolve=>child.once('close',resolve));

@@ -6,7 +6,7 @@
 
 - `start-desktop.sh`：编译当前代码并通过 Forge/Vite 启动应用；默认将 `ROZSA_CONFIG_DIR` 设为仓库内 `tmp/desktop-debug`，调用环境已设置该变量时保留原值。应用参数原样跟在脚本后。不生成 `.app` 包。
 - `show-interruption-states.mjs`：启动隔离的 Electron + Go 展示实例；本地合成 provider 会在两个 session 中分别挂起 Permission Request 和 AskUserQuestion，切换侧栏查看同一个 renderer mount 的不同状态。按 Ctrl+C 关闭。
-- `prepare-debug-sessions.mjs`：生成合成示例会话；可传目录作为第一个参数，已有同名文件保留。
+- `prepare-debug-sessions.mjs`：使用显式的 `ROZSA_CONFIG_DIR`，按当前项目目录写入 `sessions/<编码后的项目路径>/`；已有同名文件保留。示例：`ROZSA_CONFIG_DIR=tmp/desktop-debug node devtools/prepare-debug-sessions.mjs`。
 - `build-desktop.sh`：全新安装桌面依赖并生成当前主机的应用包；首次设置或依赖变更后使用。
 - `package-desktop.sh`：依赖已安装时生成应用包；传入 `make` 生成当前主机安装包，其余参数传给 Forge。
 - `test-desktop.sh`：运行 Electron + Go 跨语言验收，不启动完整 TEST phase。

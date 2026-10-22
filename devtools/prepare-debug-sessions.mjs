@@ -3,8 +3,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const debugSessionsDirectory = resolve(import.meta.dirname, "../tmp/desktop-debug/sessions");
-
 function session(id, title, texts) {
   const timestamp = "2026-10-19T00:00:00Z";
   const lines = [{ type: "session", version: 3, id, timestamp, cwd: "/synthetic/rozsa-debug" }];
@@ -27,7 +25,17 @@ function session(id, title, texts) {
   return lines.map(line => JSON.stringify(line)).join("\n") + "\n";
 }
 
-export async function prepareDebugSessions(directory = debugSessionsDirectory) {
+export async function prepareDebugSessions() {
+  const configDirectory = process.env.ROZSA_CONFIG_DIR;
+  if (!configDirectory) {
+    throw new Error("ROZSA_CONFIG_DIR must be set before preparing debug sessions");
+  }
+
+  const projectDirectory = resolve(process.cwd());
+  const encodedProjectDirectory = projectDirectory
+    .replace(/[\\/]/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const directory = resolve(configDirectory, "sessions", `-${encodedProjectDirectory}-`);
   await mkdir(directory, { recursive: true });
   const fixtures = [
     ["welcome", "示例：Markdown 与代码", ["# 调试示例\n\n这里包含 **粗体**、*斜体*、[链接](https://example.com) 与 `inline code`。\n\n- 普通消息\n- 可展开的 Thinking 和工具调用\n\n| 项目 | 状态 |\n| --- | --- |\n| Markdown | 可检查 |\n\n```typescript\nexport function greet(name: string) {\n  return `Hello, ${name}`;\n}\n```"]],
@@ -42,5 +50,5 @@ export async function prepareDebugSessions(directory = debugSessionsDirectory) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  console.log(await prepareDebugSessions(process.argv[2] ? resolve(process.argv[2]) : undefined));
+  console.log(await prepareDebugSessions());
 }

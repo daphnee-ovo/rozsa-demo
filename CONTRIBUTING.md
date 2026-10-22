@@ -199,11 +199,20 @@ bash devtools/test-desktop.sh
 `tmp/desktop-debug` directory and preserves an externally supplied value. The
 launcher does not generate sample sessions. This starts the latest
 development code through Forge; use `package-desktop.sh` to update the app bundle.
-Check fixture generation and argument forwarding with
+Prepare sample sessions from the application project directory with an explicit
+configuration root:
+
+```bash
+ROZSA_CONFIG_DIR="$PWD/tmp/desktop-debug" node devtools/prepare-debug-sessions.mjs
+```
+
+The generator writes under `ROZSA_CONFIG_DIR/sessions/<encoded project path>/`
+and keeps existing files. Check generation and launcher argument forwarding with
 `node --test desktop/tests/debug-sessions.test.js`; the separate native check is
 `npm --prefix desktop/tests exec -- tsx desktop/tests/native-debug-launcher.test.ts`.
-It launches an isolated source copy and verifies real session selection,
-diagram rendering and owned backend shutdown.
+It prepares sample sessions in an isolated configuration root before launching
+an isolated source copy, then verifies real session selection, diagram rendering
+and owned backend shutdown.
 
 `test-desktop.sh` resolves the repository root from its own location, validates
 the module manifests, packages the current tree and runs the `desktop/tests`

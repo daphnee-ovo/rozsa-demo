@@ -4,7 +4,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { prepareDebugSessions } from "../../devtools/prepare-debug-sessions.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const execute = promisify(execFile);
@@ -14,8 +13,24 @@ async function temporaryDirectory() {
 }
 
 test("debug fixtures include readable messages, complete diagrams, tool results and long history without overwriting edits", async () => {
-  const directory = await temporaryDirectory();
-  await prepareDebugSessions(directory);
+  const base = await temporaryDirectory();
+  const projectDirectory = join(base, "project");
+  const configDirectory = join(base, "config");
+  await mkdir(projectDirectory);
+  const generator = join(root, "devtools/prepare-debug-sessions.mjs");
+  const noConfigEnvironment = { ...process.env };
+  delete noConfigEnvironment.ROZSA_CONFIG_DIR;
+  await assert.rejects(
+    execute(process.execPath, [generator], { cwd: projectDirectory, env: noConfigEnvironment }),
+    error => error.code === 1 && error.stderr.includes("ROZSA_CONFIG_DIR must be set"),
+  );
+
+  const environment = { ...process.env, ROZSA_CONFIG_DIR: configDirectory };
+  await execute(process.execPath, [generator], { cwd: projectDirectory, env: environment });
+  const sessionsDirectory = join(configDirectory, "sessions");
+  const projectDirectories = await readdir(sessionsDirectory);
+  assert.equal(projectDirectories.length, 1);
+  const directory = join(sessionsDirectory, projectDirectories[0]);
   const files = await readdir(directory);
   assert.equal(files.length, 3);
   const sessions = await Promise.all(files.map(async file => (await readFile(join(directory, file), "utf8")).trim().split("\n").map(JSON.parse)));
@@ -34,7 +49,7 @@ test("debug fixtures include readable messages, complete diagrams, tool results 
   const edited = join(directory, "welcome.jsonl");
   await writeFile(edited, "user-edited debug history\n");
   const modified = (await stat(edited)).mtimeMs;
-  await prepareDebugSessions(directory);
+  await execute(process.execPath, [generator], { cwd: projectDirectory, env: environment });
   assert.equal(await readFile(edited, "utf8"), "user-edited debug history\n");
   assert.equal((await stat(edited)).mtimeMs, modified);
 });
