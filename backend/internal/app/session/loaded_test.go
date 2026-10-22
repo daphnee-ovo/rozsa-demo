@@ -1,4 +1,4 @@
-package session
+package session_test
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	. "rozsa/backend/internal/app/session"
 )
 
 func TestHistoryBlockSerializationPreservesEmptyText(t *testing.T) {
@@ -96,28 +98,29 @@ func TestAdoptedWritableManagerSeedsSessionReadCache(t *testing.T) {
 func TestLoadedFailureRetryAndEmpty(t *testing.T) {
 	dir := fixtureDir(t)
 	path := write(t, dir, "empty.jsonl", sessionHeader("empty"))
-	loadedSessions := LoadedSessions{Catalog: Catalog{Directories: []string{dir}}}
-	snapshot, err := loadedSessions.Switch(path, "empty")
+	service := NewService(Catalog{Directories: []string{dir}})
+	snapshot, err := service.Switch(t.Context(), path, "empty")
 	if err != nil || len(snapshot.Messages) != 0 || snapshot.Messages == nil || snapshot.ContextMessageCount != 0 {
 		t.Fatalf("empty: %+v %v", snapshot, err)
 	}
 	bad := write(t, dir, "bad.jsonl", sessionHeader("bad")+"\xff\n") // catalog can read header; Open rejects invalid UTF-8.
 	before, _ := os.Stat(bad)
-	if _, err := loadedSessions.Switch(bad, "bad"); err == nil {
+	if _, err := service.Switch(t.Context(), bad, "bad"); err == nil {
 		t.Fatal("invalid UTF-8 restored")
 	}
 	assertUnchanged(t, bad, []byte(sessionHeader("bad")+"\xff\n"), before)
-	if loadedSessions.activePath != path {
-		t.Fatal("failure replaced active tab")
+	state, err := service.Snapshot(t.Context())
+	if err != nil || state.Active == nil || state.Active.Path != path {
+		t.Fatalf("failed switch replaced active session: %+v, %v", state, err)
 	}
 	write(t, dir, "bad.jsonl", sessionHeader("bad"))
-	if _, err := loadedSessions.Switch(bad, "bad"); err != nil {
+	if _, err := service.Switch(t.Context(), bad, "bad"); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if _, err := loadedSessions.Switch(filepath.Join(dir, "missing.jsonl"), "missing"); err == nil {
+	if _, err := service.Switch(t.Context(), filepath.Join(dir, "missing.jsonl"), "missing"); err == nil {
 		t.Fatal("non-catalog path accepted")
 	}
-	if _, err := loadedSessions.Switch(path, "bad"); err == nil {
+	if _, err := service.Switch(t.Context(), path, "bad"); err == nil {
 		t.Fatal("mismatched path/ID accepted")
 	}
 }

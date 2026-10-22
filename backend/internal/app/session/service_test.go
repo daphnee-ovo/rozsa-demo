@@ -1,4 +1,4 @@
-package session
+package session_test
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"os"
 	"sync"
 	"testing"
+
+	. "rozsa/backend/internal/app/session"
 )
 
 func TestBackgroundRefreshPreservesSelectionAndWritableOwner(t *testing.T) {

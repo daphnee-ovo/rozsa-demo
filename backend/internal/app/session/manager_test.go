@@ -1,12 +1,10 @@
-package session
+package session_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	. "rozsa/backend/internal/app/session"
 )
 
 func managerForTest(t *testing.T) *Manager {
@@ -42,6 +42,15 @@ func readForTest(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func fieldsForTest(t *testing.T, data []byte) map[string]json.RawMessage {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	return fields
 }
 
 func reopenForTest(t *testing.T, manager *Manager) *Manager {
@@ -236,7 +245,7 @@ func TestManagerAllPayloadsAndMessageSerialization(t *testing.T) {
 		if _, err := manager.AppendMessage(message); err != nil {
 			t.Fatal(err)
 		}
-		fields := jsonFields(bytes.Split(bytes.TrimSpace(readForTest(t, manager.Path())), []byte{'\n'})[len(manager.Entries())])
+		fields := fieldsForTest(t, bytes.Split(bytes.TrimSpace(readForTest(t, manager.Path())), []byte{'\n'})[len(manager.Entries())])
 		expected, err := json.Marshal(messageWire(message))
 		if err != nil {
 			t.Fatal(err)
@@ -303,7 +312,7 @@ func TestManagerAllPayloadsAndMessageSerialization(t *testing.T) {
 	lastLines := bytes.Split(bytes.TrimSpace(readForTest(t, manager.Path())), []byte{'\n'})
 	for _, field := range []string{"data", "details", "fromHook", "label", "name"} {
 		for _, line := range lastLines[len(lastLines)-4:] {
-			if _, exists := jsonFields(line)[field]; exists {
+			if _, exists := fieldsForTest(t, line)[field]; exists {
 				t.Fatalf("absent %s should be omitted: %s", field, line)
 			}
 		}
@@ -364,89 +373,12 @@ func TestManagerSetCwdAndRenamePreserveHistory(t *testing.T) {
 	}
 }
 
-type failingAppend struct {
-	file               *os.File
-	limit              int
-	writeErr, closeErr error
-}
-
-func (writer failingAppend) Write(data []byte) (int, error) {
-	if writer.limit < len(data) {
-		data = data[:writer.limit]
-	}
-	if writer.file == nil {
-		return len(data), writer.writeErr
-	}
-	written, err := writer.file.Write(data)
-	if err != nil {
-		return written, err
-	}
-	return written, writer.writeErr
-}
-func (writer failingAppend) Close() error {
-	if writer.file != nil {
-		if err := writer.file.Close(); err != nil {
-			return err
-		}
-	}
-	return writer.closeErr
-}
-
-func TestManagerAppendFailureDoesNotAdvanceMemory(t *testing.T) {
-	for _, test := range []struct {
-		name                         string
-		limit                        int
-		writeErr, closeErr, expected error
-	}{
-		{"write", 0, io.ErrClosedPipe, nil, io.ErrClosedPipe},
-		{"cancelled", 0, context.Canceled, nil, context.Canceled},
-		{"short-write", 4, nil, nil, io.ErrShortWrite},
-		{"close", 1 << 20, nil, io.ErrClosedPipe, io.ErrClosedPipe},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			manager := managerForTest(t)
-			appendForTest(t, manager, Custom{Type: "previous"})
-			entries, leaf := manager.Entries(), manager.LeafID()
-			manager.openAppend = func(string) (io.WriteCloser, error) {
-				return failingAppend{limit: test.limit, writeErr: test.writeErr, closeErr: test.closeErr}, nil
-			}
-			if id, err := manager.AppendCustom("failed", nil); id != "" || !errors.Is(err, test.expected) {
-				t.Fatalf("failure reported success: %q %v", id, err)
-			}
-			if !reflect.DeepEqual(manager.Entries(), entries) || *manager.LeafID() != *leaf {
-				t.Fatal("failed append advanced state")
-			}
-		})
-	}
-	manager := managerForTest(t)
-	appendForTest(t, manager, Custom{Type: "previous"})
-	leaf := *manager.LeafID()
-	manager.openAppend = func(path string) (io.WriteCloser, error) {
-		file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-		return failingAppend{file: file, limit: 12, writeErr: io.ErrUnexpectedEOF}, err
-	}
-	if id, err := manager.AppendCustom("partial", nil); id != "" || !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("partial write: %s %v", id, err)
-	}
-	reopened := reopenForTest(t, manager)
-	if *reopened.LeafID() != leaf || len(reopened.Entries()) != 1 {
-		t.Fatal("partial entry was restored as committed")
-	}
-	if bytes.HasSuffix(readForTest(t, manager.Path()), []byte{'\n'}) {
-		t.Fatal("test did not leave a truncated tail")
-	}
-	// Open skips the partial line; it does not repair or truncate it.
-	if *manager.LeafID() != leaf {
-		t.Fatal("partial write advanced leaf")
-	}
-}
-
 func TestManagerFilesystemAndSerializationFailures(t *testing.T) {
 	dir := t.TempDir()
 	blocker := write(t, dir, "blocker", "file")
 	for _, path := range []string{filepath.Join(blocker, "session.jsonl"), dir} {
 		manager := CreateLazy(path, "session", "/workspace", nil)
-		if _, err := manager.AppendCustom("failed", nil); err == nil || manager.materialized || manager.LeafID() != nil {
+		if _, err := manager.AppendCustom("failed", nil); err == nil || manager.LeafID() != nil {
 			t.Fatalf("materialization failure: %v", err)
 		}
 	}
@@ -454,7 +386,7 @@ func TestManagerFilesystemAndSerializationFailures(t *testing.T) {
 	if id, err := manager.AppendCustom("invalid", json.RawMessage(`{`)); err == nil || id != "" {
 		t.Fatal("invalid raw JSON accepted")
 	}
-	if !manager.materialized || len(reopenForTest(t, manager).Entries()) != 0 {
+	if len(reopenForTest(t, manager).Entries()) != 0 {
 		t.Fatal("serialization failure must leave only the materialized header")
 	}
 	before := readForTest(t, manager.Path())
@@ -467,12 +399,6 @@ func TestManagerFilesystemAndSerializationFailures(t *testing.T) {
 	if !bytes.Equal(before, readForTest(t, manager.Path())) {
 		t.Fatal("serialization error changed entries")
 	}
-	open := manager.openAppend
-	manager.openAppend = func(string) (io.WriteCloser, error) { return nil, os.ErrPermission }
-	if id, err := manager.AppendCustom("failed", nil); id != "" || !errors.Is(err, os.ErrPermission) {
-		t.Fatal("open error hidden")
-	}
-	manager.openAppend = open
 	for _, content := range []string{"", "{}\n", strings.TrimSuffix(sessionHeader("session"), "\n"), "\n" + sessionHeader("session"), sessionHeader("session") + "\xff"} {
 		write(t, dir, "lazy.jsonl", content)
 		if err := manager.SetCwd("/changed"); err == nil || manager.Cwd() != "/workspace" {
@@ -502,7 +428,7 @@ func TestManagerFilesystemAndSerializationFailures(t *testing.T) {
 	}
 }
 
-func TestManagerBranchCopyPartialFailureAndEmptySource(t *testing.T) {
+func TestManagerBranchCopyEmptyAndContextMessages(t *testing.T) {
 	source := managerForTest(t)
 	branch := CreateLazy(filepath.Join(t.TempDir(), "branch.jsonl"), "branch", "/workspace", nil)
 	if err := branch.CopyContextMessagesFrom(source); err != nil {
@@ -515,22 +441,6 @@ func TestManagerBranchCopyPartialFailureAndEmptySource(t *testing.T) {
 	kept := appendForTest(t, source, MessageEntry{UserMessage{Content: UserText("kept")}})
 	appendForTest(t, source, Compaction{Summary: "summary", FirstKeptEntryID: kept})
 	appendForTest(t, source, MessageEntry{UserMessage{Content: UserText("after")}})
-	open := branch.openAppend
-	calls := 0
-	branch.openAppend = func(path string) (io.WriteCloser, error) {
-		calls++
-		if calls == 2 {
-			return nil, os.ErrPermission
-		}
-		return open(path)
-	}
-	if err := branch.CopyContextMessagesFrom(source); !errors.Is(err, os.ErrPermission) {
-		t.Fatalf("copy partial error: %v", err)
-	}
-	sameMessages(t, reopenForTest(t, branch).ContextMessages(), source.ContextMessages()[:1])
-	if len(branch.Entries()) != 1 || branch.Entries()[0].ID == kept {
-		t.Fatal("copy did not generate a new root")
-	}
 	branch = CreateLazy(filepath.Join(t.TempDir(), "complete.jsonl"), "branch", "/workspace", nil)
 	if err := branch.CopyContextMessagesFrom(source); err != nil {
 		t.Fatal(err)
@@ -553,7 +463,7 @@ func TestManagerSeparateInstancesAndMetadataAcrossBranches(t *testing.T) {
 	if entries := reopened.Entries(); len(entries) != 2 || entries[0].ID != root || entries[1].ID != right {
 		t.Fatal("last leaf must select the right branch")
 	}
-	if len(reopened.reader.byID) != 3 || reopened.LatestCustom("left") == nil {
+	if reopened.LatestCustom("left") == nil || reopened.LatestCustom("right") == nil {
 		t.Fatal("inactive branch lost from index")
 	}
 	// Metadata selection uses the largest timestamp across the whole index,
@@ -653,15 +563,8 @@ func TestManagerFileWriteFailures(t *testing.T) {
 	manager := managerForTest(t)
 	appendForTest(t, manager, Custom{Type: "previous"})
 	before, leaf := readForTest(t, manager.Path()), *manager.LeafID()
-	// A real read-only descriptor makes the OS reject Write, independently of
-	// simulated short writes and open errors in the other failure tests.
-	manager.openAppend = func(path string) (io.WriteCloser, error) { return os.Open(path) }
-	if id, err := manager.AppendCustom("failed", nil); id != "" || err == nil {
-		t.Fatalf("OS write failure reported success: %s %v", id, err)
-	}
-	if *manager.LeafID() != leaf || !bytes.Equal(before, readForTest(t, manager.Path())) {
-		t.Fatal("failed OS write changed state")
-	}
+	// A read-only file mode makes the OS reject header rewrite independently of
+	// the append failures covered by manager_fault_test.go.
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("cwd mode-bit write denial requires a non-root Unix user")
 	}
@@ -676,7 +579,7 @@ func TestManagerFileWriteFailures(t *testing.T) {
 	if err := manager.SetCwd("/denied"); err == nil {
 		t.Fatal("cwd write failure reported success")
 	}
-	if manager.Cwd() != "/workspace" || !bytes.Equal(before, readForTest(t, manager.Path())) {
+	if manager.Cwd() != "/workspace" || manager.LeafID() == nil || *manager.LeafID() != leaf || !bytes.Equal(before, readForTest(t, manager.Path())) {
 		t.Fatal("failed cwd write advanced state")
 	}
 }

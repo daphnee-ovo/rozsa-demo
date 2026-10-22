@@ -1,4 +1,4 @@
-package session
+package session_test
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	. "rozsa/backend/internal/app/session"
 )
 
 // The Rust reference consumes this same file. Origins: manager.rs
@@ -238,11 +240,30 @@ func TestReaderHeaderAndEntryPayloads(t *testing.T) {
 	label := "bookmark"
 	flag := false
 	expected := []EntryPayload{ThinkingEffortChange{"high"}, ThinkingEffortChange{"low"}, ModelChange{"p", "m"}, Compaction{"s", "kept", ^uint64(0), json.RawMessage(`{"test":true}`), &flag}, Custom{"x", json.RawMessage(`[1,"a",null]`)}, Label{"target", &label}, SessionInfo{&name}}
-	for i, input := range inputs {
-		input = strings.TrimSuffix(input, "}") + `,"id":"e","timestamp":"t","parentId":"previous"}`
-		entry, ok := parseRestoredEntry([]byte(input))
-		if !ok || entry.ID != "e" || entry.ParentID == nil || *entry.ParentID != "previous" || entry.Timestamp != "t" || !reflect.DeepEqual(entry.Payload, expected[i]) {
-			t.Fatalf("entry %d: %+v", i, entry)
+	text := sessionHeader("id")
+	for index, input := range inputs {
+		parentID := "null"
+		if index > 0 {
+			parentID = `"entry-` + fmt.Sprint(index-1) + `"`
+		}
+		text += strings.TrimSuffix(input, "}") + `,"id":"entry-` + fmt.Sprint(index) + `","timestamp":"t","parentId":` + parentID + `}` + "\n"
+	}
+	path = write(t, fixtureDir(t), "entries.jsonl", text)
+	reader, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := reader.Entries()
+	if len(entries) != len(expected) {
+		t.Fatalf("entry count = %d, want %d", len(entries), len(expected))
+	}
+	for index, want := range expected {
+		entry := entries[index]
+		if entry.ID != fmt.Sprintf("entry-%d", index) || entry.Timestamp != "t" || !reflect.DeepEqual(entry.Payload, want) {
+			t.Fatalf("entry %d: %+v", index, entry)
+		}
+		if index == 0 && entry.ParentID != nil || index > 0 && (entry.ParentID == nil || *entry.ParentID != fmt.Sprintf("entry-%d", index-1)) {
+			t.Fatalf("entry %d parent = %v", index, entry.ParentID)
 		}
 	}
 }

@@ -1,13 +1,16 @@
-package session
+package session_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	. "rozsa/backend/internal/app/session"
 )
 
 func fixtureDir(t *testing.T) string {
@@ -114,6 +117,9 @@ func TestInvalidFilesSkippedAndMtime(t *testing.T) {
 }
 func TestAllEntryVariantsAndNames(t *testing.T) {
 	dir := fixtureDir(t)
+	baseModified := "2026-01-01T00:00:00+00:00"
+	activityTimestamp := "2026-02-01T00:00:00+00:00"
+	fileTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	lines := []string{
 		`{"type":"thinking_level_change","thinkingLevel":"high"}`,
 		`{"type":"thinking_effort_change","thinkingEffort":"low"}`,
@@ -122,11 +128,28 @@ func TestAllEntryVariantsAndNames(t *testing.T) {
 		`{"type":"custom","customType":"x","data":null}`,
 		`{"type":"label","targetId":"e","label":null}`,
 	}
+	variantIDs := make([]string, len(lines))
 	for i, line := range lines {
-		line = strings.TrimSuffix(line, "}") + `,"id":"e","timestamp":"activity","parentId":null}`
-		entry, ok := parseEntry([]byte(line))
-		if !ok || entry.timestamp != "activity" {
-			t.Fatalf("variant %d invalid: %s", i, line)
+		variantID := fmt.Sprintf("variant-%d", i)
+		variantIDs[i] = variantID
+		entryLine := strings.TrimSuffix(line, "}") + fmt.Sprintf(`,"id":"entry-%d","timestamp":"%s","parentId":null}`, i, activityTimestamp)
+		path := write(t, dir, variantID+".jsonl", sessionHeader(variantID)+entryLine+"\n")
+		if err := os.Chtimes(path, fileTime, fileTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	metas, err := ListDir(dir)
+	if err != nil || len(metas) != len(lines) {
+		t.Fatalf("catalog metadata: %+v, %v", metas, err)
+	}
+	metadataByID := make(map[string]Meta, len(metas))
+	for _, meta := range metas {
+		metadataByID[meta.ID] = meta
+	}
+	for _, variantID := range variantIDs {
+		meta, ok := metadataByID[variantID]
+		if !ok || meta.Modified != activityTimestamp {
+			t.Fatalf("catalog did not count active time for %s: %+v", variantID, meta)
 		}
 	}
 	text := sessionHeader("named") + message("user", `"first"`, "1") +
@@ -134,11 +157,21 @@ func TestAllEntryVariantsAndNames(t *testing.T) {
 		`{"type":"session_info","id":"i2","timestamp":"3","name":"equal timestamp ignored"}` + "\n" +
 		`{"type":"session_info","id":"i3","timestamp":"2","name":"old"}` + "\n"
 	path := write(t, dir, "name.jsonl", text)
-	metadata, err := buildMeta(path)
-	if err != nil || metadata.Name != nil || metadata.Modified != "3" {
-		t.Fatalf("%+v %v", metadata, err)
+	metadata, err := ListDir(dir)
+	if err != nil {
+		t.Fatalf("list metadata: %v", err)
 	}
-	for _, line := range []string{
+	var named Meta
+	for _, candidate := range metadata {
+		if candidate.Path == path {
+			named = candidate
+		}
+	}
+	if named.Path == "" || named.Name != nil || named.Modified != "3" {
+		t.Fatalf("metadata: %+v", named)
+	}
+	malformedIDs := make([]string, 0, 6)
+	for index, line := range []string{
 		`{"type":"custom","id":"e","timestamp":"z","customType":null}`,
 		`{"type":"session_info","id":"e","timestamp":"z","name":12}`,
 		`{"type":"compaction","id":"e","timestamp":"z","summary":"s","firstKeptEntryId":"f","tokensBefore":-1}`,
@@ -146,8 +179,25 @@ func TestAllEntryVariantsAndNames(t *testing.T) {
 		`{"type":"message","id":"e","timestamp":"z","message":{"role":"user","content":[{"type":"text"}]}}`,
 		`{"type":"message","id":"e","timestamp":"z","message":{"role":"assistant","content":null,"model":"x"}}`,
 	} {
-		if _, ok := parseEntry([]byte(line)); ok {
-			t.Fatalf("accepted malformed entry: %s", line)
+		malformedID := fmt.Sprintf("malformed-%d", index)
+		malformedIDs = append(malformedIDs, malformedID)
+		malformedPath := write(t, dir, malformedID+".jsonl", sessionHeader(malformedID)+line+"\n")
+		if err := os.Chtimes(malformedPath, fileTime, fileTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	metas, err = ListDir(dir)
+	if err != nil || len(metas) != len(variantIDs)+1+len(malformedIDs) {
+		t.Fatalf("catalog omitted valid-header files: %+v, %v", metas, err)
+	}
+	metadataByID = make(map[string]Meta, len(metas))
+	for _, meta := range metas {
+		metadataByID[meta.ID] = meta
+	}
+	for _, malformedID := range malformedIDs {
+		meta, ok := metadataByID[malformedID]
+		if !ok || meta.Modified != baseModified || meta.MessageCount != 0 || meta.FirstMessage != "(no messages)" {
+			t.Fatalf("malformed entry changed catalog metadata for %s: %+v", malformedID, meta)
 		}
 	}
 }
