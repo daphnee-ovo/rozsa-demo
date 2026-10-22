@@ -124,16 +124,17 @@ function deferred() {
   return { promise, resolve };
 }
 
-test("failed permission responses keep the request visible and allow retry; queued requests advance only after confirmation", async () => withDom(async () => {
+test("failed permission responses stay actionable without exposing a retry state; queued requests advance only after confirmation", async () => withDom(async () => {
   const states = { "session-a": { approvals: [approval("approval-a", "failed"), approval("approval-b", "queued")] } };
   const bridge = createBridge(states);
   const runtimeNotifications = [];
-  window.addEventListener("rozsa:runtime-notification", event => runtimeNotifications.push(event.detail));
+  window.upsertNotification = notification => runtimeNotifications.push({ type: "upsert", ...notification });
+  window.resolveNotification = id => runtimeNotifications.push({ type: "resolve", id });
   bridge.failNextPermission();
   const mounted = mount(bridge);
   try {
     await waitFor(() => document.querySelector("#permPanel")?.dataset.requestId === "approval-a", "first approval");
-    assert.match(document.querySelector("#permPanel").textContent, /previous response failed/i);
+    assert.doesNotMatch(document.querySelector("#permPanel").textContent, /failed|retry/i);
     document.querySelector('[data-permission-action="allow"]').click();
     await waitFor(() => runtimeNotifications.some(item => item.type === "upsert"
       && item.id === "interruption-action:permission:session-a:approval-a"), "application error notification");
@@ -151,12 +152,12 @@ test("failed permission responses keep the request visible and allow retry; queu
   } finally { mounted.panel.dispose(); }
 }));
 
-test("responding requests disable approval actions", async () => withDom(async () => {
+test("responding requests disable approval actions without exposing a submitting state", async () => withDom(async () => {
   const bridge = createBridge({ "session-a": { approvals: [approval("approval-responding", "responding")] } });
   const mounted = mount(bridge);
   try {
     await waitFor(() => Boolean(document.querySelector("#permPanel")), "responding approval");
-    assert.match(document.querySelector("#permPanel").textContent, /Applying response/i);
+    assert.doesNotMatch(document.querySelector("#permPanel").textContent, /Applying response/i);
     assert.equal(document.querySelector('[data-permission-action="allow"]').disabled, true);
   } finally { mounted.panel.dispose(); }
 }));
@@ -168,10 +169,14 @@ test("permission keyboard shortcuts open trust and submit a trust level", async 
     await waitFor(() => Boolean(document.querySelector("#permPanel")), "keyboard approval");
     document.querySelector("#permPanel").dispatchEvent(new window.KeyboardEvent("keydown", { key: "t", bubbles: true, cancelable: true }));
     await waitFor(() => Boolean(document.querySelector("#permTrustActions")), "keyboard trust page");
+    getByRole(document, "button", { name: "Back" }).click();
+    await waitFor(() => Boolean(document.querySelector("#permPanelMain")), "trust back action");
+    document.querySelector('[data-permission-action="trust"]').click();
+    await waitFor(() => Boolean(document.querySelector("#permTrustActions")), "trust page reopened");
     document.querySelector("#permTrustActions").dispatchEvent(new window.KeyboardEvent("keydown", { key: "1", bubbles: true, cancelable: true }));
     await waitFor(() => !document.querySelector("#permPanel.visible"), "keyboard trust response");
     assert.deepEqual(bridge.calls.permissions, [{
-      sessionId: "session-a", requestId: "approval-keyboard", choice: "allow-session", trustKeys: ["Write:/workspace/a.txt"],
+      sessionId: "session-a", requestId: "approval-keyboard", choice: "allow-project", trustKeys: ["Write:/workspace/a.txt"],
     }]);
   } finally { mounted.panel.dispose(); }
 }));
@@ -296,6 +301,7 @@ test("multi-question flow supports Next, checkbox Other, and cancellation reject
 
     states["session-a"].question = question("question-cancel");
     await waitFor(() => document.querySelector("#questionPanel")?.dataset.requestId === "question-cancel", "second question");
+    assert.ok(getByRole(document, "button", { name: "Cancel" }));
     const lateId = document.querySelector("#questionPanel").dataset.requestId;
     document.querySelector("#questionPanel").dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     await waitFor(() => !document.querySelector("#questionPanel.visible"), "question cancellation");

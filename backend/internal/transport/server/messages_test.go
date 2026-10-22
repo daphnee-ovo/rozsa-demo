@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"context"
@@ -10,18 +10,22 @@ import (
 
 	"go.lsp.dev/jsonrpc2"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/transport/server"
 	"rozsa/backend/internal/transport/types"
 )
 
 type fakeMessageApp struct {
-	startedText string
-	continued   bool
-	canceled    string
-	startErr    error
-	cancelErr   error
-	events      chan types.MessageEvent
-	nextStarted chan struct{}
+	startedText   string
+	continued     bool
+	canceled      string
+	startErr      error
+	cancelErr     error
+	events        chan types.MessageEvent
+	nextStarted   chan struct{}
+	runtimeStatus types.RuntimeStatusResult
 }
+
+func (app *fakeMessageApp) RuntimeStatus() types.RuntimeStatusResult { return app.runtimeStatus }
 
 func (app *fakeMessageApp) StartMessage(_ context.Context, text string) (string, error) {
 	app.startedText = text
@@ -33,7 +37,7 @@ func (app *fakeMessageApp) ContinueMessage(context.Context) (string, error) {
 	return "operation-continue", nil
 }
 
-func (app *fakeMessageApp) SubscribeMessageEvents(_ context.Context, operationID string) (MessageEventSubscription, error) {
+func (app *fakeMessageApp) SubscribeMessageEvents(_ context.Context, operationID string) (server.MessageEventSubscription, error) {
 	if operationID != "operation-start" {
 		return nil, errors.New("unknown operation")
 	}
@@ -77,7 +81,7 @@ func startMessagePeer(t *testing.T, app *fakeMessageApp) *testPeer {
 	client.SetDeadline(time.Now().Add(8 * time.Second))
 	peer := &testPeer{t: t, client: client, stream: jsonrpc2.NewStream(client), ended: make(chan error, 1)}
 	go func() {
-		peer.ended <- serveWithMessages(backend, backend, session.NewService(session.Catalog{}), app, time.Second)
+		peer.ended <- server.ServeProductApplication(backend, backend, session.NewService(session.Catalog{}), app)
 		backend.Close()
 	}()
 	t.Cleanup(func() {
@@ -95,8 +99,13 @@ func startMessagePeer(t *testing.T, app *fakeMessageApp) *testPeer {
 }
 
 func TestMessageMethodsReachTypedApplicationAndDeliverEvents(t *testing.T) {
-	app := &fakeMessageApp{events: make(chan types.MessageEvent, 4)}
+	app := &fakeMessageApp{events: make(chan types.MessageEvent, 4), runtimeStatus: types.RuntimeStatusResult{State: "ready"}}
 	peer := startMessagePeer(t, app)
+	peer.send(20, string(types.RuntimeStatus), types.EmptyParams{})
+	var status types.RuntimeStatusResult
+	if err := json.Unmarshal(peer.readOK().Result(), &status); err != nil || status.State != "ready" {
+		t.Fatalf("runtime status=%+v err=%v", status, err)
+	}
 	peer.send(2, string(types.StartMessage), types.StartMessageParams{Text: "hello"})
 	var operation types.MessageOperation
 	if err := json.Unmarshal(peer.readOK().Result(), &operation); err != nil || operation.OperationID != "operation-start" || app.startedText != "hello" {
@@ -135,6 +144,24 @@ func TestMessageMethodsReachTypedApplicationAndDeliverEvents(t *testing.T) {
 	peer.send(8, string(types.ContinueMessage), types.EmptyParams{})
 	if err := json.Unmarshal(peer.readOK().Result(), &operation); err != nil || operation.OperationID != "operation-continue" || !app.continued {
 		t.Fatalf("continue=%+v app=%+v err=%v", operation, app, err)
+	}
+}
+
+func TestRuntimeInitializationFailureIsReturnedAsTypedStatusError(t *testing.T) {
+	app := &fakeMessageApp{
+		events:        make(chan types.MessageEvent, 1),
+		runtimeStatus: types.RuntimeStatusResult{State: "failed", Error: "model credentials are missing"},
+	}
+	peer := startMessagePeer(t, app)
+	peer.send(30, string(types.RuntimeStatus), types.EmptyParams{})
+	response := peer.read()
+	var rpcError *jsonrpc2.Error
+	if !errors.As(response.Err(), &rpcError) || rpcError.Code != -32009 {
+		t.Fatalf("runtime failure response = %v, want typed runtime initialization error", response.Err())
+	}
+	var data types.ErrorData
+	if err := json.Unmarshal(rpcError.Data, &data); err != nil || data.Kind != types.RuntimeInitialization || rpcError.Message != "model credentials are missing" {
+		t.Fatalf("runtime failure error = code %d data %s message %q err=%v", rpcError.Code, rpcError.Data, rpcError.Message, err)
 	}
 }
 

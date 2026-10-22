@@ -1,5 +1,5 @@
-import { validatedBridgeFault, ProductFailure, type BridgeFault, type ModelOption, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary } from "../../contracts/ipc/session.js";
-export type { ModelOption, ModelUpdate, ModelDiagnostic, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary } from "../../contracts/ipc/session.js";
+import { validatedBridgeFault, ProductFailure, type ApprovalRequest, type BridgeFault, type InputCompletion, type InterruptionState, type ModelOption, type PermissionResponse, type QuestionAnswers, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary, type UserQuestionRequest } from "../../contracts/ipc/session.js";
+export type { ApprovalRequest, InputCompletion, InputSuggestion, InputHighlightRange, InterruptionState, ModelOption, ModelUpdate, ModelDiagnostic, PermissionResponse, QuestionAnswers, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary, UserQuestion, UserQuestionRequest } from "../../contracts/ipc/session.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { MessageEvent } from "../../contracts/ipc/session.js";
 export { ProductFailure, RPCFailure, bridgeFault, remoteFault, transportFailure } from "../../contracts/ipc/session.js";
@@ -50,15 +50,22 @@ export interface ProductBridge {
   nextMessageEvent(subscriptionId: string): Promise<MessageEventResult>;
   unsubscribeMessageEvents(subscriptionId: string): Promise<void>;
   cancelMessage(operationId: string): Promise<void>;
+  getInterruptionState?(sessionId: string): Promise<InterruptionState>;
+  respondPermission?(response: PermissionResponse): Promise<void>;
+  respondUserQuestion?(requestId: string, answers: QuestionAnswers): Promise<void>;
+  cancelUserQuestion?(requestId: string): Promise<void>;
   getSettings(scope: SettingsScope): Promise<SettingsSnapshot>;
   updateSetting(scope: SettingsScope, key: string, value: unknown): Promise<SettingsSnapshot>;
   resetSetting(scope: SettingsScope, key: string): Promise<SettingsSnapshot>;
   listThemes(scope: SettingsScope): Promise<ThemeSummary[]>;
   getTheme(id: string, mode: "light" | "dark"): Promise<ThemeDefinition>;
   saveTheme(theme: ThemeDefinition): Promise<void>;
+  autocompleteInput(text: string, cursor: number): Promise<InputCompletion>;
   onModelsChanged?(receive: (update: import("../../contracts/ipc/session.js").ModelUpdate) => void): () => void;
+  onRuntimeInitializationError?(receive: (message: string) => void): () => void;
 }
 export const MODELS_CHANGED_CHANNEL = "product:models-changed";
+export const RUNTIME_INITIALIZATION_ERROR_CHANNEL = "product:runtime-initialization-error";
 export const AUTH_LOGIN_CHANNEL = "product:auth-login";
 export const AUTH_INPUT_CHANNEL = "product:auth-input";
 export const AUTH_NEXT_CHANNEL = "product:auth-next";
@@ -87,7 +94,12 @@ export const MESSAGE_SUBSCRIBE_CHANNEL = "product:subscribe-message-events";
 export const MESSAGE_NEXT_CHANNEL = "product:next-message-event";
 export const MESSAGE_UNSUBSCRIBE_CHANNEL = "product:unsubscribe-message-events";
 export const MESSAGE_CANCEL_CHANNEL = "product:cancel-message";
+export const INTERRUPTION_STATE_CHANNEL = "product:get-interruption-state";
+export const PERMISSION_RESPOND_CHANNEL = "product:respond-permission";
+export const USER_QUESTION_RESPOND_CHANNEL = "product:respond-user-question";
+export const USER_QUESTION_CANCEL_CHANNEL = "product:cancel-user-question";
 export const SETTINGS_GET_CHANNEL = "product:get-settings";
+export const INPUT_AUTOCOMPLETE_CHANNEL = "product:autocomplete-input";
 export const SETTINGS_UPDATE_CHANNEL = "product:update-setting";
 export const SETTINGS_RESET_CHANNEL = "product:reset-setting";
 export const THEMES_LIST_CHANNEL = "product:list-themes";
@@ -189,19 +201,67 @@ export function settingsSnapshot(value: unknown): SettingsSnapshot {
   themeDefinition(appearance.lightTheme);
   themeDefinition(appearance.darkTheme);
   value.themes.forEach(themeSummary);
-  if (!value.models.every(model => record(model) && typeof model.id === "string" && model.id.length > 0
-    && typeof model.name === "string" && typeof model.provider === "string" && typeof model.reasoning === "boolean"
-    && Number.isSafeInteger(model.contextWindow) && (model.contextWindow as number) > 0)) throw new Error("Invalid model catalog response");
+  if (!value.models.every(validModelOption)) throw new Error("Invalid model catalog response");
   return value as unknown as SettingsSnapshot;
 }
 
 export function modelUpdate(value: unknown): import("../../contracts/ipc/session.js").ModelUpdate {
   if (!record(value) || !Array.isArray(value.models) || !Array.isArray(value.diagnostics)
-    || !value.models.every(model => record(model) && typeof model.id === "string" && model.id.length > 0
-      && typeof model.name === "string" && typeof model.provider === "string" && typeof model.reasoning === "boolean"
-      && Number.isSafeInteger(model.contextWindow) && (model.contextWindow as number) > 0)
+    || !value.models.every(validModelOption)
     || !value.diagnostics.every(item => record(item) && typeof item.provider === "string" && typeof item.message === "string")) throw new Error("Invalid model catalog update");
   return value as unknown as import("../../contracts/ipc/session.js").ModelUpdate;
+}
+
+function validModelOption(value: unknown): value is ModelOption {
+  if (!record(value) || typeof value.id !== "string" || value.id.length === 0 || typeof value.name !== "string"
+    || typeof value.provider !== "string" || typeof value.reasoning !== "boolean"
+    || !Number.isSafeInteger(value.contextWindow) || (value.contextWindow as number) <= 0) return false;
+  const effortMap = value.thinkingEffortMap;
+  return effortMap === undefined || (record(effortMap) && Object.values(effortMap).every(item => item === null || typeof item === "string"));
+}
+
+export function inputCompletion(value: unknown): InputCompletion {
+  if (!record(value) || typeof value.prefix !== "string" || typeof value.validMatch !== "boolean"
+    || !Array.isArray(value.items) || !value.items.every(item => record(item) && typeof item.value === "string"
+      && typeof item.label === "string" && typeof item.description === "string")
+    || !Array.isArray(value.highlightRanges) || !value.highlightRanges.every(range => record(range)
+      && Number.isSafeInteger(range.start) && (range.start as number) >= 0
+      && Number.isSafeInteger(range.end) && (range.end as number) >= (range.start as number))) {
+    throw new Error("Invalid input completion response");
+  }
+  return value as unknown as InputCompletion;
+}
+
+export function interruptionState(value: unknown): InterruptionState {
+  if (!record(value) || !Array.isArray(value.approvals) || !value.approvals.every(approval => validApproval(approval))) {
+    throw new Error("Invalid interruption state");
+  }
+  if (value.question !== undefined && !validQuestionRequest(value.question)) throw new Error("Invalid user question request");
+  return value as unknown as InterruptionState;
+}
+
+function validApproval(value: unknown): value is ApprovalRequest {
+  if (!record(value) || ["sessionId", "requestId", "tool", "summary", "risk"].some(key => typeof value[key] !== "string")
+    || !["pending", "queued", "responding", "failed", "cancelled", "stale", "unknown"].includes(value.status as string)
+    || !Array.isArray(value.trustLevels) || !Array.isArray(value.trustGroups)) return false;
+  if (value.trustKey !== undefined && typeof value.trustKey !== "string") return false;
+  if (value.command !== undefined && typeof value.command !== "string") return false;
+  if (!value.trustLevels.every(validTrustLevel)) return false;
+  return value.trustGroups.every(group => record(group) && typeof group.target === "string"
+    && Array.isArray(group.levels) && group.levels.every(validTrustLevel));
+}
+
+function validTrustLevel(value: unknown): boolean {
+  return record(value) && typeof value.key === "string" && typeof value.label === "string";
+}
+
+function validQuestionRequest(value: unknown): value is UserQuestionRequest {
+  return record(value) && ["sessionId", "requestId", "transportId"].every(key => typeof value[key] === "string")
+    && Array.isArray(value.questions) && value.questions.length > 0
+    && value.questions.every(question => record(question) && typeof question.question === "string"
+      && typeof question.header === "string" && typeof question.multiSelect === "boolean"
+      && Array.isArray(question.options) && question.options.every(option => record(option)
+        && typeof option.label === "string" && typeof option.description === "string"));
 }
 
 export function messageSuccess(value: unknown): unknown {

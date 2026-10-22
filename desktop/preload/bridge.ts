@@ -1,4 +1,4 @@
-import { sessionTarget, sessionReply, historyReply, subscriptionId, syncReply, unsubscribeReply, messageSuccess, messageOperation, messageSubscription, messageEventResult, MESSAGE_START_CHANNEL, MESSAGE_CONTINUE_CHANNEL, MESSAGE_ACTIVE_CHANNEL, MESSAGE_SUBSCRIBE_CHANNEL, MESSAGE_NEXT_CHANNEL, MESSAGE_UNSUBSCRIBE_CHANNEL, MESSAGE_CANCEL_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL, SETTINGS_GET_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL } from "../main/session-contract.js";
+import { sessionTarget, sessionReply, historyReply, subscriptionId, syncReply, unsubscribeReply, messageSuccess, messageOperation, messageSubscription, messageEventResult, inputCompletion, interruptionState, MESSAGE_START_CHANNEL, MESSAGE_CONTINUE_CHANNEL, MESSAGE_ACTIVE_CHANNEL, MESSAGE_SUBSCRIBE_CHANNEL, MESSAGE_NEXT_CHANNEL, MESSAGE_UNSUBSCRIBE_CHANNEL, MESSAGE_CANCEL_CHANNEL, INTERRUPTION_STATE_CHANNEL, PERMISSION_RESPOND_CHANNEL, USER_QUESTION_CANCEL_CHANNEL, USER_QUESTION_RESPOND_CHANNEL, SESSION_SUBSCRIBE_CHANNEL, SESSION_NEXT_CHANNEL, SESSION_UNSUBSCRIBE_CHANNEL, SETTINGS_GET_CHANNEL, INPUT_AUTOCOMPLETE_CHANNEL, SETTINGS_UPDATE_CHANNEL, SETTINGS_RESET_CHANNEL, THEMES_LIST_CHANNEL, THEME_GET_CHANNEL, THEME_SAVE_CHANNEL, RUNTIME_INITIALIZATION_ERROR_CHANNEL } from "../main/session-contract.js";
 // Vite bundles this module into one sandbox preload; Electron is external.
 import { authEvent, oauthProvider, AUTH_LOGIN_CHANNEL, AUTH_INPUT_CHANNEL, AUTH_NEXT_CHANNEL, AUTH_CANCEL_CHANNEL, AUTH_LOGOUT_CHANNEL } from "../main/session-contract.js";
 export namespace RozsaBridge {
@@ -29,6 +29,12 @@ export namespace RozsaBridge {
           if (typeof value !== "object" || value === null || !("models" in value) || !("diagnostics" in value)
             || !Array.isArray(value.models) || !value.models.every(validModelOption) || !validDiagnostics(value.diagnostics)) throw new Error("Invalid model update");
           receive(value as import("../../contracts/ipc/session.js").ModelUpdate);
+        });
+      }, onRuntimeInitializationError(receive: (message: string) => void) {
+        if (typeof receive !== "function" || !subscribe) throw new Error("Runtime error events are unavailable");
+        return subscribe(RUNTIME_INITIALIZATION_ERROR_CHANNEL, value => {
+          if (typeof value !== "string") throw new Error("Invalid runtime initialization error");
+          receive(value);
         });
       } } : {}),
       async getSessions(...args: never[]): Promise<import("../main/session-contract").SessionListReply> {
@@ -93,9 +99,31 @@ export namespace RozsaBridge {
         const result = messageSuccess(await invoke(MESSAGE_CANCEL_CHANNEL, { operationId: args[0] }));
         if (result !== true && !(typeof result === "object" && result !== null && Object.keys(result).length === 0)) throw new Error("Invalid message cancellation response");
       },
+      async getInterruptionState(...args: [string]) {
+        if (args.length !== 1 || !validKey(args[0])) throw new Error("Invalid interruption session");
+        const value = messageSuccess(await invoke(INTERRUPTION_STATE_CHANNEL, args[0]));
+        if (typeof value !== "object" || value === null || !("state" in value)) throw new Error("Invalid interruption state response");
+        return interruptionState(value.state);
+      },
+      async respondPermission(...args: [import("../main/session-contract.js").PermissionResponse]) {
+        if (args.length !== 1 || !validPermissionResponse(args[0])) throw new Error("Invalid permission response");
+        messageSuccess(await invoke(PERMISSION_RESPOND_CHANNEL, args[0]));
+      },
+      async respondUserQuestion(...args: [string, import("../main/session-contract.js").QuestionAnswers]) {
+        if (args.length !== 2 || !validKey(args[0]) || !validQuestionAnswers(args[1])) throw new Error("Invalid user question response");
+        messageSuccess(await invoke(USER_QUESTION_RESPOND_CHANNEL, args[0], args[1]));
+      },
+      async cancelUserQuestion(...args: [string]) {
+        if (args.length !== 1 || !validKey(args[0])) throw new Error("Invalid user question request");
+        messageSuccess(await invoke(USER_QUESTION_CANCEL_CHANNEL, args[0]));
+      },
       async getSettings(...args: ["global" | "project"]) {
         if (args.length !== 1 || !validScope(args[0])) throw new Error("Invalid settings scope");
         return settingsSnapshot(messageSuccess(await invoke(SETTINGS_GET_CHANNEL, args[0])));
+      },
+      async autocompleteInput(...args: [string, number]) {
+        if (args.length !== 2 || typeof args[0] !== "string" || !Number.isSafeInteger(args[1]) || args[1] < 0) throw new Error("Invalid input completion request");
+        return inputCompletion(messageSuccess(await invoke(INPUT_AUTOCOMPLETE_CHANNEL, args[0], args[1])));
       },
       async updateSetting(...args: ["global" | "project", string, unknown]) {
         if (args.length !== 3 || !validScope(args[0]) || !validKey(args[1])) throw new Error("Invalid settings update");
@@ -126,6 +154,19 @@ export namespace RozsaBridge {
 
 function validScope(value: unknown): value is "global" | "project" { return value === "global" || value === "project"; }
 function validKey(value: unknown): value is string { return typeof value === "string" && value.length > 0 && value.trim() === value; }
+function validPermissionResponse(value: unknown): value is import("../main/session-contract.js").PermissionResponse {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const response = value as Record<string, unknown>;
+  return validKey(response.sessionId) && validKey(response.requestId)
+    && ["allow", "allow-once", "allow-session", "allow-project", "deny", "deny-hint"].includes(response.choice as string)
+    && (response.trustKey === undefined || typeof response.trustKey === "string")
+    && (response.trustKeys === undefined || Array.isArray(response.trustKeys) && response.trustKeys.every(key => typeof key === "string"))
+    && (response.hint === undefined || typeof response.hint === "string");
+}
+function validQuestionAnswers(value: unknown): value is import("../main/session-contract.js").QuestionAnswers {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length > 0
+    && Object.values(value).every(answer => typeof answer === "string" || Array.isArray(answer) && answer.every(item => typeof item === "string"));
+}
 function validThemeMode(value: unknown): value is "light" | "dark" { return value === "light" || value === "dark"; }
 function validThemeDefinition(value: unknown): value is import("../../contracts/ipc/session.js").ThemeDefinition {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -164,6 +205,9 @@ function validDiagnostics(value: unknown): boolean {
 function validModelOption(value: unknown): value is import("../../contracts/ipc/session.js").ModelOption {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const model = value as Record<string, unknown>;
+  const effortMap = model.thinkingEffortMap;
   return validKey(model.id) && typeof model.name === "string" && validKey(model.provider)
-    && typeof model.reasoning === "boolean" && Number.isSafeInteger(model.contextWindow) && (model.contextWindow as number) > 0;
+    && typeof model.reasoning === "boolean" && Number.isSafeInteger(model.contextWindow) && (model.contextWindow as number) > 0
+    && (effortMap === undefined || (typeof effortMap === "object" && effortMap !== null && !Array.isArray(effortMap)
+      && Object.values(effortMap as Record<string, unknown>).every(item => item === null || typeof item === "string")));
 }

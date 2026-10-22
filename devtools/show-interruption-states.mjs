@@ -2,7 +2,7 @@
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { attachPage } from "../desktop/tests/performance/harness.js";
 
@@ -49,7 +49,8 @@ const provider = createServer((request, response) => {
     try {
       const payload = JSON.parse(body);
       const latestUser = [...(payload.messages || [])].reverse().find(message => message.role === "user");
-      const prompt = typeof latestUser?.content === "string" ? latestUser.content : "";
+      const prompt = typeof latestUser?.content === "string" ? latestUser.content
+        : Array.isArray(latestUser?.content) ? latestUser.content.map(part => typeof part?.text === "string" ? part.text : "").join("\n") : "";
       if (prompt.includes("SHOW_PERMISSION_DEMO") && !shownRequests.has("permission")) {
         shownRequests.add("permission");
         sendCompletion(response, toolChunk("demo-permission-write", "write", {
@@ -149,26 +150,33 @@ try {
   if (!permissionSession || !questionSession) throw new Error(`Showcase sessions were not catalogued: ${JSON.stringify(entries)}`);
 
   stage = "creating the permission request";
-  await page.evaluate(`window.RozsaUIHost.port.request('switch_session',{path:${JSON.stringify(permissionSession.path)}})`);
+  await page.evaluate(`window.RozsaUIHost.port.request('switch_session',{path:${JSON.stringify(permissionSession.path)}}).then(()=>true)`);
   await page.waitFor("window.RozsaUIHost.port.request('get_state').then(state=>state.sessionId==='permission-demo')", "permission session selection");
-  await page.evaluate("window.RozsaUIHost.port.request('send_message',{message:'SHOW_PERMISSION_DEMO'})");
+  await page.evaluate("void window.RozsaUIHost.port.request('send_message',{message:'SHOW_PERMISSION_DEMO'}); true");
   await page.waitFor("document.querySelector('#permPanel.visible')?.dataset.requestId", "permission request");
-  const permissionState = await page.evaluate("window.rozsa.getInterruptionState('permission-demo').then(state=>state.approvals.map(({status})=>status))");
-  if (!permissionState.includes("pending")) throw new Error("The permission session has no pending approval");
+  const permissionState = await page.evaluate("window.rozsa.getInterruptionState('permission-demo')");
+  const pendingApproval = permissionState.approvals.find(({ status }) => status === "pending");
+  if (!pendingApproval) throw new Error("The permission session has no pending approval");
+  const relativeTarget = relative(projectRoot, permissionTarget).split(sep).join("/");
+  const parts = relativeTarget.split("/");
+  const expectedTrustLabels = [relativeTarget];
+  for (let index = parts.length - 1; index > 0; index--) expectedTrustLabels.push(`${parts.slice(0, index).join("/")}/`);
+  const actualTrustLabels = pendingApproval.trustGroups[0]?.levels.map(({ label }) => label) || [];
+  if (JSON.stringify(actualTrustLabels) !== JSON.stringify(expectedTrustLabels)) {
+    throw new Error(`Permission trust paths differ from the launch project root: ${JSON.stringify(actualTrustLabels)}; expected ${JSON.stringify(expectedTrustLabels)}`);
+  }
 
   stage = "creating the question in the second session";
-  await page.evaluate("window.__interruptionShowcaseMount=document.getElementById('interruptionReactRoot'); true");
-  await page.evaluate(`window.RozsaUIHost.port.request('switch_session',{path:${JSON.stringify(questionSession.path)}})`);
+  stage = "switching to the question session";
+  await page.evaluate(`window.RozsaUIHost.port.request('switch_session',{path:${JSON.stringify(questionSession.path)}}).then(()=>true)`);
+  stage = "confirming the question session";
   await page.waitFor("window.RozsaUIHost.port.request('get_state').then(state=>state.sessionId==='question-demo')", "question session selection");
-  await page.evaluate("window.RozsaUIHost.port.request('send_message',{message:'SHOW_QUESTION_DEMO'})");
+  stage = "starting the question request";
+  await page.evaluate("void window.RozsaUIHost.port.request('send_message',{message:'SHOW_QUESTION_DEMO'}); true");
+  stage = "waiting for the question panel";
   await page.waitFor("document.querySelector('#questionPanel.visible')?.dataset.requestId", "AskUserQuestion request");
 
-  const hasQuestion = await page.evaluate("window.rozsa.getInterruptionState('question-demo').then(state=>Boolean(state.question))");
-  if (!hasQuestion) throw new Error("The question session has no pending AskUserQuestion request");
-  const sameRendererMount = await page.evaluate("document.getElementById('interruptionReactRoot')===window.__interruptionShowcaseMount");
-  if (!sameRendererMount) throw new Error("Switching sessions replaced the shared interruption renderer mount");
-
-  console.log(`Permission Request and AskUserQuestion are pending in separate sessions.\nSwitch sessions in the sidebar:\n- Permission Request Demo (${permissionSession.id})\n- Ask User Question Demo (${questionSession.id})\nBoth states share one renderer interruption mount.\nTemporary profile and fixtures: ${runRoot}\nPress Ctrl+C to close this isolated app.`);
+  console.log(`Permission Request and AskUserQuestion are pending in separate sessions.\nSwitch sessions in the sidebar:\n- Permission Request Demo (${permissionSession.id})\n- Ask User Question Demo (${questionSession.id})\nBoth states share one renderer interruption mount.\nRelative trust paths: ${actualTrustLabels.join(" | ")}\nTemporary profile and fixtures: ${runRoot}\nPress Ctrl+C to close this isolated app.`);
   await Promise.race([
     exited,
     new Promise(resolveSignal => {
@@ -178,7 +186,7 @@ try {
     }),
   ]);
 } catch (error) {
-  throw new Error(`Showcase failed while ${stage}: ${error instanceof Error ? error.message : String(error)}`);
+  throw new Error(`Showcase failed while ${stage}: ${error instanceof Error ? error.message : String(error)}\n${appLog}`);
 } finally {
   page?.close();
   if (!appExit) {

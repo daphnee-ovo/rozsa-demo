@@ -1,20 +1,21 @@
 import { createUIHost } from "../../scripts/core/renderer.ts";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { PanelLeft } from "lucide-react";
 import { createElectronAdapter } from "../adapters/electron.ts";
 import { bindNativeViewport } from '../adapters/viewport.js';
 import { mountShell, resolveTemplateRoot } from "../../scripts/core/shell.ts";
 import { init as bindPopover } from "../../scripts/components/popover.js";
-import { init as bindComposer, renderSendState } from "../../scripts/components/composer.js";
+import { init as bindComposer, renderSendState, mountComposerInput, mountSuggestionPopup } from "../../scripts/components/composer.js";
 import { emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup } from "../../scripts/features/conversation.ts";
 import { mountConversation, createConversationFlow } from "../../scripts/flows/conversation.ts";
 import { createConversationAdapter } from "../adapters/conversation.js";
 import { createConversationRenderer } from "../../scripts/features/conversation-view.tsx";
+import { mountInterruptionPanel } from "../../scripts/components/interruption-panel.tsx";
 import * as tools from '../../scripts/features/tools.js';
 import { init as bindTools } from '../../scripts/components/tool-call.js';
 import { toolView, activityView } from '../adapters/tools.js';
-import * as permissions from '../../scripts/features/permissions.js';
-import { init as bindInterruption } from '../../scripts/components/interruption-panel.js';
 import { init as bindInterruptionFlow } from '../../scripts/flows/composer-interruption.js';
-import { createInterruptionAdapter } from '../adapters/interruption.js';
 import * as settings from '../../scripts/features/settings.tsx';
 import { createSettingsAdapter, bindSettingSwitch } from '../adapters/settings.js';
 import * as notifications from '../../scripts/features/notifications.js';
@@ -25,8 +26,14 @@ import { loadTemplate } from '../../scripts/core/template-loader.ts';
 import { renderMarkdownStatic } from '../../scripts/features/markdown-renderer.tsx';
 import * as devFlow from '../../scripts/features/dev-flow.js';
 import { devFlowSettingsView, devFlowDetailView } from '../adapters/sidebar-dev-flow.js';
-
 import { reportError, resolveError } from '../../error-reporting.ts';
+
+const sidebarToggle = document.querySelector<HTMLButtonElement>(".sidebar-toggle-button");
+if (!sidebarToggle) throw new Error("Sidebar toggle button is missing");
+sidebarToggle.innerHTML = renderToStaticMarkup(createElement(PanelLeft, {
+  className: "lucide", size: 17, strokeWidth: 1.7, "aria-hidden": true,
+}));
+
 declare global {
   interface Window {
     RozsaSessionCatalogReady: Promise<unknown>;
@@ -153,21 +160,43 @@ window.RozsaUIReady = Promise.all([bindNativeViewport(), mountConversation(docum
   window.addEventListener('pagehide', disposeSettingsPanes, { once: true });
   window.RozsaTools = Object.freeze({ ...tools, toolView, activityView });
   bindTools({ boundModules: new Set(), byId: (id: string) => document.getElementById(id), toggleToolCall, toggleTurnDiff });
-  window.RozsaPermissions = permissions;
-  const interruption = {
-    ...createInterruptionAdapter({ respondPermission, enterPermissionTrust, enterPermissionHint,
-      togglePermissionCommand, showPermissionMainPage, submitPermissionHint, submitUserQuestion,
-      normalizePermissionHint, handlePermissionHintKeydown }),
-    boundModules: new Set(), byId: (id: string) => document.getElementById(id),
-  };
-  configureInterruptionSuspensions();
-  bindInterruption(interruption);
-  bindInterruptionFlow(interruption);
+  const interruptionMount = document.getElementById("interruptionReactRoot");
+  if (!interruptionMount) throw new Error("Interruption panel mount is missing");
+  const interruptionPanel = mountInterruptionPanel(interruptionMount, window.rozsa);
+  const detachInterruptionState = await window.RozsaUIHost.port.subscribe("ui-state", snapshot => {
+    if (typeof snapshot === "object" && snapshot !== null && "sessionId" in snapshot && typeof snapshot.sessionId === "string") {
+      interruptionPanel.setSessionId(snapshot.sessionId);
+    }
+  });
+  void window.RozsaInitialStateReady.then(snapshot => {
+    if (typeof snapshot === "object" && snapshot !== null && "sessionId" in snapshot && typeof snapshot.sessionId === "string") {
+      interruptionPanel.setSessionId(snapshot.sessionId);
+    }
+  }, () => undefined);
+  window.addEventListener("pagehide", () => {
+    detachInterruptionState();
+    interruptionPanel.dispose();
+  }, { once: true });
+  bindInterruptionFlow({ boundModules: new Set(), byId: (id: string) => document.getElementById(id) });
   document.querySelector('[data-od-id="chat-input"]')!.prepend(document.querySelector<HTMLTemplateElement>('#runtimeSubagentTemplate')!.content.cloneNode(true));
   configureConversationSuspensions();
   window.RozsaConversation = Object.freeze({ emptyConversationMarkup, messageFrame, createMessageFrame, runningPanelMarkup, thinkingMarkup,
     renderView: conversationRenderer.render });
-  window.RozsaComposer = Object.freeze({ renderSendState });
+  const inputMount = document.querySelector<HTMLElement>("[data-composer-input-mount]");
+  const autocompleteMount = document.getElementById("autocomplete");
+  if (!inputMount || !autocompleteMount) throw new Error("Composer template mounts are missing");
+  const disposeInput = mountComposerInput(inputMount);
+  const suggestionPopup = mountSuggestionPopup(autocompleteMount);
+  window.addEventListener("pagehide", () => {
+    disposeInput();
+    suggestionPopup.dispose();
+  }, { once: true });
+  window.RozsaComposer = Object.freeze({
+    renderSendState,
+    renderSuggestions: suggestionPopup.render.bind(suggestionPopup),
+    clearSuggestions: suggestionPopup.clear.bind(suggestionPopup),
+    scrollSuggestionTo: suggestionPopup.scrollTo.bind(suggestionPopup),
+  });
   const flow = createConversationFlow(createConversationAdapter({
     attachFileReference, attachDirectoryReference, insertSlashCommandPrefix, showModelPicker,
     updateAbortButton,

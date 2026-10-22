@@ -37,6 +37,7 @@ import (
 
 type Config struct {
 	SessionDir       string
+	ProjectRoot      string
 	SessionDirs      []string
 	SessionService   *session.Service
 	ModelRegistry    modelregistry.Reader
@@ -73,6 +74,7 @@ type Runtime struct {
 	permissionRuntime *permissionRuntime
 	lifecycle         sessions.Owner
 	sessionDir        string
+	projectRoot       string
 	outputMu          sync.Mutex
 	output            io.Writer
 	revision          uint64
@@ -87,6 +89,13 @@ type Runtime struct {
 func New(config Config) (*Runtime, error) {
 	if config.SessionDir == "" {
 		return nil, errors.New("session directory is required")
+	}
+	if config.ProjectRoot == "" {
+		projectRoot, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve runtime project root: %w", err)
+		}
+		config.ProjectRoot = projectRoot
 	}
 	if config.Model.ID == "" || config.Model.Provider == "" || config.Model.API == "" {
 		return nil, errors.New("runtime requires a configured model, provider and API")
@@ -129,7 +138,7 @@ func New(config Config) (*Runtime, error) {
 	if effort == "" || !config.Model.SupportsThinking(effort) {
 		effort = types.ThinkingOff
 	}
-	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, model: config.Model, modelRegistry: config.ModelRegistry, credentialSource: config.Credentials, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, skills: config.Skills, resolveRoots: config.ResolveRoots, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), permissionRuntime: newPermissionRuntime(config.ProjectRuleStore), messages: newMessageOperations()}
+	runtime := &Runtime{session: manager, service: service, sessionDir: config.SessionDir, projectRoot: config.ProjectRoot, model: config.Model, modelRegistry: config.ModelRegistry, credentialSource: config.Credentials, thinkingEffort: effort, resolvedSettings: config.ResolvedSettings, skills: config.Skills, resolveRoots: config.ResolveRoots, provider: config.Provider, authPath: config.AuthPath, output: config.Output, questions: questions.NewOwner(), approvals: permissions.NewOwner(), permissionRuntime: newPermissionRuntime(config.ProjectRuleStore), messages: newMessageOperations()}
 	lifecycleHooks := config.LifecycleHooks
 	rejectApprovals, cancelQuestions := lifecycleHooks.RejectApprovals, lifecycleHooks.CancelQuestions
 	lifecycleHooks.RejectApprovals = func(id string) error {

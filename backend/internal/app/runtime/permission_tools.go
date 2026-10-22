@@ -43,7 +43,7 @@ func (runtime *Runtime) permissionHook(sessionID, workspaceRoot string) hooks.Pr
 				return nil, fmt.Errorf("decode permission arguments: %w", err)
 			}
 		}
-		policy, err := runtime.permissionPolicy(sessionID, workspaceRoot)
+		policy, err := runtime.permissionPolicy(sessionID, runtime.projectRoot)
 		if err != nil {
 			return nil, err
 		}

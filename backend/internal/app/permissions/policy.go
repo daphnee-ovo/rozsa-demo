@@ -67,6 +67,7 @@ type TrustGroup struct {
 type ApprovalInfo struct {
 	ToolName    string
 	ArgsSummary string
+	Command     string
 	Risk        Risk
 	TrustKey    string
 	TrustLevels []TrustLevel
@@ -289,7 +290,7 @@ func (p *policy) approval(sessionID, tool string, args map[string]any, targets [
 			summary = "(no command)"
 		}
 	} else if len(targets) != 0 {
-		summary = targets[0]
+		summary = displayPath(targets[0], p.workspaceRoot)
 	} else if isPathTool(tool) {
 		summary = "(unknown)"
 	} else {
@@ -347,7 +348,7 @@ func (p *policy) approval(sessionID, tool string, args map[string]any, targets [
 		canonical := canonicalPath(path, p.workspaceRoot)
 		if !p.inSessionTrust(sessionID, tool, []string{canonical}) && !matchesAnyAllow(p.rules.Allow, tool, canonical, p.workspaceRoot, args) {
 			levels = fileTrustLevels(tool, path, p.workspaceRoot)
-			groups = []TrustGroup{{Target: canonical, Levels: levels}}
+			groups = []TrustGroup{{Target: displayPath(canonical, p.workspaceRoot), Levels: levels}}
 		} else {
 			levels = nil
 		}
@@ -359,7 +360,11 @@ func (p *policy) approval(sessionID, tool string, args map[string]any, targets [
 	if len(levels) > 0 {
 		key = levels[0].Key
 	}
-	info := &ApprovalInfo{ToolName: tool, ArgsSummary: summary, Risk: risk, TrustKey: key, TrustLevels: levels, TrustGroups: groups}
+	command := ""
+	if isShell(tool) {
+		command, _ = args["command"].(string)
+	}
+	info := &ApprovalInfo{ToolName: tool, ArgsSummary: summary, Command: command, Risk: risk, TrustKey: key, TrustLevels: levels, TrustGroups: groups}
 	return Verdict{Kind: NeedApproval, Info: info}
 }
 
@@ -391,18 +396,26 @@ func fileTrustLevels(tool, path, root string) []TrustLevel {
 	if absolute != workspace && !withinRoot(absolute, workspace) {
 		return []TrustLevel{{Label: absolute, Key: tool + ":" + absolute}}
 	}
-	levels := []TrustLevel{{Label: absolute, Key: tool + ":" + absolute}}
-	directory := filepath.Dir(absolute)
-	if extension := filepath.Ext(absolute); extension != "" {
-		scope := filepath.ToSlash(filepath.Join(directory, "*"+extension))
-		levels = append(levels, TrustLevel{Label: scope, Key: tool + ":" + scope})
-	}
-	levels = append(levels, TrustLevel{Label: filepath.ToSlash(filepath.Join(directory, "*")), Key: tool + ":" + filepath.ToSlash(filepath.Join(directory, "*"))})
-	projectScope := filepath.ToSlash(filepath.Join(workspace, "*"))
-	if levels[len(levels)-1].Label != projectScope {
-		levels = append(levels, TrustLevel{Label: projectScope, Key: tool + ":" + projectScope})
+	levels := []TrustLevel{{Label: displayPath(absolute, workspace), Key: tool + ":" + absolute}}
+	for directory := filepath.Dir(filepath.FromSlash(absolute)); directory != filepath.FromSlash(workspace); directory = filepath.Dir(directory) {
+		if directory == "." || directory == string(filepath.Separator) {
+			break
+		}
+		label := strings.TrimSuffix(displayPath(filepath.ToSlash(directory), workspace), "/") + "/"
+		key := strings.TrimSuffix(filepath.ToSlash(directory), "/") + "/**"
+		levels = append(levels, TrustLevel{Label: label, Key: tool + ":" + key})
 	}
 	return levels
+}
+
+func displayPath(path, root string) string {
+	absolute := canonicalPath(path, root)
+	workspace := canonicalPath(root, root)
+	relative, ok := relativePath(absolute, workspace)
+	if !ok || relative == "" {
+		return absolute
+	}
+	return filepath.ToSlash(relative)
 }
 
 func isPathTool(tool string) bool {

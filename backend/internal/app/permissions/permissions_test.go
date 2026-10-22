@@ -89,6 +89,21 @@ func TestModeUpdatesKeepSessionTrustAndAutoApproveStillAsks(t *testing.T) {
 	}
 }
 
+func TestApprovalInfoPreservesFullBashCommandAlongsideSummary(t *testing.T) {
+	command := "printf 'denied' > '/tmp/approval-target.txt' # " + strings.Repeat("inspect-scope ", 12)
+	policy := testPolicy(t, OnRequest, t.TempDir(), Rules{})
+	verdict := policy.Evaluate("session", "Bash", map[string]any{"command": command})
+	if verdict.Kind != NeedApproval || verdict.Info == nil {
+		t.Fatalf("policy verdict = %#v, want approval", verdict)
+	}
+	if verdict.Info.Command != command {
+		t.Fatalf("full command = %q, want %q", verdict.Info.Command, command)
+	}
+	if got := len([]rune(verdict.Info.ArgsSummary)); got != 80 {
+		t.Fatalf("summary length = %d, want truncated display summary of 80 runes", got)
+	}
+}
+
 func TestSafeReadOnlyShellCommandsStayWithinWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	policy := testPolicy(t, OnRequest, workspace, Rules{Allow: DefaultReadOnlyBashRules()})
@@ -209,13 +224,33 @@ func TestFileTrustScopesAndSymlinksStayWorkspaceBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{filepath.ToSlash(filepath.Join(resolvedWorkspace, "src", "lib.go")), filepath.ToSlash(filepath.Join(resolvedWorkspace, "src", "*.go")), filepath.ToSlash(filepath.Join(resolvedWorkspace, "src", "*")), filepath.ToSlash(filepath.Join(resolvedWorkspace, "*"))}
+	want := []string{"src/lib.go", "src/"}
 	got := []string{}
 	for _, level := range verdict.Info.TrustGroups[0].Levels {
 		got = append(got, level.Label)
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("file trust levels = %#v, want %#v", got, want)
+	}
+	if verdict.Info.ArgsSummary != "src/lib.go" || verdict.Info.TrustGroups[0].Target != "src/lib.go" {
+		t.Fatalf("file approval display paths = summary %q target %q", verdict.Info.ArgsSummary, verdict.Info.TrustGroups[0].Target)
+	}
+	if got := verdict.Info.TrustGroups[0].Levels[1].Key; got != "Edit:"+filepath.ToSlash(filepath.Join(resolvedWorkspace, "src"))+"/**" {
+		t.Fatalf("directory trust key = %q", got)
+	}
+	showcase := policy.Evaluate("showcase", "Write", map[string]any{"file_path": "tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt"})
+	showcaseLabels := []string{}
+	for _, level := range showcase.Info.TrustGroups[0].Levels {
+		showcaseLabels = append(showcaseLabels, level.Label)
+	}
+	wantShowcaseLabels := []string{
+		"tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt",
+		"tmp/interruption-state-showcase/run-HdHEYs/",
+		"tmp/interruption-state-showcase/",
+		"tmp/",
+	}
+	if !reflect.DeepEqual(showcaseLabels, wantShowcaseLabels) {
+		t.Fatalf("showcase trust labels = %#v, want %#v", showcaseLabels, wantShowcaseLabels)
 	}
 	outsideVerdict := policy.Evaluate("s", "Read", map[string]any{"file_path": link})
 	if outsideVerdict.Kind != NeedApproval || len(outsideVerdict.Info.TrustGroups[0].Levels) != 1 {

@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"go.lsp.dev/jsonrpc2"
 	"net"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/transport/server"
+	"rozsa/backend/internal/transport/types"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,82 @@ import (
 type rawFrames interface {
 	ReadFrame(context.Context) ([]byte, int64, error)
 	WriteFrame(context.Context, []byte) (int64, error)
+}
+
+type testPeer struct {
+	t      *testing.T
+	client net.Conn
+	stream jsonrpc2.Stream
+	ended  chan error
+}
+
+func transportID(id any) jsonrpc2.ID {
+	switch id := id.(type) {
+	case int:
+		return jsonrpc2.NewNumberID(int64(id))
+	case string:
+		return jsonrpc2.NewStringID(id)
+	default:
+		panic("test ID must be integer or string")
+	}
+}
+
+func (peer *testPeer) send(id any, method string, params any) {
+	peer.t.Helper()
+	data, err := json.Marshal(params)
+	if err != nil {
+		peer.t.Fatal(err)
+	}
+	if _, err := peer.stream.Write(peer.t.Context(), jsonrpc2.NewCall(transportID(id), method, jsonrpc2.RawMessage(data))); err != nil {
+		peer.t.Fatal(err)
+	}
+}
+
+func (peer *testPeer) cancel(id any) {
+	peer.t.Helper()
+	data, err := json.Marshal(struct {
+		ID any `json:"id"`
+	}{id})
+	if err != nil {
+		peer.t.Fatal(err)
+	}
+	if _, err := peer.stream.Write(peer.t.Context(), jsonrpc2.NewNotification("$/cancelRequest", jsonrpc2.RawMessage(data))); err != nil {
+		peer.t.Fatal(err)
+	}
+}
+
+func (peer *testPeer) read() *jsonrpc2.Response {
+	peer.t.Helper()
+	message, _, err := peer.stream.Read(peer.t.Context())
+	if err != nil {
+		peer.t.Fatal(err)
+	}
+	response, ok := message.(*jsonrpc2.Response)
+	if !ok {
+		peer.t.Fatalf("unexpected message %T", message)
+	}
+	return response
+}
+
+func (peer *testPeer) readOK() *jsonrpc2.Response {
+	peer.t.Helper()
+	response := peer.read()
+	if response.Err() != nil {
+		peer.t.Fatal(response.Err())
+	}
+	return response
+}
+
+func errorKind(t *testing.T, err error, want types.ErrorKind) {
+	t.Helper()
+	var rpcError *jsonrpc2.Error
+	if !errors.As(err, &rpcError) {
+		t.Fatalf("want %s typed error, got %v", want, err)
+	}
+	var data types.ErrorData
+	if json.Unmarshal(rpcError.Data, &data) != nil || data.Kind != want {
+		t.Fatalf("want %s, got %+v", want, rpcError)
+	}
 }
 
 func call(t *testing.T, catalog session.Catalog, requests ...string) []json.RawMessage {
@@ -34,7 +112,7 @@ func exchange(t *testing.T, catalog session.Catalog, requests ...string) ([]json
 	defer backend.Close()
 	client.SetDeadline(time.Now().Add(5 * time.Second))
 	ended := make(chan error, 1)
-	go func() { ended <- Serve(backend, backend, catalog); backend.Close() }()
+	go func() { ended <- server.Serve(backend, backend, catalog); backend.Close() }()
 	frames := jsonrpc2.NewStream(client).(rawFrames)
 	responses := []json.RawMessage{}
 	for _, req := range requests {
@@ -98,27 +176,27 @@ func TestUninitializedAndNotificationGating(t *testing.T) {
 	if !bytes.Contains(responses[2], []byte(`"kind":"catalog"`)) {
 		t.Fatal(string(responses[2]))
 	}
-	if err := Serve(strings.NewReader("Content-Length: 5\r\n\r\n{}"), &bytes.Buffer{}, session.Catalog{}); err == nil {
+	if err := server.Serve(strings.NewReader("Content-Length: 5\r\n\r\n{}"), &bytes.Buffer{}, session.Catalog{}); err == nil {
 		t.Fatal("truncated frame accepted")
 	}
 }
 
 type notificationTestApplication struct {
-	MessageApplication
-	notifications <-chan AppNotification
+	server.MessageApplication
+	notifications <-chan server.AppNotification
 }
 
-func (application notificationTestApplication) AppNotifications() <-chan AppNotification {
+func (application notificationTestApplication) AppNotifications() <-chan server.AppNotification {
 	return application.notifications
 }
 
 func TestAppNotificationSourcePublishesRendererEvent(t *testing.T) {
 	client, backend := net.Pipe()
 	client.SetDeadline(time.Now().Add(5 * time.Second))
-	notifications := make(chan AppNotification, 1)
+	notifications := make(chan server.AppNotification, 1)
 	ended := make(chan error, 1)
 	go func() {
-		ended <- ServeProductApplication(backend, backend, session.NewService(session.Catalog{}), notificationTestApplication{notifications: notifications})
+		ended <- server.ServeProductApplication(backend, backend, session.NewService(session.Catalog{}), notificationTestApplication{notifications: notifications})
 		_ = backend.Close()
 	}()
 	stream := jsonrpc2.NewStream(client)
@@ -128,7 +206,7 @@ func TestAppNotificationSourcePublishesRendererEvent(t *testing.T) {
 	if _, _, err := stream.Read(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	notifications <- AppNotification{Type: "upsert", ID: "builtin-skills-initialization", Severity: "error", Title: "Built-in skills unavailable", Message: "remote unavailable", TimeoutMs: 6000}
+	notifications <- server.AppNotification{Type: "upsert", ID: "builtin-skills-initialization", Severity: "error", Title: "Built-in skills unavailable", Message: "remote unavailable", TimeoutMs: 6000}
 	frames := stream.(rawFrames)
 	frame, _, err := frames.ReadFrame(t.Context())
 	if err != nil {

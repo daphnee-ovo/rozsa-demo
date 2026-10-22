@@ -9,6 +9,7 @@ function showPermission(ev) {
 }
 
 function schedulePermPanelDisplay() {
+  if (document.getElementById('interruptionReactRoot')) return;
   void displayPermPanelIfNeeded();
 }
 

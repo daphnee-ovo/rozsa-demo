@@ -13,9 +13,13 @@ import (
 	"time"
 
 	"go.lsp.dev/jsonrpc2"
+	appinput "rozsa/backend/internal/app/input"
+	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/productsettings"
+	"rozsa/backend/internal/app/questions"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/settings"
+	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/themes"
 	"rozsa/backend/internal/transport/types"
 )
@@ -78,6 +82,16 @@ type MessageApplication interface {
 	ContinueMessage(context.Context) (string, error)
 	SubscribeMessageEvents(context.Context, string) (MessageEventSubscription, error)
 	CancelMessage(context.Context, string) error
+}
+
+// InterruptionApplication exposes pending approval and question lifecycles
+// through the same owned product runtime as message operations.
+type InterruptionApplication interface {
+	PendingApprovals(context.Context, string) ([]permissions.Request, error)
+	NextQuestion(context.Context, string) (questions.Request, bool, error)
+	RespondApproval(context.Context, permissions.Identity, permissions.Response) error
+	RespondQuestion(context.Context, string, questions.Answers) error
+	CancelQuestion(context.Context, string) error
 }
 
 type RuntimeStatusApplication interface {
@@ -208,7 +222,9 @@ type rpcServer struct {
 	modelWatch     chan struct{}
 	modelWatchOnce sync.Once
 	app            session.ApplicationService
+	inputService   appinput.Service
 	messages       MessageApplication
+	interruptions  InterruptionApplication
 	settings       productsettings.Service
 	lifetime       context.Context
 	timeout        time.Duration
@@ -241,9 +257,13 @@ func newServer(app session.ApplicationService, lifetime context.Context, timeout
 	if len(messages) > 0 {
 		messageApp = messages[0]
 	}
-	return &rpcServer{app: app, lifetime: lifetime, timeout: timeout, modelWatch: make(chan struct{}),
+	server := &rpcServer{app: app, inputService: appinput.NewService(nil), lifetime: lifetime, timeout: timeout, modelWatch: make(chan struct{}),
 		slots: make(chan struct{}, maxConcurrentRequests), pending: make(map[jsonrpc2.ID]context.CancelCauseFunc),
 		sync: sessionSync{app: app}, messages: messageApp, messageSync: messageSync{app: messageApp}}
+	if application, ok := messageApp.(InterruptionApplication); ok {
+		server.interruptions = application
+	}
+	return server
 }
 
 func newServerWithSettings(app session.ApplicationService, lifetime context.Context, timeout time.Duration, messages MessageApplication, settingsApps ...productsettings.Service) *rpcServer {
@@ -300,9 +320,14 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	var startParams types.StartMessageParams
 	var operationParams types.MessageOperationParams
 	var messageSubscriptionParams types.MessageSubscriptionParams
+	var inputCompletionParams types.InputCompletionParams
 	var settingsScope settings.Scope
 	var settingsArguments any
 	var authArguments authParams
+	var interruptionStateParams types.GetInterruptionStateParams
+	var permissionResponseParams types.PermissionResponseParams
+	var questionResponseParams types.UserQuestionResponseParams
+	var cancelQuestionParams types.CancelUserQuestionParams
 	switch method {
 	case types.Initialize:
 		traceRPCStartup("initialize-request-received")
@@ -319,8 +344,11 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			}
 			capabilities = append(capabilities, string(types.StartMessage), string(types.ContinueMessage), string(types.SubscribeMessage), string(types.NextMessageEvent), string(types.UnsubscribeMessage), string(types.CancelMessage))
 		}
+		if server.interruptions != nil {
+			capabilities = append(capabilities, string(types.GetInterruptionState), string(types.RespondPermission), string(types.RespondUserQuestion), string(types.CancelUserQuestion))
+		}
 		if server.settings != nil {
-			capabilities = append(capabilities, string(types.GetSettings), string(types.UpdateSetting), string(types.ResetSetting), string(types.ListThemes), string(types.GetTheme), string(types.SaveTheme), string(types.WatchModels))
+			capabilities = append(capabilities, string(types.GetSettings), string(types.UpdateSetting), string(types.ResetSetting), string(types.ListThemes), string(types.GetTheme), string(types.SaveTheme), string(types.WatchModels), string(types.AutocompleteInput))
 		}
 		if application, ok := server.messages.(AuthApplication); ok && application.AuthService() != nil {
 			capabilities = append(capabilities, string(types.AuthLogin), string(types.AuthInput), string(types.AuthNext), string(types.AuthCancel), string(types.AuthLogout))
@@ -377,6 +405,26 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	case types.CancelMessage:
 		if !types.Params(req.Params(), &operationParams) || operationParams.OperationID == "" {
 			return nil, types.Error(types.InvalidParams, "Invalid params")
+		}
+	case types.GetInterruptionState:
+		if !types.Params(req.Params(), &interruptionStateParams) || strings.TrimSpace(interruptionStateParams.SessionID) == "" {
+			return nil, types.Error(types.InvalidParams, "Invalid interruption state request")
+		}
+	case types.RespondPermission:
+		if !types.Params(req.Params(), &permissionResponseParams) || permissionResponseParams.SessionID == "" || permissionResponseParams.RequestID == "" || permissionResponseParams.Choice == "" {
+			return nil, types.Error(types.InvalidParams, "Invalid permission response")
+		}
+	case types.RespondUserQuestion:
+		if !types.Params(req.Params(), &questionResponseParams) || questionResponseParams.RequestID == "" || questionResponseParams.Answers == nil {
+			return nil, types.Error(types.InvalidParams, "Invalid user question response")
+		}
+	case types.CancelUserQuestion:
+		if !types.Params(req.Params(), &cancelQuestionParams) || cancelQuestionParams.RequestID == "" {
+			return nil, types.Error(types.InvalidParams, "Invalid user question cancellation")
+		}
+	case types.AutocompleteInput:
+		if !types.Params(req.Params(), &inputCompletionParams) || inputCompletionParams.Cursor < 0 {
+			return nil, types.Error(types.InvalidParams, "Invalid input completion params")
 		}
 	case types.RuntimeStatus:
 		if !types.Params(req.Params(), &types.EmptyParams{}) {
@@ -447,6 +495,12 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	}
 	if isSettingsMethod(method) && server.settings == nil {
 		return nil, types.Error(types.MethodNotFound, "Settings operations are unavailable")
+	}
+	if method == types.AutocompleteInput && server.settings == nil {
+		return nil, types.Error(types.MethodNotFound, "Input completion is unavailable")
+	}
+	if isInterruptionMethod(method) && server.interruptions == nil {
+		return nil, types.Error(types.MethodNotFound, "Interruption operations are unavailable")
 	}
 	select {
 	case server.slots <- struct{}{}:
@@ -570,6 +624,14 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			}
 		case types.StartMessage, types.ContinueMessage, types.SubscribeMessage, types.NextMessageEvent, types.CancelMessage:
 			result, err = server.messageSync.handle(work, method, startParams, operationParams, messageSubscriptionParams)
+		case types.GetInterruptionState, types.RespondPermission, types.RespondUserQuestion, types.CancelUserQuestion:
+			result, err = server.interruptionHandle(work, method, interruptionStateParams, permissionResponseParams, questionResponseParams, cancelQuestionParams)
+		}
+		if err != nil && isInterruptionMethod(method) {
+			var rpcError *jsonrpc2.Error
+			if !errors.As(err, &rpcError) {
+				err = types.Error(types.Interruption, err.Error())
+			}
 		}
 		if err != nil && isSettingsMethod(method) {
 			err = types.SettingsError(err.Error())
@@ -585,6 +647,15 @@ func (server *rpcServer) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			cursor.close()
 		}
 		return nil, requestError(work, work.Err())
+	}
+}
+
+func isInterruptionMethod(method types.Method) bool {
+	switch method {
+	case types.GetInterruptionState, types.RespondPermission, types.RespondUserQuestion, types.CancelUserQuestion:
+		return true
+	default:
+		return false
 	}
 }
 

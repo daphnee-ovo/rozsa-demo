@@ -23,6 +23,7 @@ function showUserQuestion(ev) {
 }
 
 function scheduleQuestionPanelDisplay() {
+  if (document.getElementById('interruptionReactRoot')) return;
   void displayQuestionPanelIfNeeded();
 }
 

@@ -1,14 +1,14 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter, ResponseError, type MessageConnection } from "vscode-jsonrpc/node";
-import { record, sessionEntries, sessionTarget, sessionSnapshot, sessionUpdate, subscriptionId, messageOperation, messageSubscription, messageEventResult, settingsSnapshot, themeDefinition, themeSummary, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry, type MessageOperation, type MessageSubscription, type MessageEventResult } from "./session-contract.js";
-import type { SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary, ModelUpdate } from "../../contracts/ipc/session.js";
+import { record, sessionEntries, sessionTarget, sessionSnapshot, sessionUpdate, subscriptionId, messageOperation, messageSubscription, messageEventResult, settingsSnapshot, inputCompletion, interruptionState, themeDefinition, themeSummary, RPCFailure, remoteFault, transportFailure, ProductFailure, type SessionTarget, type SessionSnapshot, type SessionListEntry, type MessageOperation, type MessageSubscription, type MessageEventResult, type InputCompletion } from "./session-contract.js";
+import type { InterruptionState, PermissionResponse, QuestionAnswers, SettingsScope, SettingsSnapshot, ThemeDefinition, ThemeSummary, ModelUpdate } from "../../contracts/ipc/session.js";
 import { modelUpdate } from "./session-contract.js";
 import { authEvent, oauthProvider } from "./session-contract.js";
 import type { SessionUpdate } from "../../contracts/ipc/session.js";
 import type { SessionMethods } from "../../contracts/ipc/session.js";
 export { RPCFailure } from "./session-contract.js";
 
-export interface BackendOptions { requestTimeoutMs?: number; env?: NodeJS.ProcessEnv }
+export interface BackendOptions { requestTimeoutMs?: number; env?: NodeJS.ProcessEnv; projectRoot?: string }
 function startupMark(stage: string): void {
   if (process.env.ROZSA_PERF_TRACE === "1") {
     console.info(`ROZSA_PERF_STARTUP ${JSON.stringify({ stage, epochMs: Date.now() })}`);
@@ -27,6 +27,7 @@ export class BackendService {
   private readonly closed: Promise<void>;
   private readonly timeoutMs: number;
   private readonly modelListeners = new Set<(update: ModelUpdate) => void>();
+  private readonly runtimeInitializationListeners = new Set<(message: string) => void>();
   private lastModelUpdate: ModelUpdate | undefined;
   private modelWatch: Promise<unknown> | undefined;
   private readonly settingsReads = new Map<SettingsScope, Promise<SettingsSnapshot>>();
@@ -35,7 +36,9 @@ export class BackendService {
     this.timeoutMs = options.requestTimeoutMs ?? 10000;
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("Invalid backend request timeout");
     this.process = spawn(binary, directories.flatMap(dir => ["--session-dir", dir]), {
-      stdio: "pipe", windowsHide: true, ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
+      stdio: "pipe", windowsHide: true,
+      ...(options.projectRoot ? { cwd: options.projectRoot } : {}),
+      ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
     });
     this.connection = createMessageConnection(new StreamMessageReader(this.process.stdout), new StreamMessageWriter(this.process.stdin));
     this.process.once("spawn", () => console.info(`Backend started: ${this.process.pid}`));
@@ -70,6 +73,17 @@ export class BackendService {
     const current = this.lastModelUpdate;
     if (current) queueMicrotask(() => { if (this.modelListeners.has(receive)) receive(current); });
     return () => { this.modelListeners.delete(receive); };
+  }
+  onRuntimeInitializationError(receive: (message: string) => void): () => void {
+    this.runtimeInitializationListeners.add(receive);
+    return () => { this.runtimeInitializationListeners.delete(receive); };
+  }
+  private publishRuntimeInitializationError(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    for (const receive of this.runtimeInitializationListeners) {
+      try { receive(message); }
+      catch (listenerError) { console.error("Runtime initialization error delivery:", listenerError); }
+    }
   }
   private watchModels(): Promise<unknown> {
     if (!this.modelWatch) this.modelWatch = this.request("watch_models", {});
@@ -112,7 +126,8 @@ export class BackendService {
             || (fault.kind === "session" && !["switch_session", "subscribe_sessions", "next_session_event"].includes(method))
             || (fault.kind === "message" && !["start_message", "continue_message", "subscribe_message_events", "next_message_event", "cancel_message"].includes(method))
             || (fault.kind === "runtime_initialization" && method !== "runtime_status")
-            || (fault.kind === "settings" && !["get_settings", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"].includes(method))
+            || (fault.kind === "interruption" && !["get_interruption_state", "respond_permission", "respond_user_question", "cancel_user_question"].includes(method))
+            || (fault.kind === "settings" && !["get_settings", "autocomplete_input", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"].includes(method))
             || (fault.kind === "auth" && !["auth_login", "auth_input", "auth_next", "auth_cancel", "auth_logout"].includes(method))) throw new Error("Backend error owner mismatch");
           throw new RPCFailure(fault);
         } catch (fault) {
@@ -143,20 +158,26 @@ export class BackendService {
         || !capabilities.every(item => typeof item === "string")
         || !["get_sessions", "switch_session", "subscribe_sessions", "next_session_event", "unsubscribe_sessions",
           "runtime_status", "start_message", "continue_message", "subscribe_message_events", "next_message_event", "unsubscribe_message_events", "cancel_message",
-          "get_settings", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"].every(method => capabilities.includes(method))) {
+          "get_interruption_state", "respond_permission", "respond_user_question", "cancel_user_question",
+          "get_settings", "autocomplete_input", "update_setting", "reset_setting", "list_themes", "get_theme", "save_theme"].every(method => capabilities.includes(method))) {
         throw transportFailure("protocol", "Incompatible backend handshake");
       }
     } catch (error) { this.fail(error instanceof ProductFailure ? error : transportFailure("io", asError(error).message, error)); throw error; }
   }
   async waitForRuntime(): Promise<void> {
-    this.requireRunning();
-    for (;;) {
-      const value = await this.request("runtime_status", {});
-      if (!record(value) || !["initializing", "ready"].includes(value.state as string)) {
-        const failure = transportFailure("protocol", "Invalid runtime status response"); this.fail(failure); throw failure;
+    try {
+      this.requireRunning();
+      for (;;) {
+        const value = await this.request("runtime_status", {});
+        if (!record(value) || !["initializing", "ready"].includes(value.state as string)) {
+          const failure = transportFailure("protocol", "Invalid runtime status response"); this.fail(failure); throw failure;
+        }
+        if (value.state === "ready") return;
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
-      if (value.state === "ready") return;
-      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      this.publishRuntimeInitializationError(error);
+      throw error;
     }
   }
   async getSessions(): Promise<SessionListEntry[]> {
@@ -267,6 +288,34 @@ export class BackendService {
       const failure = transportFailure("protocol", "Invalid message cancellation response"); this.fail(failure); throw failure;
     }
   }
+  async getInterruptionState(sessionId: string): Promise<InterruptionState> {
+    this.requireRunning();
+    if (typeof sessionId !== "string" || sessionId.trim() === "") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid interruption session" });
+    const value = await this.request("get_interruption_state", { sessionId });
+    try { return interruptionState(value); }
+    catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  async respondPermission(response: PermissionResponse): Promise<void> {
+    this.requireRunning();
+    if (!validPermissionResponse(response)) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid permission response" });
+    if (await this.request("respond_permission", response) !== true) {
+      const failure = transportFailure("protocol", "Invalid permission response acknowledgement"); this.fail(failure); throw failure;
+    }
+  }
+  async respondUserQuestion(requestId: string, answers: QuestionAnswers): Promise<void> {
+    this.requireRunning();
+    if (typeof requestId !== "string" || requestId.trim() === "" || !validQuestionAnswers(answers)) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid user question response" });
+    if (await this.request("respond_user_question", { requestId, answers }) !== true) {
+      const failure = transportFailure("protocol", "Invalid user question acknowledgement"); this.fail(failure); throw failure;
+    }
+  }
+  async cancelUserQuestion(requestId: string): Promise<void> {
+    this.requireRunning();
+    if (typeof requestId !== "string" || requestId.trim() === "") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid user question request" });
+    if (await this.request("cancel_user_question", { requestId }) !== true) {
+      const failure = transportFailure("protocol", "Invalid user question cancellation acknowledgement"); this.fail(failure); throw failure;
+    }
+  }
   async getSettings(scope: SettingsScope): Promise<SettingsSnapshot> {
     if (scope !== "global" && scope !== "project") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid settings scope" });
     const active = this.settingsReads.get(scope);
@@ -283,6 +332,16 @@ export class BackendService {
   private invalidateSettingsReads(): void {
     this.settingsReads.delete("global");
     this.settingsReads.delete("project");
+  }
+  async autocompleteInput(text: string, cursor: number): Promise<InputCompletion> {
+    this.requireRunning();
+    if (typeof text !== "string" || !Number.isSafeInteger(cursor) || cursor < 0) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid input completion request" });
+    const value = await this.request("autocomplete_input", { text, cursor });
+    try { return inputCompletion(value); }
+    catch (error) { const failure = transportFailure("protocol", asError(error).message, error); this.fail(failure); throw failure; }
+  }
+  async prewarmAutocomplete(): Promise<void> {
+    await this.autocompleteInput("/", 1);
   }
   async updateSetting(scope: SettingsScope, key: string, value: unknown): Promise<SettingsSnapshot> {
     if ((scope !== "global" && scope !== "project") || typeof key !== "string" || !key) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid setting update" });
@@ -352,3 +411,16 @@ export class BackendService {
   }
 }
 function asError(error: unknown): Error { return error instanceof Error ? error : new Error(String(error)); }
+function validPermissionResponse(value: PermissionResponse): boolean {
+  return typeof value === "object" && value !== null && typeof value.sessionId === "string" && value.sessionId.trim() !== ""
+    && typeof value.requestId === "string" && value.requestId.trim() !== ""
+    && ["allow", "allow-once", "allow-session", "allow-project", "deny", "deny-hint"].includes(value.choice)
+    && (value.trustKey === undefined || typeof value.trustKey === "string")
+    && (value.trustKeys === undefined || (Array.isArray(value.trustKeys) && value.trustKeys.every(key => typeof key === "string")))
+    && (value.hint === undefined || typeof value.hint === "string");
+}
+function validQuestionAnswers(value: QuestionAnswers): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    && Object.keys(value).length > 0 && Object.values(value).every(answer => typeof answer === "string"
+      || Array.isArray(answer) && answer.every(item => typeof item === "string"));
+}

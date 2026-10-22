@@ -94,6 +94,7 @@ const (
 	Busy                  ErrorKind = "busy"
 	ResyncRequired        ErrorKind = "resync_required"
 	Message               ErrorKind = "message"
+	Interruption          ErrorKind = "interruption"
 	RuntimeInitialization ErrorKind = "runtime_initialization"
 )
 
@@ -126,6 +127,8 @@ func Error(kind ErrorKind, message string) *jsonrpc2.Error {
 		code = -32007
 	case Message:
 		code = -32008
+	case Interruption:
+		code = -32012
 	case RuntimeInitialization:
 		code = -32009
 	default:

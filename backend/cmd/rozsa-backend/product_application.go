@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"rozsa/backend/internal/app/auth"
+	"rozsa/backend/internal/app/permissions"
+	"rozsa/backend/internal/app/questions"
 	"rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/transport/server"
 	"rozsa/backend/internal/transport/types"
@@ -72,6 +74,62 @@ func (application productMessageApplication) CancelMessage(ctx context.Context, 
 	return app.CancelMessage(ctx, operationID)
 }
 
+func (application productMessageApplication) PendingApprovals(ctx context.Context, sessionID string) ([]permissions.Request, error) {
+	app, err := application.ready(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return app.ApprovalOwner().PendingApprovals(sessionID), nil
+}
+
+func (application productMessageApplication) NextQuestion(ctx context.Context, sessionID string) (questions.Request, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return questions.Request{}, false, err
+	}
+	app, err := application.ready(ctx)
+	if err != nil {
+		return questions.Request{}, false, err
+	}
+	request, exists := app.QuestionOwner().Next()
+	if !exists || request.SessionID != sessionID {
+		return questions.Request{}, false, nil
+	}
+	return request, true, nil
+}
+
+func (application productMessageApplication) RespondApproval(ctx context.Context, identity permissions.Identity, response permissions.Response) error {
+	app, err := application.ready(ctx)
+	if err != nil {
+		return err
+	}
+	return app.ApprovalOwner().RespondApproval(ctx, identity, response)
+}
+
+func (application productMessageApplication) RespondQuestion(ctx context.Context, requestID string, answers questions.Answers) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	app, err := application.ready(ctx)
+	if err != nil {
+		return err
+	}
+	return app.QuestionOwner().Respond(requestID, answers)
+}
+
+func (application productMessageApplication) CancelQuestion(ctx context.Context, requestID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	app, err := application.ready(ctx)
+	if err != nil {
+		return err
+	}
+	if !app.QuestionOwner().Cancel(requestID) {
+		return questions.ErrNoPending
+	}
+	return nil
+}
+
 type runtimeMessageSubscription struct {
 	subscription runtime.MessageEventSubscription
 }
@@ -92,3 +150,4 @@ func (subscription runtimeMessageSubscription) Next(ctx context.Context) (types.
 func (subscription runtimeMessageSubscription) Close() { subscription.subscription.Close() }
 
 var _ server.MessageApplication = productMessageApplication{}
+var _ server.InterruptionApplication = productMessageApplication{}

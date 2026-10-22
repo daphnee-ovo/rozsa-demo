@@ -387,6 +387,22 @@ Stop 顺序为清 queue、拒绝该会话审批、取消问题、清 steering �
 
 本项验证 Go 后端生命周期。审批 policy/工具/UI 整链留在对应任务；subagent 生命周期、真实 Dev Flow dashboard、完整 queue/steering/fork UI 分别仍由 T040、T041、T049 验收，未由 hook 顺序测试替代。I017 的基础消息归属修复独立交付；本项没有运行原生 Electron 端到端验收或 Linux/Windows 实机验证。
 
+#### TASK-T006 权限 trust 与多问题/多选设计审阅（已批准）
+
+`docs/migration/design/approval.html` 的审阅说明和状态导航使用中文；产品窗口保留实际界面的英文文案。应用预览参照 `desktop/renderer/styles/layouts/app-shell.css`、`sidebar-shell.css`、`features/sidebar.css`、`permission-question.css` 和 `interruption-panel.tsx`，并按用户截图还原 Sessions/Status/Settings 侧栏、主区标题、HOW_PERMISSION_DEMO 内容和位于 Composer 槽位的权限面板。上一稿虚构了会话标题、对话气泡，并把 trust 改成单选后再确认；用户已退回，要求中文审阅内容并与实际 UI 呈现一致。
+
+批准稿按用户明确要求，在相对启动项目根目录的 `tmp/interruption-state-showcase/run-HdHEYs/permission-demo.txt` 下展示文件、run 目录、showcase 目录、`tmp/` 四个直接 trust 操作。末项使用与 AskUserQuestion 圆形操作按钮一致的 Lucide ArrowLeft 控件，无可见文字并保留 Back 无障碍名称。最终权限操作立即关闭审批面板；未选有效答案时问题确认按钮置灰。界面不显示排队、提交中、权限重试、问题校验错误和迟到响应；旧请求仍按原 session/request identity 归属。文件写入、Bash 命令和通用 tool call 使用对应摘要；复合 Bash 的信任组不计入待审批圆点。
+
+本轮样式补充：Permission Request 与 AskUserQuestion 选项行默认无可见边框，hover 显示边框；Back 圆形按钮保留自身边框。Permission Request 主操作改为左对齐的方框字母快捷键，键帽常规字重，选项内容加粗。Permission Request 选项容器本身上下各留 12px padding；换行只增加整行高度，不压缩下方留白，快捷键块单独在整行内垂直居中。hover 保持相同的上下 padding 和 1px 边框宽度，不改变选项高度或文字留白。AskUserQuestion 保持现有选项留白。窄 Permission Request 卡片中摘要和选项文本必须换行且完整留在面板内；选项行使用固定 24px 居中快捷键列和可收缩文案列，只有选项区滚动。正常和 hover 状态禁止预期外重叠，通知等明确设计的浮层除外；路径摘要与主操作间留有明确间距。
+
+#### TASK-T039 权限与用户问题接线
+
+Electron main/preload/renderer 到 Go interruption transport 已接通：每个 session 按 request identity 查询、响应或取消；main bridge 在主 frame 导航、renderer 退出和窗口关闭时使迟到响应失效。React+TSX interruption panel 以单一 `createRoot` 挂载，根据活动 session 查询状态，并按 session 保留 hint、trust、题目进度和选项。共享 `ScrollViewport`、`FoldContent`、`ActionButton` 与圆形图标按钮组合权限和问题面板。文件/Bash 进入逐级 trust，通用工具的 Trust in project 直接提交；权限操作完成即关闭面板，界面不暴露排队、提交中、重试、校验错误或迟到结果。AskUserQuestion 覆盖单题/多题、多选、Other、Cancel、Back、Next、Done 与迟到回答拒绝。
+
+对照来源为旧 `crates/rozsa-gui/frontend/ui/scripts/{components/interruption-panel.js,features/permissions.js,flows/composer-interruption.js}`、`ui/templates/composites/interruption-panel.html`，以及 `permission_display_test.rs`、`permission_hint_test.rs`、`permission_queue_test.rs`、`ask_user_question_runtime_test.rs`。`devtools/show-interruption-states.mjs` 启动隔离 Electron+Go 与本地合成 provider，在两个 session 同时挂起 Permission Request 和 AskUserQuestion；切换 session 时确认同一 `#interruptionReactRoot` mount 保持。真实 GUI 演示已运行并正常关闭。
+
+聚焦证据：`npm --prefix desktop run typecheck`；`npx vitest run --config vitest.config.ts approval-question-lifecycle.test.js`（desktop/tests，9/9）；`go -C backend test -race -count=1 ./internal/app/permissions ./internal/app/runtime ./cmd/rozsa-backend`；`bash devtools/check-error-display.sh desktop/renderer/scripts/components/interruption-panel.tsx`；以及 `node devtools/show-interruption-states.mjs`。真实 Electron+Go 展示验证两个 session 分别挂起 Permission 与 AskUserQuestion、切换复用同一 renderer mount，并从动态启动项目根目录生成文件、run 目录、showcase 目录、`tmp/` 四级相对 trust；内部 trust key 保持规范化绝对路径。macOS 宿主已验证；Linux/Windows 实机未验证。
+
 #### TASK-T040 subagent 后端运行与重接
 
 Go `app/subagent.Manager` 复用 `sessions.Owner/Execution`，生产 runtime 已注册真实 `subagent` 工具，支持 spawn/send/wait/interrupt/list、独立 system prompt/transcript、工具禁用/递归过滤、scope 先于权限 hook、各自 question identity、按 owner/subagent/session/tool-call 关联的事件及独立 JSONL。Interrupt/shutdown 等待本项启动的工具/hook 清理；后台任务不随发起工具返回而取消。路径规范化及 symlink 检查遵循不越域要求；provider/写入错误透明呈现，未沿用 Rust `had_error = false` 的状态缺口。重建 manager 分配新编号，不覆盖已有 transcript。

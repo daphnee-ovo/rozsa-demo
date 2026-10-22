@@ -1,4 +1,4 @@
-import { sessionReply, historyReply, syncReply, unsubscribeReply, sessionTarget, subscriptionId, messageOperation, messageSubscription, messageEventResult, settingsSnapshot, themeDefinition, themeSummary, ProductFailure, transportFailure, type ProductBridge, type SessionListEntry, type SessionTarget, type SessionSnapshot, type SessionSyncReply, type MessageOperation, type MessageSubscription, type MessageEventResult, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary } from "../main/session-contract.js";
+import { sessionReply, historyReply, syncReply, unsubscribeReply, sessionTarget, subscriptionId, messageOperation, messageSubscription, messageEventResult, settingsSnapshot, inputCompletion, interruptionState, themeDefinition, themeSummary, ProductFailure, transportFailure, type ProductBridge, type InterruptionState, type PermissionResponse, type QuestionAnswers, type SessionListEntry, type SessionTarget, type SessionSnapshot, type SessionSyncReply, type MessageOperation, type MessageSubscription, type MessageEventResult, type InputCompletion, type SettingsScope, type SettingsSnapshot, type ThemeDefinition, type ThemeSummary } from "../main/session-contract.js";
 
 export interface ReceiveOptions { signal?: AbortSignal }
 // Cancels UI delivery only. Neither AbortSignal nor an abort intent crosses IPC.
@@ -59,10 +59,34 @@ export class ProductClient {
     if (typeof input !== "string" || input === "") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid message operation" });
     await this.bridge.cancelMessage(input);
   }
+  async getInterruptionState(sessionId: string, { signal }: ReceiveOptions = {}): Promise<InterruptionState> {
+    if (!this.bridge.getInterruptionState) throw new Error("Permission and question requests are unavailable");
+    if (typeof sessionId !== "string" || sessionId.trim() === "") throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid interruption session" });
+    const value = await receive(() => this.bridge.getInterruptionState!(sessionId), signal);
+    return validate(() => interruptionState(value));
+  }
+  async respondPermission(response: PermissionResponse): Promise<void> {
+    if (!this.bridge.respondPermission) throw new Error("Permission responses are unavailable");
+    await this.bridge.respondPermission(response);
+  }
+  async respondUserQuestion(requestId: string, answers: QuestionAnswers): Promise<void> {
+    if (!this.bridge.respondUserQuestion) throw new Error("User question responses are unavailable");
+    await this.bridge.respondUserQuestion(requestId, answers);
+  }
+  async cancelUserQuestion(requestId: string): Promise<void> {
+    if (!this.bridge.cancelUserQuestion) throw new Error("User question cancellation is unavailable");
+    await this.bridge.cancelUserQuestion(requestId);
+  }
   async getSettings(scope: SettingsScope, { signal }: ReceiveOptions = {}): Promise<SettingsSnapshot> {
     if (!this.bridge.getSettings) throw new Error("Settings are unavailable");
     const value = await receive(() => this.bridge.getSettings!(scope), signal);
     return validate(() => settingsSnapshot(value));
+  }
+  async autocompleteInput(text: string, cursor: number, { signal }: ReceiveOptions = {}): Promise<InputCompletion> {
+    if (!this.bridge.autocompleteInput) throw new Error("Input completion is unavailable");
+    if (typeof text !== "string" || !Number.isSafeInteger(cursor) || cursor < 0) throw new ProductFailure({ kind: "invalid_params", code: -32602, message: "Invalid input completion request" });
+    const value = await receive(() => this.bridge.autocompleteInput!(text, cursor), signal);
+    return validate(() => inputCompletion(value));
   }
   async updateSetting(scope: SettingsScope, key: string, value: unknown, { signal }: ReceiveOptions = {}): Promise<SettingsSnapshot> {
     if (!this.bridge.updateSetting) throw new Error("Settings updates are unavailable");

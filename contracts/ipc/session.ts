@@ -29,7 +29,12 @@ export interface SessionMethods {
   next_message_event: { params: { subscriptionId: string }; result: { subscriptionId: string; operationId: string; event: MessageEvent } };
   unsubscribe_message_events: { params: { subscriptionId: string }; result: true };
   cancel_message: { params: { operationId: string }; result: true };
+  get_interruption_state: { params: { sessionId: string }; result: InterruptionState };
+  respond_permission: { params: PermissionResponse; result: true };
+  respond_user_question: { params: { requestId: string; answers: QuestionAnswers }; result: true };
+  cancel_user_question: { params: { requestId: string }; result: true };
   get_settings: { params: { scope: SettingsScope }; result: SettingsSnapshot };
+  autocomplete_input: { params: { text: string; cursor: number }; result: InputCompletion };
   update_setting: { params: { scope: SettingsScope; key: string; value: unknown }; result: SettingsSnapshot };
   reset_setting: { params: { scope: SettingsScope; key: string }; result: SettingsSnapshot };
   list_themes: { params: { scope: SettingsScope }; result: ThemeSummary[] };
@@ -42,8 +47,16 @@ export interface ThemeDefinition {
   foreground: string; uiFont: string; codeFont: string; variables: Record<string, string>;
 }
 export interface ThemeSummary { id: string; name: string; mode: "light" | "dark" }
-export interface ModelOption { id: string; name: string; provider: string; reasoning: boolean; contextWindow: number }
+export interface ModelOption {
+  id: string; name: string; provider: string; reasoning: boolean; contextWindow: number;
+  thinkingEffortMap?: Record<string, string | null>;
+}
 export interface ModelDiagnostic { provider: string; message: string }
+export interface InputSuggestion { value: string; label: string; description: string }
+export interface InputHighlightRange { start: number; end: number }
+export interface InputCompletion {
+  prefix: string; items: InputSuggestion[]; validMatch: boolean; highlightRanges: InputHighlightRange[];
+}
 export type OAuthProvider = "anthropic" | "codex-oauth" | "github-copilot";
 export interface AuthEvent { operationId: string; provider: OAuthProvider; kind: "authorization_url" | "input_required" | "progress" | "complete" | "error"; url?: string; message?: string; userCode?: string }
 export interface ModelUpdate { models: ModelOption[]; diagnostics: ModelDiagnostic[] }
@@ -60,6 +73,27 @@ export type MessageEvent =
   | { sequence: number; kind: "completed"; delta?: never; error?: never }
   | { sequence: number; kind: "error"; delta?: never; error: string }
   | { sequence: number; kind: "canceled"; delta?: never; error?: never };
+export type PermissionChoice = "allow" | "allow-once" | "allow-session" | "allow-project" | "deny" | "deny-hint";
+export interface PermissionResponse {
+  sessionId: string; requestId: string; choice: PermissionChoice;
+  trustKey?: string; trustKeys?: string[]; hint?: string;
+}
+export interface PermissionTrustLevel { key: string; label: string }
+export interface PermissionTrustGroup { target: string; levels: PermissionTrustLevel[] }
+export interface ApprovalRequest {
+  sessionId: string; requestId: string; tool: string; summary: string; command?: string; risk: string;
+  trustKey?: string; trustLevels: PermissionTrustLevel[]; trustGroups: PermissionTrustGroup[];
+  status: "pending" | "queued" | "responding" | "failed" | "cancelled" | "stale" | "unknown";
+}
+export interface UserQuestionOption { label: string; description: string }
+export interface UserQuestion {
+  question: string; header: string; options: UserQuestionOption[]; multiSelect: boolean;
+}
+export interface UserQuestionRequest {
+  sessionId: string; requestId: string; transportId: string; questions: UserQuestion[];
+}
+export type QuestionAnswers = Record<string, string | string[]>;
+export interface InterruptionState { approvals: ApprovalRequest[]; question?: UserQuestionRequest }
 export type SessionRequest = { [M in keyof SessionMethods]: { method: M; params: SessionMethods[M]["params"] } }[keyof SessionMethods];
 export type RemoteFault =
   | { kind: "parse"; code: -32700; message: string }
@@ -69,6 +103,7 @@ export type RemoteFault =
   | { kind: "internal"; code: -32603; message: string }
   | { kind: "catalog" | "session"; code: -32001; message: string }
   | { kind: "message"; code: -32008; message: string }
+  | { kind: "interruption"; code: -32012; message: string }
   | { kind: "runtime_initialization"; code: -32009; message: string }
   | { kind: "settings"; code: -32010; message: string }
   | { kind: "auth"; code: -32011; message: string }
@@ -125,6 +160,7 @@ export function remoteFault(code: unknown, message: unknown, data?: unknown): Re
       if (!object(data) || (data.kind !== "catalog" && data.kind !== "session")) throw new Error("Invalid backend error kind");
       kind = data.kind; break;
     case -32008: kind = "message"; break;
+    case -32012: kind = "interruption"; break;
     case -32009: kind = "runtime_initialization"; break;
     case -32010: kind = "settings"; break;
     case -32011: kind = "auth"; break;
