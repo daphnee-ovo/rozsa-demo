@@ -49,7 +49,7 @@ test("session-list real Go process: layers, empty/corrupt input, directory error
   await writeFile(join(global, "session.jsonl"), content("global", "2026-09")); await writeFile(file, text);
   await writeFile(join(project, "broken.jsonl"), "not-json\n");
   const before = await stat(file);
-  const service = new BackendService(binary, [global, project], { env: backendEnvironment });
+  const service = new BackendService(binary, { env: backendEnvironment });
   try {
     await service.initialize();
     const [first, second] = await Promise.all([service.getSessions(), service.getSessions()]);
@@ -58,18 +58,18 @@ test("session-list real Go process: layers, empty/corrupt input, directory error
   } finally { await service.stop(); }
   assert.equal(service.process.exitCode, 0);
   assert.throws(() => process.kill(service.process.pid!, 0), /ESRCH/);
-  const empty = new BackendService(binary, [join(dir, "missing")], { env: backendEnvironment });
+  const empty = new BackendService(binary, { env: backendEnvironment });
   try { await empty.initialize(); assert.deepEqual(await empty.getSessions(), []); } finally { await empty.stop(); }
-  const bad = new BackendService(binary, [global, file], { env: backendEnvironment });
+  const bad = new BackendService(binary, { env: backendEnvironment });
   try { await bad.initialize(); await assert.rejects(() => bad.getSessions(), (e: unknown) => e instanceof RPCFailure && e.code === -32001 && e.message === `Failed to read session dir: ${file}`); } finally { await bad.stop(); }
-  const unconfigured = new BackendService(binary, [], { env: backendEnvironment });
+  const unconfigured = new BackendService(binary, { env: backendEnvironment });
   try { await unconfigured.initialize(); assert.deepEqual(await unconfigured.getSessions(), []); } finally { await unconfigured.stop(); }
 });
 
 test("session-list backend exit and failed spawn reject rather than return empty", async () => {
-  const missing = new BackendService(join(root, "tmp/missing-backend-binary"), []);
+  const missing = new BackendService(join(root, "tmp/missing-backend-binary"));
   try { await assert.rejects(() => missing.initialize(), /ENOENT/); } finally { await missing.stop(); }
-  const backend = new BackendService(binary, [], { env: backendEnvironment });
+  const backend = new BackendService(binary, { env: backendEnvironment });
   await backend.initialize();
   const closed = new Promise(resolve => backend.process.once("close", resolve));
   const pending = backend.getSessions();

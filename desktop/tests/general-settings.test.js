@@ -215,7 +215,7 @@ test('settings loading and read errors are represented explicitly', async () => 
 
 test('the Electron preload contract reads and updates layered settings through the Go process', async () => {
   const environment = await createIsolatedBackendEnvironment();
-  const backend = new BackendService(backendBinary, [], { env: environment });
+  const backend = new BackendService(backendBinary, { env: environment });
   const trustedURL = 'file:///synthetic/index.html';
   const webContents = Object.assign(new EventEmitter(), { mainFrame: { url: trustedURL } });
   webContents.send = (channel, value) => webContents.emit(channel, value);

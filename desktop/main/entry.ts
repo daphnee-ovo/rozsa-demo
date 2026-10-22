@@ -25,23 +25,6 @@ mkdirSync(profile, { recursive: true });
 app.setPath("userData", profile);
 app.setPath("sessionData", profile);
 
-// Directories are configured by the trusted launcher, never supplied by renderer.
-function directories(args: string[]): string[] {
-  const result: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--session-dir") {
-      const value = args[++i];
-      if (!value || value.startsWith("--")) throw new Error("--session-dir requires a directory");
-      result.push(resolve(value));
-    } else if (args[i].startsWith("--session-dir=")) {
-      const value = args[i].slice("--session-dir=".length);
-      if (!value) throw new Error("--session-dir requires a directory");
-      result.push(resolve(value));
-    }
-  }
-  return result;
-}
-
 let backend: BackendService | undefined;
 let quitReady = false;
 let quitting = false;
@@ -68,7 +51,6 @@ app.on("window-all-closed", () => app.quit());
 process.once("SIGTERM", () => app.quit());
 backend = new BackendService(
   join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "../dist"), process.platform === "win32" ? "rozsa-backend.exe" : "rozsa-backend"),
-  directories(process.argv),
   { projectRoot: launchProjectRoot },
 );
 backend.onRuntimeInitializationError(deliverRuntimeInitializationError);

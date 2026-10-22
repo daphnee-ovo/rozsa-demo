@@ -138,7 +138,7 @@ test("late rejected UI work is consumed, transport failures keep their type", as
 });
 
 test("real backend typed errors remain usable; exit rejects without replay", async () => {
-  const backend = new BackendService(binary, [], { env: backendEnvironment });
+  const backend = new BackendService(binary, { env: backendEnvironment });
   try {
     await assert.rejects(backend.getSessions(), error => error instanceof ProductFailure
       && error.failure.kind === "transport" && error.failure.reason === "protocol"
@@ -149,7 +149,7 @@ test("real backend typed errors remain usable; exit rejects without replay", asy
     const closed = new Promise(resolve => backend.process.once("close", resolve)); backend.process.kill("SIGKILL"); await closed;
     await assert.rejects(backend.getSessions(), error => error instanceof ProductFailure && error.failure.kind === "transport");
   } finally { await backend.stop(); }
-  const brokenCatalog = new BackendService(binary, [writableSessions, invalidCatalog], { env: backendEnvironment });
+  const brokenCatalog = new BackendService(binary, { env: backendEnvironment });
   try {
     await brokenCatalog.initialize();
     await assert.rejects(brokenCatalog.getSessions(), error => error instanceof RPCFailure && error.remote.kind === "catalog");
@@ -196,7 +196,7 @@ test("timeout, pipe exit and malformed typed error never resend an uncertain req
     "conn.listen(); console.error('synthetic ready');", "",
   ].join("\n"));
   await chmod(fake,0o700);
-  const backend = new BackendService(fake, [], {requestTimeoutMs:3000});
+  const backend = new BackendService(fake, {requestTimeoutMs:3000});
   try {
     // Synchronize the synthetic server's startup before measuring a request
     // timeout. The production timeout still includes a real process startup.

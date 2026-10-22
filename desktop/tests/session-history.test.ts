@@ -40,7 +40,7 @@ test("session-history actual Go process restores branch history, empty, read fai
   const text = header("different-header")+message("a",null,"old")+message("fork","a","off branch")+message("b","a","kept")+JSON.stringify({type:"compaction",id:"c",parentId:"b",timestamp:"c",summary:"s",firstKeptEntryId:"b",tokensBefore:100})+"\n"+message("d","c","new");
   await writeFile(path,text); await writeFile(empty,header("empty")); await writeFile(bad,Buffer.concat([Buffer.from(header("bad")),Buffer.from([255,10])]));
   await writeFile(blank,header("blank")+JSON.stringify({type:"message",id:"tool",timestamp:"t",message:{role:"assistant",content:[{type:"text",text:""},{type:"toolCall",id:"call",name:"",arguments:{}}],api:"openai-completions",provider:"openai",model:"test",stopReason:"toolUse"}})+"\n");
-  const before = await stat(path); const service = new BackendService(binary,[dir],{env:backendEnvironment});
+  const before = await stat(path); const service = new BackendService(binary,{env:backendEnvironment});
   try {
     await service.initialize();
     const value = await service.switchSession({path,catalogId:"different-header"});

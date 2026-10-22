@@ -32,10 +32,10 @@ export class BackendService {
   private modelWatch: Promise<unknown> | undefined;
   private readonly settingsReads = new Map<SettingsScope, Promise<SettingsSnapshot>>();
 
-  constructor(binary: string, directories: string[], options: BackendOptions = {}) {
+  constructor(binary: string, options: BackendOptions = {}) {
     this.timeoutMs = options.requestTimeoutMs ?? 10000;
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("Invalid backend request timeout");
-    this.process = spawn(binary, directories.flatMap(dir => ["--session-dir", dir]), {
+    this.process = spawn(binary, {
       stdio: "pipe", windowsHide: true,
       ...(options.projectRoot ? { cwd: options.projectRoot } : {}),
       ...(options.env ? { env: { ...process.env, ...options.env } } : {}),

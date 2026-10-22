@@ -35,7 +35,7 @@ async function startBackend(options: { busyOnceScope?: string; readCapacity?: nu
   ].join("\n");
   await writeFile(executable, source);
   await chmod(executable, 0o700);
-  service = new BackendService(executable, [], { env: { ROZSA_TEST_BUSY_ONCE_SCOPE: options.busyOnceScope ?? "", ROZSA_TEST_SETTINGS_CAPACITY: String(options.readCapacity ?? 1), ROZSA_TEST_BARRIER_SCOPE: options.barrierScope ?? "", ROZSA_TEST_PROJECT_FONT_SIZE: options.projectFontSize ? String(options.projectFontSize) : "" } });
+  service = new BackendService(executable, { env: { ROZSA_TEST_BUSY_ONCE_SCOPE: options.busyOnceScope ?? "", ROZSA_TEST_SETTINGS_CAPACITY: String(options.readCapacity ?? 1), ROZSA_TEST_BARRIER_SCOPE: options.barrierScope ?? "", ROZSA_TEST_PROJECT_FONT_SIZE: options.projectFontSize ? String(options.projectFontSize) : "" } });
   await service.initialize();
   const release = async (): Promise<void> => { await writeFile(releasePath, "release"); };
   const waitForCapture = async (): Promise<void> => {

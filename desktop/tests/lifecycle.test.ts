@@ -44,7 +44,7 @@ async function endpoint(body: string) {
 
 test("fatal handshake mismatch reaps its live owned process without waiting for window close", { skip: process.platform === "win32" }, async () => {
   const fake = await endpoint("conn.onRequest('initialize',()=>({protocolVersion:99,capabilities:[]}));");
-  const backend = new BackendService(fake.executable, []);
+  const backend = new BackendService(fake.executable);
   try {
     await assert.rejects(backend.initialize(), /Incompatible backend handshake/);
     await poll(() => absent(backend.process.pid!));
@@ -56,7 +56,7 @@ test("product catalog calls wait for the initialize handshake and run afterward"
     `conn.onRequest('initialize',()=>{appendFileSync(calls,JSON.stringify('initialize')+'\\n');return new Promise(resolve=>setTimeout(()=>resolve({protocolVersion:1,capabilities:${JSON.stringify(capabilities)}}),250));});`,
     "conn.onRequest('get_sessions',()=>{appendFileSync(calls,JSON.stringify('get_sessions')+'\\n');return [];});",
   ].join("\n"));
-  const backend = new BackendService(fake.executable, []);
+  const backend = new BackendService(fake.executable);
   try {
     const initialized = backend.initialize();
     const catalog = backend.getSessions();
@@ -73,7 +73,7 @@ test("runtime initialization failure is reported before any message is sent whil
     "conn.onRequest('get_sessions',()=>[]);",
     "conn.onRequest('start_message',()=>{appendFileSync(calls,JSON.stringify('start_message')+'\\n');return {operationId:'unexpected'};});",
   ].join("\n"));
-  const backend = new BackendService(fake.executable, []);
+  const backend = new BackendService(fake.executable);
   try {
     await backend.initialize();
     assert.deepEqual(await backend.getSessions(), []);
@@ -84,7 +84,7 @@ test("runtime initialization failure is reported before any message is sent whil
 
 test("fatal request timeout reaps its process and never replays accepted work", { skip: process.platform === "win32" }, async () => {
   const fake = await endpoint("conn.onRequest('get_sessions',()=>{appendFileSync(calls,JSON.stringify('get_sessions')+'\\n');return new Promise(()=>{});});");
-  const backend = new BackendService(fake.executable, [], { requestTimeoutMs: 5000 });
+  const backend = new BackendService(fake.executable, { requestTimeoutMs: 5000 });
   try {
     await backend.initialize();
     await assert.rejects(backend.getSessions(), error => error instanceof ProductFailure && error.failure.kind === "transport" && error.failure.reason === "timeout");
@@ -95,9 +95,9 @@ test("fatal request timeout reaps its process and never replays accepted work", 
 });
 
 test("failed spawn and backend crash reject explicitly and leave no owned process", async () => {
-  const missing = new BackendService(join(root, "tmp/absent-backend-T012"), []);
+  const missing = new BackendService(join(root, "tmp/absent-backend-T012"));
   await assert.rejects(missing.initialize(), /ENOENT/); await missing.stop();
-  const backend = new BackendService(binary, [], { env: backendEnvironment });
+  const backend = new BackendService(binary, { env: backendEnvironment });
   try {
     await backend.initialize();
     const subscribed = await backend.subscribeSessions();
@@ -115,7 +115,7 @@ test("real Go subscription survives idle, reload restores active snapshot withou
   const original = JSON.stringify({ type: "session", version: 3, id: "header-a", timestamp: "t", cwd: "/synthetic" }) + "\n"
     + JSON.stringify({ type: "message", id: "entry", parentId: null, timestamp: "t", message: { role: "user", content: "Hello" } }) + "\n";
   await writeFile(path, original);
-  const backend = new BackendService(binary, [directory], { requestTimeoutMs: 500, env: backendEnvironment });
+  const backend = new BackendService(binary, { requestTimeoutMs: 500, env: backendEnvironment });
   const calls: string[] = [];
   const bridge = RozsaBridge.create(async (channel, input) => {
     calls.push(channel);
@@ -156,7 +156,7 @@ test("pipe loss and unresponsive shutdown terminate and reap the owned process",
     const fake = await endpoint(mode === "pipe"
       ? "conn.onRequest('get_sessions',()=>{process.stdout.end();setInterval(()=>{},1000);return new Promise(()=>{});});"
       : "conn.onRequest('shutdown',()=>{appendFileSync(calls,JSON.stringify('shutdown')+'\\n');setInterval(()=>{},1000);return new Promise(()=>{});});");
-    const backend = new BackendService(fake.executable, []);
+    const backend = new BackendService(fake.executable);
     try {
       await backend.initialize();
       if (mode === "pipe") {
