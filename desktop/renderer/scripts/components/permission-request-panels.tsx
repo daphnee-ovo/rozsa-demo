@@ -266,6 +266,8 @@ function FoldContent(props: {
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    const full = element.querySelector<HTMLElement>(".fold-full");
+    if (full) observer.observe(full);
     return () => observer.disconnect();
   }, [kind, props.text]);
   const title = overflow
@@ -292,10 +294,10 @@ function FoldContent(props: {
         <span className="fold-collapsed">
           <span className="fold-head">
             {props.prefix}
-            {props.text}
+            {props.children || props.text}
           </span>
           <span className="fold-tail">
-            <span>{props.text}</span>
+            <span>{props.children || props.text}</span>
           </span>
         </span>
       )}

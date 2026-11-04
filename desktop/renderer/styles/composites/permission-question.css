@@ -74,6 +74,7 @@
   font: 12px/1.5 var(--font-ui);
 }
 .perm-panel-cmd {
+  position: relative;
   min-width: 0;
   padding: 11px 12px;
   border-radius: var(--radius-control);
@@ -102,7 +103,10 @@
   display: none;
 }
 .fold[data-kind="lines"][data-overflow="true"]:not([data-expanded="true"]) .fold-full {
-  display: none;
+  position: absolute;
+  inset: 11px 12px auto;
+  visibility: hidden;
+  pointer-events: none;
 }
 .fold[data-kind="lines"][data-overflow="true"]:not([data-expanded="true"]) .fold-collapsed {
   display: block;

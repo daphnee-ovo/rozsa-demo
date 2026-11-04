@@ -192,10 +192,30 @@ test(
         "!!document.querySelector('.perm-panel-cmd[data-overflow=\"true\"]')",
         "long command control",
       );
+      // A collapsed command must remain highlighted without oscillating as it is measured.
+      const collapsed = await page.evaluate(`new Promise(resolve => {
+        const command = document.querySelector('.perm-panel-cmd');
+        const changes = [];
+        const observer = new MutationObserver(() => changes.push(command.dataset.overflow));
+        observer.observe(command, { attributes: true, attributeFilter: ['data-overflow'] });
+        setTimeout(() => {
+          observer.disconnect();
+          const visible = [...command.querySelectorAll('.fold-collapsed code')];
+          resolve({ overflow: command.dataset.overflow, changes, colored: visible.map(code => !!code.querySelector('span[style]')) });
+        }, 700);
+      })`);
+      assert.deepEqual(collapsed, { overflow: "true", changes: [], colored: [true, true] });
       await page.evaluate("document.querySelector('.perm-panel-cmd').click()");
       await page.waitFor(
         "document.querySelector('.perm-panel-cmd')?.classList.contains('expanded')",
         "long command expansion",
+      );
+      await page.evaluate(
+        `document.querySelector('[data-permission-action="allow"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'z', bubbles: true }))`,
+      );
+      await page.waitFor(
+        "document.querySelector('.perm-panel-cmd')?.dataset.overflow === 'true' && !document.querySelector('.perm-panel-cmd')?.classList.contains('expanded')",
+        "long command collapsed with Z",
       );
       await page.evaluate("document.querySelector('[data-permission-action=\"hint\"]').click()");
       await page.waitFor("!!document.querySelector('[data-permission-hint]')", "hint input");
