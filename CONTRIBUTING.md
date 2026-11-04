@@ -270,6 +270,29 @@ npm --prefix desktop/tests exec -- vitest run --config desktop/tests/vitest.conf
 
 `npm --prefix` makes the tests package available but keeps the caller's working
 directory; pass the config and test paths from the repository root as shown.
+Do not run generators before every test. Run the shared model generator from
+the repository root only when it changes or its generated data is damaged:
+
+```bash
+node testdata/generators/backend-test-fixtures.mjs
+```
+
+Run the desktop fixture generator only when it changes or its generated data is
+damaged:
+
+```bash
+node testdata/generators/desktop-test-environment.mjs
+```
+
+The committed provider responses and UI states live in
+`testdata/fixtures/desktop/`. The desktop generator reads those fixtures and
+creates project directories and session files in `testdata/project-test-dirs/`
+and `testdata/rozsa-config-dev/sessions/`. The backend fixture generator reads
+`testdata/fixtures/backend/synthetic.json` and creates the shared `synthetic`
+provider with model `test`, using `openai-completions` at
+`http://127.0.0.1:50805/v1`. Tests and the showcase read committed fixtures
+directly. They do not import or invoke generators, and generators do not
+rewrite fixed fixtures.
 The Vitest config uses the tests directory as its root, the Node environment,
 single-worker execution and disabled globals. Regular approval lifecycle checks
 run under Vitest; `test:native-lifecycle` selects only

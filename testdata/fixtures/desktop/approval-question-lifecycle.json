@@ -1,0 +1,758 @@
+{
+  "sessionId": "approval-lifecycle",
+  "files": {
+    "trustPath": "tmp/approval-question-lifecycle/trust-scopescopescopescopescopescopescopescope.txt",
+    "queuedPath": "tmp/approval-question-lifecycle/queued-write.txt",
+    "hintPath": "tmp/approval-question-lifecycle/hint-denied.txt",
+    "denyPath": "tmp/approval-question-lifecycle/direct-deny.txt",
+    "oncePath": "tmp/approval-question-lifecycle/allow-once.txt"
+  },
+  "ui": {
+    "approvals": {
+      "failed": {
+        "sessionId": "session-a",
+        "requestId": "approval-a",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "failed",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "queued": {
+        "sessionId": "session-a",
+        "requestId": "approval-b",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "queued",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "responding": {
+        "sessionId": "session-a",
+        "requestId": "approval-responding",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "responding",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "keyboard": {
+        "sessionId": "session-a",
+        "requestId": "approval-keyboard",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "pending",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "allow": {
+        "sessionId": "session-a",
+        "requestId": "approval-allow",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "pending",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "hint": {
+        "sessionId": "session-a",
+        "requestId": "approval-hint",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "pending",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "deny": {
+        "sessionId": "session-a",
+        "requestId": "approval-deny",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "pending",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "sessionSwitch": {
+        "sessionId": "session-a",
+        "requestId": "approval-a",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "pending",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "sessionA": {
+        "sessionId": "session-a",
+        "requestId": "approval-session-a",
+        "tool": "Write",
+        "summary": "write /workspace/a.txt",
+        "risk": "write",
+        "status": "pending",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "questions": {
+      "default": {
+        "sessionId": "session-a",
+        "requestId": "question-a",
+        "transportId": "tool-call-a",
+        "questions": [
+          {
+            "header": "Mode",
+            "question": "Choose a mode",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Fast",
+                "description": "Quick execution"
+              }
+            ]
+          },
+          {
+            "header": "Features",
+            "question": "Choose features",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Tests",
+                "description": "Run tests"
+              },
+              {
+                "label": "Docs",
+                "description": "Update docs"
+              }
+            ]
+          }
+        ]
+      },
+      "cancel": {
+        "sessionId": "session-a",
+        "requestId": "question-cancel",
+        "transportId": "tool-call-a",
+        "questions": [
+          {
+            "header": "Mode",
+            "question": "Choose a mode",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Fast",
+                "description": "Quick execution"
+              }
+            ]
+          },
+          {
+            "header": "Features",
+            "question": "Choose features",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Tests",
+                "description": "Run tests"
+              },
+              {
+                "label": "Docs",
+                "description": "Update docs"
+              }
+            ]
+          }
+        ]
+      },
+      "sessionB": {
+        "sessionId": "session-b",
+        "requestId": "question-session-b",
+        "transportId": "tool-call-a",
+        "questions": [
+          {
+            "header": "Mode",
+            "question": "Choose a mode",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Fast",
+                "description": "Quick execution"
+              }
+            ]
+          },
+          {
+            "header": "Features",
+            "question": "Choose features",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Tests",
+                "description": "Run tests"
+              },
+              {
+                "label": "Docs",
+                "description": "Update docs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "bashApprovals": {
+      "short": {
+        "sessionId": "session-a",
+        "requestId": "bash-short",
+        "tool": "Bash",
+        "summary": "printf 'ready\\n'",
+        "risk": "write",
+        "status": "pending",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ],
+        "command": "printf 'ready\\n'"
+      },
+      "multiline": {
+        "sessionId": "session-a",
+        "requestId": "bash-multiline",
+        "tool": "Bash",
+        "summary": "for item in alpha beta; do\n  printf '%s\\n' \"$item\"\ndone",
+        "risk": "write",
+        "status": "pending",
+        "trustKey": "Write:/workspace/a.txt",
+        "trustLevels": [
+          {
+            "key": "Write:/workspace/a.txt",
+            "label": "/workspace/a.txt"
+          }
+        ],
+        "trustGroups": [
+          {
+            "target": "/workspace/a.txt",
+            "levels": [
+              {
+                "key": "Write:/workspace/a.txt",
+                "label": "/workspace/a.txt"
+              }
+            ]
+          }
+        ],
+        "command": "for item in alpha beta; do\n  printf '%s\\n' \"$item\"\ndone"
+      }
+    }
+  },
+  "responses": [
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "write-trust",
+                  "type": "function",
+                  "function": {
+                    "name": "write",
+                    "arguments": "{\"file_path\":\"tmp/approval-question-lifecycle/trust-scopescopescopescopescopescopescopescope.txt\",\"content\":\"trusted\"}"
+                  }
+                },
+                {
+                  "index": 1,
+                  "id": "write-queued",
+                  "type": "function",
+                  "function": {
+                    "name": "write",
+                    "arguments": "{\"file_path\":\"tmp/approval-question-lifecycle/queued-write.txt\",\"content\":\"queued\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "content": "Two writes complete."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 4
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "bash-hint",
+                  "type": "function",
+                  "function": {
+                    "name": "bash",
+                    "arguments": "{\"command\":\"printf 'denied' > 'tmp/approval-question-lifecycle/hint-denied.txt'\\n# review-scope review-scope review-scope review-scope review-scope review-scope review-scope review-scope \"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "content": "The hinted command was denied."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 4
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "bash-deny",
+                  "type": "function",
+                  "function": {
+                    "name": "bash",
+                    "arguments": "{\"command\":\"printf 'denied' > 'tmp/approval-question-lifecycle/direct-deny.txt'\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "content": "The denied command did not run."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 4
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "bash-once",
+                  "type": "function",
+                  "function": {
+                    "name": "bash",
+                    "arguments": "{\"command\":\"printf 'once' > 'tmp/approval-question-lifecycle/allow-once.txt'\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "content": "The one-time command completed."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 4
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "ask-answer",
+                  "type": "function",
+                  "function": {
+                    "name": "askUserQuestion",
+                    "arguments": "{\"questions\":[{\"question\":\"Choose a mode\",\"header\":\"Mode\",\"options\":[{\"label\":\"Fast\",\"description\":\"Quick execution\"}]},{\"question\":\"Choose features\",\"header\":\"Features\",\"multiSelect\":true,\"options\":[{\"label\":\"Tests\",\"description\":\"Run tests\"},{\"label\":\"Docs\",\"description\":\"Update docs\"}]}]}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "content": "Answers received."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 4
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "ask-cancel",
+                  "type": "function",
+                  "function": {
+                    "name": "askUserQuestion",
+                    "arguments": "{\"questions\":[{\"question\":\"Cancel this request\",\"header\":\"Cancel\",\"options\":[{\"label\":\"Continue\",\"description\":\"Keep going\"}]}]}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ],
+    [
+      {
+        "choices": [
+          {
+            "delta": {
+              "content": "The canceled question was handled."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 4
+        }
+      }
+    ]
+  ],
+  "sessions": [
+    {
+      "id": "approval-lifecycle",
+      "name": "Approval lifecycle"
+    }
+  ]
+}

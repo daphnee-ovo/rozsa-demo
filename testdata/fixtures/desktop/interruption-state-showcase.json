@@ -1,0 +1,140 @@
+{
+  "requests": {
+    "permission": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "demo-permission-write",
+                  "type": "function",
+                  "function": {
+                    "name": "write",
+                    "arguments": "{\"file_path\":\"tmp/interruption-state-showcase/permission-demo.txt\",\"content\":\"This file is written only if the permission request is approved.\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ],
+    "bash": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "demo-bash-permission",
+                  "type": "function",
+                  "function": {
+                    "name": "bash",
+                  "arguments": "{\"command\":\"for item in alpha beta; do\\n  printf '%s\\\\n' \\\"$item\\\" > 'tmp/interruption-state-showcase/bash-permission-demo.txt'\\ndone\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ],
+    "question": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "demo-user-question",
+                  "type": "function",
+                  "function": {
+                    "name": "askUserQuestion",
+                    "arguments": "{\"questions\":[{\"header\":\"Mode\",\"question\":\"Which mode should this session use?\",\"options\":[{\"label\":\"Careful\",\"description\":\"Review each change\"},{\"label\":\"Fast\",\"description\":\"Make the change directly\"}]},{\"header\":\"Checks\",\"question\":\"Which checks should run?\",\"multiSelect\":true,\"options\":[{\"label\":\"Tests\",\"description\":\"Run focused tests\"},{\"label\":\"Docs\",\"description\":\"Review documentation\"}]}]}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24,
+          "completion_tokens": 5
+        }
+      }
+    ]
+  },
+  "followup": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "The approved demo action completed."
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 4
+      }
+    }
+  ],
+  "sessions": [
+    {
+      "id": "permission-demo",
+      "name": "Permission Request Demo"
+    },
+    {
+      "id": "bash-permission-demo",
+      "name": "Bash Permission Request Demo"
+    },
+    {
+      "id": "question-demo",
+      "name": "Ask User Question Demo"
+    }
+  ]
+}

@@ -5,6 +5,9 @@ import { test } from "vitest";
 import { JSDOM } from "jsdom";
 import { installInterruptionBridge } from "../main/interruption-bridge.ts";
 import { PERMISSION_RESPOND_CHANNEL } from "../main/session-contract.ts";
+import approvalLifecycleFixture from "../../testdata/fixtures/desktop/approval-question-lifecycle.json";
+
+const uiFixtures = approvalLifecycleFixture.ui;
 
 let mountInterruptionPanel;
 
@@ -41,50 +44,6 @@ async function withDom(run) {
     }
     dom.window.close();
   }
-}
-
-function approval(requestId, status = "pending", summary = "write /workspace/a.txt") {
-  return {
-    sessionId: "session-a",
-    requestId,
-    tool: "Write",
-    summary,
-    risk: "write",
-    status,
-    trustKey: "Write:/workspace/a.txt",
-    trustLevels: [{ key: "Write:/workspace/a.txt", label: "/workspace/a.txt" }],
-    trustGroups: [
-      {
-        target: "/workspace/a.txt",
-        levels: [{ key: "Write:/workspace/a.txt", label: "/workspace/a.txt" }],
-      },
-    ],
-  };
-}
-
-function question(requestId = "question-a") {
-  return {
-    sessionId: "session-a",
-    requestId,
-    transportId: "tool-call-a",
-    questions: [
-      {
-        header: "Mode",
-        question: "Choose a mode",
-        multiSelect: false,
-        options: [{ label: "Fast", description: "Quick execution" }],
-      },
-      {
-        header: "Features",
-        question: "Choose features",
-        multiSelect: true,
-        options: [
-          { label: "Tests", description: "Run tests" },
-          { label: "Docs", description: "Update docs" },
-        ],
-      },
-    ],
-  };
 }
 
 function createBridge(states) {
@@ -183,7 +142,10 @@ test("failed permission responses stay actionable without exposing a retry state
   withDom(async () => {
     const states = {
       "session-a": {
-        approvals: [approval("approval-a", "failed"), approval("approval-b", "queued")],
+        approvals: [
+          structuredClone(uiFixtures.approvals.failed),
+          structuredClone(uiFixtures.approvals.queued),
+        ],
       },
     };
     const bridge = createBridge(states);
@@ -253,7 +215,7 @@ test("failed permission responses stay actionable without exposing a retry state
 test("responding requests disable approval actions without exposing a submitting state", async () =>
   withDom(async () => {
     const bridge = createBridge({
-      "session-a": { approvals: [approval("approval-responding", "responding")] },
+      "session-a": { approvals: [structuredClone(uiFixtures.approvals.responding)] },
     });
     const mounted = mount(bridge);
     try {
@@ -267,7 +229,9 @@ test("responding requests disable approval actions without exposing a submitting
 
 test("permission keyboard shortcuts open trust and submit a trust level", async () =>
   withDom(async () => {
-    const bridge = createBridge({ "session-a": { approvals: [approval("approval-keyboard")] } });
+    const bridge = createBridge({
+      "session-a": { approvals: [structuredClone(uiFixtures.approvals.keyboard)] },
+    });
     const mounted = mount(bridge);
     try {
       await waitFor(() => Boolean(document.querySelector("#permPanel")), "keyboard approval");
@@ -308,7 +272,9 @@ test("permission keyboard shortcuts open trust and submit a trust level", async 
 
 test("permission keyboard shortcuts apply allow, hint, and direct deny responses", async () =>
   withDom(async () => {
-    const states = { "session-a": { approvals: [approval("approval-allow")] } };
+    const states = {
+      "session-a": { approvals: [structuredClone(uiFixtures.approvals.allow)] },
+    };
     const bridge = createBridge(states);
     const mounted = mount(bridge);
     try {
@@ -319,7 +285,7 @@ test("permission keyboard shortcuts apply allow, hint, and direct deny responses
           new window.KeyboardEvent("keydown", { key: "y", bubbles: true, cancelable: true }),
         );
       await waitFor(() => !document.querySelector("#permPanel.visible"), "allow shortcut response");
-      states["session-a"].approvals = [approval("approval-hint")];
+      states["session-a"].approvals = [structuredClone(uiFixtures.approvals.hint)];
       await waitFor(
         () => document.querySelector("#permPanel")?.dataset.requestId === "approval-hint",
         "hint shortcut approval",
@@ -340,7 +306,7 @@ test("permission keyboard shortcuts apply allow, hint, and direct deny responses
           new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
         );
       await waitFor(() => !document.querySelector("#permPanel.visible"), "hint shortcut response");
-      states["session-a"].approvals = [approval("approval-deny")];
+      states["session-a"].approvals = [structuredClone(uiFixtures.approvals.deny)];
       await waitFor(
         () => document.querySelector("#permPanel")?.dataset.requestId === "approval-deny",
         "deny shortcut approval",
@@ -367,7 +333,7 @@ test("permission keyboard shortcuts apply allow, hint, and direct deny responses
 test("session switching restores the pending request and its hint page", async () =>
   withDom(async () => {
     const states = {
-      "session-a": { approvals: [approval("approval-a")] },
+      "session-a": { approvals: [structuredClone(uiFixtures.approvals.sessionSwitch)] },
       "session-b": { approvals: [] },
     };
     const bridge = createBridge(states);
@@ -400,10 +366,10 @@ test("session switching restores the pending request and its hint page", async (
 test("session switching restores the selected interruption and question input", async () =>
   withDom(async () => {
     const states = {
-      "session-a": { approvals: [approval("approval-session-a")] },
+      "session-a": { approvals: [structuredClone(uiFixtures.approvals.sessionA)] },
       "session-b": {
         approvals: [],
-        question: { ...question("question-session-b"), sessionId: "session-b" },
+        question: structuredClone(uiFixtures.questions.sessionB),
       },
     };
     const mounted = mount(createBridge(states));
@@ -450,20 +416,11 @@ test("session switching restores the selected interruption and question input", 
 
 test("Bash approval keeps its prompt outside highlighted source when switching sessions", async () =>
   withDom(async () => {
-    const shortCommand = "printf 'ready\\n'";
-    const multilineCommand = `for item in alpha beta; do
-  printf '%s\\n' "$item"
-done`;
-    const bashApproval = (requestId, sessionId, command) => ({
-      ...approval(requestId),
-      sessionId,
-      tool: "Bash",
-      command,
-      summary: command,
-    });
+    const shortApproval = structuredClone(uiFixtures.bashApprovals.short);
+    const multilineApproval = structuredClone(uiFixtures.bashApprovals.multiline);
     const states = {
-      "session-a": { approvals: [bashApproval("bash-short", "session-a", shortCommand)] },
-      "session-b": { approvals: [bashApproval("bash-multiline", "session-b", multilineCommand)] },
+      "session-a": { approvals: [shortApproval] },
+      "session-b": { approvals: [multilineApproval] },
     };
     const mounted = mount(createBridge(states));
     const assertBashCommand = (requestId, command) => {
@@ -480,21 +437,21 @@ done`;
         () => document.querySelector("#permPanel")?.dataset.requestId === "bash-short",
         "short Bash approval",
       );
-      assertBashCommand("bash-short", shortCommand);
+      assertBashCommand("bash-short", shortApproval.command);
 
       mounted.panel.setSessionId("session-b");
       await waitFor(
         () => document.querySelector("#permPanel")?.dataset.requestId === "bash-multiline",
         "multiline Bash approval",
       );
-      assertBashCommand("bash-multiline", multilineCommand);
+      assertBashCommand("bash-multiline", multilineApproval.command);
 
       mounted.panel.setSessionId("session-a");
       await waitFor(
         () => document.querySelector("#permPanel")?.dataset.requestId === "bash-short",
         "short Bash approval restored",
       );
-      assertBashCommand("bash-short", shortCommand);
+      assertBashCommand("bash-short", shortApproval.command);
     } finally {
       mounted.panel.dispose();
     }
@@ -536,7 +493,9 @@ test("window close invalidates pending responses and removes interruption handle
 
 test("multi-question flow supports Next, checkbox Other, and cancellation rejects late answers", async () =>
   withDom(async () => {
-    const states = { "session-a": { approvals: [], question: question() } };
+    const states = {
+      "session-a": { approvals: [], question: structuredClone(uiFixtures.questions.default) },
+    };
     const bridge = createBridge(states);
     const mounted = mount(bridge);
     try {
@@ -564,7 +523,7 @@ test("multi-question flow supports Next, checkbox Other, and cancellation reject
         },
       ]);
 
-      states["session-a"].question = question("question-cancel");
+      states["session-a"].question = structuredClone(uiFixtures.questions.cancel);
       await waitFor(
         () => document.querySelector("#questionPanel")?.dataset.requestId === "question-cancel",
         "second question",
