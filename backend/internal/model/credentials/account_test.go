@@ -1,8 +1,10 @@
-package credentials
+package credentials_test
 
 import (
 	"encoding/base64"
 	"testing"
+
+	. "rozsa/backend/internal/model/credentials"
 )
 
 func TestAccountIDAcceptsStoredAliasesAndTokenClaims(t *testing.T) {

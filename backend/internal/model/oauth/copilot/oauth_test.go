@@ -1,4 +1,4 @@
-package copilot
+package copilot_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"rozsa/backend/internal/model/credentials"
+	. "rozsa/backend/internal/model/oauth/copilot"
 )
 
 func TestLoginDeviceFlowExchangesTokenAndPreservesEnterpriseDomain(t *testing.T) {
@@ -25,7 +26,7 @@ func TestLoginDeviceFlowExchangesTokenAndPreservesEnterpriseDomain(t *testing.T)
 			if request.Header.Get("Authorization") != "Bearer github-secret" {
 				t.Errorf("authorization = %q", request.Header.Get("Authorization"))
 			}
-			if request.Header.Get("User-Agent") != providerUserAgent {
+			if request.Header.Get("User-Agent") != "rozsa/1.0" {
 				t.Errorf("login User-Agent = %q", request.Header.Get("User-Agent"))
 			}
 			_, _ = writer.Write([]byte(`{"token":"copilot-secret","expires_at":4102444800}`))

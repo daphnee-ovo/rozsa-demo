@@ -1,4 +1,4 @@
-package modelsendpoint
+package modelsendpoint_test
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	. "rozsa/backend/internal/model/modelsendpoint"
 )
 
 func TestRefreshUpdatesCodexOnlyAndFiltersCatalog(t *testing.T) {
@@ -71,20 +73,27 @@ func TestRefreshUpdatesCodexOnlyAndFiltersCatalog(t *testing.T) {
 }
 
 func TestCacheFreshFor24Hours(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{"models":[]}`))
+	}))
+	defer server.Close()
 	path := filepath.Join(t.TempDir(), "models.json")
 	if err := os.WriteFile(path, []byte(`{"_last_refreshed":1000,"providers":{}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	client := NewClient(nil)
+	client := NewClient(server.Client())
+	client.Endpoint = server.URL
 	client.Now = func() time.Time { return time.Unix(1000+int64(CacheDuration/time.Second)-1, 0) }
-	fresh, err := client.cacheFresh(path)
-	if err != nil || !fresh {
-		t.Fatalf("fresh=%v err=%v", fresh, err)
+	updated, err := client.RefreshIfNeeded(context.Background(), path, "token", "account", false)
+	if err != nil || updated || requests != 0 {
+		t.Fatalf("fresh cache updated=%v requests=%d err=%v", updated, requests, err)
 	}
 	client.Now = func() time.Time { return time.Unix(1000+int64(CacheDuration/time.Second), 0) }
-	fresh, err = client.cacheFresh(path)
-	if err != nil || fresh {
-		t.Fatalf("fresh=%v err=%v", fresh, err)
+	updated, err = client.RefreshIfNeeded(context.Background(), path, "token", "account", false)
+	if err != nil || !updated || requests != 1 {
+		t.Fatalf("expired cache updated=%v requests=%d err=%v", updated, requests, err)
 	}
 }
 

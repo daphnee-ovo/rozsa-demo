@@ -1,4 +1,4 @@
-package credentials
+package credentials_test
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	. "rozsa/backend/internal/model/credentials"
 )
 
 func testResolver(env map[string]string, home string) Resolver {

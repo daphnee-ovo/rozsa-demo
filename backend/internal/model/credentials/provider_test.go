@@ -1,6 +1,8 @@
-package credentials
+package credentials_test
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestProviderEnvironmentMappingAndPrivateFileResolution(t *testing.T) {
 	resolver := testResolver(map[string]string{"OPENAI_API_KEY": "openai", "ANTHROPIC_OAUTH_TOKEN": "oauth", "ANTHROPIC_API_KEY": "api", "ROZSA_CONFIG_DIR": t.TempDir()}, t.TempDir())

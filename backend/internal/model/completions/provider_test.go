@@ -1,4 +1,4 @@
-package completions
+package completions_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	. "rozsa/backend/internal/model/completions"
 	"rozsa/backend/internal/model/types"
 )
 
@@ -170,21 +171,25 @@ func TestStreamSimpleCancellationAborts(t *testing.T) {
 }
 
 func TestCompatOverridesAndEndpoint(t *testing.T) {
-	model := types.Model{ID: "m", Provider: "custom", BaseURL: "https://example.test/v1/", Compat: json.RawMessage(`{"maxTokensField":"MaxTokens","supportsStore":false,"supportsUsageInStreaming":false,"sendSessionAffinityHeaders":true}`)}
-	body, c, err := buildPayload(model, types.Context{}, types.SimpleStreamOptions{Base: types.StreamOptions{MaxTokens: intp(42)}})
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("endpoint=%q", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+	model := types.Model{ID: "m", Provider: "custom", BaseURL: server.URL + "/v1/", Compat: json.RawMessage(`{"maxTokensField":"MaxTokens","supportsStore":false,"supportsUsageInStreaming":false,"sendSessionAffinityHeaders":true}`)}
+	err := NewProvider(server.Client()).StreamSimple(context.Background(), model, types.Context{}, types.SimpleStreamOptions{Base: types.StreamOptions{MaxTokens: intp(42)}}, func(types.StreamEvent) {})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got map[string]any
-	if err = json.Unmarshal(body, &got); err != nil {
-		t.Fatal(err)
-	}
-	if c.maxTokens != "max_tokens" || got["max_tokens"] != float64(42) || got["store"] != nil || got["stream_options"] != nil {
-		t.Fatalf("compat=%#v payload=%#v", c, got)
-	}
-	endpoint, err := resolveEndpoint(model.BaseURL)
-	if err != nil || endpoint != "https://example.test/v1/chat/completions" {
-		t.Fatalf("endpoint=%q err=%v", endpoint, err)
+	if got["max_tokens"] != float64(42) || got["store"] != nil || got["stream_options"] != nil {
+		t.Fatalf("payload=%#v", got)
 	}
 }
 

@@ -1,10 +1,11 @@
-package model
+package model_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	. "rozsa/backend/internal/model"
 	"rozsa/backend/internal/model/types"
 )
 

@@ -1,16 +1,17 @@
-package common
+package common_test
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	. "rozsa/backend/internal/model/oauth/common"
 )
 
 func TestGeneratePKCEUsesS256AndUniqueVerifier(t *testing.T) {
@@ -109,44 +110,49 @@ func TestWaitForCallbackRejectsNonLoopbackAddress(t *testing.T) {
 }
 
 func TestCallbackServerRejectsWrongStateAndReturnsBoundCode(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	reserveAddress := func() string {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer listener.Close()
+		return listener.Addr().String()
 	}
-	address := listener.Addr().String()
-	result := make(chan AuthorizationCode, 1)
-	failure := make(chan error, 1)
-	go func() {
-		code, callbackErr := serveCallback(context.Background(), listener, "expected")
-		result <- code
-		failure <- callbackErr
-	}()
-	response, err := http.Get("http://" + address + "/callback?code=bad&state=wrong")
-	if err != nil {
+	requestCallback := func(query string) (*http.Response, <-chan AuthorizationCode, <-chan error) {
+		address := reserveAddress()
+		result := make(chan AuthorizationCode, 1)
+		failure := make(chan error, 1)
+		go func() {
+			code, callbackErr := WaitForCallback(context.Background(), address, "expected")
+			result <- code
+			failure <- callbackErr
+		}()
+		var response *http.Response
+		var err error
+		for attempt := 0; attempt < 50; attempt++ {
+			response, err = http.Get("http://" + address + "/callback?" + query)
+			if err == nil {
+				return response, result, failure
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 		t.Fatal(err)
+		return nil, result, failure
 	}
+
+	response, result, failure := requestCallback("code=bad&state=wrong")
 	response.Body.Close()
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("wrong-state status = %d", response.StatusCode)
 	}
-	if _, err := <-result, <-failure; err == nil || !strings.Contains(err.Error(), "state mismatch") {
+	if err := <-failure; err == nil || !strings.Contains(err.Error(), "state mismatch") {
 		t.Fatalf("wrong-state callback error = %v", err)
 	}
+	if code := <-result; code.Code != "" {
+		t.Fatalf("wrong-state callback returned code %#v", code)
+	}
 
-	listener, err = net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	address = listener.Addr().String()
-	go func() {
-		code, callbackErr := serveCallback(context.Background(), listener, "expected")
-		result <- code
-		failure <- callbackErr
-	}()
-	response, err = http.Get(fmt.Sprintf("http://%s/callback?code=ok&state=expected", address))
-	if err != nil {
-		t.Fatal(err)
-	}
+	response, result, failure = requestCallback("code=ok&state=expected")
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("valid-state status = %d", response.StatusCode)

@@ -1,4 +1,4 @@
-package bedrock
+package bedrock_test
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ import (
 	aweventstream "github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+	. "rozsa/backend/internal/model/bedrock"
 	modeltypes "rozsa/backend/internal/model/types"
 )
 
@@ -28,15 +28,13 @@ func TestBuildMessagesPreservesUserAndAssistantToolUse(t *testing.T) {
 		modeltypes.UserMessage{Content: modeltypes.UserText("question")},
 		modeltypes.AssistantMessage{Content: []modeltypes.ContentBlock{modeltypes.TextBlock{Text: "checking"}, modeltypes.ToolCallBlock{ID: toolCallID, Name: "lookup", Arguments: json.RawMessage(`{"q":"x"}`)}}},
 	}}
-	messages, err := buildMessages(input)
-	if err != nil {
-		t.Fatal(err)
+	request := captureBedrockRequest(t, modeltypes.Model{ID: "model", Provider: "amazon-bedrock"}, input, modeltypes.SimpleStreamOptions{}, false)
+	messages := request["messages"].([]any)
+	if len(messages) != 2 || messages[0].(map[string]any)["role"] != "user" || messages[1].(map[string]any)["role"] != "assistant" {
+		t.Fatalf("wire messages = %#v", messages)
 	}
-	if len(messages) != 2 || string(messages[0].Role) != "user" || string(messages[1].Role) != "assistant" {
-		t.Fatalf("messages roles = %#v", messages)
-	}
-	if len(messages[0].Content) != 1 || len(messages[1].Content) != 2 {
-		t.Fatalf("messages content sizes = %d, %d", len(messages[0].Content), len(messages[1].Content))
+	if len(messages[0].(map[string]any)["content"].([]any)) != 1 || len(messages[1].(map[string]any)["content"].([]any)) != 2 {
+		t.Fatalf("wire content = %#v", messages)
 	}
 }
 
@@ -51,19 +49,17 @@ func TestBuildMessagesMergesToolResultsAndPreservesSignedThinking(t *testing.T) 
 		modeltypes.ToolResultMessage{ToolCallID: "call-1", Content: []modeltypes.ContentBlock{modeltypes.TextBlock{Text: "first"}}},
 		modeltypes.ToolResultMessage{ToolCallID: "call-2", Content: []modeltypes.ContentBlock{modeltypes.TextBlock{Text: "second"}}, IsError: true},
 	}}
-	messages, err := buildMessages(input)
-	if err != nil {
-		t.Fatal(err)
+	messages := captureBedrockRequest(t, modeltypes.Model{ID: "model", Provider: "amazon-bedrock"}, input, modeltypes.SimpleStreamOptions{}, false)["messages"].([]any)
+	if len(messages) != 3 || len(messages[2].(map[string]any)["content"].([]any)) != 2 {
+		t.Fatalf("wire messages = %#v; want merged tool results", messages)
 	}
-	if len(messages) != 3 || len(messages[2].Content) != 2 {
-		t.Fatalf("messages = %#v; want user, assistant, merged user results", messages)
+	assistantBlocks := messages[1].(map[string]any)["content"].([]any)
+	if _, ok := assistantBlocks[0].(map[string]any)["reasoningContent"]; !ok {
+		t.Fatalf("signed thinking wire block = %#v", assistantBlocks[0])
 	}
-	if _, ok := messages[1].Content[0].(*types.ContentBlockMemberReasoningContent); !ok {
-		t.Fatalf("signed thinking content = %T", messages[1].Content[0])
-	}
-	secondResult, ok := messages[2].Content[1].(*types.ContentBlockMemberToolResult)
-	if !ok || secondResult.Value.Status != types.ToolResultStatusError {
-		t.Fatalf("second tool result = %#v", messages[2].Content[1])
+	resultBlock := messages[2].(map[string]any)["content"].([]any)[1].(map[string]any)["toolResult"].(map[string]any)
+	if resultBlock["status"] != "error" {
+		t.Fatalf("error tool result wire status = %#v", resultBlock)
 	}
 }
 
@@ -73,39 +69,53 @@ func TestBuildRequestAppliesBedrockToolCacheAndReasoningFields(t *testing.T) {
 	model := modeltypes.Model{ID: "anthropic.claude-opus-4-6-v1:0", Name: "Claude Opus 4.6", Reasoning: true, MaxTokens: 4096}
 	input := modeltypes.Context{SystemPrompt: &systemPrompt, Messages: []modeltypes.Message{modeltypes.UserMessage{Content: modeltypes.UserText("question")}}, Tools: []modeltypes.ToolSchema{{Name: "lookup", Description: "look up", Parameters: json.RawMessage(`{"type":"object"}`)}}}
 	options := modeltypes.SimpleStreamOptions{Base: modeltypes.StreamOptions{CacheRetention: modeltypes.CacheLong, Temperature: &temperature}, Reasoning: pointer(modeltypes.ThinkingHigh)}
-	request, err := buildRequest(model, input, options)
-	if err != nil {
-		t.Fatal(err)
+	request := captureBedrockRequest(t, model, input, options, true)
+	if len(request["system"].([]any)) != 2 || len(request["toolConfig"].(map[string]any)["tools"].([]any)) != 1 {
+		t.Fatalf("wire system/tools = %#v / %#v", request["system"], request["toolConfig"])
 	}
-	if len(request.System) != 2 || request.ToolConfig == nil || len(request.ToolConfig.Tools) != 1 {
-		t.Fatalf("request system/tools = %#v / %#v", request.System, request.ToolConfig)
+	messageContent := request["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	if len(messageContent) != 2 {
+		t.Fatalf("wire messages = %#v", request["messages"])
 	}
-	if len(request.Messages) != 1 || len(request.Messages[0].Content) != 2 {
-		t.Fatalf("request messages = %#v", request.Messages)
+	cachePoint := messageContent[1].(map[string]any)["cachePoint"].(map[string]any)
+	if cachePoint["type"] != "default" || cachePoint["ttl"] != "1h" {
+		t.Fatalf("wire cache point = %#v; want default, one-hour TTL", cachePoint)
 	}
-	if cachePoint, ok := request.Messages[0].Content[1].(*types.ContentBlockMemberCachePoint); !ok || cachePoint.Value.Ttl != types.CacheTTLOneHour {
-		t.Fatalf("message cache point = %#v", request.Messages[0].Content[1])
+	inference := request["inferenceConfig"].(map[string]any)
+	if inference["maxTokens"] != float64(model.MaxTokens) || inference["temperature"] != float64(temperature) {
+		t.Fatalf("wire inference config = %#v", inference)
 	}
-	if request.InferenceConfig.MaxTokens == nil || *request.InferenceConfig.MaxTokens != int32(model.MaxTokens) || request.InferenceConfig.Temperature == nil || *request.InferenceConfig.Temperature != float32(temperature) {
-		t.Fatalf("inference config = %#v", request.InferenceConfig)
-	}
-	if request.AdditionalModelRequestFields == nil {
-		t.Fatal("missing adaptive thinking fields")
-	}
-	var fields map[string]any
-	encodedFields, err := request.AdditionalModelRequestFields.MarshalSmithyDocument()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(encodedFields, &fields); err != nil {
-		t.Fatal(err)
-	}
+	fields := request["additionalModelRequestFields"].(map[string]any)
 	if fields["thinking"].(map[string]any)["type"] != "adaptive" || fields["output_config"].(map[string]any)["effort"] != "high" {
 		t.Fatalf("additional model fields = %#v", fields)
 	}
 }
 
 func pointer[T any](value T) *T { return &value }
+
+func captureBedrockRequest(t *testing.T, model modeltypes.Model, input modeltypes.Context, options modeltypes.SimpleStreamOptions, forceCache bool) map[string]any {
+	t.Helper()
+	if forceCache {
+		t.Setenv("AWS_BEDROCK_FORCE_CACHE", "1")
+	}
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if err := json.NewDecoder(request.Body).Decode(&requestBody); err != nil {
+			t.Error(err)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusBadRequest)
+		_, _ = writer.Write([]byte(`{"message":"request captured","__type":"ValidationException"}`))
+	}))
+	defer server.Close()
+	model.API = modeltypes.APIBedrockConverseStream
+	model.BaseURL = server.URL
+	err := NewProvider(testClient(server.URL)).StreamSimple(context.Background(), model, input, options, func(modeltypes.StreamEvent) {})
+	if err == nil || !strings.Contains(err.Error(), "ValidationException") {
+		t.Fatalf("expected captured SDK request to reach fixture service, err=%v", err)
+	}
+	return requestBody
+}
 
 func TestStreamSimpleDecodesBinaryEventStreamTextAndUsage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {

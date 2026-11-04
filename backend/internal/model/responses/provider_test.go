@@ -1,4 +1,4 @@
-package responses
+package responses_test
 
 import (
 	"context"
@@ -12,8 +12,39 @@ import (
 	"testing"
 	"time"
 
+	. "rozsa/backend/internal/model/responses"
 	"rozsa/backend/internal/model/types"
 )
+
+func streamSSE(t *testing.T, input string) (error, []types.StreamEvent) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte(input))
+	}))
+	defer server.Close()
+	var events []types.StreamEvent
+	err := NewProvider(server.Client()).StreamSimple(context.Background(), types.Model{ID: "m", Provider: "custom", BaseURL: server.URL}, types.Context{}, types.SimpleStreamOptions{}, func(event types.StreamEvent) {
+		events = append(events, event)
+	})
+	return err, events
+}
+
+func requestPayload(t *testing.T, model types.Model, input types.Context, options types.SimpleStreamOptions) (map[string]any, error) {
+	t.Helper()
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(writer, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}\n\n")
+	}))
+	defer server.Close()
+	model.BaseURL = server.URL
+	err := NewProvider(server.Client()).StreamSimple(context.Background(), model, input, options, func(types.StreamEvent) {})
+	return payload, err
+}
 
 func TestBuildRequestPreservesResponsesItemsAndProviderIdentity(t *testing.T) {
 	system := "instructions"
@@ -29,18 +60,11 @@ func TestBuildRequestPreservesResponsesItemsAndProviderIdentity(t *testing.T) {
 		Tools: []types.ToolSchema{{Name: "lookup", Description: "search", Parameters: json.RawMessage(`{"type":"object"}`)}},
 	}
 	session := "session-1"
-	request, err := buildRequest(model, input, types.SimpleStreamOptions{Base: types.StreamOptions{SessionID: &session}})
+	got, err := requestPayload(t, model, input, types.SimpleStreamOptions{Base: types.StreamOptions{SessionID: &session}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := json.Marshal(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got map[string]any
-	if err := json.Unmarshal(encoded, &got); err != nil {
-		t.Fatal(err)
-	}
+	encoded, _ := json.Marshal(got)
 	items := got["input"].([]any)
 	if got["model"] != "custom-model" || got["prompt_cache_key"] != "session-1" || got["store"] != false || got["stream"] != true || got["tool_choice"] != "auto" {
 		t.Fatalf("request=%s", encoded)
@@ -59,7 +83,7 @@ func TestBuildRequestPreservesResponsesItemsAndProviderIdentity(t *testing.T) {
 func TestBuildRequestKeepsEmptyProtocolFieldsAndHonorsUnsupportedEffort(t *testing.T) {
 	model := types.Model{ID: "m", Provider: "custom", ThinkingEffortMap: map[types.ThinkingEffort]*string{types.ThinkingHigh: nil}}
 	effort := types.ThinkingHigh
-	request, err := buildRequest(model, types.Context{
+	got, err := requestPayload(t, model, types.Context{
 		Messages: []types.Message{
 			types.UserMessage{Content: types.UserText("")},
 			types.ToolResultMessage{ToolCallID: "call", Content: []types.ContentBlock{}},
@@ -68,14 +92,7 @@ func TestBuildRequestKeepsEmptyProtocolFieldsAndHonorsUnsupportedEffort(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := json.Marshal(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got map[string]any
-	if err := json.Unmarshal(encoded, &got); err != nil {
-		t.Fatal(err)
-	}
+	encoded, _ := json.Marshal(got)
 	items := got["input"].([]any)
 	if items[0].(map[string]any)["content"].([]any)[0].(map[string]any)["text"] != "" {
 		t.Fatalf("empty text omitted: %s", encoded)
@@ -89,7 +106,7 @@ func TestBuildRequestKeepsEmptyProtocolFieldsAndHonorsUnsupportedEffort(t *testi
 }
 
 func TestBuildRequestRejectsMalformedToolResultContent(t *testing.T) {
-	_, err := buildRequest(types.Model{ID: "m", Provider: "custom"}, types.Context{
+	_, err := requestPayload(t, types.Model{ID: "m", Provider: "custom"}, types.Context{
 		Messages: []types.Message{
 			types.AssistantMessage{Content: []types.ContentBlock{types.ToolCallBlock{ID: "call", Name: "lookup", Arguments: json.RawMessage("{")}}},
 		},
@@ -98,7 +115,7 @@ func TestBuildRequestRejectsMalformedToolResultContent(t *testing.T) {
 		t.Fatalf("err=%v, want transparent invalid arguments error", err)
 	}
 
-	_, err = buildRequest(types.Model{ID: "m", Provider: "custom"}, types.Context{
+	_, err = requestPayload(t, types.Model{ID: "m", Provider: "custom"}, types.Context{
 		Messages: []types.Message{
 			types.ToolResultMessage{ToolCallID: "call", Content: []types.ContentBlock{types.ToolCallBlock{Arguments: json.RawMessage("{")}}},
 		},
@@ -202,8 +219,7 @@ func TestStreamIncompleteAndFailedHaveDistinctTerminalResults(t *testing.T) {
 		{"failed", `{"type":"response.failed","response":{"error":{"code":"server_error","message":"unavailable"}}}`, types.Error, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			output := types.AssistantMessage{Content: []types.ContentBlock{}}
-			err := consume(context.Background(), strings.NewReader("data: "+test.frame+"\n\n"), types.Model{}, &output, func(types.StreamEvent) {})
+			err, events := streamSSE(t, "data: "+test.frame+"\n\n")
 			if (err != nil) != test.wantErr {
 				t.Fatalf("err=%v", err)
 			}
@@ -215,8 +231,9 @@ func TestStreamIncompleteAndFailedHaveDistinctTerminalResults(t *testing.T) {
 				t.Fatalf("err=%v", err)
 			}
 			if test.name == "incomplete" {
-				if output.StopReason != test.wantStop || output.ErrorMessage == nil || *output.ErrorMessage != "max_output_tokens" {
-					t.Fatalf("output=%#v", output)
+				done, ok := events[len(events)-1].(types.Done)
+				if !ok || done.Reason != test.wantStop || done.Message.ErrorMessage == nil || *done.Message.ErrorMessage != "max_output_tokens" {
+					t.Fatalf("events=%#v", events)
 				}
 			}
 		})
@@ -267,19 +284,20 @@ func TestConsumeRejectsMalformedUnsupportedLateAndMissingTerminal(t *testing.T) 
 		{"late event", "data: {\"type\":\"response.completed\"}\n\ndata: {\"type\":\"response.created\"}\n\n", "after terminal"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := consume(context.Background(), strings.NewReader(test.input), types.Model{}, &types.AssistantMessage{Content: []types.ContentBlock{}}, func(types.StreamEvent) {})
+			err, _ := streamSSE(t, test.input)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("err=%v want=%q", err, test.want)
 			}
 		})
 	}
 	invalidUTF8 := string([]byte{'d', 'a', 't', 'a', ':', ' ', 0xff, '\n', '\n'})
-	if err := consume(context.Background(), strings.NewReader(invalidUTF8), types.Model{}, &types.AssistantMessage{Content: []types.ContentBlock{}}, func(types.StreamEvent) {}); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+	if err, _ := streamSSE(t, invalidUTF8); err == nil || !strings.Contains(err.Error(), "UTF-8") {
 		t.Fatalf("invalid UTF-8 error=%v", err)
 	}
-	output := types.AssistantMessage{Content: []types.ContentBlock{}}
-	if err := consume(context.Background(), strings.NewReader("data: {\"type\":\"response.incomplete\"}\n\n"), types.Model{}, &output, func(types.StreamEvent) {}); err != nil || output.StopReason != types.Length {
-		t.Fatalf("incomplete without response: output=%#v err=%v", output, err)
+	err, events := streamSSE(t, "data: {\"type\":\"response.incomplete\"}\n\n")
+	done, ok := events[len(events)-1].(types.Done)
+	if err != nil || !ok || done.Reason != types.Length {
+		t.Fatalf("incomplete without response: events=%#v err=%v", events, err)
 	}
 }
 

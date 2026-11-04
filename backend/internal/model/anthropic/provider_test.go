@@ -1,4 +1,4 @@
-package anthropic
+package anthropic_test
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	. "rozsa/backend/internal/model/anthropic"
 	"rozsa/backend/internal/model/types"
 )
 
@@ -61,21 +62,40 @@ func newTestProvider(client *http.Client) *Provider {
 	return provider
 }
 
+func captureRequest(t *testing.T, model types.Model, input types.Context, options types.SimpleStreamOptions) (map[string]any, http.Header) {
+	t.Helper()
+	if options.Base.APIKey == "" {
+		options.Base.APIKey = "fake-api-key"
+	}
+	var payload map[string]any
+	var headers http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Error(err)
+		}
+		headers = request.Header.Clone()
+		_, _ = fmt.Fprint(writer, emptyMessage())
+	}))
+	defer server.Close()
+	model.BaseURL = server.URL + "/v1"
+	if err := newTestProvider(server.Client()).StreamSimple(context.Background(), model, input, options, func(types.StreamEvent) {}); err != nil {
+		t.Fatal(err)
+	}
+	return payload, headers
+}
+
 // request.json is hand-derived from the current Rust anthropic/payload.rs,
 // including its unnormalized outgoing tool IDs and schema projection.
 func TestPayloadReference(t *testing.T) {
 	model, input, options := fixtureModel(), fixtureContext(), fixtureOptions()
-	compat, err := resolveCompatibility(model)
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload, err := buildPayload(model, input, options, true, compat)
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload, _ := captureRequest(t, model, input, options)
 	want := jsonValue(t, []byte(readFixture(t, "request.json")))
-	if got := jsonValue(t, payload); !reflect.DeepEqual(got, want) {
-		t.Fatalf("payload mismatch\ngot %s\nwant %v", payload, want)
+	if !reflect.DeepEqual(payload, want) {
+		t.Fatalf("payload mismatch\ngot %#v\nwant %v", payload, want)
 	}
 }
 
@@ -100,49 +120,33 @@ func TestThinkingCacheAndCompatibility(t *testing.T) {
 			model.ThinkingEffortMap = test.mapping
 			model.Compat = json.RawMessage(fmt.Sprintf(`{"forceAdaptiveThinking":%t}`, test.adaptive))
 			options := types.SimpleStreamOptions{Base: types.StreamOptions{Temperature: pointer(0.3)}, Reasoning: test.effort}
-			compat, err := resolveCompatibility(model)
-			if err != nil {
-				t.Fatal(err)
-			}
-			data, err := buildPayload(model, types.Context{}, options, false, compat)
-			if err != nil {
-				t.Fatal(err)
-			}
-			payload := jsonValue(t, data).(map[string]any)
+			payload, _ := captureRequest(t, model, types.Context{}, options)
 			if !reflect.DeepEqual(payload["thinking"], jsonValue(t, []byte(test.thinking))) || !reflect.DeepEqual(payload["output_config"], jsonValue(t, []byte(test.output))) {
-				t.Fatalf("thinking payload %s", data)
+				t.Fatalf("thinking payload %#v", payload)
 			}
 			_, temperature := payload["temperature"]
 			if temperature != test.temperature {
-				t.Fatalf("temperature payload %s", data)
+				t.Fatalf("temperature payload %#v", payload)
 			}
 		})
 	}
 	for _, effort := range []types.ThinkingEffort{types.ThinkingMax, types.ThinkingXHigh} {
 		options := fixtureOptions()
 		options.Reasoning = &effort
-		compat, _ := resolveCompatibility(fixtureModel())
-		data, err := buildPayload(fixtureModel(), types.Context{}, options, false, compat)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if jsonValue(t, data).(map[string]any)["thinking"].(map[string]any)["budget_tokens"] != float64(4096) {
-			t.Fatal(string(data))
+		payload, _ := captureRequest(t, fixtureModel(), types.Context{}, options)
+		if payload["thinking"].(map[string]any)["budget_tokens"] != float64(4096) {
+			t.Fatal(payload)
 		}
 	}
 	model := fixtureModel()
 	model.Provider = "fireworks"
-	compat, _ := resolveCompatibility(model)
-	data, err := buildPayload(model, fixtureContext(), fixtureOptions(), false, compat)
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := jsonValue(t, data).(map[string]any)
+	options := fixtureOptions()
+	options.Base.SessionID = pointer("session")
+	payload, headers := captureRequest(t, model, fixtureContext(), options)
 	tool := payload["tools"].([]any)[0].(map[string]any)
 	if tool["eager_input_streaming"] != nil || tool["cache_control"] != nil || payload["system"].([]any)[0].(map[string]any)["cache_control"].(map[string]any)["ttl"] != nil {
-		t.Fatal(string(data))
+		t.Fatal(payload)
 	}
-	headers := buildHeaders(model, types.SimpleStreamOptions{Base: types.StreamOptions{SessionID: pointer("session")}}, false, compat, fixtureContext())
 	if headers.Get("x-session-affinity") != "session" || !strings.Contains(headers.Get("anthropic-beta"), "fine-grained-tool-streaming") {
 		t.Fatal(headers)
 	}
@@ -151,23 +155,19 @@ func TestThinkingCacheAndCompatibility(t *testing.T) {
 func TestNonVisionAndAssistantCachePlacement(t *testing.T) {
 	model := fixtureModel()
 	model.Input = []string{"text"}
-	compat, _ := resolveCompatibility(model)
 	image := types.ImageBlock{Data: "aW1n", MimeType: "image/png"}
 	input := types.Context{Messages: []types.Message{types.UserMessage{Content: types.UserBlocks{image, image, types.TextBlock{Text: "middle"}, image}}, types.ToolResultMessage{Content: []types.ContentBlock{image, image}}, types.AssistantMessage{Content: []types.ContentBlock{types.TextBlock{Text: "last"}}}}}
-	data, err := buildPayload(model, input, types.SimpleStreamOptions{}, false, compat)
-	if err != nil {
-		t.Fatal(err)
-	}
-	messages := jsonValue(t, data).(map[string]any)["messages"].([]any)
+	payload, _ := captureRequest(t, model, input, types.SimpleStreamOptions{})
+	messages := payload["messages"].([]any)
 	blocks := messages[0].(map[string]any)["content"].([]any)
 	if len(blocks) != 3 || blocks[0].(map[string]any)["text"] != "(image omitted: model does not support images)" {
-		t.Fatal(string(data))
+		t.Fatal(payload)
 	}
 	tool := messages[1].(map[string]any)["content"].([]any)[0].(map[string]any)
 	if tool["content"].([]any)[0].(map[string]any)["text"] != "(tool image omitted: model does not support images)" {
-		t.Fatal(string(data))
+		t.Fatal(payload)
 	}
-	if strings.Contains(string(data), "cache_control") {
+	if strings.Contains(fmt.Sprint(payload), "cache_control") {
 		t.Fatal("cache must not be attached when last message is assistant")
 	}
 }
@@ -227,15 +227,35 @@ func TestRequestAuthHeadersAndEndpoints(t *testing.T) {
 			}
 		})
 	}
-	for base, want := range map[string]string{"": "https://api.anthropic.com/v1/messages", " https://example.test/ ": "https://example.test/v1/messages", "https://example.test/v1/": "https://example.test/v1/messages", "https://example.test/custom/messages": "https://example.test/custom/messages"} {
-		got, err := resolveEndpoint(base)
-		if err != nil || got != want {
-			t.Fatal(base, got, err)
-		}
+	for base, want := range map[string]string{
+		"":                                     "https://api.anthropic.com/v1/messages",
+		" https://example.test/ ":              "https://example.test/v1/messages",
+		"https://example.test/v1/":             "https://example.test/v1/messages",
+		"https://example.test/custom/messages": "https://example.test/custom/messages",
+	} {
+		t.Run("endpoint/"+base, func(t *testing.T) {
+			var got string
+			client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				got = request.URL.String()
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(emptyMessage())), Header: make(http.Header)}, nil
+			})}
+			model := fixtureModel()
+			model.BaseURL = base
+			err := newTestProvider(client).StreamSimple(context.Background(), model, types.Context{}, types.SimpleStreamOptions{Base: types.StreamOptions{APIKey: "fake"}}, func(types.StreamEvent) {})
+			if err != nil || got != want {
+				t.Fatalf("request URL = %q, err=%v; want %q", got, err, want)
+			}
+		})
 	}
 	for _, base := range []string{"file:///tmp/provider", "://", "https:///messages"} {
-		if _, err := resolveEndpoint(base); err == nil {
-			t.Fatal(base)
+		provider := newTestProvider(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			t.Fatal("invalid endpoint must fail before HTTP")
+			return nil, nil
+		})})
+		model := fixtureModel()
+		model.BaseURL = base
+		if err := provider.StreamSimple(context.Background(), model, types.Context{}, types.SimpleStreamOptions{}, func(types.StreamEvent) {}); err == nil {
+			t.Fatalf("accepted invalid endpoint %q", base)
 		}
 	}
 }
@@ -642,7 +662,8 @@ func TestInvalidRequestFailsBeforeHTTP(t *testing.T) {
 
 func TestLongDeltaAndConsumerMutation(t *testing.T) {
 	text := strings.Repeat("🌹", 20000)
-	fixture := sse("message_start", `{"message":{"id":"long"}}`) + sse("content_block_start", `{"index":0,"content_block":{"type":"text"}}`) + sse("content_block_delta", fmt.Sprintf(`{"index":0,"delta":{"type":"text_delta","text":%q}}`, text)) + sse("content_block_stop", `{"index":0}`) + sse("message_stop", `{}`)
+	toolID := "!你好" + strings.Repeat("a", 70)
+	fixture := sse("message_start", `{"message":{"id":"long"}}`) + sse("content_block_start", `{"index":0,"content_block":{"type":"text"}}`) + sse("content_block_delta", fmt.Sprintf(`{"index":0,"delta":{"type":"text_delta","text":%q}}`, text)) + sse("content_block_stop", `{"index":0}`) + sse("content_block_start", fmt.Sprintf(`{"index":1,"content_block":{"type":"tool_use","id":%q,"name":"lookup","input":{}}}`, toolID)) + sse("content_block_stop", `{"index":1}`) + sse("message_delta", `{"delta":{"stop_reason":"tool_use"}}`) + sse("message_stop", `{}`)
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(fixture))}, nil
 	})}
@@ -659,8 +680,9 @@ func TestLongDeltaAndConsumerMutation(t *testing.T) {
 	if err != nil || done.Message.Content[0].(types.TextBlock).Text != text || *done.Message.ResponseID != "long" {
 		t.Fatal(err, done)
 	}
-	if got := normalizeToolID("!你好" + strings.Repeat("a", 70)); got != strings.Repeat("a", 64) {
-		t.Fatal(got)
+	toolCall := done.Message.Content[1].(types.ToolCallBlock)
+	if toolCall.ID != strings.Repeat("a", 64) {
+		t.Fatalf("normalized tool call ID = %q", toolCall.ID)
 	}
 }
 

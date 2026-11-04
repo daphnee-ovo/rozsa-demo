@@ -1,8 +1,10 @@
-package types
+package types_test
 
 import (
 	"encoding/json"
 	"testing"
+
+	. "rozsa/backend/internal/model/types"
 )
 
 func TestThinkingSupportDistinguishesMissingAndExplicitNull(t *testing.T) {

@@ -1,4 +1,4 @@
-package anthropic
+package anthropic_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"rozsa/backend/internal/model/credentials"
+	. "rozsa/backend/internal/model/oauth/anthropic"
 )
 
 func TestRefreshUsesAnthropicJSONContractAndRetainsRefreshToken(t *testing.T) {
@@ -23,7 +24,7 @@ func TestRefreshUsesAnthropicJSONContractAndRetainsRefreshToken(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
-		if body["grant_type"] != "refresh_token" || body["refresh_token"] != "old-refresh" || body["client_id"] != clientID {
+		if body["grant_type"] != "refresh_token" || body["refresh_token"] != "old-refresh" || body["client_id"] != "9d1c250a-e61b-44d9-88ed-5944d1962f5e" {
 			t.Errorf("unexpected refresh request fields: %#v", body)
 		}
 		writer.Header().Set("Content-Type", "application/json")
@@ -92,7 +93,7 @@ func TestLoginBuildsPKCERequestFromTypedManualInput(t *testing.T) {
 	if body["code"] != "manual-code" || body["grant_type"] != "authorization_code" || body["redirect_uri"] != query.Get("redirect_uri") {
 		t.Fatalf("unexpected code exchange fields: %#v", body)
 	}
-	if len(body["code_verifier"]) != 43 || body["client_id"] != clientID {
+	if len(body["code_verifier"]) != 43 || body["client_id"] != "9d1c250a-e61b-44d9-88ed-5944d1962f5e" {
 		t.Fatalf("missing PKCE verifier/client id: %#v", body)
 	}
 }
