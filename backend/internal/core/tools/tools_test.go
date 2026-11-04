@@ -1,10 +1,18 @@
-package tools
+package tools_test
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"rozsa/backend/internal/core/tools"
 )
+
+type Result = tools.Result
+type ExecutionMode = tools.ExecutionMode
+type Tool = tools.Tool
+
+var NormalizeArguments = tools.NormalizeArguments
 
 type argumentTool struct{}
 

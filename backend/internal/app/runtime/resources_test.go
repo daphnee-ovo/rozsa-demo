@@ -1,4 +1,4 @@
-package runtime
+package runtime_test
 
 import (
 	"context"
@@ -48,29 +48,10 @@ func (provider *promptCaptureProvider) captured() []types.Context {
 }
 
 func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) {
-	root := t.TempDir()
+	root := useProjectTestCWD(t)
 	globalRoot := filepath.Join(root, "global")
 	home := filepath.Join(root, "home")
 	cwdA := filepath.Join(root, "project-a", "work")
-	cwdB := filepath.Join(root, "project-b", "work")
-	for _, directory := range []string{globalRoot, home, cwdA, cwdB} {
-		if err := os.MkdirAll(directory, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	writeRuntimeFixture(t, filepath.Join(globalRoot, "AGENTS.md"), "global resource")
-	writeRuntimeFixture(t, filepath.Join(cwdA, ".rozsa", "AGENTS.md"), "project A resource")
-	writeRuntimeFixture(t, filepath.Join(cwdB, ".rozsa", "AGENTS.md"), "project B resource")
-	writeRuntimeFixture(t, filepath.Join(root, "project-a", "AGENTS.md"), "project A ancestor")
-	writeRuntimeFixture(t, filepath.Join(cwdA, "AGENTS.md"), "project A cwd")
-	writeRuntimeFixture(t, filepath.Join(cwdB, "AGENTS.md"), "project B cwd")
-
-	writeRuntimeSkill(t, filepath.Join(globalRoot, "skills", "shared", "SKILL.md"), "global shared", "global shared body")
-	writeRuntimeSkill(t, filepath.Join(home, ".agents", "skills", "shared", "SKILL.md"), "agents shared", "agents shared body")
-	writeRuntimeSkill(t, filepath.Join(cwdA, ".rozsa", "skills", "shared", "SKILL.md"), "project shared", "project shared body")
-	writeRuntimeSkill(t, filepath.Join(globalRoot, "skills", "global-only", "SKILL.md"), "global only", "global only body")
-	writeRuntimeSkill(t, filepath.Join(cwdB, ".rozsa", "skills", "b-only", "SKILL.md"), "project B only", "project B body")
-	writeRuntimeFixture(t, filepath.Join(globalRoot, "settings.json"), `{"skills":{"global-only":false}}`)
 
 	rootsResolver := func(cwd string) (configpaths.Roots, error) {
 		return configpaths.Resolve(cwd, &globalRoot, nil, &home, "darwin")
@@ -81,25 +62,21 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 	}
 	settingsPaths := rootsA.SettingsPaths()
 	projectSettingsPath := settingsPaths[1]
-	settingsManager, err := settings.Load(settingsPaths[0], &projectSettingsPath, nil)
+	globalSettingsPath := filepath.Join(t.TempDir(), "settings.json")
+	copyTestFixture(t, settingsPaths[0], globalSettingsPath)
+	settingsManager, err := settings.Load(globalSettingsPath, &projectSettingsPath, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	builtinServer := newRuntimeBuiltinServer(t)
 	skillApplication := skills.NewApplicationWithBuiltinURL(settingsManager, rootsResolver, builtinServer.URL+"/contents/builtin-skills", builtinServer.Client(), nil)
 
-	writeDirectory, otherDirectory := filepath.Join(root, "sessions-a"), filepath.Join(root, "sessions-b")
-	if err := os.MkdirAll(writeDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	firstSession, err := session.Create(filepath.Join(writeDirectory, "a.jsonl"), "session-a", cwdA, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondSession := session.CreateLazy(filepath.Join(otherDirectory, "b.jsonl"), "session-b", cwdB, nil)
-	if _, err := secondSession.AppendMessage(session.UserMessage{Content: session.UserText("existing B history"), Timestamp: 1}); err != nil {
-		t.Fatal(err)
-	}
+	sessionRoot := t.TempDir()
+	writeDirectory, otherDirectory := filepath.Join(sessionRoot, "sessions-a"), filepath.Join(sessionRoot, "sessions-b")
+	firstSessionPath := filepath.Join(writeDirectory, "a.jsonl")
+	secondSessionPath := filepath.Join(otherDirectory, "b.jsonl")
+	copyTestFixture(t, filepath.Join(root, "sessions-a", "a.jsonl"), firstSessionPath)
+	copyTestFixture(t, filepath.Join(root, "sessions-b", "b.jsonl"), secondSessionPath)
 	provider := &promptCaptureProvider{}
 	app, err := New(Config{
 		SessionDir: writeDirectory, SessionDirs: []string{writeDirectory, otherDirectory},
@@ -111,8 +88,8 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if app.session.Path() != firstSession.Path() {
-		t.Fatalf("active session path = %q, want %q", app.session.Path(), firstSession.Path())
+	if got := app.SessionStatus().ActivePath; got != firstSessionPath {
+		t.Fatalf("active session path = %q, want %q", got, firstSessionPath)
 	}
 
 	if err := app.Prompt(context.Background(), "Use /skill:shared"); err != nil {
@@ -143,7 +120,8 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 	if !ok || !strings.Contains(string(userText), "<content>\nproject shared body\n</content>") || !strings.Contains(string(userText), filepath.Join(cwdA, ".rozsa", "skills", "shared")) {
 		t.Fatalf("slash skill body was not injected from the highest-priority source: %#v", firstUser.Content)
 	}
-	persisted := app.session.ContextMessages()
+	active := activeSession(t, app)
+	persisted := active.ContextMessages()
 	if len(persisted) == 0 {
 		t.Fatal("runtime did not persist the user message")
 	}
@@ -151,7 +129,7 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 	if !ok || persistedUser.DisplayText == nil || *persistedUser.DisplayText != "Use /skill:shared" {
 		t.Fatalf("persisted skill prompt display text = %#v, want original slash command", persisted[0])
 	}
-	reopened, err := session.OpenManager(app.session.Path())
+	reopened, err := session.OpenManager(active.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +158,7 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 		t.Fatalf("next runtime turn did not apply changed skill settings: %s", secondPrompt)
 	}
 
-	if _, err := app.Switch(context.Background(), secondSession.Path(), secondSession.SessionID()); err != nil {
+	if _, err := app.Switch(context.Background(), secondSessionPath, "session-b"); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.Prompt(context.Background(), "Use /skill:b-only"); err != nil {
@@ -220,7 +198,7 @@ func TestProductionRuntimeBuildsLayeredPromptAndReloadsPerSession(t *testing.T) 
 }
 
 func TestProductionRuntimeReturnsRootResolutionFailureBeforeProviderCall(t *testing.T) {
-	root := t.TempDir()
+	root := useProjectTestCWD(t)
 	settingsManager, err := settings.Load(filepath.Join(root, "settings.json"), nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -242,8 +220,8 @@ func TestProductionRuntimeReturnsRootResolutionFailureBeforeProviderCall(t *test
 	if len(provider.captured()) != 0 {
 		t.Fatal("provider was called after prompt root resolution failed")
 	}
-	if got := len(app.session.ContextMessages()); got != 0 {
-		t.Fatalf("user message persisted despite root resolution failure: %d messages", got)
+	if _, err := os.Stat(app.SessionStatus().ActivePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session file exists despite root resolution failure: %v", err)
 	}
 }
 
@@ -292,21 +270,6 @@ func lastUserMessage(t *testing.T, input types.Context) types.UserMessage {
 	}
 	t.Fatal("provider request has no user message")
 	return types.UserMessage{}
-}
-
-func writeRuntimeFixture(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func writeRuntimeSkill(t *testing.T, path, description, body string) {
-	t.Helper()
-	writeRuntimeFixture(t, path, "---\ndescription: "+description+"\n---\n"+body)
 }
 
 var _ agent.Provider = (*promptCaptureProvider)(nil)

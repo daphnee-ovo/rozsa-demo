@@ -1,4 +1,4 @@
-package agent
+package agent_test
 
 import (
 	"context"
@@ -8,10 +8,22 @@ import (
 	"testing"
 	"time"
 
+	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
 	"rozsa/backend/internal/core/tools"
 	"rozsa/backend/internal/model/types"
 )
+
+type Config = agent.Config
+type Result = agent.Result
+type Event = agent.Event
+type ToolExecutionEnd = agent.ToolExecutionEnd
+type MessageStart = agent.MessageStart
+type TurnEnd = agent.TurnEnd
+type AgentEnd = agent.AgentEnd
+type ToolExecutionStart = agent.ToolExecutionStart
+
+var Run = agent.Run
 
 type fakeProvider struct {
 	events []types.StreamEvent

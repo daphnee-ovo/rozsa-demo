@@ -1,4 +1,4 @@
-package runtime
+package runtime_test
 
 import (
 	"context"
@@ -86,9 +86,16 @@ func subscribeMessage(t *testing.T, app *Runtime, operation string) MessageEvent
 	return subscription
 }
 
-func createOtherSession(t *testing.T, app *Runtime, id string) *session.Manager {
+func openOtherSession(t *testing.T, app *Runtime, id string) *session.Manager {
 	t.Helper()
-	manager, err := session.Create(filepath.Join(app.sessionDir, id+".jsonl"), id, "/workspace", nil)
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	activePath := app.SessionStatus().ActivePath
+	path := filepath.Join(filepath.Dir(activePath), id+".jsonl")
+	copyTestFixture(t, filepath.Join(workingDirectory, "sessions", id+".jsonl"), path)
+	manager, err := session.OpenManager(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,14 +112,15 @@ func TestConcurrentSessionsKeepEventsCancellationAndSelectionIsolated(t *testing
 			t.Error(err)
 		}
 	})
-	managerA := app.session
+	managerAPath := app.SessionStatus().ActivePath
+	managerAID := session.IDFromPath(managerAPath)
 	operationA, err := app.StartMessage(t.Context(), "question A")
 	if err != nil {
 		t.Fatal(err)
 	}
 	callA := nextCall(t, provider)
 	subA := subscribeMessage(t, app, operationA)
-	managerB := createOtherSession(t, app, "session-b")
+	managerB := openOtherSession(t, app, "session-b")
 	if _, err := app.Switch(t.Context(), managerB.Path(), "session-b"); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +141,7 @@ func TestConcurrentSessionsKeepEventsCancellationAndSelectionIsolated(t *testing
 	for _, pair := range []struct {
 		sub        MessageEventSubscription
 		path, text string
-	}{{subA, managerA.Path(), "A only"}, {subB, managerB.Path(), "B only"}} {
+	}{{subA, managerAPath, "A only"}, {subB, managerB.Path(), "B only"}} {
 		event := nextMessageEvent(t, pair.sub)
 		if event.SessionPath != pair.path || event.Kind != MessageTextDelta || event.Delta == nil || *event.Delta != pair.text {
 			t.Fatalf("crossed delta: %+v", event)
@@ -152,7 +160,7 @@ func TestConcurrentSessionsKeepEventsCancellationAndSelectionIsolated(t *testing
 	if err := app.CancelMessage(t.Context(), operationA); err != nil {
 		t.Fatal(err)
 	}
-	if event := nextMessageEvent(t, subA); event.Kind != MessageCanceled || event.SessionPath != managerA.Path() {
+	if event := nextMessageEvent(t, subA); event.Kind != MessageCanceled || event.SessionPath != managerAPath {
 		t.Fatalf("cancel crossed sessions: %+v", event)
 	}
 	state, err := app.Snapshot(t.Context())
@@ -167,11 +175,15 @@ func TestConcurrentSessionsKeepEventsCancellationAndSelectionIsolated(t *testing
 	if event := nextMessageEvent(t, subB); event.Kind != MessageCompleted || event.SessionPath != managerB.Path() {
 		t.Fatalf("B terminal: %+v", event)
 	}
+	managerA, err := session.OpenManager(managerAPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct {
 		manager *session.Manager
 		want    session.StopReason
 		text    string
-	}{{managerA, session.Aborted, "A only"}, {app.session, session.Stop, "B only still running"}} {
+	}{{managerA, session.Aborted, "A only"}, {activeSession(t, app), session.Stop, "B only still running"}} {
 		messages := test.manager.ContextMessages()
 		if len(messages) != 2 {
 			t.Fatalf("messages for %s: %#v", test.manager.Path(), messages)
@@ -181,18 +193,18 @@ func TestConcurrentSessionsKeepEventsCancellationAndSelectionIsolated(t *testing
 			t.Fatalf("wrong persisted owner: %#v", messages)
 		}
 	}
-	if _, err := app.Switch(t.Context(), managerA.Path(), managerA.SessionID()); err != nil {
+	if _, err := app.Switch(t.Context(), managerAPath, managerAID); err != nil {
 		t.Fatalf("re-entry lost the original writable owner: %v", err)
 	}
-	if app.session != managerA {
-		t.Fatal("re-entry replaced the initial session manager")
+	if app.SessionStatus().ActivePath != managerAPath {
+		t.Fatal("re-entry did not restore the original session")
 	}
 }
 
 func TestRuntimeConsumesQueueSeriallyAndSteeringBetweenTurns(t *testing.T) {
 	provider := &controlledProvider{calls: make(chan *controlledCall, 8)}
 	app := newTestRuntime(t, provider, io.Discard)
-	path := app.session.Path()
+	path := app.SessionStatus().ActivePath
 	operation, err := app.StartMessage(t.Context(), "initial")
 	if err != nil {
 		t.Fatal(err)
@@ -279,13 +291,15 @@ func TestRuntimeConsumesQueueSeriallyAndSteeringBetweenTurns(t *testing.T) {
 
 func TestForkCopiesOnlyPrefixThroughUserAndRestoresContext(t *testing.T) {
 	provider := &controlledProvider{calls: make(chan *controlledCall, 8)}
-	app := newTestRuntime(t, provider, io.Discard)
-	source := app.session
-	for _, message := range []session.Message{session.UserMessage{Content: session.UserText("first")}, session.AssistantMessage{Content: []session.ContentBlock{session.TextBlock{Text: "answer"}}, StopReason: session.Stop}, session.UserMessage{Content: session.UserText("fork here")}, session.AssistantMessage{Content: []session.ContentBlock{session.TextBlock{Text: "later"}}, StopReason: session.Stop}} {
-		if _, err := source.AppendMessage(message); err != nil {
-			t.Fatal(err)
-		}
+	workingDirectory := useProjectTestCWD(t)
+	sourcePath := filepath.Join(t.TempDir(), "source.jsonl")
+	copyTestFixture(t, filepath.Join(workingDirectory, "sessions", "source.jsonl"), sourcePath)
+	sourceDir := filepath.Dir(sourcePath)
+	source, err := session.Open(sourcePath)
+	if err != nil {
+		t.Fatal(err)
 	}
+	app := newTestRuntimeAt(t, sourceDir, provider, io.Discard)
 	if _, err := app.ForkSession(t.Context(), 1); err == nil {
 		t.Fatal("accepted assistant fork point")
 	}
@@ -298,8 +312,12 @@ func TestForkCopiesOnlyPrefixThroughUserAndRestoresContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	header := reader.Header()
-	if header.ParentSession == nil || *header.ParentSession != source.Path() || len(reader.ContextMessages()) != 3 {
-		t.Fatalf("fork restoration: %+v %#v", header, reader.ContextMessages())
+	parentSession := ""
+	if header.ParentSession != nil {
+		parentSession = *header.ParentSession
+	}
+	if parentSession != source.Path() || len(reader.ContextMessages()) != 3 {
+		t.Fatalf("fork restoration parent = %q, source = %q, messages = %#v", parentSession, source.Path(), reader.ContextMessages())
 	}
 	if source.Entries()[0].ID == reader.Entries()[0].ID {
 		t.Fatal("fork reused entry identity")
@@ -323,7 +341,7 @@ type questionProvider struct{ calls chan string }
 func (provider *questionProvider) StreamSimple(ctx context.Context, model types.Model, input types.Context, options types.SimpleStreamOptions, emit func(types.StreamEvent)) error {
 	message := types.AssistantMessage{API: model.API, Provider: model.Provider, Model: model.ID, Content: []types.ContentBlock{}, StopReason: types.Stop}
 	if _, ok := input.Messages[len(input.Messages)-1].(types.ToolResultMessage); !ok {
-		message.Content = []types.ContentBlock{types.ToolCallBlock{ID: "same-call", Name: askUserQuestionName, Arguments: json.RawMessage(questionArguments)}}
+		message.Content = []types.ContentBlock{types.ToolCallBlock{ID: "same-call", Name: "askUserQuestion", Arguments: json.RawMessage(questionArguments)}}
 		message.StopReason = types.ToolUse
 	}
 	emit(types.Start{Partial: message})
@@ -335,7 +353,7 @@ func (provider *questionProvider) StreamSimple(ctx context.Context, model types.
 func TestRuntimeQuestionAndApprovalCleanupUsesOriginSession(t *testing.T) {
 	provider := &questionProvider{calls: make(chan string, 8)}
 	app := newTestRuntime(t, provider, io.Discard)
-	managerA := app.session
+	managerAPath := app.SessionStatus().ActivePath
 	operationA, err := app.StartMessage(t.Context(), "A asks")
 	if err != nil {
 		t.Fatal(err)
@@ -344,10 +362,7 @@ func TestRuntimeQuestionAndApprovalCleanupUsesOriginSession(t *testing.T) {
 	if !ok {
 		t.Fatal("A production tool did not submit")
 	}
-	managerB, err := session.Create(filepath.Join(app.sessionDir, "b.jsonl"), "header-b", "/workspace", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	managerB := openOtherSession(t, app, "b")
 	if _, err := app.Switch(t.Context(), managerB.Path(), "header-b"); err != nil {
 		t.Fatal(err)
 	}
@@ -362,11 +377,6 @@ func TestRuntimeQuestionAndApprovalCleanupUsesOriginSession(t *testing.T) {
 			t.Fatal("both providers did not run")
 		}
 	}
-	for _, id := range []string{managerA.SessionID(), "b"} {
-		if err := app.approvals.Add(permissions.Identity{SessionID: id, RequestID: "same-call"}, permissions.ApprovalInfo{}); err != nil {
-			t.Fatal(err)
-		}
-	}
 	if err := app.CancelMessage(t.Context(), operationA); err != nil {
 		t.Fatal(err)
 	}
@@ -375,6 +385,10 @@ func TestRuntimeQuestionAndApprovalCleanupUsesOriginSession(t *testing.T) {
 		t.Fatalf("A terminal: %+v", event)
 	}
 	foundToolCall := false
+	managerA, err := session.OpenManager(managerAPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, message := range managerA.ContextMessages() {
 		if assistant, ok := message.(session.AssistantMessage); ok {
 			foundToolCall = true
@@ -391,11 +405,6 @@ func TestRuntimeQuestionAndApprovalCleanupUsesOriginSession(t *testing.T) {
 	if !ok || requestB.SessionID != "b" || requestB.TransportID != requestA.TransportID || requestB.RequestID == requestA.RequestID {
 		t.Fatalf("question route: A=%+v B=%+v", requestA, requestB)
 	}
-	approvalA, _ := app.approvals.Get(permissions.Identity{SessionID: managerA.SessionID(), RequestID: "same-call"})
-	approvalB, _ := app.approvals.Get(permissions.Identity{SessionID: "b", RequestID: "same-call"})
-	if approvalA.Status != permissions.Cancelled || approvalB.Status != permissions.Pending {
-		t.Fatalf("approval cleanup crossed sessions: A=%+v B=%+v", approvalA, approvalB)
-	}
 	answers := questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}
 	if err := app.QuestionOwner().Respond(requestA.RequestID, answers); !errors.Is(err, questions.ErrNoPending) {
 		t.Fatalf("accepted late A answer: %v", err)
@@ -406,12 +415,65 @@ func TestRuntimeQuestionAndApprovalCleanupUsesOriginSession(t *testing.T) {
 	if event := nextMessageEvent(t, subscribeMessage(t, app, operationB)); event.Kind != MessageCompleted || event.SessionID != "b" || event.SessionPath != managerB.Path() {
 		t.Fatalf("B terminal: %+v", event)
 	}
+
+	t.Run("approval cancellation preserves the other session request", func(t *testing.T) {
+		workspace := useProjectTestCWD(t)
+		path := filepath.Join(newToolOutputDirectory(t, workspace), "approved.txt")
+		writeProvider := newToolLoopProvider("write", func(types.Context) json.RawMessage {
+			data, _ := json.Marshal(map[string]any{"file_path": path, "content": "approved"})
+			return data
+		})
+		approvalApp := newProductionRuntime(t, writeProvider, workspace, nil, nil)
+		sessionAID := activeSession(t, approvalApp).SessionID()
+		operationA, err := approvalApp.StartMessage(t.Context(), "request A write")
+		if err != nil {
+			t.Fatal(err)
+		}
+		requestA := waitForApproval(t, approvalApp, sessionAID)
+		sessionB := openOtherSession(t, approvalApp, "approval-b")
+		if _, err := approvalApp.Switch(t.Context(), sessionB.Path(), sessionB.SessionID()); err != nil {
+			t.Fatal(err)
+		}
+		operationB, err := approvalApp.StartMessage(t.Context(), "request B write")
+		if err != nil {
+			t.Fatal(err)
+		}
+		requestB := waitForApproval(t, approvalApp, sessionB.SessionID())
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("Write ran before either approval: %v", err)
+		}
+		if err := approvalApp.CancelMessage(t.Context(), operationA); err != nil {
+			t.Fatal(err)
+		}
+		if terminal := waitForTerminal(t, approvalApp, operationA); terminal.Kind != MessageCanceled {
+			t.Fatalf("A terminal = %+v", terminal)
+		}
+		if requests := approvalApp.PendingApprovals(requestA.Identity.SessionID); len(requests) != 0 {
+			t.Fatalf("A approvals after cancellation = %+v", requests)
+		}
+		requestsB := approvalApp.PendingApprovals(requestB.Identity.SessionID)
+		if len(requestsB) != 1 || requestsB[0].Identity != requestB.Identity || requestsB[0].Status != permissions.Pending {
+			t.Fatalf("B approvals after A cancellation = %+v", requestsB)
+		}
+		if err := approvalApp.ApprovalOwner().RespondApproval(t.Context(), requestA.Identity, permissions.Response{Kind: permissions.AllowOnce}); err == nil {
+			t.Fatal("late response to cancelled A approval was accepted")
+		}
+		if err := approvalApp.ApprovalOwner().RespondApproval(t.Context(), requestB.Identity, permissions.Response{Kind: permissions.AllowOnce}); err != nil {
+			t.Fatal(err)
+		}
+		if terminal := waitForTerminal(t, approvalApp, operationB); terminal.Kind != MessageCompleted {
+			t.Fatalf("B terminal = %+v", terminal)
+		}
+		if contents, err := os.ReadFile(path); err != nil || string(contents) != "approved" {
+			t.Fatalf("B approved Write = %q, %v", contents, err)
+		}
+	})
 }
 
 func TestRuntimeShutdownRejectsNewWorkWithoutChangingSelection(t *testing.T) {
 	provider := &controlledProvider{calls: make(chan *controlledCall, 8)}
 	app := newTestRuntime(t, provider, io.Discard)
-	manager := createOtherSession(t, app, "selected")
+	manager := openOtherSession(t, app, "selected")
 	if _, err := app.Switch(t.Context(), manager.Path(), "selected"); err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +507,7 @@ func TestRuntimeReportsWriteFailureWithoutContaminatingOtherSession(t *testing.T
 		t.Fatal(err)
 	}
 	callA := nextCall(t, provider)
-	managerB := createOtherSession(t, app, "b")
+	managerB := openOtherSession(t, app, "b")
 	if _, err := app.Switch(t.Context(), managerB.Path(), "b"); err != nil {
 		t.Fatal(err)
 	}
@@ -474,6 +536,7 @@ func TestRuntimeReportsWriteFailureWithoutContaminatingOtherSession(t *testing.T
 }
 
 func TestCancellationDoesNotHideCleanupFailure(t *testing.T) {
+	useProjectTestCWD(t)
 	provider := &controlledProvider{calls: make(chan *controlledCall, 8)}
 	app, err := New(Config{SessionDir: t.TempDir(), Model: types.Model{ID: "model", Provider: "provider", API: types.APIAnthropicMessages}, Provider: provider, LifecycleHooks: sessions.Hooks{RejectApprovals: func(string) error { return errors.New("response rejected") }}})
 	if err != nil {
@@ -519,19 +582,26 @@ func TestCancelBeforeProviderStartsDoesNotBecomeEmptyResponseFailure(t *testing.
 func TestForkFromDeliveredSteeringWhileSourceContinuesInBackground(t *testing.T) {
 	provider := &controlledProvider{calls: make(chan *controlledCall, 8)}
 	app := newTestRuntime(t, provider, io.Discard)
-	source := app.session
+	sourcePath := app.SessionStatus().ActivePath
 	operation, err := app.StartMessage(t.Context(), "initial")
 	if err != nil {
 		t.Fatal(err)
 	}
 	call := nextCall(t, provider)
-	if err := app.SendRunningMessage(t.Context(), source.Path(), sessions.Steer, "live fork point"); err != nil {
+	if err := app.SendRunningMessage(t.Context(), sourcePath, sessions.Steer, "live fork point"); err != nil {
 		t.Fatal(err)
 	}
 	close(call.proceed)
 	steered := nextCall(t, provider)
 	deadline := time.Now().Add(time.Second)
-	for len(app.conversation(source).displayMessages()) < 3 && time.Now().Before(deadline) {
+	for {
+		state, err := app.Snapshot(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.Active != nil && len(state.Active.Messages) >= 3 || time.Now().After(deadline) {
+			break
+		}
 		goruntime.Gosched()
 	}
 	fork, err := app.ForkSession(t.Context(), 2)
@@ -542,14 +612,14 @@ func TestForkFromDeliveredSteeringWhileSourceContinuesInBackground(t *testing.T)
 		t.Fatalf("fork prefix: %+v", fork.Messages)
 	}
 	close(steered.proceed)
-	if event := nextMessageEvent(t, subscribeMessage(t, app, operation)); event.Kind != MessageCompleted || event.SessionPath != source.Path() {
+	if event := nextMessageEvent(t, subscribeMessage(t, app, operation)); event.Kind != MessageCompleted || event.SessionPath != sourcePath {
 		t.Fatalf("background source terminal: %+v", event)
 	}
 	state, err := app.Snapshot(t.Context())
 	if err != nil || state.Active == nil || state.Active.Path != fork.Path {
 		t.Fatalf("background source stole fork selection: %+v %v", state, err)
 	}
-	reader, err := session.Open(source.Path())
+	reader, err := session.Open(sourcePath)
 	if err != nil {
 		t.Fatal(err)
 	}

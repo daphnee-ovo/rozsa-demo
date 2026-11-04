@@ -1,4 +1,4 @@
-package runtime
+package runtime_test
 
 import (
 	"context"
@@ -54,14 +54,13 @@ func (provider *toolLoopProvider) StreamSimple(ctx context.Context, model types.
 
 func newProductionRuntime(t *testing.T, provider *toolLoopProvider, workspace string, resolvedSettings func() map[string]any, store permissions.ProjectRuleStore) *Runtime {
 	t.Helper()
+	sessionDir := t.TempDir()
+	copyTestFixture(t, filepath.Join(workspace, "sessions", "runtime.jsonl"), filepath.Join(sessionDir, "runtime.jsonl"))
 	app, err := New(Config{
-		SessionDir: t.TempDir(), Model: types.Model{ID: "fixture-model", Provider: "fixture", API: types.APIAnthropicMessages, ContextWindow: 128000},
+		SessionDir: sessionDir, Model: types.Model{ID: "fixture-model", Provider: "fixture", API: types.APIAnthropicMessages, ContextWindow: 128000},
 		Provider: provider, Output: io.Discard, ResolvedSettings: resolvedSettings, ProjectRuleStore: store,
 	})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := app.session.SetCwd(workspace); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -72,6 +71,20 @@ func newProductionRuntime(t *testing.T, provider *toolLoopProvider, workspace st
 		}
 	})
 	return app
+}
+
+func newToolOutputDirectory(t *testing.T, workspace string) string {
+	t.Helper()
+	directory, err := os.MkdirTemp(workspace, ".test-output-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(directory); err != nil {
+			t.Errorf("remove test output directory: %v", err)
+		}
+	})
+	return directory
 }
 
 func yoloSettings() func() map[string]any {
@@ -156,25 +169,23 @@ func assertProductionTools(t *testing.T, schemas []types.ToolSchema) {
 func TestRuntimeRegistersProductionToolsAndPersistsResults(t *testing.T) {
 	for _, name := range []string{"read", "write", "bash"} {
 		t.Run(name, func(t *testing.T) {
-			workspace := t.TempDir()
+			workspace := useProjectTestCWD(t)
+			readFixturePath := filepath.Join(workspace, "input.txt")
+			outputDirectory := newToolOutputDirectory(t, workspace)
+			nextDirectory := filepath.Join(outputDirectory, "next")
 			provider := newToolLoopProvider(name, func(types.Context) json.RawMessage {
 				switch name {
 				case "read":
-					path := filepath.Join(workspace, "input.txt")
-					if err := os.WriteFile(path, []byte("read fixture\n"), 0o600); err != nil {
-						t.Fatal(err)
-					}
-					data, _ := json.Marshal(map[string]any{"file_path": path})
+					data, _ := json.Marshal(map[string]any{"file_path": readFixturePath})
 					return data
 				case "write":
-					data, _ := json.Marshal(map[string]any{"file_path": filepath.Join(workspace, "output.txt"), "content": "write fixture"})
+					data, _ := json.Marshal(map[string]any{"file_path": filepath.Join(outputDirectory, "output.txt"), "content": "write fixture"})
 					return data
 				default:
-					nextDirectory := filepath.Join(workspace, "next")
 					if err := os.Mkdir(nextDirectory, 0o700); err != nil {
 						t.Fatal(err)
 					}
-					command := "printf 'bash fixture' > " + filepath.Join(workspace, "bash.txt") + "; cd " + nextDirectory
+					command := "printf 'bash fixture' > " + filepath.Join(outputDirectory, "bash.txt") + "; cd " + nextDirectory
 					data, _ := json.Marshal(map[string]any{"command": command})
 					return data
 				}
@@ -185,11 +196,11 @@ func TestRuntimeRegistersProductionToolsAndPersistsResults(t *testing.T) {
 			}
 			firstCall := <-provider.calls
 			assertProductionTools(t, firstCall.Tools)
-			result := persistedToolResult(t, app.session.ContextMessages())
+			result := persistedToolResult(t, activeSession(t, app).ContextMessages())
 			if len(result.Details) == 0 || string(result.Details) == "null" {
 				t.Fatalf("tool result details were not persisted: %s", result.Details)
 			}
-			reopened, err := session.Open(app.session.Path())
+			reopened, err := session.Open(activeSession(t, app).Path())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -203,21 +214,20 @@ func TestRuntimeRegistersProductionToolsAndPersistsResults(t *testing.T) {
 					t.Fatalf("Read result = %q", persistedText(persisted))
 				}
 			case "write":
-				contents, err := os.ReadFile(filepath.Join(workspace, "output.txt"))
+				contents, err := os.ReadFile(filepath.Join(outputDirectory, "output.txt"))
 				if err != nil || string(contents) != "write fixture" {
 					t.Fatalf("Write side effect = %q, %v", contents, err)
 				}
 			case "bash":
-				contents, err := os.ReadFile(filepath.Join(workspace, "bash.txt"))
+				contents, err := os.ReadFile(filepath.Join(outputDirectory, "bash.txt"))
 				if err != nil || string(contents) != "bash fixture" {
 					t.Fatalf("Bash side effect = %q, %v", contents, err)
 				}
-				wantCWD := filepath.Join(workspace, "next")
-				if app.session.Cwd() != wantCWD {
-					t.Fatalf("Bash cwd = %q, want %q", app.session.Cwd(), wantCWD)
+				if got := activeSession(t, app).Cwd(); got != nextDirectory {
+					t.Fatalf("Bash cwd = %q, want %q", got, nextDirectory)
 				}
-				if reopened.Header().Cwd != wantCWD {
-					t.Fatalf("persisted Bash cwd = %q, want %q", reopened.Header().Cwd, wantCWD)
+				if reopened.Header().Cwd != nextDirectory {
+					t.Fatalf("persisted Bash cwd = %q, want %q", reopened.Header().Cwd, nextDirectory)
 				}
 			}
 		})
@@ -225,8 +235,8 @@ func TestRuntimeRegistersProductionToolsAndPersistsResults(t *testing.T) {
 }
 
 func TestApprovalWaitsBeforeWriteAndAppliesSessionTrust(t *testing.T) {
-	workspace := t.TempDir()
-	path := filepath.Join(workspace, "approved.txt")
+	workspace := useProjectTestCWD(t)
+	path := filepath.Join(newToolOutputDirectory(t, workspace), "approved.txt")
 	provider := newToolLoopProvider("write", func(types.Context) json.RawMessage {
 		data, _ := json.Marshal(map[string]any{"file_path": path, "content": "approved"})
 		return data
@@ -236,7 +246,7 @@ func TestApprovalWaitsBeforeWriteAndAppliesSessionTrust(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := waitForApproval(t, app, app.session.SessionID())
+	request := waitForApproval(t, app, activeSession(t, app).SessionID())
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Write ran before approval: stat err = %v", err)
 	}
@@ -246,8 +256,9 @@ func TestApprovalWaitsBeforeWriteAndAppliesSessionTrust(t *testing.T) {
 	if err := app.ApprovalOwner().RespondApproval(t.Context(), request.Identity, permissions.Response{Kind: permissions.AllowSession, TrustKey: "write:/outside/scope"}); err == nil {
 		t.Fatal("invalid trust scope was accepted")
 	}
-	if current, exists := app.approvals.Get(request.Identity); !exists || current.Status != permissions.Pending {
-		t.Fatalf("invalid trust scope changed the pending request: %+v %v", current, exists)
+	current := waitForApproval(t, app, request.Identity.SessionID)
+	if current.Identity != request.Identity || current.Status != permissions.Pending {
+		t.Fatalf("invalid trust scope changed the pending request: %+v", current)
 	}
 	response := permissions.Response{Kind: permissions.AllowSession, TrustKey: request.Info.TrustLevels[0].Key}
 	if err := app.ApprovalOwner().RespondApproval(t.Context(), request.Identity, response); err != nil {
@@ -260,26 +271,28 @@ func TestApprovalWaitsBeforeWriteAndAppliesSessionTrust(t *testing.T) {
 	if err != nil || string(contents) != "approved" {
 		t.Fatalf("approved Write = %q, %v", contents, err)
 	}
-	if _, exists := app.approvals.Get(request.Identity); exists {
-		t.Fatal("successful approval remained pending")
+	if requests := app.PendingApprovals(request.Identity.SessionID); len(requests) != 0 {
+		t.Fatalf("successful approval remained pending: %+v", requests)
 	}
-	arguments := map[string]any{"file_path": path}
-	if verdict := app.permissionRuntime.policies[request.Identity.SessionID].Evaluate(request.Identity.SessionID, "write", arguments); verdict.Kind != permissions.Allow {
-		t.Fatalf("session trust was not applied: verdict=%+v approval=%+v", verdict, request.Info)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
 	}
 	secondContext, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	if err := app.Prompt(secondContext, "reuse session trust"); err != nil {
 		t.Fatal(err)
 	}
-	if requests := app.PendingApprovals(app.session.SessionID()); len(requests) != 0 {
+	if requests := app.PendingApprovals(request.Identity.SessionID); len(requests) != 0 {
 		t.Fatalf("session trust did not cover the same request: %+v", requests)
+	}
+	if contents, err := os.ReadFile(path); err != nil || string(contents) != "approved" {
+		t.Fatalf("trusted retry Write = %q, %v", contents, err)
 	}
 }
 
 func TestProjectTrustPersistsThroughLayeredSettings(t *testing.T) {
-	workspace := t.TempDir()
-	path := filepath.Join(workspace, "project-trusted.txt")
+	workspace := useProjectTestCWD(t)
+	path := filepath.Join(newToolOutputDirectory(t, workspace), "project-trusted.txt")
 	settingsRoot := t.TempDir()
 	globalPath := filepath.Join(settingsRoot, "global.json")
 	projectPath := filepath.Join(settingsRoot, "project", "settings.json")
@@ -303,7 +316,7 @@ func TestProjectTrustPersistsThroughLayeredSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := waitForApproval(t, app, app.session.SessionID())
+	request := waitForApproval(t, app, activeSession(t, app).SessionID())
 	trustKey := request.Info.TrustLevels[0].Key
 	if err := app.ApprovalOwner().RespondApproval(t.Context(), request.Identity, permissions.Response{Kind: permissions.AllowProject, TrustKey: trustKey}); err != nil {
 		t.Fatal(err)
@@ -320,28 +333,39 @@ func TestProjectTrustPersistsThroughLayeredSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	permissionSettings := settingsManager.Resolved()["permission"].(map[string]any)
-	allowRules, ok := settingStrings(permissionSettings["allow"])
-	if !ok || !containsString(allowRules, rule) {
+	allowRules, ok := permissionSettings["allow"].([]any)
+	containsRule := false
+	if ok {
+		for _, value := range allowRules {
+			if value == rule {
+				containsRule = true
+				break
+			}
+		}
+	}
+	if !containsRule {
 		t.Fatalf("project approval was not persisted in settings: %v", permissionSettings["allow"])
 	}
-	arguments := map[string]any{"file_path": path}
-	if verdict := app.permissionRuntime.policies[request.Identity.SessionID].Evaluate(request.Identity.SessionID, "write", arguments); verdict.Kind != permissions.Allow {
-		t.Fatalf("project trust was not applied: verdict=%+v approval=%+v", verdict, request.Info)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
 	}
 	secondContext, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	if err := app.Prompt(secondContext, "reuse project trust"); err != nil {
 		t.Fatal(err)
 	}
-	if requests := app.PendingApprovals(app.session.SessionID()); len(requests) != 0 {
+	if requests := app.PendingApprovals(request.Identity.SessionID); len(requests) != 0 {
 		t.Fatalf("project trust did not cover the same request: %+v", requests)
+	}
+	if contents, err := os.ReadFile(path); err != nil || string(contents) != "trusted" {
+		t.Fatalf("project-trusted retry Write = %q, %v", contents, err)
 	}
 }
 
 func TestDeniedHintCancellationAndFailedResponseRemainSafe(t *testing.T) {
 	t.Run("deny does not write", func(t *testing.T) {
-		workspace := t.TempDir()
-		path := filepath.Join(workspace, "denied.txt")
+		workspace := useProjectTestCWD(t)
+		path := filepath.Join(newToolOutputDirectory(t, workspace), "denied.txt")
 		provider := newToolLoopProvider("write", func(types.Context) json.RawMessage {
 			data, _ := json.Marshal(map[string]any{"file_path": path, "content": "must not exist"})
 			return data
@@ -351,7 +375,7 @@ func TestDeniedHintCancellationAndFailedResponseRemainSafe(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		request := waitForApproval(t, app, app.session.SessionID())
+		request := waitForApproval(t, app, activeSession(t, app).SessionID())
 		if err := app.ApprovalOwner().RespondApproval(t.Context(), request.Identity, permissions.Response{Kind: permissions.Deny}); err != nil {
 			t.Fatal(err)
 		}
@@ -361,15 +385,15 @@ func TestDeniedHintCancellationAndFailedResponseRemainSafe(t *testing.T) {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("denied Write changed the filesystem: %v", err)
 		}
-		result := persistedToolResult(t, app.session.ContextMessages())
+		result := persistedToolResult(t, activeSession(t, app).ContextMessages())
 		if !result.IsError || !strings.Contains(persistedText(result), "Permission denied by user") {
 			t.Fatalf("denial was not returned to the model: %+v", result)
 		}
 	})
 
 	t.Run("denied hint does not write", func(t *testing.T) {
-		workspace := t.TempDir()
-		path := filepath.Join(workspace, "denied.txt")
+		workspace := useProjectTestCWD(t)
+		path := filepath.Join(newToolOutputDirectory(t, workspace), "denied.txt")
 		provider := newToolLoopProvider("write", func(types.Context) json.RawMessage {
 			data, _ := json.Marshal(map[string]any{"file_path": path, "content": "must not exist"})
 			return data
@@ -379,7 +403,7 @@ func TestDeniedHintCancellationAndFailedResponseRemainSafe(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		request := waitForApproval(t, app, app.session.SessionID())
+		request := waitForApproval(t, app, activeSession(t, app).SessionID())
 		response := permissions.Response{Kind: permissions.DenyWithHint, Hint: "inspect the target first"}
 		if err := app.ApprovalOwner().RespondApproval(t.Context(), request.Identity, response); err != nil {
 			t.Fatal(err)
@@ -390,15 +414,15 @@ func TestDeniedHintCancellationAndFailedResponseRemainSafe(t *testing.T) {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("denied Write changed the filesystem: %v", err)
 		}
-		result := persistedToolResult(t, app.session.ContextMessages())
+		result := persistedToolResult(t, activeSession(t, app).ContextMessages())
 		if !result.IsError || !strings.Contains(persistedText(result), "Hint: inspect the target first") {
 			t.Fatalf("denial was not returned to the model: %+v", result)
 		}
 	})
 
 	t.Run("cancel closes the waiter", func(t *testing.T) {
-		workspace := t.TempDir()
-		path := filepath.Join(workspace, "cancelled.txt")
+		workspace := useProjectTestCWD(t)
+		path := filepath.Join(newToolOutputDirectory(t, workspace), "cancelled.txt")
 		provider := newToolLoopProvider("write", func(types.Context) json.RawMessage {
 			data, _ := json.Marshal(map[string]any{"file_path": path, "content": "must not exist"})
 			return data
@@ -408,7 +432,7 @@ func TestDeniedHintCancellationAndFailedResponseRemainSafe(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		request := waitForApproval(t, app, app.session.SessionID())
+		request := waitForApproval(t, app, activeSession(t, app).SessionID())
 		if err := app.CancelMessage(t.Context(), operationID); err != nil {
 			t.Fatal(err)
 		}
@@ -424,8 +448,8 @@ func TestDeniedHintCancellationAndFailedResponseRemainSafe(t *testing.T) {
 	})
 
 	t.Run("failed project persistence remains retryable", func(t *testing.T) {
-		workspace := t.TempDir()
-		path := filepath.Join(workspace, "retry.txt")
+		workspace := useProjectTestCWD(t)
+		path := filepath.Join(newToolOutputDirectory(t, workspace), "retry.txt")
 		storeError := errors.New("settings disk unavailable")
 		provider := newToolLoopProvider("write", func(types.Context) json.RawMessage {
 			data, _ := json.Marshal(map[string]any{"file_path": path, "content": "retry succeeded"})
@@ -436,12 +460,12 @@ func TestDeniedHintCancellationAndFailedResponseRemainSafe(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		request := waitForApproval(t, app, app.session.SessionID())
+		request := waitForApproval(t, app, activeSession(t, app).SessionID())
 		trustKey := request.Info.TrustLevels[0].Key
 		if err := app.ApprovalOwner().RespondApproval(t.Context(), request.Identity, permissions.Response{Kind: permissions.AllowProject, TrustKey: trustKey}); !errors.Is(err, storeError) {
 			t.Fatalf("project persistence error = %v", err)
 		}
-		retryRequest := waitForApproval(t, app, app.session.SessionID())
+		retryRequest := waitForApproval(t, app, request.Identity.SessionID)
 		if retryRequest.Status != permissions.Failed {
 			t.Fatalf("failed response status = %d", retryRequest.Status)
 		}

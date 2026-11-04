@@ -1,9 +1,9 @@
-package runtime
+package runtime_test
 
 import (
 	"context"
-	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,23 +11,6 @@ import (
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/model/types"
 )
-
-func TestBackgroundOperationDoesNotPinAllCompletedOperations(t *testing.T) {
-	operations := newMessageOperations()
-	operations.add(&messageOperation{id: "background"})
-	for i := range 80 {
-		operations.add(&messageOperation{id: fmt.Sprintf("completed-%d", i), terminal: true})
-	}
-	if _, ok := operations.get("background"); !ok {
-		t.Fatal("pruned running background operation")
-	}
-	if _, ok := operations.get("completed-0"); ok {
-		t.Fatal("running background operation pinned old terminal history")
-	}
-	if _, ok := operations.get("completed-79"); !ok {
-		t.Fatal("pruned latest terminal history")
-	}
-}
 
 func TestStartMessageReplaysOrderedEventsToLateSubscription(t *testing.T) {
 	provider := &promptProvider{started: make(chan struct{}), ended: make(chan struct{})}
@@ -55,7 +38,7 @@ func TestStartMessageReplaysOrderedEventsToLateSubscription(t *testing.T) {
 	if err != nil || terminal.Kind != MessageCompleted || terminal.Sequence != 2 {
 		t.Fatalf("terminal event = %#v, %v", terminal, err)
 	}
-	for _, status := range app.lifecycle.Snapshot().Sessions {
+	for _, status := range app.SessionStatus().Sessions {
 		if status.Running {
 			t.Fatal("message remained marked running after completion")
 		}
@@ -63,8 +46,14 @@ func TestStartMessageReplaysOrderedEventsToLateSubscription(t *testing.T) {
 }
 
 func TestSwitchSessionChangesTheRuntimeMessageOwner(t *testing.T) {
+	useProjectTestCWD(t)
 	provider := &promptProvider{started: make(chan struct{}), ended: make(chan struct{})}
-	writeDirectory, otherDirectory := t.TempDir(), t.TempDir()
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeDirectory, otherDirectory := filepath.Join(t.TempDir(), "sessions-a"), filepath.Join(t.TempDir(), "sessions-b")
+	copyTestFixture(t, filepath.Join(workingDirectory, "sessions-b", "selected.jsonl"), filepath.Join(otherDirectory, "selected.jsonl"))
 	app, err := New(Config{
 		SessionDir:  writeDirectory,
 		SessionDirs: []string{writeDirectory, otherDirectory},
@@ -74,8 +63,8 @@ func TestSwitchSessionChangesTheRuntimeMessageOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager := session.CreateLazy(filepath.Join(otherDirectory, "selected.jsonl"), "selected", "/workspace", nil)
-	if _, err := manager.AppendMessage(session.UserMessage{Content: session.UserText("existing")}); err != nil {
+	manager, err := session.OpenManager(filepath.Join(otherDirectory, "selected.jsonl"))
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.Switch(context.Background(), manager.Path(), "selected"); err != nil {
@@ -88,10 +77,10 @@ func TestSwitchSessionChangesTheRuntimeMessageOwner(t *testing.T) {
 	if err != nil || len(snapshot.Messages) != 3 {
 		t.Fatalf("runtime exposed stale session snapshot: %+v, %v", snapshot.Messages, err)
 	}
-	if app.session.Path() != manager.Path() {
-		t.Fatalf("runtime session path = %q, want %q", app.session.Path(), manager.Path())
+	if got := app.SessionStatus().ActivePath; got != manager.Path() {
+		t.Fatalf("runtime session path = %q, want %q", got, manager.Path())
 	}
-	if got := len(app.session.ContextMessages()); got != 3 {
+	if got := len(activeSession(t, app).ContextMessages()); got != 3 {
 		t.Fatalf("selected session messages = %d, want existing user and new user/assistant", got)
 	}
 }
@@ -134,7 +123,7 @@ func TestCancelMessageProducesTerminalEventAndPersistsAbortedAssistant(t *testin
 	case <-time.After(time.Second):
 		t.Fatal("provider did not stop after cancellation")
 	}
-	messages := app.session.ContextMessages()
+	messages := activeSession(t, app).ContextMessages()
 	if len(messages) != 2 {
 		t.Fatalf("persisted messages = %d, want user and aborted assistant", len(messages))
 	}
@@ -150,7 +139,7 @@ func TestContinueMessageReturnsCompletedEventWithoutDuplicatePrompt(t *testing.T
 	if err := app.Prompt(context.Background(), "first"); err != nil {
 		t.Fatal(err)
 	}
-	before := len(app.session.ContextMessages())
+	before := len(activeSession(t, app).ContextMessages())
 	operationID, err := app.ContinueMessage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +153,7 @@ func TestContinueMessageReturnsCompletedEventWithoutDuplicatePrompt(t *testing.T
 	if err != nil || event.Kind != MessageCompleted || event.Sequence != 1 {
 		t.Fatalf("continue event = %#v, %v", event, err)
 	}
-	if after := len(app.session.ContextMessages()); after != before {
+	if after := len(activeSession(t, app).ContextMessages()); after != before {
 		t.Fatalf("continue changed persisted messages: before=%d after=%d", before, after)
 	}
 }

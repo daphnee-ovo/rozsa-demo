@@ -1,0 +1,14 @@
+{
+  "providers": {
+    "synthetic": {
+      "api": "openai-completions",
+      "apiKey": "synthetic-key",
+      "baseUrl": "http://127.0.0.1:__BACKEND_MOCK_PORT__/v1",
+      "models": [
+        { "id": "test", "contextWindow": 4096, "maxTokens": 256 },
+        { "id": "available", "contextWindow": 4096, "maxTokens": 256 },
+        { "id": "title-model", "name": "Title model" }
+      ]
+    }
+  }
+}

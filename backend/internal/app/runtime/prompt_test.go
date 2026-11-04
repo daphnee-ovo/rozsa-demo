@@ -1,9 +1,12 @@
-package runtime
+package runtime_test
 
 import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -44,7 +47,60 @@ func (writer rejectingWriter) Write([]byte) (int, error) { return 0, writer.err 
 
 func newTestRuntime(t *testing.T, provider agent.Provider, output io.Writer) *Runtime {
 	t.Helper()
-	app, err := New(Config{SessionDir: t.TempDir(), Model: types.Model{ID: "custom-model", Provider: "custom-anthropic", API: types.APIAnthropicMessages, BaseURL: "http://127.0.0.1"}, Provider: provider, Output: output})
+	return newTestRuntimeAt(t, t.TempDir(), provider, output)
+}
+
+func useProjectTestCWD(t *testing.T) string {
+	t.Helper()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, sourceFile, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate runtime test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "../../../../"))
+	name := projectTestDirName(t.Name())
+	workingDirectory := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", name)
+	if err := os.Chdir(workingDirectory); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Error(err)
+		}
+	})
+	return workingDirectory
+}
+
+func projectTestDirName(testName string) string {
+	return strings.Map(func(character rune) rune {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-' || character == '_' {
+			return character
+		}
+		return '-'
+	}, testName)
+}
+
+func copyTestFixture(t *testing.T, sourcePath, targetPath string) {
+	t.Helper()
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", sourcePath, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newTestRuntimeAt(t *testing.T, sessionDir string, provider agent.Provider, output io.Writer) *Runtime {
+	t.Helper()
+	useProjectTestCWD(t)
+	app, err := New(Config{SessionDir: sessionDir, Model: types.Model{ID: "custom-model", Provider: "custom-anthropic", API: types.APIAnthropicMessages, BaseURL: "http://127.0.0.1"}, Provider: provider, Output: output})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,16 +120,18 @@ func TestPromptDrainsProviderAndPersistsAfterOutputWriteFailure(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("provider goroutine did not finish")
 	}
-	messages := app.session.ContextMessages()
+	manager := activeSession(t, app)
+	messages := manager.ContextMessages()
 	if len(messages) != 2 {
 		t.Fatalf("persisted messages = %d, want user and assistant: %#v", len(messages), messages)
 	}
-	if !strings.Contains(app.session.Path(), ".jsonl") {
-		t.Fatalf("session path = %q", app.session.Path())
+	if !strings.Contains(manager.Path(), ".jsonl") {
+		t.Fatalf("session path = %q", manager.Path())
 	}
 }
 
 func TestPromptUsesInjectedProviderForUnregisteredAPI(t *testing.T) {
+	useProjectTestCWD(t)
 	provider := &promptProvider{started: make(chan struct{}), ended: make(chan struct{})}
 	customAPI := types.API("custom-api")
 	app, err := New(Config{
@@ -88,7 +146,7 @@ func TestPromptUsesInjectedProviderForUnregisteredAPI(t *testing.T) {
 	if err := app.Prompt(context.Background(), "hello custom API"); err != nil {
 		t.Fatal(err)
 	}
-	messages := app.session.ContextMessages()
+	messages := activeSession(t, app).ContextMessages()
 	if len(messages) != 2 {
 		t.Fatalf("persisted messages = %d, want user and assistant: %#v", len(messages), messages)
 	}
@@ -99,6 +157,7 @@ func TestPromptUsesInjectedProviderForUnregisteredAPI(t *testing.T) {
 }
 
 func TestNewRejectsUnregisteredAPIWithoutInjectedProvider(t *testing.T) {
+	useProjectTestCWD(t)
 	_, err := New(Config{
 		SessionDir: t.TempDir(),
 		Model:      types.Model{ID: "custom-model", Provider: "custom-provider", API: types.API("custom-api")},
@@ -133,7 +192,7 @@ func TestPromptCancellationWaitsForProviderAndPersistsAbortedAssistant(t *testin
 	case <-time.After(time.Second):
 		t.Fatal("provider goroutine leaked after cancellation")
 	}
-	messages := app.session.ContextMessages()
+	messages := activeSession(t, app).ContextMessages()
 	if len(messages) != 2 {
 		t.Fatalf("persisted messages = %d, want user and aborted assistant", len(messages))
 	}

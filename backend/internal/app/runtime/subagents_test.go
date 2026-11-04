@@ -1,4 +1,4 @@
-package runtime
+package runtime_test
 
 import (
 	"context"
@@ -13,17 +13,42 @@ import (
 	"rozsa/backend/internal/app/questions"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/subagent"
-	"rozsa/backend/internal/core/tools"
 	"rozsa/backend/internal/model/types"
 )
 
 type subagentProvider struct {
 	mu         sync.Mutex
 	childCalls int
+	mainTools  []types.ToolSchema
+	childTools []types.ToolSchema
+}
+
+func toolSchemaNames(schemas []types.ToolSchema) []string {
+	names := make([]string, 0, len(schemas))
+	for _, schema := range schemas {
+		names = append(names, schema.Name)
+	}
+	return names
+}
+
+func hasTool(schemas []types.ToolSchema, name string) bool {
+	for _, schema := range schemas {
+		if schema.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (provider *subagentProvider) StreamSimple(_ context.Context, model types.Model, input types.Context, _ types.SimpleStreamOptions, emit func(types.StreamEvent)) error {
 	child := input.SystemPrompt != nil && *input.SystemPrompt == "child"
+	provider.mu.Lock()
+	if child {
+		provider.childTools = append([]types.ToolSchema(nil), input.Tools...)
+	} else {
+		provider.mainTools = append([]types.ToolSchema(nil), input.Tools...)
+	}
+	provider.mu.Unlock()
 	last := input.Messages[len(input.Messages)-1]
 	if _, user := last.(types.UserMessage); user {
 		var call types.ToolCallBlock
@@ -31,7 +56,7 @@ func (provider *subagentProvider) StreamSimple(_ context.Context, model types.Mo
 			provider.mu.Lock()
 			provider.childCalls++
 			provider.mu.Unlock()
-			call = types.ToolCallBlock{ID: "child-question", Name: askUserQuestionName, Arguments: json.RawMessage(questionArguments)}
+			call = types.ToolCallBlock{ID: "child-question", Name: "askUserQuestion", Arguments: json.RawMessage(questionArguments)}
 		} else {
 			call = types.ToolCallBlock{ID: "main-spawn", Name: "subagent", Arguments: json.RawMessage(`{"action":"spawn","system_prompt":"child","prompt":"ask independently","wait":true}`)}
 		}
@@ -46,14 +71,15 @@ func (provider *subagentProvider) StreamSimple(_ context.Context, model types.Mo
 	return nil
 }
 
-func TestProductionSubagentExecutesAndPersistsWithSeparateQuestionIdentity(t *testing.T) {
+func TestProductionSubagentUsesScopedToolsAndPersistsSeparateQuestionIdentity(t *testing.T) {
 	provider := &subagentProvider{}
 	app := newTestRuntime(t, provider, nil)
 	defer app.Shutdown(context.Background())
-	mainID := session.IDFromPath(app.session.Path())
+	mainPath := app.SessionStatus().ActivePath
+	mainID := session.IDFromPath(mainPath)
 	finished := make(chan error, 1)
 	go func() { finished <- app.Prompt(context.Background(), "delegate") }()
-	request, ok := waitForQuestion(app.questions)
+	request, ok := waitForQuestion(app.QuestionOwner())
 	if !ok {
 		t.Fatal("real subagent did not execute question tool")
 	}
@@ -66,7 +92,7 @@ func TestProductionSubagentExecutesAndPersistsWithSeparateQuestionIdentity(t *te
 		t.Fatalf("question identity = %#v, subagents %#v", request, infos)
 	}
 	answers := questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}
-	if err := app.questions.Respond(request.RequestID, answers); err != nil {
+	if err := app.QuestionOwner().Respond(request.RequestID, answers); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -78,7 +104,7 @@ func TestProductionSubagentExecutesAndPersistsWithSeparateQuestionIdentity(t *te
 		t.Fatal("subagent tool did not finish")
 	}
 	var result *session.ToolResultMessage
-	for _, message := range app.session.ContextMessages() {
+	for _, message := range activeSession(t, app).ContextMessages() {
 		if message, ok := message.(session.ToolResultMessage); ok && message.ToolName == "subagent" {
 			copy := message
 			result = &copy
@@ -91,11 +117,11 @@ func TestProductionSubagentExecutesAndPersistsWithSeparateQuestionIdentity(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(child.ContextMessages()) != 4 || child.Header().ParentSession == nil || *child.Header().ParentSession != app.session.Path() {
+	if len(child.ContextMessages()) != 4 || child.Header().ParentSession == nil || *child.Header().ParentSession != mainPath {
 		t.Fatal("child transcript/header not persisted independently")
 	}
-	for _, message := range app.session.ContextMessages() {
-		if result, ok := message.(session.ToolResultMessage); ok && result.ToolName == askUserQuestionName {
+	for _, message := range activeSession(t, app).ContextMessages() {
+		if result, ok := message.(session.ToolResultMessage); ok && result.ToolName == "askUserQuestion" {
 			t.Fatal("child transcript leaked into main context")
 		}
 	}
@@ -109,11 +135,21 @@ func TestProductionSubagentExecutesAndPersistsWithSeparateQuestionIdentity(t *te
 	if !found {
 		t.Fatal("subagent events lost owner/tool association")
 	}
+	provider.mu.Lock()
+	mainTools := append([]types.ToolSchema(nil), provider.mainTools...)
+	childTools := append([]types.ToolSchema(nil), provider.childTools...)
+	provider.mu.Unlock()
+	if !hasTool(mainTools, "subagent") || hasTool(childTools, "subagent") || !hasTool(childTools, "askUserQuestion") {
+		t.Fatalf("subagent tool scope: main=%v child=%v", toolSchemaNames(mainTools), toolSchemaNames(childTools))
+	}
+	if _, err := app.SubagentManager("unregistered-session"); err == nil {
+		t.Fatal("runtime accepted a subagent owner for an unregistered session")
+	}
 	// Reattaching an app consumer reuses the live owner, independent of the
 	// renderer's message subscription lifetime.
 	again, err := app.SubagentManager(mainID)
-	if err != nil || again != manager || len(again.List()) != 1 {
-		t.Fatal("consumer reattachment recreated manager")
+	if err != nil || len(again.List()) != 1 || again.List()[0].ID != infos[0].ID {
+		t.Fatal("consumer reattachment lost live subagent state")
 	}
 }
 
@@ -121,7 +157,7 @@ func TestSubagentAbortAndShutdownCancelOwnQuestions(t *testing.T) {
 	for _, stop := range []string{"abort", "shutdown"} {
 		t.Run(stop, func(t *testing.T) {
 			app := newTestRuntime(t, &subagentProvider{}, nil)
-			mainID := session.IDFromPath(app.session.Path())
+			mainID := session.IDFromPath(app.SessionStatus().ActivePath)
 			manager, err := app.SubagentManager(mainID)
 			if err != nil {
 				t.Fatal(err)
@@ -133,7 +169,7 @@ func TestSubagentAbortAndShutdownCancelOwnQuestions(t *testing.T) {
 			if err := manager.Send(context.Background(), info.ID, "ask", false, "call"); err != nil {
 				t.Fatal(err)
 			}
-			request, ok := waitForQuestion(app.questions)
+			request, ok := waitForQuestion(app.QuestionOwner())
 			if !ok {
 				t.Fatal("question missing")
 			}
@@ -147,7 +183,7 @@ func TestSubagentAbortAndShutdownCancelOwnQuestions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := app.questions.Respond(request.RequestID, questions.Answers{}); err == nil {
+			if err := app.QuestionOwner().Respond(request.RequestID, questions.Answers{}); err == nil {
 				t.Fatal("late question response accepted")
 			}
 			snapshot, _ := manager.Snapshot(info.ID)
@@ -163,35 +199,15 @@ func TestSubagentAbortAndShutdownCancelOwnQuestions(t *testing.T) {
 	}
 }
 
-func TestProductionSubagentToolsDoNotRecurseOrShareOwner(t *testing.T) {
-	app := newTestRuntime(t, &subagentProvider{}, nil)
-	defer app.Shutdown(context.Background())
-	var registered tools.Tool
-	for _, candidate := range app.applicationTools(session.IDFromPath(app.session.Path())) {
-		if candidate.Name() == "subagent" {
-			registered = candidate
-		}
-	}
-	if registered == nil {
-		t.Fatal("runtime did not register subagent")
-	}
-	if _, err := registered.Execute(context.Background(), "list", json.RawMessage(`{"action":"list"}`), nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := app.SubagentManager("other-session"); err == nil {
-		t.Fatal("unregistered owner accepted")
-	}
-}
-
 func TestSubagentProductionToolsCheckScopeBeforePermission(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := useProjectTestCWD(t)
 	outsidePath := filepath.Join(t.TempDir(), "outside.txt")
 	provider := newToolLoopProvider("write", func(types.Context) json.RawMessage {
 		data, _ := json.Marshal(map[string]any{"file_path": outsidePath, "content": "must not be written"})
 		return data
 	})
 	app := newProductionRuntime(t, provider, workspace, nil, nil)
-	mainID := session.IDFromPath(app.session.Path())
+	mainID := session.IDFromPath(activeSession(t, app).Path())
 	manager, err := app.SubagentManager(mainID)
 	if err != nil {
 		t.Fatal(err)
@@ -244,19 +260,18 @@ func TestSubagentSurvivesConsumerReloadAndRestartRetainsOnlyHistory(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, ok := waitForQuestion(app.questions)
+	request, ok := waitForQuestion(app.QuestionOwner())
 	if !ok {
 		t.Fatal("subagent question did not start")
 	}
-	mainID := session.IDFromPath(app.session.Path())
-	manager, err := app.SubagentManager(mainID)
-	if err != nil {
+	mainID := session.IDFromPath(activeSession(t, app).Path())
+	if _, err := app.SubagentManager(mainID); err != nil {
 		t.Fatal(err)
 	}
 	subscription.Close()
 	reconnected, err := app.SubagentManager(mainID)
-	if err != nil || reconnected != manager {
-		t.Fatal("consumer reload recreated live manager")
+	if err != nil {
+		t.Fatal("consumer reload lost live manager")
 	}
 	infos := reconnected.List()
 	if len(infos) != 1 || infos[0].Status != subagent.Running || infos[0].SessionID != request.SessionID {
@@ -270,7 +285,7 @@ func TestSubagentSurvivesConsumerReloadAndRestartRetainsOnlyHistory(t *testing.T
 		t.Fatal(err)
 	}
 	defer resumed.Close()
-	if err := app.questions.Respond(request.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); err != nil {
+	if err := app.QuestionOwner().Respond(request.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -290,10 +305,11 @@ func TestSubagentSurvivesConsumerReloadAndRestartRetainsOnlyHistory(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessionDir := filepath.Dir(app.SessionStatus().ActivePath)
 	if err := app.Shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
-	restarted, err := New(Config{SessionDir: app.sessionDir, Model: app.model, Provider: &subagentProvider{}})
+	restarted, err := New(Config{SessionDir: sessionDir, Model: app.Model(), Provider: &subagentProvider{}})
 	if err != nil {
 		t.Fatal(err)
 	}

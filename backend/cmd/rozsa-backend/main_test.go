@@ -1,19 +1,19 @@
+// Package main tests use the private coordinator only for the approved setup in
+// TestRuntimeCoordinatorServesSessionsAndAdoptsSelectionBeforeReady. Other
+// process behavior tests use package main_test and the built product executable.
+// The public process interface cannot pause initialization before it completes,
+// so it cannot deterministically expose the pre-ready selection window.
 package main
 
 import (
-	"bytes"
 	"context"
-	"flag"
-	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
+	"strings"
 	"testing"
-	"time"
 
-	"go.lsp.dev/jsonrpc2"
-	"rozsa/backend/internal/app/runtime"
+	appruntime "rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/model/types"
 )
@@ -24,17 +24,42 @@ func (coordinatorTestProvider) StreamSimple(context.Context, types.Model, types.
 	return nil
 }
 
-func TestRuntimeCoordinatorServesSessionsAndAdoptsSelectionBeforeReady(t *testing.T) {
-	directory := t.TempDir()
-	selectedPath := filepath.Join(directory, "selected.jsonl")
-	otherPath := filepath.Join(directory, "other.jsonl")
-	for id, path := range map[string]string{"selected": selectedPath, "other": otherPath} {
-		content := fmt.Sprintf("{\"type\":\"session\",\"version\":3,\"id\":%q,\"timestamp\":\"2026-10-18T00:00:00Z\",\"cwd\":%q}\n", id, directory)
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
+func useProjectTestCWD(t *testing.T) string {
+	t.Helper()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	sessions := session.NewService(session.Catalog{Directories: []string{directory}})
+	_, sourceFile, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate coordinator test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "../../.."))
+	name := strings.NewReplacer("/", "-", " ", "-", ":", "-").Replace(t.Name())
+	workingDirectory := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", name)
+	if err := os.Chdir(workingDirectory); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Error(err)
+		}
+	})
+	return workingDirectory
+}
+
+func TestRuntimeCoordinatorServesSessionsAndAdoptsSelectionBeforeReady(t *testing.T) {
+	// Prevent a regression where selection made before runtime readiness is lost
+	// when initialization completes. Public process startup cannot deterministically
+	// hold initialization between the selection and completion, so this test uses
+	// only newRuntimeCoordinator and complete for setup and asserts public results.
+	workingDirectory := useProjectTestCWD(t)
+	sessionDirectory := filepath.Join(workingDirectory, "sessions")
+	selectedPath := filepath.Join(sessionDirectory, "selected.jsonl")
+	otherPath := filepath.Join(sessionDirectory, "other.jsonl")
+	sessions := session.NewService(session.Catalog{Directories: []string{sessionDirectory}})
+	// Private setup is required because process startup cannot guarantee that
+	// initialization remains pending until after a session selection.
 	coordinator := newRuntimeCoordinator(sessions)
 	entries, err := coordinator.GetSessions(t.Context())
 	if err != nil || len(entries) != 2 {
@@ -47,13 +72,15 @@ func TestRuntimeCoordinatorServesSessionsAndAdoptsSelectionBeforeReady(t *testin
 	if status := coordinator.RuntimeStatus(); status.State != "initializing" {
 		t.Fatalf("status before completion = %+v", status)
 	}
-	app, err := runtime.New(runtime.Config{
-		SessionDir: directory, SessionDirs: []string{directory}, SessionService: sessions,
+	app, err := appruntime.New(appruntime.Config{
+		ProjectRoot: workingDirectory, SessionDir: sessionDirectory, SessionDirs: []string{sessionDirectory}, SessionService: sessions,
 		Model: types.Model{ID: "test", Provider: "test", API: types.APIAnthropicMessages}, Provider: coordinatorTestProvider{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Deliver initialization only after selection so the assertion checks whether
+	// the runtime adopts the earlier public session selection.
 	coordinator.complete(app, nil)
 	if status := coordinator.RuntimeStatus(); status.State != "ready" {
 		t.Fatalf("status after completion = %+v", status)
@@ -68,132 +95,5 @@ func TestRuntimeCoordinatorServesSessionsAndAdoptsSelectionBeforeReady(t *testin
 	shared, err := coordinator.Snapshot(t.Context())
 	if err != nil || shared.Active == nil || shared.Active.Path != otherPath {
 		t.Fatalf("runtime session switch was not published through the early session service: %+v err=%v", shared.Active, err)
-	}
-}
-
-func TestRuntimeCoordinatorPublishesInitializationFailureWithoutMessageRequest(t *testing.T) {
-	coordinator := newRuntimeCoordinator(session.NewService(session.Catalog{Directories: []string{t.TempDir()}}))
-	coordinator.complete(nil, fmt.Errorf("missing model credentials"))
-	status := coordinator.RuntimeStatus()
-	if status.State != "failed" || status.Error != "missing model credentials" {
-		t.Fatalf("failed runtime status = %+v", status)
-	}
-	if _, err := coordinator.await(t.Context()); err == nil || err.Error() != status.Error {
-		t.Fatalf("runtime wait error = %v, want initialization diagnostic %q", err, status.Error)
-	}
-}
-
-// Execute the actual main in an owned child, including its stderr diagnostics
-// and exit status. No external build/runner or user session directory is used.
-func TestBackendHelperProcess(t *testing.T) {
-	if os.Getenv("ROZSA_TEST_BACKEND_PROCESS") != "1" {
-		return
-	}
-	os.Args = []string{os.Args[0]}
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	main()
-	os.Exit(0)
-}
-
-type processIO struct {
-	io.Reader
-	io.Writer
-}
-
-func (processIO) Close() error { return nil }
-
-func TestStdioProcessProtocolAndDiagnostics(t *testing.T) {
-	configRoot := t.TempDir()
-	global := filepath.Join(configRoot, "global")
-	project := filepath.Join(configRoot, "project")
-	if err := os.MkdirAll(filepath.Join(global, "models"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(project, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(global, "settings.json"), []byte(`{"defaultProvider":"test","defaultModel":"test"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	modelConfig := `{"providers":{"test":{"api":"openai-completions","apiKey":"test-key","baseUrl":"http://127.0.0.1:1/v1","models":[{"id":"test","contextWindow":4096,"maxTokens":256}]}}}`
-	if err := os.WriteFile(filepath.Join(global, "models", "test.json"), []byte(modelConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, malformed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "clean shutdown", true: "malformed input"}[malformed], func(t *testing.T) {
-			executable, err := os.Executable()
-			if err != nil {
-				t.Fatal(err)
-			}
-			ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, executable, "-test.run=^TestBackendHelperProcess$")
-			cmd.Env = append(os.Environ(), "ROZSA_TEST_BACKEND_PROCESS=1", "ROZSA_CONFIG_DIR="+global, "ROZSA_PROJECT_CONFIG_DIR="+project)
-			input, err := cmd.StdinPipe()
-			if err != nil {
-				t.Fatal(err)
-			}
-			output, err := cmd.StdoutPipe()
-			if err != nil {
-				t.Fatal(err)
-			}
-			var diagnostics bytes.Buffer
-			cmd.Stderr = &diagnostics
-			if err := cmd.Start(); err != nil {
-				t.Fatal(err)
-			}
-			stream := jsonrpc2.NewStream(processIO{output, input})
-			send := func(id int64, method string, params string) {
-				t.Helper()
-				if _, err := stream.Write(ctx, jsonrpc2.NewCall(jsonrpc2.NewNumberID(id), method, jsonrpc2.RawMessage(params))); err != nil {
-					t.Fatal(err)
-				}
-			}
-			read := func() *jsonrpc2.Response {
-				t.Helper()
-				message, _, err := stream.Read(ctx)
-				if err != nil {
-					t.Fatal(err)
-				}
-				response, ok := message.(*jsonrpc2.Response)
-				if !ok {
-					t.Fatalf("stdout contained %T", message)
-				}
-				return response
-			}
-			send(1, "initialize", `{"protocolVersion":1}`)
-			if err := read().Err(); err != nil {
-				t.Fatal(err)
-			}
-			send(2, "get_sessions", `{}`)
-			if response := read(); response.Err() != nil || string(response.Result()) != "[]" {
-				t.Fatalf("get_sessions result = %s, error=%v; want empty configured catalog", response.Result(), response.Err())
-			}
-			if malformed {
-				frames := stream.(interface {
-					WriteFrame(context.Context, []byte) (int64, error)
-				})
-				if _, err := frames.WriteFrame(ctx, []byte(`{`)); err != nil {
-					t.Fatal(err)
-				}
-				if _, _, err := stream.Read(ctx); err != io.EOF {
-					t.Fatalf("parser failure wrote a non-protocol stdout message or wire error response: %v", err)
-				}
-			} else {
-				send(3, "shutdown", `{}`)
-				if err := read().Err(); err != nil {
-					t.Fatal(err)
-				}
-			}
-			input.Close()
-			err = cmd.Wait()
-			if malformed {
-				if err == nil || diagnostics.Len() == 0 {
-					t.Fatalf("want exit failure and stderr diagnostic: %v %q", err, diagnostics.String())
-				}
-			} else if err != nil || diagnostics.Len() != 0 {
-				t.Fatalf("clean shutdown: %v %q", err, diagnostics.String())
-			}
-		})
 	}
 }

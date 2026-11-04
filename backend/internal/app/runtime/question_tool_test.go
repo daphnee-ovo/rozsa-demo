@@ -1,4 +1,4 @@
-package runtime
+package runtime_test
 
 import (
 	"context"
@@ -10,59 +10,68 @@ import (
 	"time"
 
 	"rozsa/backend/internal/app/questions"
-	"rozsa/backend/internal/core/tools"
+	"rozsa/backend/internal/model/types"
 )
 
 const questionArguments = `{"questions":[{"question":"Pick mode","header":"Mode","options":[{"label":"Fast","description":"Quick"},{"label":"Other","description":"Custom"}]},{"question":"Pick features","header":"Features","multiSelect":true,"options":[{"label":"Lint","description":"Check source"},{"label":"Tests","description":"Run tests"}]}]}`
 
-func productionQuestionTool(sessionID string, owner *questions.Owner) tools.Tool {
-	runtime := &Runtime{questions: owner}
-	for _, tool := range runtime.applicationTools(sessionID) {
-		if tool.Name() == askUserQuestionName {
-			return tool
+type questionToolProvider struct {
+	arguments string
+	calls     chan struct{}
+}
+
+func newQuestionToolProvider(arguments string) *questionToolProvider {
+	return &questionToolProvider{arguments: arguments, calls: make(chan struct{}, 8)}
+}
+
+func (provider *questionToolProvider) StreamSimple(_ context.Context, model types.Model, input types.Context, _ types.SimpleStreamOptions, emit func(types.StreamEvent)) error {
+	provider.calls <- struct{}{}
+	message := types.AssistantMessage{API: model.API, Provider: model.Provider, Model: model.ID}
+	if len(input.Messages) > 0 {
+		if _, isResult := input.Messages[len(input.Messages)-1].(types.ToolResultMessage); isResult {
+			message.StopReason = types.Stop
+			message.Content = []types.ContentBlock{types.TextBlock{Text: "question flow complete"}}
+			emit(types.Done{Reason: types.Stop, Message: message})
+			return nil
 		}
 	}
+	message.StopReason = types.ToolUse
+	message.Content = []types.ContentBlock{types.ToolCallBlock{ID: "question-call", Name: "askUserQuestion", Arguments: json.RawMessage(provider.arguments)}}
+	emit(types.Done{Reason: types.ToolUse, Message: message})
 	return nil
 }
 
-func TestProductionToolExecutesThroughRuntimeQuestionOwner(t *testing.T) {
-	owner := questions.NewOwner()
-	tool := productionQuestionTool("session-a", owner)
-	if tool == nil {
-		t.Fatal("runtime did not register AskUserQuestion")
+func TestRuntimeRoutesQuestionAnswersIntoPersistedToolResult(t *testing.T) {
+	provider := newQuestionToolProvider(questionArguments)
+	app := newTestRuntime(t, provider, nil)
+	defer app.Shutdown(context.Background())
+	operationID, err := app.StartMessage(t.Context(), "ask a question")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if mode := tool.ExecutionMode(); mode == nil || *mode != tools.Sequential {
-		t.Fatalf("execution mode = %v", mode)
-	}
-	type execution struct {
-		result tools.Result
-		err    error
-	}
-	finished := make(chan execution, 1)
-	go func() {
-		result, err := tool.Execute(context.Background(), "transport-call-id", json.RawMessage(questionArguments), nil)
-		finished <- execution{result: result, err: err}
-	}()
-	request, ok := waitForQuestion(owner)
+	request, ok := waitForQuestion(app.QuestionOwner())
 	if !ok {
-		t.Fatal("production tool did not submit a question")
+		t.Fatal("runtime did not submit a question")
 	}
-	if request.SessionID != "session-a" || request.TransportID != "transport-call-id" || request.RequestID == request.TransportID {
+	if request.SessionID != activeSession(t, app).SessionID() || request.TransportID != "question-call" || request.RequestID == request.TransportID {
 		t.Fatalf("request identity/session = %#v", request)
 	}
 	answers := questions.Answers{"Mode": questions.Single("custom answer"), "Features": questions.Multiple("Lint", "Tests")}
-	if err := owner.Respond(request.RequestID, answers); err != nil {
+	if err := app.QuestionOwner().Respond(request.RequestID, answers); err != nil {
 		t.Fatal(err)
 	}
-	completed := <-finished
-	if completed.err != nil {
-		t.Fatal(completed.err)
+	if terminal := waitForTerminal(t, app, operationID); terminal.Kind != MessageCompleted {
+		t.Fatalf("question turn = %+v", terminal)
 	}
+	result := persistedToolResult(t, activeSession(t, app).ContextMessages())
 	var details map[string]any
-	if err := json.Unmarshal(completed.result.Details, &details); err != nil {
+	if err := json.Unmarshal(result.Details, &details); err != nil {
 		t.Fatal(err)
 	}
-	answerMap := details["answers"].(map[string]any)
+	answerMap, ok := details["answers"].(map[string]any)
+	if !ok {
+		t.Fatalf("persisted answer details = %#v", details)
+	}
 	if answerMap["Mode"] != "custom answer" {
 		t.Fatalf("single/Other answer = %#v", answerMap["Mode"])
 	}
@@ -71,60 +80,61 @@ func TestProductionToolExecutesThroughRuntimeQuestionOwner(t *testing.T) {
 	}
 }
 
-func TestProductionToolValidationAndCancellationRejectLateResponse(t *testing.T) {
-	owner := questions.NewOwner()
-	tool := productionQuestionTool("session-a", owner)
-	if _, err := tool.Execute(context.Background(), "bad-call", json.RawMessage(`{"questions":[]}`), nil); err == nil || !strings.Contains(err.Error(), "1 to 4") {
-		t.Fatalf("invalid parameters error = %v", err)
-	}
-	if _, ok := owner.Next(); ok {
-		t.Fatal("invalid tool arguments left a pending request")
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	finished := make(chan error, 1)
-	go func() {
-		_, err := tool.Execute(ctx, "same-transport-id", json.RawMessage(questionArguments), nil)
-		finished <- err
-	}()
-	cancelledRequest, ok := waitForQuestion(owner)
-	if !ok {
-		t.Fatal("cancelled production tool did not submit request")
-	}
-	cancel()
-	if err := <-finished; !errors.Is(err, context.Canceled) {
-		t.Fatalf("tool cancellation error = %v", err)
-	}
-	if err := owner.Respond(cancelledRequest.RequestID, questions.Answers{"Mode": questions.Single("late"), "Features": questions.Multiple("Lint")}); !errors.Is(err, questions.ErrNoPending) {
-		t.Fatalf("late response error = %v", err)
-	}
-
-	newRequest, future, err := owner.Submit("session-a", "same-transport-id", mustParseQuestionParams(t))
+func TestRuntimeRejectsInvalidQuestionsAndCancelledLateAnswers(t *testing.T) {
+	invalidProvider := newQuestionToolProvider(`{"questions":[]}`)
+	invalidApp := newTestRuntime(t, invalidProvider, nil)
+	defer invalidApp.Shutdown(context.Background())
+	invalidOperation, err := invalidApp.StartMessage(t.Context(), "invalid question")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if newRequest.RequestID == cancelledRequest.RequestID {
-		t.Fatal("cancelled product identity was reused")
+	if terminal := waitForTerminal(t, invalidApp, invalidOperation); terminal.Kind != MessageCompleted {
+		t.Fatalf("invalid question turn = %+v", terminal)
 	}
-	shown, ok := owner.Next()
-	if !ok || shown.RequestID != newRequest.RequestID {
-		t.Fatalf("new request after late answer = %#v, %v", shown, ok)
+	<-invalidProvider.calls
+	<-invalidProvider.calls
+	if _, ok := invalidApp.QuestionOwner().Next(); ok {
+		t.Fatal("invalid arguments left a pending runtime question")
 	}
-	if err := owner.Respond(newRequest.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); err != nil {
-		t.Fatal(err)
+	invalidResult := persistedToolResult(t, activeSession(t, invalidApp).ContextMessages())
+	if !invalidResult.IsError || !strings.Contains(persistedText(invalidResult), "1 to 4") {
+		t.Fatalf("invalid question result = %+v", invalidResult)
 	}
-	if _, err := future.Wait(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-}
 
-func mustParseQuestionParams(t *testing.T) questions.Params {
-	t.Helper()
-	var params questions.Params
-	if err := json.Unmarshal([]byte(questionArguments), &params); err != nil {
+	provider := newQuestionToolProvider(questionArguments)
+	app := newTestRuntime(t, provider, nil)
+	defer app.Shutdown(context.Background())
+	operationID, err := app.StartMessage(t.Context(), "cancelled question")
+	if err != nil {
 		t.Fatal(err)
 	}
-	return params
+	cancelledRequest, ok := waitForQuestion(app.QuestionOwner())
+	if !ok {
+		t.Fatal("runtime did not submit the cancellable question")
+	}
+	if err := app.CancelMessage(t.Context(), operationID); err != nil {
+		t.Fatal(err)
+	}
+	if terminal := waitForTerminal(t, app, operationID); terminal.Kind != MessageCanceled {
+		t.Fatalf("cancelled question turn = %+v", terminal)
+	}
+	if err := app.QuestionOwner().Respond(cancelledRequest.RequestID, questions.Answers{"Mode": questions.Single("late"), "Features": questions.Multiple("Lint")}); !errors.Is(err, questions.ErrNoPending) {
+		t.Fatalf("late response error = %v", err)
+	}
+	newOperationID, err := app.StartMessage(t.Context(), "retry question")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newRequest, ok := waitForQuestion(app.QuestionOwner())
+	if !ok || newRequest.RequestID == cancelledRequest.RequestID || newRequest.TransportID != cancelledRequest.TransportID {
+		t.Fatalf("new request after cancellation = %#v", newRequest)
+	}
+	if err := app.QuestionOwner().Respond(newRequest.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); err != nil {
+		t.Fatal(err)
+	}
+	if terminal := waitForTerminal(t, app, newOperationID); terminal.Kind != MessageCompleted {
+		t.Fatalf("retried question turn = %+v", terminal)
+	}
 }
 
 func waitForQuestion(owner *questions.Owner) (questions.Request, bool) {
