@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/skills"
 	"rozsa/backend/internal/app/themes"
+	"rozsa/backend/internal/transport/server"
 )
 
 type inputSessionFixture struct{ state session.StateSnapshot }
@@ -58,7 +59,7 @@ func inputRPCExchange(t *testing.T, app session.ApplicationService, service prod
 	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
 	ended := make(chan error, 1)
 	go func() {
-		ended <- serveProduct(backend, backend, app, nil, []productsettings.Service{service}, requestTimeout)
+		ended <- server.ServeProductApplication(backend, backend, app, nil, service)
 		_ = backend.Close()
 	}()
 	frames := jsonrpc2.NewStream(client).(rawFrames)

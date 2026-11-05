@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 
 	"go.lsp.dev/jsonrpc2"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/transport/server"
 )
 
 type shutdownMessageApp struct {
@@ -39,7 +40,7 @@ func TestShutdownAndDisconnectInvokeBusinessCleanupExactlyOnce(t *testing.T) {
 			client.SetDeadline(time.Now().Add(4 * time.Second))
 			ended := make(chan error, 1)
 			go func() {
-				ended <- serveWithMessages(backend, backend, session.NewService(session.Catalog{}), app, time.Second)
+				ended <- server.ServeProductApplication(backend, backend, session.NewService(session.Catalog{}), app)
 				backend.Close()
 			}()
 			if mode != "eof" {

@@ -1,10 +1,11 @@
-package server
+package server_test
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -12,24 +13,26 @@ import (
 	"rozsa/backend/internal/app/permissions"
 	"rozsa/backend/internal/app/questions"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/transport/server"
 )
 
-// rawFrames exposes the library stream's native frame methods for malformed
-// transport inputs; it does not implement framing or protocol parsing.
-type rawFrames interface {
-	ReadFrame(context.Context) ([]byte, int64, error)
-	WriteFrame(context.Context, []byte) (int64, error)
+type interruptionTestApplication struct {
+	*fakeMessageApp
+	requests            []permissions.Request
+	question            questions.Request
+	responded           permissions.Response
+	respondedIdentity   permissions.Identity
+	respondedQuestionID string
+	expectedIdentity    permissions.Identity
+	expectedQuestionID  string
+	approvalCalls       int
+	questionCalls       int
+	answer              questions.Answers
+	cancelled           string
+	failReply           error
 }
 
-type interruptionTestApplication struct {
-	MessageApplication
-	requests  []permissions.Request
-	question  questions.Request
-	responded permissions.Response
-	answer    questions.Answers
-	cancelled string
-	failReply error
-}
+// This fake checks transport forwarding and error mapping; it does not define business-owner identity validity.
 
 func (application *interruptionTestApplication) PendingApprovals(_ context.Context, sessionID string) ([]permissions.Request, error) {
 	if application.failReply != nil {
@@ -54,13 +57,23 @@ func (application *interruptionTestApplication) NextQuestion(_ context.Context, 
 	return application.question, true, nil
 }
 
-func (application *interruptionTestApplication) RespondApproval(_ context.Context, _ permissions.Identity, response permissions.Response) error {
+func (application *interruptionTestApplication) RespondApproval(_ context.Context, identity permissions.Identity, response permissions.Response) error {
+	application.approvalCalls++
+	application.respondedIdentity = identity
 	application.responded = response
+	if identity != application.expectedIdentity {
+		return permissions.ErrRequestNotFound
+	}
 	return application.failReply
 }
 
-func (application *interruptionTestApplication) RespondQuestion(_ context.Context, _ string, answer questions.Answers) error {
+func (application *interruptionTestApplication) RespondQuestion(_ context.Context, requestID string, answer questions.Answers) error {
+	application.questionCalls++
+	application.respondedQuestionID = requestID
 	application.answer = answer
+	if requestID != application.expectedQuestionID {
+		return questions.ErrNoPending
+	}
 	return application.failReply
 }
 
@@ -70,7 +83,8 @@ func (application *interruptionTestApplication) CancelQuestion(_ context.Context
 }
 
 func TestInterruptionRequestsExposeTypedStateAndResponses(t *testing.T) {
-	application := &interruptionTestApplication{
+	application := &interruptionTestApplication{fakeMessageApp: &fakeMessageApp{},
+		expectedIdentity: permissions.Identity{SessionID: "session-a", RequestID: "approval-a"}, expectedQuestionID: "question-a",
 		requests: []permissions.Request{{
 			Identity: permissions.Identity{SessionID: "session-a", RequestID: "approval-a"},
 			Info: permissions.ApprovalInfo{
@@ -98,6 +112,9 @@ func TestInterruptionRequestsExposeTypedStateAndResponses(t *testing.T) {
 	if len(responses) != 6 {
 		t.Fatalf("response count = %d, want 6: %s", len(responses), responses)
 	}
+	for _, responseCase := range []struct{ index, id int }{{2, 3}, {3, 4}, {4, 5}, {5, 6}} {
+		assertRPCSuccess(t, responses[responseCase.index], responseCase.id)
+	}
 	for _, expected := range []string{`"get_interruption_state"`, `"respond_permission"`, `"respond_user_question"`, `"cancel_user_question"`} {
 		if !stringContains(responses[0], expected) {
 			t.Fatalf("handshake missing %s: %s", expected, responses[0])
@@ -111,7 +128,13 @@ func TestInterruptionRequestsExposeTypedStateAndResponses(t *testing.T) {
 	if application.responded.Kind != permissions.AllowSession || len(application.responded.TrustKeys) != 1 || application.responded.TrustKeys[0] != "Bash:make" {
 		t.Fatalf("permission response = %#v", application.responded)
 	}
-	if application.answer["Mode"].Single == nil || *application.answer["Mode"].Single != "Fast" || len(application.answer["Features"].Multiple) != 2 {
+	if application.respondedIdentity != (permissions.Identity{SessionID: "session-a", RequestID: "approval-a"}) {
+		t.Fatalf("permission identity = %+v", application.respondedIdentity)
+	}
+	if application.respondedQuestionID != "question-a" {
+		t.Fatalf("question request identity = %q", application.respondedQuestionID)
+	}
+	if application.answer["Mode"].Single == nil || *application.answer["Mode"].Single != "Fast" || len(application.answer["Features"].Multiple) != 2 || application.answer["Features"].Multiple[0] != "Tests" || application.answer["Features"].Multiple[1] != "Review" {
 		t.Fatalf("question answer = %#v", application.answer)
 	}
 	if application.cancelled != "question-a" {
@@ -119,8 +142,66 @@ func TestInterruptionRequestsExposeTypedStateAndResponses(t *testing.T) {
 	}
 }
 
+// Prevents incomplete or stale interruption identities from reaching successful response handling.
+func TestInterruptionResponsesRejectWrongEmptyAndStaleIdentities(t *testing.T) {
+	for _, testCase := range []struct {
+		name, sessionID, requestID string
+		expectedCode               int
+	}{
+		{"wrong session", "session-b", "approval-a", -32012},
+		{"stale request", "session-a", "approval-old", -32012},
+		{"empty session", "", "approval-a", -32602},
+		{"empty request", "session-a", "", -32602},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			application := &interruptionTestApplication{fakeMessageApp: &fakeMessageApp{}, expectedIdentity: permissions.Identity{SessionID: "session-a", RequestID: "approval-a"}}
+			responses, err := exchangeProduct(t, application,
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}`,
+				`{"jsonrpc":"2.0","id":2,"method":"respond_permission","params":{"sessionId":"`+testCase.sessionID+`","requestId":"`+testCase.requestID+`","choice":"allow-once"}}`,
+				`{"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(responses) != 3 {
+				t.Fatalf("response count = %d, want 3: %s", len(responses), responses)
+			}
+			assertRPCError(t, responses[1], 2, testCase.expectedCode)
+			if testCase.expectedCode == -32012 && application.respondedIdentity != (permissions.Identity{SessionID: testCase.sessionID, RequestID: testCase.requestID}) {
+				t.Fatalf("forwarded identity = %+v", application.respondedIdentity)
+			}
+			if testCase.expectedCode == -32602 && application.approvalCalls != 0 {
+				t.Fatalf("invalid empty identity reached application %d times", application.approvalCalls)
+			}
+		})
+	}
+	for _, requestID := range []string{"question-old", ""} {
+		application := &interruptionTestApplication{fakeMessageApp: &fakeMessageApp{}, expectedQuestionID: "question-current"}
+		responses, err := exchangeProduct(t, application,
+			`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}`,
+			`{"jsonrpc":"2.0","id":2,"method":"respond_user_question","params":{"requestId":"`+requestID+`","answers":{"Mode":"Fast"}}}`,
+			`{"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(responses) != 3 {
+			t.Fatalf("response count = %d, want 3: %s", len(responses), responses)
+		}
+		wantCode := -32012
+		if requestID == "" {
+			wantCode = -32602
+		}
+		assertRPCError(t, responses[1], 2, wantCode)
+		if requestID != "" && application.respondedQuestionID != requestID {
+			t.Fatalf("forwarded question identity = %q", application.respondedQuestionID)
+		}
+		if requestID == "" && application.questionCalls != 0 {
+			t.Fatalf("empty identity reached application %d times", application.questionCalls)
+		}
+	}
+}
+
 func TestMalformedQuestionAnswerAndInterruptionFailureRemainVisible(t *testing.T) {
-	application := &interruptionTestApplication{failReply: context.DeadlineExceeded}
+	application := &interruptionTestApplication{fakeMessageApp: &fakeMessageApp{}, failReply: context.DeadlineExceeded}
 	responses, err := exchangeProduct(t, application,
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"respond_user_question","params":{"requestId":"q","answers":{"Mode":true}}}`,
@@ -135,7 +216,7 @@ func TestMalformedQuestionAnswerAndInterruptionFailureRemainVisible(t *testing.T
 	}
 }
 
-func exchangeProduct(t *testing.T, messages MessageApplication, requests ...string) ([]json.RawMessage, error) {
+func exchangeProduct(t *testing.T, messages server.MessageApplication, requests ...string) ([]json.RawMessage, error) {
 	t.Helper()
 	client, backend := net.Pipe()
 	defer client.Close()
@@ -143,7 +224,7 @@ func exchangeProduct(t *testing.T, messages MessageApplication, requests ...stri
 	client.SetDeadline(time.Now().Add(5 * time.Second))
 	ended := make(chan error, 1)
 	go func() {
-		ended <- ServeProductApplication(backend, backend, session.NewService(session.Catalog{}), messages)
+		ended <- server.ServeProductApplication(backend, backend, session.NewService(session.Catalog{}), messages)
 		_ = backend.Close()
 	}()
 	frames := jsonrpc2.NewStream(client).(rawFrames)
@@ -160,6 +241,37 @@ func exchangeProduct(t *testing.T, messages MessageApplication, requests ...stri
 	}
 	_ = client.Close()
 	return responses, <-ended
+}
+
+func assertRPCSuccess(t *testing.T, raw json.RawMessage, id int) {
+	t.Helper()
+	var response struct {
+		ID     json.RawMessage `json:"id"`
+		Result json.RawMessage `json:"result"`
+		Error  json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatal(err)
+	}
+	if string(response.ID) != strconv.Itoa(id) || string(response.Result) != "true" || len(response.Error) != 0 {
+		t.Fatalf("RPC response = %s, want id %d, result true, no error", raw, id)
+	}
+}
+
+func assertRPCError(t *testing.T, raw json.RawMessage, id, code int) {
+	t.Helper()
+	var response struct {
+		ID    json.RawMessage `json:"id"`
+		Error *struct {
+			Code int `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatal(err)
+	}
+	if string(response.ID) != strconv.Itoa(id) || response.Error == nil || response.Error.Code != code {
+		t.Fatalf("RPC response = %s, want id %d error code %d", raw, id, code)
+	}
 }
 
 func stringContains(value []byte, fragment string) bool {

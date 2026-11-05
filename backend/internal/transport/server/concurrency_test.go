@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"bytes"
@@ -17,8 +17,26 @@ import (
 
 	"go.lsp.dev/jsonrpc2"
 	"rozsa/backend/internal/app/session"
+	"rozsa/backend/internal/transport/server"
 	"rozsa/backend/internal/transport/types"
 )
+
+const maxConcurrentRequests = 8
+
+type subscriptionParams struct {
+	SubscriptionID string `json:"subscriptionId"`
+}
+type sessionUpdate struct {
+	SubscriptionID string                 `json:"subscriptionId"`
+	Event          *session.Event         `json:"event"`
+	Snapshot       *session.StateSnapshot `json:"snapshot"`
+}
+type readWriteCloser struct {
+	io.Reader
+	io.Writer
+}
+
+func (readWriteCloser) Close() error { return nil }
 
 type fakeApp struct {
 	*session.Service
@@ -53,19 +71,12 @@ func (fakeApp *fakeApp) Subscribe() session.EventSubscription {
 	return fakeApp.Service.Subscribe()
 }
 
-type testPeer struct {
-	t      *testing.T
-	client net.Conn
-	stream jsonrpc2.Stream
-	ended  chan error
-}
-
 func startPeer(t *testing.T, app session.ApplicationService, timeout time.Duration) *testPeer {
 	t.Helper()
 	client, backend := net.Pipe()
-	client.SetDeadline(time.Now().Add(8 * time.Second))
+	client.SetDeadline(time.Now().Add(timeout))
 	peer := &testPeer{t: t, client: client, stream: jsonrpc2.NewStream(client), ended: make(chan error, 1)}
-	go func() { peer.ended <- serve(backend, backend, app, timeout); backend.Close() }()
+	go func() { peer.ended <- server.ServeApplication(backend, backend, app); backend.Close() }()
 	t.Cleanup(func() {
 		client.Close()
 		select {
@@ -79,55 +90,6 @@ func startPeer(t *testing.T, app session.ApplicationService, timeout time.Durati
 	peer.readOK()
 	return peer
 }
-func transportID(id any) jsonrpc2.ID {
-	switch id := id.(type) {
-	case int:
-		return jsonrpc2.NewNumberID(int64(id))
-	case string:
-		return jsonrpc2.NewStringID(id)
-	default:
-		panic("test ID must be integer or string")
-	}
-}
-func (peer *testPeer) send(id any, method string, params any) {
-	peer.t.Helper()
-	data, err := json.Marshal(params)
-	if err != nil {
-		peer.t.Fatal(err)
-	}
-	if _, err := peer.stream.Write(peer.t.Context(), jsonrpc2.NewCall(transportID(id), method, jsonrpc2.RawMessage(data))); err != nil {
-		peer.t.Fatal(err)
-	}
-}
-func (peer *testPeer) cancel(id any) {
-	peer.t.Helper()
-	data, _ := json.Marshal(struct {
-		ID any `json:"id"`
-	}{id})
-	if _, err := peer.stream.Write(peer.t.Context(), jsonrpc2.NewNotification("$/cancelRequest", jsonrpc2.RawMessage(data))); err != nil {
-		peer.t.Fatal(err)
-	}
-}
-func (peer *testPeer) read() *jsonrpc2.Response {
-	peer.t.Helper()
-	message, _, err := peer.stream.Read(peer.t.Context())
-	if err != nil {
-		peer.t.Fatal(err)
-	}
-	response, ok := message.(*jsonrpc2.Response)
-	if !ok {
-		peer.t.Fatalf("unexpected message %T", message)
-	}
-	return response
-}
-func (peer *testPeer) readOK() *jsonrpc2.Response {
-	peer.t.Helper()
-	response := peer.read()
-	if response.Err() != nil {
-		peer.t.Fatal(response.Err())
-	}
-	return response
-}
 func (peer *testPeer) update() sessionUpdate {
 	peer.t.Helper()
 	var update sessionUpdate
@@ -138,17 +100,6 @@ func (peer *testPeer) update() sessionUpdate {
 		peer.t.Fatalf("not a snapshot/event union: %+v", update)
 	}
 	return update
-}
-func errorKind(t *testing.T, err error, want types.ErrorKind) {
-	t.Helper()
-	var rpcError *jsonrpc2.Error
-	if !errors.As(err, &rpcError) {
-		t.Fatalf("want %s typed error, got %v", want, err)
-	}
-	var data types.ErrorData
-	if json.Unmarshal(rpcError.Data, &data) != nil || data.Kind != want {
-		t.Fatalf("want %s, got %+v", want, rpcError)
-	}
 }
 func waitFor[T any](t *testing.T, channel <-chan T) T {
 	t.Helper()
@@ -220,16 +171,20 @@ func TestCancellationRegistrationAndStringIdentity(t *testing.T) {
 
 func TestTimeoutDoesNotRetryAppWork(t *testing.T) {
 	var calls atomic.Int32
+	started := make(chan struct{})
 	app := &fakeApp{get: func(ctx context.Context) ([]session.ListEntry, error) {
-		calls.Add(1)
+		if calls.Add(1) == 1 {
+			close(started)
+		}
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}}
-	peer := startPeer(t, app, 40*time.Millisecond)
+	peer := startPeer(t, app, 35*time.Second)
 	peer.send(2, "get_sessions", nil)
+	waitFor(t, started)
 	errorKind(t, peer.read().Err(), types.Timeout)
 	if calls.Load() != 1 {
-		t.Fatal(calls.Load())
+		t.Fatalf("timed-out app calls = %d, want 1", calls.Load())
 	}
 }
 
@@ -365,7 +320,11 @@ func syntheticService(t *testing.T) (*session.Service, string) {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "filename.jsonl")
-	if err := os.WriteFile(path, []byte("{\"type\":\"session\",\"version\":1,\"id\":\"catalog\",\"timestamp\":\"2026-10-16T00:00:00Z\",\"cwd\":\"/synthetic\"}\n"), 0600); err != nil {
+	fixture, err := os.ReadFile("../../../../testdata/fixtures/backend/transport/session.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, fixture, 0600); err != nil {
 		t.Fatal(err)
 	}
 	return session.NewService(session.Catalog{Directories: []string{dir}}), path
@@ -432,7 +391,7 @@ func TestFragmentedAndCoalescedUTF8ThroughServer(t *testing.T) {
 	}}
 	peer := startPeer(t, app, 5*time.Second)
 	var batch bytes.Buffer
-	stream := jsonrpc2.NewStream(stdio{Reader: bytes.NewReader(nil), Writer: &batch})
+	stream := jsonrpc2.NewStream(readWriteCloser{Reader: bytes.NewReader(nil), Writer: &batch})
 	for i := 2; i < 5; i++ {
 		if _, err := stream.Write(t.Context(), jsonrpc2.NewCall(transportID(i), "get_sessions", nil)); err != nil {
 			t.Fatal(err)
@@ -643,25 +602,38 @@ func TestCanceledEventWaitResynchronizesAndHasOneConsumer(t *testing.T) {
 		}
 		return source
 	}}
-	syncer := sessionSync{app: app}
-	defer syncer.close()
-	cursor := syncer.subscribe()
-	if _, err := cursor.snapshot(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	result := make(chan error, 1)
-	go func() { _, err := syncer.next(ctx, cursor.id); result <- err }()
+	peer := startPeer(t, app, 5*time.Second)
+	peer.send(2, "subscribe_sessions", nil)
+	initial := peer.update()
+	peer.send(3, "next_session_event", subscriptionParams{SubscriptionID: initial.SubscriptionID})
 	waitFor(t, started)
-	if _, err := syncer.next(t.Context(), cursor.id); err == nil {
-		t.Fatal("concurrent consumer accepted")
-	} else {
-		errorKind(t, err, types.Busy)
+	peer.send(4, "next_session_event", subscriptionParams{SubscriptionID: initial.SubscriptionID})
+	busy := peer.read()
+	if busy.ID() != transportID(4) {
+		t.Fatalf("concurrent poll response id = %v, want 4", busy.ID())
 	}
-	cancel()
-	errorKind(t, waitFor(t, result), types.Canceled)
-	update, err := syncer.next(t.Context(), cursor.id)
-	if err != nil || update.Snapshot == nil || subscriptions.Load() != 2 {
-		t.Fatalf("%+v %v subscriptions=%d", update, err, subscriptions.Load())
+	errorKind(t, busy.Err(), types.Busy)
+	peer.cancel(3)
+	canceled := peer.read()
+	if canceled.ID() != transportID(3) {
+		t.Fatalf("canceled poll response id = %v, want 3", canceled.ID())
+	}
+	errorKind(t, canceled.Err(), types.Canceled)
+	var resynchronized sessionUpdate
+	for attempt := 0; attempt < 10; attempt++ {
+		peer.send(attempt+5, "next_session_event", subscriptionParams{SubscriptionID: initial.SubscriptionID})
+		response := peer.read()
+		if response.Err() != nil {
+			errorKind(t, response.Err(), types.Busy)
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if err := json.Unmarshal(response.Result(), &resynchronized); err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	if resynchronized.Snapshot == nil || subscriptions.Load() != 2 {
+		t.Fatalf("resynchronized update=%+v subscriptions=%d", resynchronized, subscriptions.Load())
 	}
 }

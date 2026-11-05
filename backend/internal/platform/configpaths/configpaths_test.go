@@ -1,14 +1,16 @@
-package configpaths
+package configpaths_test
 
 import (
 	"reflect"
 	"testing"
+
+	"rozsa/backend/internal/platform/configpaths"
 )
 
 func stringPointer(value string) *string { return &value }
 
 func TestResolveUsesExplicitRootsAndHomeDefaults(testContext *testing.T) {
-	roots, err := Resolve("/workspace", nil, nil, stringPointer("/home/user"), "darwin")
+	roots, err := configpaths.Resolve("/workspace", nil, nil, stringPointer("/home/user"), "darwin")
 	if err != nil {
 		testContext.Fatal(err)
 	}
@@ -18,7 +20,7 @@ func TestResolveUsesExplicitRootsAndHomeDefaults(testContext *testing.T) {
 	if agentsPath, exists := roots.AgentsSkills(); !exists || agentsPath != "/home/user/.agents/skills" {
 		testContext.Fatalf("agents skills path: %q %v", agentsPath, exists)
 	}
-	explicit, err := Resolve("/workspace", stringPointer("/private/config"), stringPointer("/private/project"), stringPointer("/ignored"), "linux")
+	explicit, err := configpaths.Resolve("/workspace", stringPointer("/private/config"), stringPointer("/private/project"), stringPointer("/ignored"), "linux")
 	if err != nil {
 		testContext.Fatal(err)
 	}
@@ -28,16 +30,16 @@ func TestResolveUsesExplicitRootsAndHomeDefaults(testContext *testing.T) {
 }
 
 func TestResolveRejectsEmptyOverridesAndMissingHome(testContext *testing.T) {
-	if _, err := Resolve("/workspace", nil, nil, nil, "darwin"); err == nil {
+	if _, err := configpaths.Resolve("/workspace", nil, nil, nil, "darwin"); err == nil {
 		testContext.Fatal("expected missing-home error")
 	}
 	for _, testCase := range []struct {
 		global, project *string
 		expected        string
 	}{
-		{stringPointer(""), nil, GlobalConfigDirEnv}, {nil, stringPointer(""), ProjectConfigDirEnv},
+		{stringPointer(""), nil, configpaths.GlobalConfigDirEnv}, {nil, stringPointer(""), configpaths.ProjectConfigDirEnv},
 	} {
-		if _, err := Resolve("/workspace", testCase.global, testCase.project, stringPointer("/home/user"), "linux"); err == nil || err.Error() != testCase.expected+" must not be empty" {
+		if _, err := configpaths.Resolve("/workspace", testCase.global, testCase.project, stringPointer("/home/user"), "linux"); err == nil || err.Error() != testCase.expected+" must not be empty" {
 			testContext.Fatalf("error = %v", err)
 		}
 	}
@@ -51,7 +53,7 @@ func TestPathLayoutIsSharedAcrossSupportedPathFamilies(testContext *testing.T) {
 	}
 	for _, testCase := range cases {
 		testContext.Run(testCase.operatingSystem, func(testContext *testing.T) {
-			roots, err := Resolve(testCase.project, nil, nil, stringPointer(testCase.home), testCase.operatingSystem)
+			roots, err := configpaths.Resolve(testCase.project, nil, nil, stringPointer(testCase.home), testCase.operatingSystem)
 			if err != nil {
 				testContext.Fatal(err)
 			}
@@ -67,7 +69,7 @@ func TestPathLayoutIsSharedAcrossSupportedPathFamilies(testContext *testing.T) {
 			if !reflect.DeepEqual(settingsPaths, expectedSettingsPaths) {
 				testContext.Fatalf("settings paths %q, want %q", settingsPaths, expectedSettingsPaths)
 			}
-			if actualKey := ProjectKey(testCase.project); actualKey != testCase.expectedKey {
+			if actualKey := configpaths.ProjectKey(testCase.project); actualKey != testCase.expectedKey {
 				testContext.Fatalf("project key %q, want %q", actualKey, testCase.expectedKey)
 			}
 			expectedSessionDir := testCase.expectedGlobal + pathSeparator + "sessions" + pathSeparator + testCase.expectedKey
@@ -84,7 +86,7 @@ func TestPathLayoutIsSharedAcrossSupportedPathFamilies(testContext *testing.T) {
 }
 
 func TestEnvironmentOverridesPreservePrivatePathAndGlobalFirstOrder(testContext *testing.T) {
-	roots, err := Resolve("/workspace", stringPointer("/private/user-config"), stringPointer("/private/project-config"), stringPointer("/home/user"), "darwin")
+	roots, err := configpaths.Resolve("/workspace", stringPointer("/private/user-config"), stringPointer("/private/project-config"), stringPointer("/home/user"), "darwin")
 	if err != nil {
 		testContext.Fatal(err)
 	}
@@ -98,9 +100,9 @@ func TestEnvironmentOverridesPreservePrivatePathAndGlobalFirstOrder(testContext 
 }
 
 func TestDiscoverReadsEnvironmentOverrides(testContext *testing.T) {
-	testContext.Setenv(GlobalConfigDirEnv, "/private/global")
-	testContext.Setenv(ProjectConfigDirEnv, "/private/project")
-	roots, err := Discover("/workspace")
+	testContext.Setenv(configpaths.GlobalConfigDirEnv, "/private/global")
+	testContext.Setenv(configpaths.ProjectConfigDirEnv, "/private/project")
+	roots, err := configpaths.Discover("/workspace")
 	if err != nil {
 		testContext.Fatal(err)
 	}

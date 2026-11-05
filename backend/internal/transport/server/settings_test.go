@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/app/settings"
 	"rozsa/backend/internal/app/themes"
+	"rozsa/backend/internal/transport/server"
 )
 
 func settingsExchange(t *testing.T, service productsettings.Service, requests ...string) []json.RawMessage {
@@ -22,7 +23,7 @@ func settingsExchange(t *testing.T, service productsettings.Service, requests ..
 	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
 	ended := make(chan error, 1)
 	go func() {
-		ended <- serveProduct(backend, backend, session.NewService(session.Catalog{}), nil, []productsettings.Service{service}, requestTimeout)
+		ended <- server.ServeProductApplication(backend, backend, session.NewService(session.Catalog{}), nil, service)
 		_ = backend.Close()
 	}()
 	frames := jsonrpc2.NewStream(client).(rawFrames)
