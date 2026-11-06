@@ -380,8 +380,7 @@ func TestRuntimeQuestionAndApprovalCleanupUsesOriginSession(t *testing.T) {
 	if err := app.CancelMessage(t.Context(), operationA); err != nil {
 		t.Fatal(err)
 	}
-	subA := subscribeMessage(t, app, operationA)
-	if event := nextMessageEvent(t, subA); event.Kind != MessageCanceled {
+	if event := waitForTerminal(t, app, operationA); event.Kind != MessageCanceled {
 		t.Fatalf("A terminal: %+v", event)
 	}
 	foundToolCall := false
@@ -412,7 +411,7 @@ func TestRuntimeQuestionAndApprovalCleanupUsesOriginSession(t *testing.T) {
 	if err := app.QuestionOwner().Respond(requestB.RequestID, answers); err != nil {
 		t.Fatal(err)
 	}
-	if event := nextMessageEvent(t, subscribeMessage(t, app, operationB)); event.Kind != MessageCompleted || event.SessionID != "b" || event.SessionPath != managerB.Path() {
+	if event := waitForTerminal(t, app, operationB); event.Kind != MessageCompleted || event.SessionID != "b" || event.SessionPath != managerB.Path() {
 		t.Fatalf("B terminal: %+v", event)
 	}
 

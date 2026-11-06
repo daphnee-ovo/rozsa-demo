@@ -110,11 +110,14 @@ func (syncer *messageSync) next(ctx context.Context, id string) (types.MessageEv
 func validMessageEvent(event types.MessageEvent) bool {
 	switch event.Kind {
 	case types.MessageTextDelta:
-		return event.Sequence > 0 && event.Delta != nil && event.Error == nil
+		return event.Sequence > 0 && event.Delta != nil && event.Error == nil && event.CallID == "" && event.Phase == ""
+	case types.MessageToolPhase:
+		return event.Sequence > 0 && event.Delta == nil && event.Error == nil && event.CallID != "" &&
+			(event.Phase == types.ToolStarted || event.Phase == types.ToolFinished)
 	case types.MessageCompleted, types.MessageCanceled:
-		return event.Sequence > 0 && event.Delta == nil && event.Error == nil
+		return event.Sequence > 0 && event.Delta == nil && event.Error == nil && event.CallID == "" && event.Phase == ""
 	case types.MessageFailed:
-		return event.Sequence > 0 && event.Delta == nil && event.Error != nil
+		return event.Sequence > 0 && event.Delta == nil && event.Error != nil && event.CallID == "" && event.Phase == ""
 	default:
 		return false
 	}

@@ -14,9 +14,17 @@ type MessageEventKind string
 
 const (
 	MessageTextDelta MessageEventKind = "text_delta"
+	MessageToolPhase MessageEventKind = "tool_phase"
 	MessageCompleted MessageEventKind = "completed"
 	MessageFailed    MessageEventKind = "error"
 	MessageCanceled  MessageEventKind = "canceled"
+)
+
+type ToolPhase string
+
+const (
+	ToolStarted  ToolPhase = "started"
+	ToolFinished ToolPhase = "finished"
 )
 
 type MessageEvent struct {
@@ -26,6 +34,8 @@ type MessageEvent struct {
 	Kind        MessageEventKind
 	Delta       *string
 	Error       *string
+	CallID      string
+	Phase       ToolPhase
 }
 
 type MessageEventSubscription interface {
@@ -87,7 +97,7 @@ func (runtime *Runtime) startMessage(prompt *string) (string, error) {
 	operation := &messageOperation{id: operationID, execution: execution, changed: make(chan struct{})}
 	runtime.messages.add(operation)
 	go func() {
-		err := runtime.runExecution(prompt, execution, operation.appendText)
+		err := runtime.runExecution(prompt, execution, operation.appendEvent)
 		operation.finish(err)
 		runtime.messages.finish(operationID)
 	}()
@@ -168,13 +178,13 @@ func (operations *messageOperations) pruneLocked() {
 	}
 }
 
-func (operation *messageOperation) appendText(delta string) {
+func (operation *messageOperation) appendEvent(event MessageEvent) {
 	operation.mu.Lock()
 	defer operation.mu.Unlock()
 	if operation.terminal {
 		return
 	}
-	operation.appendLocked(MessageEvent{Kind: MessageTextDelta, Delta: &delta})
+	operation.appendLocked(event)
 }
 
 func (operation *messageOperation) finish(err error) {

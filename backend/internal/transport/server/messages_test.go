@@ -147,6 +147,31 @@ func TestMessageMethodsReachTypedApplicationAndDeliverEvents(t *testing.T) {
 	}
 }
 
+func TestToolPhaseEventsPreserveCallIdentityAndRejectMalformedPhases(t *testing.T) {
+	for _, invalid := range []types.MessageEvent{
+		{Sequence: 2, Kind: types.MessageToolPhase, Phase: types.ToolFinished},
+		{Sequence: 2, Kind: types.MessageToolPhase, CallID: "call-read", Phase: "unknown"},
+	} {
+		app := &fakeMessageApp{events: make(chan types.MessageEvent, 2), runtimeStatus: types.RuntimeStatusResult{State: "ready"}}
+		peer := startMessagePeer(t, app)
+		peer.send(1, string(types.SubscribeMessage), types.MessageOperationParams{OperationID: "operation-start"})
+		var subscription types.MessageSubscription
+		if err := json.Unmarshal(peer.readOK().Result(), &subscription); err != nil {
+			t.Fatal(err)
+		}
+		app.events <- types.MessageEvent{Sequence: 1, Kind: types.MessageToolPhase, CallID: "call-read", Phase: types.ToolStarted}
+		peer.send(2, string(types.NextMessageEvent), types.MessageSubscriptionParams{SubscriptionID: subscription.SubscriptionID})
+		var received types.MessageEventResult
+		if err := json.Unmarshal(peer.readOK().Result(), &received); err != nil || received.Event.CallID != "call-read" ||
+			received.Event.Phase != types.ToolStarted || received.Event.Sequence != 1 {
+			t.Fatalf("tool phase event=%+v err=%v", received, err)
+		}
+		app.events <- invalid
+		peer.send(3, string(types.NextMessageEvent), types.MessageSubscriptionParams{SubscriptionID: subscription.SubscriptionID})
+		errorKind(t, peer.read().Err(), types.Message)
+	}
+}
+
 func TestRuntimeInitializationFailureIsReturnedAsTypedStatusError(t *testing.T) {
 	app := &fakeMessageApp{
 		events:        make(chan types.MessageEvent, 1),

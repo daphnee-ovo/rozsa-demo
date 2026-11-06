@@ -330,10 +330,10 @@ func (runtime *Runtime) beginRun(ctx context.Context, operationID string) (sessi
 	return runtime.lifecycle.Start(ctx, manager.Path(), operationID)
 }
 
-func (runtime *Runtime) runExecution(prompt *string, execution sessions.Execution, emitText func(string)) (runErr error) {
+func (runtime *Runtime) runExecution(prompt *string, execution sessions.Execution, emitEvent func(MessageEvent)) (runErr error) {
 	defer func() { runErr = execution.Finish(runErr) }()
 	for {
-		err := runtime.runReserved(execution.Context(), prompt, execution, emitText)
+		err := runtime.runReserved(execution.Context(), prompt, execution, emitEvent)
 		runErr = errors.Join(runErr, err, execution.PromptFinished())
 		text, ok := execution.NextQueued()
 		if !ok {
@@ -343,7 +343,7 @@ func (runtime *Runtime) runExecution(prompt *string, execution sessions.Executio
 	}
 }
 
-func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, execution sessions.Execution, emitText func(string)) (runErr error) {
+func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, execution sessions.Execution, emitEvent func(MessageEvent)) (runErr error) {
 	manager := execution.Manager()
 	conversation := runtime.conversation(manager)
 	settings := map[string]any{}
@@ -434,8 +434,8 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 		switch event := event.(type) {
 		case agent.MessageUpdate:
 			if delta, ok := event.StreamEvent.(types.TextDelta); ok {
-				if emitText != nil {
-					emitText(delta.Delta)
+				if emitEvent != nil {
+					emitEvent(MessageEvent{Kind: MessageTextDelta, Delta: &delta.Delta})
 				}
 				if outputErr == nil {
 					runtime.outputMu.Lock()
@@ -448,6 +448,14 @@ func (runtime *Runtime) runReserved(ctx context.Context, prompt *string, executi
 			}
 		case agent.AgentEnd:
 			completed = event.Messages
+		case agent.ToolExecutionStart:
+			if emitEvent != nil {
+				emitEvent(MessageEvent{Kind: MessageToolPhase, CallID: event.CallID, Phase: ToolStarted})
+			}
+		case agent.ToolExecutionEnd:
+			if emitEvent != nil {
+				emitEvent(MessageEvent{Kind: MessageToolPhase, CallID: event.CallID, Phase: ToolFinished})
+			}
 		case agent.MessageEnd:
 			if message, ok := toSessionMessage(event.Message); ok {
 				conversation.appendDisplay(message)

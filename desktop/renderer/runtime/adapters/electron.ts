@@ -1,18 +1,42 @@
-import type { ProductBridge, SessionListEntry, SessionSnapshot, SessionTarget, SettingsSnapshot, ThemeDefinition } from "../../../main/session-contract.js";
+import type {
+  ProductBridge,
+  SessionListEntry,
+  SessionSnapshot,
+  SessionTarget,
+  SettingsSnapshot,
+  ThemeDefinition,
+} from "../../../main/session-contract.js";
 import { ProductClient } from "../../product-client.js";
 import type { Disposer, RequestOptions, UIAdapter } from "../../scripts/core/ports.ts";
 import { oauthProvider, ProductFailure } from "../../../main/session-contract.js";
 
 type LegacySession = SessionListEntry & { first_message: string; last_modified: string };
-type LegacyContent = { type: "text"; text: string }
+type LegacyContent =
+  | { type: "text"; text: string }
   | { type: "thinking"; text: string }
   | { type: "image"; data?: string; mimeType?: string }
   | { type: "toolCall"; id?: string; name: string; arguments?: unknown };
-type LegacyMessage = { kind: "standard"; entryId: string; message: {
-  role: string; content: LegacyContent[]; toolCallId?: string; toolName?: string;
-  isError?: boolean; errorMessage?: string | null; [key: string]: unknown;
-} };
-type LegacyState = { sessionId: string; sessionName: string; cwd: string; messages: LegacyMessage[]; isStreaming: boolean; [key: string]: unknown };
+type LegacyMessage = {
+  kind: "standard";
+  entryId: string;
+  message: {
+    role: string;
+    content: LegacyContent[];
+    toolCallId?: string;
+    toolName?: string;
+    isError?: boolean;
+    errorMessage?: string | null;
+    [key: string]: unknown;
+  };
+};
+type LegacyState = {
+  sessionId: string;
+  sessionName: string;
+  cwd: string;
+  messages: LegacyMessage[];
+  isStreaming: boolean;
+  [key: string]: unknown;
+};
 type UIReceiver = (payload: unknown) => void;
 type MessageEvent = Awaited<ReturnType<ProductClient["nextMessageEvent"]>>["event"];
 type OperationState = {
@@ -45,71 +69,119 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
     for (const receive of receivers.get(event) || []) receive(payload);
   };
 
-  async function login(provider: import("../../../../contracts/ipc/session.js").OAuthProvider): Promise<void> {
+  async function login(
+    provider: import("../../../../contracts/ipc/session.js").OAuthProvider,
+  ): Promise<void> {
     if (!bridge.startAuth || !bridge.nextAuthEvent) throw new Error("OAuth login is unavailable");
     const operation = await bridge.startAuth(provider);
     authOperation = operation.operationId;
     void (async () => {
       for (;;) {
         let event: import("../../../../contracts/ipc/session.js").AuthEvent;
-        try { event = await bridge.nextAuthEvent!(operation.operationId); }
-        catch (error) { if (error instanceof ProductFailure && error.failure.kind === "timeout") continue; throw error; }
+        try {
+          event = await bridge.nextAuthEvent!(operation.operationId);
+        } catch (error) {
+          if (error instanceof ProductFailure && error.failure.kind === "timeout") continue;
+          throw error;
+        }
         if (event.kind === "error") throw new Error(event.message || "OAuth login failed");
-        if (event.message || event.url) deliver("notification", [event.message, event.userCode, event.url].filter(Boolean).join("\n"));
-        if (event.kind === "complete") { deliver("models-updated", {}); deliver("notification", `${provider} login successful`); return; }
+        if (event.message || event.url)
+          deliver(
+            "notification",
+            [event.message, event.userCode, event.url].filter(Boolean).join("\n"),
+          );
+        if (event.kind === "complete") {
+          deliver("models-updated", {});
+          deliver("notification", `${provider} login successful`);
+          return;
+        }
       }
-    })().catch(error => deliver("error", error instanceof Error ? error.message : String(error)))
-      .finally(() => { if (authOperation === operation.operationId) authOperation = undefined; });
+    })()
+      .catch((error) => deliver("error", error instanceof Error ? error.message : String(error)))
+      .finally(() => {
+        if (authOperation === operation.operationId) authOperation = undefined;
+      });
   }
 
   function currentState() {
-    const selectedName = active ? sessions.find(item => item.path === active?.path)?.name : undefined;
+    const selectedName = active
+      ? sessions.find((item) => item.path === active?.path)?.name
+      : undefined;
     const state = active
       ? legacyState(active, selectedName)
       : { sessionId: "", sessionName: "Rózsa", cwd: "", messages: [], isStreaming: false };
     const messages: LegacyMessage[] = state.messages.slice();
     const sessionOperations = active ? operationsForSession(active.path) : [];
     for (const operation of sessionOperations) {
-      const lastUser = [...messages].reverse().find(item => item.message.role === "user");
-      const lastText = lastUser?.message.content?.filter(block => block.type === "text").map(block => block.text).join("\n");
+      const lastUser = [...messages].reverse().find((item) => item.message.role === "user");
+      const lastText = lastUser?.message.content
+        ?.filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
       if (operation.status === "running" && operation.userText && lastText !== operation.userText) {
-        messages.push({ kind: "standard", entryId: `pending-user:${operation.operationId}`, message: {
-          role: "user", content: [{ type: "text", text: operation.userText }], toolCallId: undefined,
-          toolName: undefined, isError: false, errorMessage: undefined,
-        } });
+        messages.push({
+          kind: "standard",
+          entryId: `pending-user:${operation.operationId}`,
+          message: {
+            role: "user",
+            content: [{ type: "text", text: operation.userText }],
+            toolCallId: undefined,
+            toolName: undefined,
+            isError: false,
+            errorMessage: undefined,
+          },
+        });
       }
-      if (operation.status === "running" || operation.streamText || operation.error || operation.status === "canceled") {
-        messages.push({ kind: "standard", entryId: `stream:${operation.operationId}`, message: {
-          role: "assistant",
-          content: operation.streamText ? [{ type: "text", text: operation.streamText }] : [],
-          errorMessage: operation.error || undefined,
-          toolCallId: undefined, toolName: undefined, isError: operation.status === "failed",
-        } });
+      if (
+        operation.status === "running" ||
+        operation.streamText ||
+        operation.error ||
+        operation.status === "canceled"
+      ) {
+        messages.push({
+          kind: "standard",
+          entryId: `stream:${operation.operationId}`,
+          message: {
+            role: "assistant",
+            content: operation.streamText ? [{ type: "text", text: operation.streamText }] : [],
+            errorMessage: operation.error || undefined,
+            toolCallId: undefined,
+            toolName: undefined,
+            isError: operation.status === "failed",
+          },
+        });
       }
     }
     state.messages = messages;
-    state.isStreaming = sessionOperations.some(operation => operation.status === "running");
+    state.isStreaming = sessionOperations.some((operation) => operation.status === "running");
     return state;
   }
 
   function operationsForSession(path: string): OperationState[] {
     return [...(operationIdsBySession.get(path) || [])]
-      .map(operationId => operations.get(operationId))
+      .map((operationId) => operations.get(operationId))
       .filter((operation): operation is OperationState => operation !== undefined);
   }
 
   function enqueueSelection<T>(action: () => Promise<T>): Promise<T> {
     const result = selectionQueue.then(action);
-    selectionQueue = result.then(() => undefined, () => undefined);
+    selectionQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 
-  function registerOperation(operationId: string, snapshot: SessionSnapshot, userText: string): OperationState {
+  function registerOperation(
+    operationId: string,
+    snapshot: SessionSnapshot,
+    userText: string,
+  ): OperationState {
     const operation: OperationState = {
       operationId,
       target: { path: snapshot.path, catalogId: snapshot.catalogId },
       userText,
-      baseEntryIds: new Set(snapshot.messages.map(message => message.entryId)),
+      baseEntryIds: new Set(snapshot.messages.map((message) => message.entryId)),
       streamText: "",
       error: "",
       sequence: 0,
@@ -127,11 +199,20 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
   function reconcilePersistedOperations(snapshot: SessionSnapshot): void {
     for (const operation of operationsForSession(snapshot.path)) {
       if (operation.status === "running") continue;
-      const appended = snapshot.messages.filter(message => !operation.baseEntryIds.has(message.entryId));
-      const hasPrompt = !operation.userText || appended.some(message => message.role === "user"
-        && historyMessageText(message) === operation.userText);
-      const hasTerminal = appended.some(message => message.role === "assistant"
-        && (operation.status === "failed" ? message.errorMessage === operation.error : true));
+      const appended = snapshot.messages.filter(
+        (message) => !operation.baseEntryIds.has(message.entryId),
+      );
+      const hasPrompt =
+        !operation.userText ||
+        appended.some(
+          (message) =>
+            message.role === "user" && historyMessageText(message) === operation.userText,
+        );
+      const hasTerminal = appended.some(
+        (message) =>
+          message.role === "assistant" &&
+          (operation.status === "failed" ? message.errorMessage === operation.error : true),
+      );
       if (hasPrompt && hasTerminal) removeOperation(operation);
     }
   }
@@ -141,15 +222,21 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
     const operationIds = operationIdsBySession.get(operation.target.path);
     operationIds?.delete(operation.operationId);
     if (!operationIds?.size) operationIdsBySession.delete(operation.target.path);
-    if (runningBySession.get(operation.target.path) === operation.operationId) runningBySession.delete(operation.target.path);
+    if (runningBySession.get(operation.target.path) === operation.operationId)
+      runningBySession.delete(operation.target.path);
   }
 
   async function reloadSessions(): Promise<SessionListEntry[]> {
     if (sessionsLoading) return sessionsLoading;
-    sessionsLoading = client.getSessions().then(entries => {
-      sessions = entries;
-      return sessions;
-    }).finally(() => { sessionsLoading = null; });
+    sessionsLoading = client
+      .getSessions()
+      .then((entries) => {
+        sessions = entries;
+        return sessions;
+      })
+      .finally(() => {
+        sessionsLoading = null;
+      });
     return sessionsLoading;
   }
 
@@ -176,24 +263,34 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
     });
   }
 
-  async function applyMessageEvent(operation: OperationState, event: MessageEvent): Promise<boolean> {
-    if (event.sequence !== operation.sequence + 1) throw new Error(`Message event sequence gap: expected ${operation.sequence + 1}, received ${event.sequence}`);
+  async function applyMessageEvent(
+    operation: OperationState,
+    event: MessageEvent,
+  ): Promise<boolean> {
+    if (event.sequence !== operation.sequence + 1)
+      throw new Error(
+        `Message event sequence gap: expected ${operation.sequence + 1}, received ${event.sequence}`,
+      );
     operation.sequence = event.sequence;
     if (event.kind === "text_delta") {
       operation.streamText += event.delta;
       if (active?.path === operation.target.path) publish();
       return false;
     }
-    operation.status = event.kind === "completed" ? "completed" : event.kind === "error" ? "failed" : "canceled";
+    if (event.kind === "tool_phase") return false;
+    operation.status =
+      event.kind === "completed" ? "completed" : event.kind === "error" ? "failed" : "canceled";
     if (event.kind === "error") operation.error = event.error;
-    if (runningBySession.get(operation.target.path) === operation.operationId) runningBySession.delete(operation.target.path);
+    if (runningBySession.get(operation.target.path) === operation.operationId)
+      runningBySession.delete(operation.target.path);
     if (active?.path === operation.target.path) {
       if (operation.error) {
         operation.errorDelivered = true;
         deliver("error", operation.error);
       }
-      try { await refreshOperationSession(operation); }
-      catch (error) {
+      try {
+        await refreshOperationSession(operation);
+      } catch (error) {
         if (!operation.error) {
           operation.error = error instanceof Error ? error.message : String(error);
           deliver("error", operation.error);
@@ -212,7 +309,10 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
       if (active?.path === operation.target.path) publish();
       while (operation.status === "running") {
         const update = await client.nextMessageEvent(subscriptionId);
-        if (update.operationId !== operation.operationId || update.subscriptionId !== subscriptionId) {
+        if (
+          update.operationId !== operation.operationId ||
+          update.subscriptionId !== subscriptionId
+        ) {
           throw new Error("Message event identity changed during subscription");
         }
         if (await applyMessageEvent(operation, update.event)) break;
@@ -225,9 +325,11 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
       }
     } finally {
       if (subscriptionId) {
-        try { await client.unsubscribeMessageEvents(subscriptionId); }
-        catch (error) {
-          if (active?.path === operation.target.path) deliver("error", error instanceof Error ? error.message : String(error));
+        try {
+          await client.unsubscribeMessageEvents(subscriptionId);
+        } catch (error) {
+          if (active?.path === operation.target.path)
+            deliver("error", error instanceof Error ? error.message : String(error));
         }
       }
     }
@@ -241,15 +343,24 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
     eventPumps.set(operation.operationId, pump);
   }
 
-  async function request(intent: string, data?: unknown, { signal }: RequestOptions = {}): Promise<unknown> {
+  async function request(
+    intent: string,
+    data?: unknown,
+    { signal }: RequestOptions = {},
+  ): Promise<unknown> {
     signal?.throwIfAborted();
     switch (intent) {
       case "dispatch_slash_command": {
-        if (!isRecord(data) || typeof data.text !== "string") throw new Error("Invalid slash command");
+        if (!isRecord(data) || typeof data.text !== "string")
+          throw new Error("Invalid slash command");
         const [command, ...args] = data.text.trim().split(/\s+/);
         if (command === "/login") {
           const value = args.join(" ");
-          if (authOperation && value && !["anthropic", "codex-oauth", "github-copilot"].includes(value)) {
+          if (
+            authOperation &&
+            value &&
+            !["anthropic", "codex-oauth", "github-copilot"].includes(value)
+          ) {
             if (!bridge.submitAuth) throw new Error("OAuth input is unavailable");
             await bridge.submitAuth(authOperation, value);
           } else await login(oauthProvider(value || "codex-oauth"));
@@ -261,17 +372,23 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
           deliver("models-updated", {});
           return { handled: true };
         }
+        if (command.startsWith("/skill:")) return { handled: false };
         throw new Error(`Electron backend command ${command} is not implemented yet`);
       }
       case "get_sessions": {
         const entries = await reloadSessions();
         signal?.throwIfAborted();
-        return entries.map((entry): LegacySession => ({ ...entry, first_message: "", last_modified: entry.modified }));
+        return entries.map((entry): LegacySession => ({
+          ...entry,
+          first_message: "",
+          last_modified: entry.modified,
+        }));
       }
       case "switch_session": {
         const path = isRecord(data) ? data.path : undefined;
-        const entry = sessions.find(session => session.path === path);
-        if (!entry) throw new Error("Session is not in the current catalog; refresh the session list first");
+        const entry = sessions.find((session) => session.path === path);
+        if (!entry)
+          throw new Error("Session is not in the current catalog; refresh the session list first");
         await enqueueSelection(async () => {
           const snapshot = await client.switchSession({ path: entry.path, catalogId: entry.id });
           active = snapshot;
@@ -294,8 +411,11 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
           if (!active) return;
           const snapshot = active;
           const knownOperationId = runningBySession.get(snapshot.path);
-          const running = knownOperationId ? { operationId: knownOperationId } : await client.getActiveMessage();
-          if (running && !operations.has(running.operationId)) registerOperation(running.operationId, snapshot, "");
+          const running = knownOperationId
+            ? { operationId: knownOperationId }
+            : await client.getActiveMessage();
+          if (running && !operations.has(running.operationId))
+            registerOperation(running.operationId, snapshot, "");
           const operation = running && operations.get(running.operationId);
           if (operation) ensureMessagePump(operation);
         });
@@ -308,31 +428,65 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
       }
       case "list_models":
         return (await client.getSettings("global", { signal })).models;
+      case "autocomplete_input": {
+        if (
+          !isRecord(data) ||
+          typeof data.text !== "string" ||
+          !Number.isSafeInteger(data.cursor) ||
+          (data.cursor as number) < 0
+        )
+          throw new TypeError("Invalid input completion request");
+        return client.autocompleteInput(data.text, data.cursor as number);
+      }
+      case "switch_model": {
+        if (
+          !isRecord(data) ||
+          typeof data.modelId !== "string" ||
+          !data.modelId ||
+          typeof data.provider !== "string" ||
+          !data.provider
+        )
+          throw new TypeError("Invalid model selection");
+        await client.updateSetting("global", "model", {
+          id: data.modelId,
+          provider: data.provider,
+        });
+        return true;
+      }
       case "list_themes":
         return client.listThemes("global", { signal });
       case "update_setting": {
-        if (!isRecord(data) || typeof data.key !== "string" || typeof data.value !== "string") throw new TypeError("Invalid setting update");
+        if (!isRecord(data) || typeof data.key !== "string" || typeof data.value !== "string")
+          throw new TypeError("Invalid setting update");
         const value = settingValue(data.key, data.value);
         return client.updateSetting("global", data.key, value, { signal });
       }
       case "get_theme": {
-        if (!isRecord(data) || typeof data.id !== "string" || (data.mode !== "light" && data.mode !== "dark")) throw new TypeError("Invalid theme request");
+        if (
+          !isRecord(data) ||
+          typeof data.id !== "string" ||
+          (data.mode !== "light" && data.mode !== "dark")
+        )
+          throw new TypeError("Invalid theme request");
         return client.getTheme(data.id, data.mode, { signal });
       }
       case "save_theme": {
-        if (!isRecord(data) || !isRecord(data.theme)) throw new TypeError("Invalid theme definition");
+        if (!isRecord(data) || !isRecord(data.theme))
+          throw new TypeError("Invalid theme definition");
         await client.saveTheme(data.theme as unknown as ThemeDefinition, { signal });
         return true;
       }
       case "send_message": {
-        if (!isRecord(data) || typeof data.message !== "string") throw new TypeError("Invalid message request");
+        if (!isRecord(data) || typeof data.message !== "string")
+          throw new TypeError("Invalid message request");
         const text = data.message.trim();
         if (!text) return;
         await restoreLatestSession();
         return enqueueSelection(async () => {
           const selected = active;
           if (!selected) throw new Error("Select a session before sending a message");
-          if (runningBySession.has(selected.path)) throw new Error("A message is already running in this session");
+          if (runningBySession.has(selected.path))
+            throw new Error("A message is already running in this session");
           const operation = await client.startMessage(text);
           const state = registerOperation(operation.operationId, selected, text);
           publish();
@@ -355,11 +509,17 @@ export function createElectronAdapter(bridge: ProductBridge): UIAdapter {
   return Object.freeze({
     request,
     subscribe(event: string, receive: UIReceiver): Disposer {
-      if (!["ui-state", "error", "models-updated", "app-notification", "notification"].includes(event)) throw new Error(`Electron backend event ${event} is not implemented yet`);
+      if (
+        !["ui-state", "error", "models-updated", "app-notification", "notification"].includes(event)
+      )
+        throw new Error(`Electron backend event ${event} is not implemented yet`);
       const listeners = receivers.get(event) || new Set<UIReceiver>();
       listeners.add(receive);
       receivers.set(event, listeners);
-      const detachModels = event === "models-updated" ? bridge.onModelsChanged?.(() => deliver("models-updated", {})) : undefined;
+      const detachModels =
+        event === "models-updated"
+          ? bridge.onModelsChanged?.(() => deliver("models-updated", {}))
+          : undefined;
       if (event === "ui-state") {
         for (const operation of operations.values()) ensureMessagePump(operation);
       }
@@ -383,15 +543,23 @@ function legacyState(snapshot: SessionSnapshot, sessionName?: string): LegacySta
     sessionId: snapshot.sessionId,
     sessionName: sessionName || snapshot.sessionId,
     cwd: snapshot.cwd,
-    messages: snapshot.messages.map(message => ({
+    messages: snapshot.messages.map((message) => ({
       kind: "standard",
       entryId: message.entryId,
       message: {
         role: message.role,
-        content: message.content.map(block => block.type === "toolCall"
-          ? { type: "toolCall", id: block.id || `${message.entryId}:${block.name}`, name: block.name, arguments: block.arguments || {} }
-          : block.type === "image" ? { type: "image", data: block.data, mimeType: block.mimeType }
-            : { type: block.type, text: block.text }),
+        content: message.content.map((block) =>
+          block.type === "toolCall"
+            ? {
+                type: "toolCall",
+                id: block.id || `${message.entryId}:${block.name}`,
+                name: block.name,
+                arguments: block.arguments || {},
+              }
+            : block.type === "image"
+              ? { type: "image", data: block.data, mimeType: block.mimeType }
+              : { type: block.type, text: block.text },
+        ),
         toolCallId: message.toolCallId || message.entryId,
         toolName: message.toolName,
         isError: message.isError,
@@ -399,7 +567,10 @@ function legacyState(snapshot: SessionSnapshot, sessionName?: string): LegacySta
       },
     })),
     isStreaming: false,
-    contextUsage: { messages: snapshot.contextMessageCount, totalMessages: snapshot.messages.length },
+    contextUsage: {
+      messages: snapshot.contextMessageCount,
+      totalMessages: snapshot.messages.length,
+    },
   };
 }
 
@@ -408,7 +579,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function historyMessageText(message: SessionSnapshot["messages"][number]): string {
-  return message.content.flatMap(block => block.type === "text" || block.type === "thinking" ? [block.text] : []).join("\n");
+  return message.content
+    .flatMap((block) => (block.type === "text" || block.type === "thinking" ? [block.text] : []))
+    .join("\n");
 }
 
 function legacySettings(snapshot: SettingsSnapshot): Record<string, unknown> {
@@ -440,11 +613,32 @@ function legacySettings(snapshot: SettingsSnapshot): Record<string, unknown> {
 }
 
 function settingValue(key: string, value: string): unknown {
-  if (["auto_compact", "auto_session_naming", "block_images", "hide_thinking", "appearance_translucent_sidebar", "appearance_show_rate_limits", "appearance_show_hourly_rate_limit", "appearance_show_weekly_rate_limit"].includes(key)) {
-    if (value !== "true" && value !== "false") throw new TypeError(`Invalid boolean setting: ${key}`);
+  if (
+    [
+      "auto_compact",
+      "auto_session_naming",
+      "block_images",
+      "hide_thinking",
+      "appearance_translucent_sidebar",
+      "appearance_show_rate_limits",
+      "appearance_show_hourly_rate_limit",
+      "appearance_show_weekly_rate_limit",
+    ].includes(key)
+  ) {
+    if (value !== "true" && value !== "false")
+      throw new TypeError(`Invalid boolean setting: ${key}`);
     return value === "true";
   }
-  if (["compaction_trigger_ratio", "compaction_target_ratio", "appearance_font_size", "retry_timeout_ms", "retry_max_retries", "retry_max_delay_ms"].includes(key)) {
+  if (
+    [
+      "compaction_trigger_ratio",
+      "compaction_target_ratio",
+      "appearance_font_size",
+      "retry_timeout_ms",
+      "retry_max_retries",
+      "retry_max_delay_ms",
+    ].includes(key)
+  ) {
     if (value.trim() === "") return null;
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) throw new TypeError(`Invalid numeric setting: ${key}`);

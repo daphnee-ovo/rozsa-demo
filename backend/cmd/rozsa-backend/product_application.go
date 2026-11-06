@@ -144,6 +144,8 @@ func (subscription runtimeMessageSubscription) Next(ctx context.Context) (types.
 		Kind:     types.MessageEventKind(event.Kind),
 		Delta:    event.Delta,
 		Error:    event.Error,
+		CallID:   event.CallID,
+		Phase:    types.ToolPhase(event.Phase),
 	}, nil
 }
 

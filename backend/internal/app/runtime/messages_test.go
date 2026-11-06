@@ -2,15 +2,57 @@ package runtime_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	appRuntime "rozsa/backend/internal/app/runtime"
 	"rozsa/backend/internal/app/session"
 	"rozsa/backend/internal/model/types"
 )
+
+func TestToolExecutionPhasesReplayWithCallIdentity(t *testing.T) {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := filepath.Clean(filepath.Join(workingDirectory, "../../../../testdata/project-test-dirs/TestRuntimeRegistersProductionToolsAndPersistsResults-read"))
+	t.Chdir(workspace)
+	provider := newToolLoopProvider("read", func(types.Context) json.RawMessage {
+		arguments, err := json.Marshal(map[string]string{"file_path": filepath.Join(workspace, "input.txt")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return arguments
+	})
+	app := newProductionRuntime(t, provider, workspace, yoloSettings(), nil)
+	operationID, err := app.StartMessage(t.Context(), "read fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal := waitForTerminal(t, app, operationID); terminal.Kind != MessageCompleted {
+		t.Fatalf("operation terminal = %+v", terminal)
+	}
+	subscription, err := app.SubscribeMessageEvents(t.Context(), operationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	for index, phase := range []appRuntime.ToolPhase{appRuntime.ToolStarted, appRuntime.ToolFinished} {
+		event, err := subscription.Next(t.Context())
+		if err != nil || event.Kind != appRuntime.MessageToolPhase || event.CallID != "same-tool-call" ||
+			event.Phase != phase || event.Sequence != uint64(index+1) {
+			t.Fatalf("tool phase %d = %+v, %v", index, event, err)
+		}
+	}
+	terminal, err := subscription.Next(t.Context())
+	if err != nil || terminal.Kind != MessageCompleted || terminal.Sequence != 3 {
+		t.Fatalf("replayed terminal = %+v, %v", terminal, err)
+	}
+}
 
 func TestStartMessageReplaysOrderedEventsToLateSubscription(t *testing.T) {
 	provider := &promptProvider{started: make(chan struct{}), ended: make(chan struct{})}

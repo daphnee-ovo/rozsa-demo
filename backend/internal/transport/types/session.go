@@ -62,9 +62,17 @@ type MessageEventKind string
 
 const (
 	MessageTextDelta MessageEventKind = "text_delta"
+	MessageToolPhase MessageEventKind = "tool_phase"
 	MessageCompleted MessageEventKind = "completed"
 	MessageFailed    MessageEventKind = "error"
 	MessageCanceled  MessageEventKind = "canceled"
+)
+
+type ToolPhase string
+
+const (
+	ToolStarted  ToolPhase = "started"
+	ToolFinished ToolPhase = "finished"
 )
 
 // Exactly one payload field is populated for each event kind.
@@ -73,6 +81,8 @@ type MessageEvent struct {
 	Kind     MessageEventKind `json:"kind"`
 	Delta    *string          `json:"delta,omitempty"`
 	Error    *string          `json:"error,omitempty"`
+	CallID   string           `json:"callId,omitempty"`
+	Phase    ToolPhase        `json:"phase,omitempty"`
 }
 type MessageEventResult struct {
 	SubscriptionID string       `json:"subscriptionId"`
