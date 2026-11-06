@@ -1,0 +1,1 @@
+{"sharedGlobal":"---\nname: shared\ndescription: Global shared\n---\nGlobal body","agentOnly":"---\ndescription: Agents skill\n---\nAgents body","sharedProject":"---\nname: shared\ndescription: Project shared\n---\nProject body","projectOnly":"---\ndescription: Project only\n---\nProject-only body"}

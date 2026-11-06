@@ -1,6 +1,9 @@
-package capabilities
+package capabilities_test
 
-import "testing"
+import (
+	. "rozsa/backend/internal/app/capabilities"
+	"testing"
+)
 
 func TestLayeredOverridesAndResetByOmission(t *testing.T) {
 	catalog := New(map[string]bool{"bash": false, "read": true}, map[string]bool{"bash": true}, map[string]bool{"read": false})

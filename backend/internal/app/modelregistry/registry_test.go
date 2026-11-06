@@ -1,8 +1,9 @@
-package modelregistry
+package modelregistry_test
 
 import (
 	"os"
 	"path/filepath"
+	. "rozsa/backend/internal/app/modelregistry"
 	"testing"
 
 	modeltypes "rozsa/backend/internal/model/types"

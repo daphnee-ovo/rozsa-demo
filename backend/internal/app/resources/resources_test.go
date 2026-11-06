@@ -1,8 +1,9 @@
-package resources
+package resources_test
 
 import (
 	"os"
 	"path/filepath"
+	. "rozsa/backend/internal/app/resources"
 	"strings"
 	"testing"
 )

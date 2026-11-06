@@ -1,0 +1,1 @@
+{"providers":{"codex-oauth":{"api":"openai-responses","baseUrl":"https://example.invalid/v1","models":[{"id":"new","name":"Project model"}]}}}

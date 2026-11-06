@@ -1,4 +1,4 @@
-package productsettings
+package productsettings_test
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	. "rozsa/backend/internal/app/productsettings"
+	"runtime"
 	"testing"
 
 	"rozsa/backend/internal/app/modelcatalog"
@@ -103,12 +105,12 @@ func TestSkillCatalogUpdateAndResetUseLayeredSettings(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	globalRoot := filepath.Join(root, "global")
-	cwd := filepath.Join(root, "workspace")
+	cwd := testProjectCWD(t)
 	projectRoot := filepath.Join(cwd, ".rozsa")
-	writeSkillFixture(t, filepath.Join(globalRoot, "skills", "shared"), "---\nname: shared\ndescription: Global shared\n---\nGlobal body")
-	writeSkillFixture(t, filepath.Join(home, ".agents", "skills", "agent-only"), "---\ndescription: Agents skill\n---\nAgents body")
-	writeSkillFixture(t, filepath.Join(projectRoot, "skills", "shared"), "---\nname: shared\ndescription: Project shared\n---\nProject body")
-	writeSkillFixture(t, filepath.Join(projectRoot, "skills", "project-only"), "---\ndescription: Project only\n---\nProject-only body")
+	copySkillFixture(t, filepath.Join(globalRoot, "skills", "shared"), "sharedGlobal")
+	copySkillFixture(t, filepath.Join(home, ".agents", "skills", "agent-only"), "agentOnly")
+	copySkillFixture(t, filepath.Join(projectRoot, "skills", "shared"), "sharedProject")
+	copySkillFixture(t, filepath.Join(projectRoot, "skills", "project-only"), "projectOnly")
 	globalSettings := filepath.Join(globalRoot, "settings.json")
 	projectSettings := filepath.Join(projectRoot, "settings.json")
 	if err := os.MkdirAll(filepath.Dir(globalSettings), 0o755); err != nil {
@@ -170,14 +172,45 @@ func TestSkillCatalogUpdateAndResetUseLayeredSettings(t *testing.T) {
 	}
 }
 
-func writeSkillFixture(t *testing.T, directory, contents string) {
+func copySkillFixture(t *testing.T, directory, fixtureName string) {
 	t.Helper()
+	fixtureContents, err := os.ReadFile("../../../../testdata/fixtures/backend/productsettings/skills.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures map[string]string
+	if err := json.Unmarshal(fixtureContents, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	contents, exists := fixtures[fixtureName]
+	if !exists {
+		t.Fatalf("missing skills fixture %q", fixtureName)
+	}
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func testProjectCWD(t *testing.T) string {
+	t.Helper()
+	_, sourceFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate productsettings test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "../../../.."))
+	targetDirectory := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", "productsettings")
+	if err := os.MkdirAll(targetDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.MkdirTemp(targetDirectory, "productsettings-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(cwd) })
+	return cwd
 }
 
 func TestThemeSaveAndSelectionReturnPersistedDefinition(t *testing.T) {

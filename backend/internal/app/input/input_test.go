@@ -1,10 +1,12 @@
-package input
+package input_test
 
 import (
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	. "rozsa/backend/internal/app/input"
+	"runtime"
 	"testing"
 
 	"rozsa/backend/internal/app/skills"
@@ -15,7 +17,7 @@ func TestCompleteReturnsBuiltinAndSkillCommands(t *testing.T) {
 	result, err := service.Complete(Request{
 		Text:   "/revie",
 		Cursor: 6,
-		CWD:    t.TempDir(),
+		CWD:    testProjectCWD(t),
 		Skills: []skills.Skill{{Name: "review", Description: "Review the current changes"}},
 	})
 	if err != nil {
@@ -31,7 +33,7 @@ func TestCompleteReturnsBuiltinAndSkillCommands(t *testing.T) {
 	conflict, err := service.Complete(Request{
 		Text:   "/skill:mod",
 		Cursor: 10,
-		CWD:    t.TempDir(),
+		CWD:    testProjectCWD(t),
 		Skills: []skills.Skill{{Name: "model", Description: "Custom model workflow"}},
 	})
 	if err != nil {
@@ -43,7 +45,7 @@ func TestCompleteReturnsBuiltinAndSkillCommands(t *testing.T) {
 }
 
 func TestCompleteUsesUTF16CursorAndHighlightRanges(t *testing.T) {
-	root := t.TempDir()
+	root := testProjectCWD(t)
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("notes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +66,7 @@ func TestCompleteUsesUTF16CursorAndHighlightRanges(t *testing.T) {
 func TestCompleteHighlightsEveryValidSlashTokenAcrossEmojiText(t *testing.T) {
 	text := "😀 /model and /skill:deploy"
 	result, err := NewService(nil).Complete(Request{
-		Text: text, Cursor: 27, CWD: t.TempDir(),
+		Text: text, Cursor: 27, CWD: testProjectCWD(t),
 		Skills: []skills.Skill{{Name: "deploy", Description: "Deploy the current project"}},
 	})
 	if err != nil {
@@ -105,7 +107,7 @@ func TestHasSkillTokenFindsCompletedSkillCommandsOutsideCurrentToken(t *testing.
 func TestCompleteHighlightsSkillCommandWhenCaretIsAfterTrailingSpace(t *testing.T) {
 	text := "/skill:deploy "
 	result, err := NewService(nil).Complete(Request{
-		Text: text, Cursor: utf16Length(text), CWD: t.TempDir(),
+		Text: text, Cursor: 14, CWD: testProjectCWD(t),
 		Skills: []skills.Skill{{Name: "deploy", Description: "Deploy the current project"}},
 	})
 	if err != nil {
@@ -118,7 +120,7 @@ func TestCompleteHighlightsSkillCommandWhenCaretIsAfterTrailingSpace(t *testing.
 }
 
 func TestCompleteFileReferencesSortsDirectoriesAndQuotesSpaces(t *testing.T) {
-	root := t.TempDir()
+	root := testProjectCWD(t)
 	if err := os.Mkdir(filepath.Join(root, "folder"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +140,7 @@ func TestCompleteFileReferencesSortsDirectoriesAndQuotesSpaces(t *testing.T) {
 }
 
 func TestCompleteReturnsEmptyResultsForUnknownTokens(t *testing.T) {
-	root := t.TempDir()
+	root := testProjectCWD(t)
 	service := NewService(nil)
 	for _, request := range []Request{
 		{Text: "/unknown-token", Cursor: len("/unknown-token"), CWD: root},
@@ -163,10 +165,29 @@ func TestCompleteRequiresWorkingDirectoryForFileReferences(t *testing.T) {
 
 func TestCompleteSurfacesFileEnumerationErrors(t *testing.T) {
 	service := NewService(failingFileSystem{})
-	_, err := service.Complete(Request{Text: "@read", Cursor: 5, CWD: t.TempDir()})
+	_, err := service.Complete(Request{Text: "@read", Cursor: 5, CWD: testProjectCWD(t)})
 	if err == nil {
 		t.Fatal("expected directory read error")
 	}
+}
+
+func testProjectCWD(t *testing.T) string {
+	t.Helper()
+	_, sourceFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate input test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "../../../.."))
+	targetDirectory := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", "input")
+	if err := os.MkdirAll(targetDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.MkdirTemp(targetDirectory, "input-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(cwd) })
+	return cwd
 }
 
 type failingFileSystem struct{}

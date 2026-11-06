@@ -1,4 +1,4 @@
-package auth
+package auth_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	. "rozsa/backend/internal/app/auth"
 	"testing"
 	"time"
 
@@ -65,58 +66,129 @@ func TestControllerCarriesTypedLoginInputAndUpdatesOnlyProvider(t *testing.T) {
 }
 
 func TestControllerLogoutWaitsForCancelledLoginBeforeRemovingCredentials(t *testing.T) {
-	stored := false
-	service := &controller{providers: map[string]flow{}, operations: map[string]*loginOperation{}, active: map[string]*loginOperation{}}
-	started := make(chan struct{})
-	service.providers["test"] = flow{
-		login: func(ctx context.Context, _ <-chan string, _ func(Event) error) error {
-			close(started)
-			<-ctx.Done()
-			stored = true
-			return ctx.Err()
-		},
-		logout: func(context.Context) error { stored = false; return nil },
-	}
-	id, err := service.Start("test")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"access_token":"late-access","refresh_token":"late-refresh","expires_in":3600}`))
+	}))
+	defer server.Close()
+	path := filepath.Join(t.TempDir(), "models", "auth.json")
+	callbackEntered, callbackCancelled, releaseCallback := make(chan struct{}, 1), make(chan struct{}), make(chan struct{})
+	callbackCalled := false
+	defer func() {
+		select {
+		case <-releaseCallback:
+		default:
+			close(releaseCallback)
+		}
+	}()
+	manager, err := NewAnthropic(path, anthropic.NewClientWithConfig(server.Client(), anthropic.Config{TokenURL: server.URL, CallbackAddress: "127.0.0.1:0"}), func(ctx context.Context, _ string) error {
+		if callbackCalled {
+			return nil
+		}
+		callbackCalled = true
+		callbackEntered <- struct{}{}
+		<-ctx.Done()
+		close(callbackCancelled)
+		<-releaseCallback
+		return ctx.Err()
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	<-started
-	if err := service.Logout(t.Context(), "test"); err != nil {
+	service := NewController(manager, nil, nil)
+	defer service.Close()
+	id, err := service.Start("anthropic")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if stored {
-		t.Fatal("late login survived logout")
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	event, err := service.Next(ctx, id)
+	if err != nil || event.Kind != "authorization_url" {
+		t.Fatalf("authorization event=%#v err=%v", event, err)
 	}
-	event, err := service.Next(t.Context(), id)
-	if err != nil || event.Kind != "error" {
-		t.Fatalf("cancel event=%#v %v", event, err)
+	if err := service.Input(id, "manual-code"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-callbackEntered:
+	case <-ctx.Done():
+		t.Fatal("login did not reach the public model-change callback")
+	}
+	logoutDone := make(chan error, 1)
+	go func() { logoutDone <- service.Logout(ctx, "anthropic") }()
+	select {
+	case <-callbackCancelled:
+	case <-ctx.Done():
+		t.Fatal("logout did not cancel the active login")
+	}
+	select {
+	case err := <-logoutDone:
+		t.Fatalf("logout returned before login callback completed: %v", err)
+	default:
+	}
+	close(releaseCallback)
+	if err := <-logoutDone; err != nil {
+		t.Fatal(err)
+	}
+	stored, err := credentials.ResolveAuth(ctx, path, "anthropic", time.Now(), nil)
+	if err != nil || stored.Access != "" {
+		t.Fatalf("logout retained late credential=%#v err=%v", stored, err)
 	}
 	service.Close()
-	if _, err := service.Start("test"); err == nil {
+	if _, err := service.Start("anthropic"); err == nil {
 		t.Fatal("closed controller accepted login")
 	}
 }
 
 func TestControllerCancelledReceptionDoesNotConsumeQueuedEvent(t *testing.T) {
-	service := &controller{providers: map[string]flow{}, operations: map[string]*loginOperation{}, active: map[string]*loginOperation{}}
-	service.providers["test"] = flow{login: func(_ context.Context, _ <-chan string, emit func(Event) error) error {
-		return emit(Event{Kind: "progress"})
-	}}
-	id, err := service.Start("test")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"access_token":"access","refresh_token":"refresh","expires_in":3600}`))
+	}))
+	defer server.Close()
+	path := filepath.Join(t.TempDir(), "models", "auth.json")
+	changed := make(chan struct{})
+	manager, err := NewAnthropic(path, anthropic.NewClientWithConfig(server.Client(), anthropic.Config{TokenURL: server.URL, CallbackAddress: "127.0.0.1:0"}), func(context.Context, string) error {
+		close(changed)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	service := NewController(manager, nil, nil)
 	defer service.Close()
-	operation, _ := service.operation(id)
-	<-operation.done
-	ctx, cancel := context.WithCancel(t.Context())
+	id, err := service.Start("test")
+	if err == nil {
+		t.Fatal("unsupported provider unexpectedly started")
+	}
+	id, err = service.Start("anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	event, err := service.Next(ctx, id)
+	if err != nil || event.Kind != "authorization_url" || event.URL == "" {
+		t.Fatalf("authorization event=%#v err=%v", event, err)
+	}
+	if err := service.Input(id, "manual-code"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changed:
+	case <-ctx.Done():
+		t.Fatal("authorization did not complete through the public callback")
+	}
+	cancelledContext, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := service.Next(ctx, id); !errors.Is(err, context.Canceled) {
+	if _, err := service.Next(cancelledContext, id); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled receive=%v", err)
 	}
-	event, err := service.Next(t.Context(), id)
-	if err != nil || event.Kind != "progress" {
+	event, err = service.Next(ctx, id)
+	if err != nil || event.Kind != "progress" || event.Message != "Exchanging authorization code for tokens..." {
 		t.Fatalf("queued event lost: %#v %v", event, err)
+	}
+	event, err = service.Next(ctx, id)
+	if err != nil || event.Kind != "complete" {
+		t.Fatalf("terminal event=%#v err=%v", event, err)
 	}
 }

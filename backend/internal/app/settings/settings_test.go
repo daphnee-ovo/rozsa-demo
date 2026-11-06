@@ -1,10 +1,11 @@
-package settings
+package settings_test
 
 import (
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	. "rozsa/backend/internal/app/settings"
 	"sync"
 	"testing"
 )

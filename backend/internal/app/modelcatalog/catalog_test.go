@@ -1,8 +1,7 @@
-package modelcatalog
+package modelcatalog_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,30 +9,24 @@ import (
 	"testing"
 	"time"
 
+	. "rozsa/backend/internal/app/modelcatalog"
 	"rozsa/backend/internal/model/credentials"
 )
 
-func writeModels(t *testing.T, path string, providers map[string]any) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(map[string]any{"providers": providers})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-func providerConfig(id, key string) map[string]any {
-	return map[string]any{"api": "openai-responses", "baseUrl": "https://example.invalid/v1", "apiKey": key, "models": []map[string]any{{"id": id, "name": id}}}
-}
-func testCatalog(t *testing.T, providers map[string]any, env map[string]string) (Service, *Auth, [2]string) {
+func testCatalog(t *testing.T, fixture string, env map[string]string, dynamic ...map[string]DynamicRefresh) (Service, *Auth, [2]string) {
 	t.Helper()
 	root := t.TempDir()
 	dirs := [2]string{filepath.Join(root, "global", "models"), filepath.Join(root, "project", "models")}
-	writeModels(t, filepath.Join(dirs[0], "models.json"), providers)
+	contents, err := os.ReadFile(filepath.Join("../../../../testdata/fixtures/backend/modelcatalog", fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dirs[0], 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirs[0], "models.json"), contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	auth := &Auth{Path: filepath.Join(dirs[0], "auth.json"), Resolver: credentials.Resolver{
 		LookupEnv: func(name string) (string, bool) {
 			value, ok := env[name]
@@ -44,7 +37,11 @@ func testCatalog(t *testing.T, providers map[string]any, env map[string]string) 
 		},
 		HomeDir: func() (string, error) { return root, nil },
 	}}
-	service, err := New(Options{Directories: dirs, Auth: auth})
+	options := Options{Directories: dirs, Auth: auth}
+	if len(dynamic) > 0 {
+		options.Dynamic = dynamic[0]
+	}
+	service, err := New(options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,12 +65,7 @@ func freshToken(access string) credentials.OAuthCredential {
 }
 
 func TestAvailabilityPreservesRustProviderRules(t *testing.T) {
-	service, auth, _ := testCatalog(t, map[string]any{
-		"anthropic":   providerConfig("a", "configured-anthropic"),
-		"codex-oauth": providerConfig("c", ""), "github-copilot": providerConfig("g", ""),
-		"custom": providerConfig("x", "literal"), "openai": providerConfig("o", ""),
-		"missing": providerConfig("m", "$MISSING"),
-	}, map[string]string{"OPENAI_API_KEY": "environment", "ANTHROPIC_API_KEY": "ignored-for-list"})
+	service, auth, _ := testCatalog(t, "availability.json", map[string]string{"OPENAI_API_KEY": "environment", "ANTHROPIC_API_KEY": "ignored-for-list"})
 	initial, err := service.Available(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -111,10 +103,37 @@ func TestAvailabilityPreservesRustProviderRules(t *testing.T) {
 }
 
 func TestRefreshPersistsTokenAndUpdatesOnlyProviderWithProjectOverride(t *testing.T) {
-	service, auth, dirs := testCatalog(t, map[string]any{"codex-oauth": providerConfig("old", ""), "custom": providerConfig("unchanged", "key")}, nil)
-	project := providerConfig("new", "")
-	project["models"] = []map[string]any{{"id": "new", "name": "Project model"}}
-	writeModels(t, filepath.Join(dirs[1], "override.json"), map[string]any{"codex-oauth": project})
+	discoveries := 0
+	var dynamicModelPath string
+	dynamic := map[string]DynamicRefresh{"codex-oauth": func(_ context.Context, current credentials.OAuthCredential, force bool) (bool, error) {
+		discoveries++
+		if current.Access != "new-token" || !force {
+			t.Fatalf("discovery credential/force: %#v %v", current, force)
+		}
+		contents, err := os.ReadFile("../../../../testdata/fixtures/backend/modelcatalog/refresh-dynamic.json")
+		if err != nil {
+			return false, err
+		}
+		if err := os.WriteFile(dynamicModelPath, contents, 0o600); err != nil {
+			return false, err
+		}
+		return true, nil
+	}}
+	service, auth, dirs := testCatalog(t, "refresh-global.json", nil, dynamic)
+	dynamicModelPath = filepath.Join(dirs[0], "dynamic.json")
+	if _, exists := service.Find("codex-oauth", "discovered"); exists {
+		t.Fatal("dynamic-only model exists before refresh")
+	}
+	projectContents, err := os.ReadFile("../../../../testdata/fixtures/backend/modelcatalog/refresh-project.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dirs[1], 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirs[1], "override.json"), projectContents, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	current := freshToken("old-token")
 	current.Expires = 1
 	current.Extra = map[string]any{"accountId": "account"}
@@ -126,15 +145,6 @@ func TestRefreshPersistsTokenAndUpdatesOnlyProviderWithProjectOverride(t *testin
 		current.Expires = time.Now().Add(time.Hour).UnixMilli()
 		return current, nil
 	}
-	discoveries := 0
-	service.(*catalog).options.Dynamic = map[string]DynamicRefresh{"codex-oauth": func(ctx context.Context, current credentials.OAuthCredential, force bool) (bool, error) {
-		discoveries++
-		if current.Access != "new-token" || !force {
-			t.Fatalf("discovery credential/force: %#v %v", current, force)
-		}
-		writeModels(t, filepath.Join(dirs[0], "dynamic.json"), map[string]any{"codex-oauth": providerConfig("new", "")})
-		return true, nil
-	}}
 	snapshot, err := service.Available(t.Context())
 	if err != nil || len(snapshot.Diagnostics) != 0 {
 		t.Fatalf("refresh: %#v, %v", snapshot, err)
@@ -148,7 +158,10 @@ func TestRefreshPersistsTokenAndUpdatesOnlyProviderWithProjectOverride(t *testin
 	}
 	model, ok := service.Find("codex-oauth", "new")
 	if !ok || model.Name != "Project model" {
-		t.Fatalf("project override missing: %#v", model)
+		t.Fatalf("project override missing for refreshed model: %#v", model)
+	}
+	if model, ok := service.Find("codex-oauth", "discovered"); !ok || model.Name != "Discovered model" {
+		t.Fatalf("dynamic model missing after discovery: %#v", model)
 	}
 	if _, ok := service.Find("custom", "unchanged"); !ok {
 		t.Fatal("refresh removed unrelated provider")
@@ -156,7 +169,7 @@ func TestRefreshPersistsTokenAndUpdatesOnlyProviderWithProjectOverride(t *testin
 }
 
 func TestFailedRefreshRetainsDiagnosticAndDoesNotHideOtherProviders(t *testing.T) {
-	service, auth, _ := testCatalog(t, map[string]any{"anthropic": providerConfig("a", ""), "custom": providerConfig("x", "key")}, nil)
+	service, auth, _ := testCatalog(t, "failed-refresh.json", nil)
 	current := freshToken("expired")
 	current.Expires = 1
 	storeToken(t, auth.Path, "anthropic", current)
@@ -173,18 +186,18 @@ func TestFailedRefreshRetainsDiagnosticAndDoesNotHideOtherProviders(t *testing.T
 }
 
 func TestDiscoveryFailureRemainsVisibleUntilProviderRefreshRecovers(t *testing.T) {
-	service, auth, _ := testCatalog(t, map[string]any{"codex-oauth": providerConfig("c", ""), "custom": providerConfig("x", "key")}, nil)
-	current := freshToken("access")
-	current.Extra = map[string]any{"accountId": "account"}
-	storeToken(t, auth.Path, "codex-oauth", current)
 	calls, fail := 0, true
-	service.(*catalog).options.Dynamic = map[string]DynamicRefresh{"codex-oauth": func(context.Context, credentials.OAuthCredential, bool) (bool, error) {
+	dynamic := map[string]DynamicRefresh{"codex-oauth": func(context.Context, credentials.OAuthCredential, bool) (bool, error) {
 		calls++
 		if fail {
 			return false, errors.New("discovery HTTP 503")
 		}
 		return false, nil
 	}}
+	service, auth, _ := testCatalog(t, "discovery.json", nil, dynamic)
+	current := freshToken("access")
+	current.Extra = map[string]any{"accountId": "account"}
+	storeToken(t, auth.Path, "codex-oauth", current)
 	for range 2 {
 		snapshot, err := service.Available(t.Context())
 		if err != nil || len(snapshot.Diagnostics) != 1 || snapshot.Diagnostics[0].Provider != "codex-oauth" || !reflect.DeepEqual(providerNames(snapshot), []string{"custom"}) {
@@ -205,7 +218,7 @@ func TestDiscoveryFailureRemainsVisibleUntilProviderRefreshRecovers(t *testing.T
 }
 
 func TestWatchObservesLoginLogoutAndStopsOnCancellation(t *testing.T) {
-	service, auth, _ := testCatalog(t, map[string]any{"anthropic": providerConfig("a", "")}, nil)
+	service, auth, _ := testCatalog(t, "watch-anthropic.json", nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	updates := make(chan Snapshot, 8)
@@ -241,7 +254,7 @@ func TestWatchObservesLoginLogoutAndStopsOnCancellation(t *testing.T) {
 }
 
 func TestWatchReportsDirectoryFailureAndRecovers(t *testing.T) {
-	service, _, dirs := testCatalog(t, map[string]any{"custom": providerConfig("x", "key")}, nil)
+	service, _, dirs := testCatalog(t, "custom.json", nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	updates := make(chan Snapshot, 8)

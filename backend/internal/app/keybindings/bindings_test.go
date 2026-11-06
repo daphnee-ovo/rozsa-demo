@@ -1,9 +1,10 @@
-package keybindings
+package keybindings_test
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	. "rozsa/backend/internal/app/keybindings"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,7 @@ func definitionFor(testContext *testing.T, definitions []Definition, action Acti
 }
 
 func TestLoadDefaultsAndInheritedDefinitions(testContext *testing.T) {
-	path := filepath.Join(testContext.TempDir(), "missing", fileName)
+	path := filepath.Join(testContext.TempDir(), "missing", "key_bindings.json")
 	loaded, err := Load(path)
 	if err != nil {
 		testContext.Fatal(err)
@@ -44,7 +45,7 @@ func TestLoadDefaultsAndInheritedDefinitions(testContext *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		testContext.Fatalf("loading defaults created the override file: %v", err)
 	}
-	if Path("/global/config") != filepath.Join("/global/config", fileName) {
+	if Path("/global/config") != filepath.Join("/global/config", "key_bindings.json") {
 		testContext.Fatalf("global path = %q", Path("/global/config"))
 	}
 	fixed := Fixed()
@@ -58,7 +59,7 @@ func TestLoadDefaultsAndInheritedDefinitions(testContext *testing.T) {
 }
 
 func TestUpdatePersistsOnlyOverridesAndResetRestoresDefaults(testContext *testing.T) {
-	path := filepath.Join(testContext.TempDir(), "nested", fileName)
+	path := filepath.Join(testContext.TempDir(), "nested", "key_bindings.json")
 	updated, err := Update(path, NewSession, "Ctrl+Shift+N")
 	if err != nil {
 		testContext.Fatal(err)
@@ -70,11 +71,14 @@ func TestUpdatePersistsOnlyOverridesAndResetRestoresDefaults(testContext *testin
 	if err != nil {
 		testContext.Fatal(err)
 	}
-	var stored bindingFile
+	var stored struct {
+		Version  int               `json:"version"`
+		Bindings map[Action]string `json:"bindings"`
+	}
 	if err := json.Unmarshal(contents, &stored); err != nil {
 		testContext.Fatal(err)
 	}
-	if stored.Version != fileVersion || len(stored.Bindings) != 1 || stored.Bindings[NewSession] != "Ctrl+Shift+N" {
+	if stored.Version != 1 || len(stored.Bindings) != 1 || stored.Bindings[NewSession] != "Ctrl+Shift+N" {
 		testContext.Fatalf("persisted file contains non-override data: %#v", stored)
 	}
 	reset, err := Reset(path, NewSession)
@@ -94,7 +98,7 @@ func TestUpdatePersistsOnlyOverridesAndResetRestoresDefaults(testContext *testin
 }
 
 func TestValidationConflictAndExistingFileErrors(testContext *testing.T) {
-	path := filepath.Join(testContext.TempDir(), fileName)
+	path := filepath.Join(testContext.TempDir(), "key_bindings.json")
 	before, err := Load(path)
 	if err != nil {
 		testContext.Fatal(err)
@@ -134,15 +138,24 @@ func TestValidationConflictAndExistingFileErrors(testContext *testing.T) {
 }
 
 func TestPlatformKeyNamesAndModifiersRemainValid(testContext *testing.T) {
-	for _, binding := range []string{"Ctrl+Enter", "Meta+Alt+F11", "Shift+ArrowUp", "Ctrl+,"} {
-		if err := validateBinding(binding); err != nil {
-			testContext.Errorf("rejected supported binding %q: %v", binding, err)
+	for _, testCase := range []struct {
+		action  Action
+		binding string
+	}{
+		{NewSession, "Ctrl+Enter"},
+		{NewSession, "Meta+Alt+F11"},
+		{NewSession, "Shift+ArrowUp"},
+		{OpenSettings, "Ctrl+,"},
+	} {
+		path := filepath.Join(testContext.TempDir(), strings.NewReplacer("+", "_", ",", "comma").Replace(testCase.binding)+".json")
+		if _, err := Update(path, testCase.action, testCase.binding); err != nil {
+			testContext.Errorf("rejected supported binding %q: %v", testCase.binding, err)
 		}
 	}
 }
 
 func TestLoadRejectsDuplicatePersistedBindings(testContext *testing.T) {
-	path := filepath.Join(testContext.TempDir(), fileName)
+	path := filepath.Join(testContext.TempDir(), "key_bindings.json")
 	contents := `{"version":1,"bindings":{"newSession":"Ctrl+t"}}`
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		testContext.Fatal(err)
@@ -153,7 +166,7 @@ func TestLoadRejectsDuplicatePersistedBindings(testContext *testing.T) {
 }
 
 func TestWriteFailureIsReturnedWithoutSuccessResult(testContext *testing.T) {
-	path := filepath.Join(testContext.TempDir(), "not-a-directory", fileName)
+	path := filepath.Join(testContext.TempDir(), "not-a-directory", "key_bindings.json")
 	if err := os.WriteFile(filepath.Dir(path), []byte("file"), 0o600); err != nil {
 		testContext.Fatal(err)
 	}

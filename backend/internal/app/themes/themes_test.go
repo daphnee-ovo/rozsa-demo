@@ -1,10 +1,11 @@
-package themes
+package themes_test
 
 import (
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	. "rozsa/backend/internal/app/themes"
 	"strings"
 	"testing"
 
@@ -55,7 +56,10 @@ func TestLayeredThemeLookupAndListUseProjectOverrideAndGlobalSave(testContext *t
 	root := testContext.TempDir()
 	globalRoot, projectRoot := filepath.Join(root, "global"), filepath.Join(root, "project")
 	themeStore := NewStore(globalRoot, projectRoot)
-	globalTheme := builtin(Light)
+	globalTheme, err := NewStore("", "").Get(BuiltinLightID, Light)
+	if err != nil {
+		testContext.Fatal(err)
+	}
 	globalTheme.ID, globalTheme.Name = "shared", "Global"
 	if err := themeStore.Save(globalTheme); err != nil {
 		testContext.Fatal(err)
@@ -65,7 +69,7 @@ func TestLayeredThemeLookupAndListUseProjectOverrideAndGlobalSave(testContext *t
 	if err := os.MkdirAll(projectRoot, 0o700); err != nil {
 		testContext.Fatal(err)
 	}
-	projectJSON, err := json.Marshal(themeFileFromDefinition(projectTheme))
+	projectJSON, err := os.ReadFile("../../../../testdata/fixtures/backend/themes/project-theme.json")
 	if err != nil {
 		testContext.Fatal(err)
 	}
@@ -179,7 +183,10 @@ func TestThemeReadAndWriteFailuresRetainPathsAndKinds(testContext *testing.T) {
 	if err := os.WriteFile(globalPath, []byte("occupied"), 0o600); err != nil {
 		testContext.Fatal(err)
 	}
-	customTheme := builtin(Light)
+	customTheme, err := NewStore("", "").Get(BuiltinLightID, Light)
+	if err != nil {
+		testContext.Fatal(err)
+	}
 	customTheme.ID = "custom"
 	if err := NewStore(globalPath, "").Save(customTheme); err == nil {
 		testContext.Fatal("expected theme write failure")

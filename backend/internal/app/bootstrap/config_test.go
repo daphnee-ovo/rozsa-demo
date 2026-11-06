@@ -1,8 +1,9 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"os"
 	"path/filepath"
+	. "rozsa/backend/internal/app/bootstrap"
 	"testing"
 )
 

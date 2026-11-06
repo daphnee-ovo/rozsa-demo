@@ -1,7 +1,8 @@
-package sessionconfig
+package sessionconfig_test
 
 import (
 	"path/filepath"
+	. "rozsa/backend/internal/app/sessionconfig"
 	"testing"
 
 	"rozsa/backend/internal/app/session"
