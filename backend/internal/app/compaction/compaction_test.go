@@ -1,16 +1,42 @@
-package compaction
+package compaction_test
 
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 
+	"rozsa/backend/internal/app/compaction"
 	"rozsa/backend/internal/app/session"
 )
 
+func projectWorkingDirectory(t *testing.T) string {
+	t.Helper()
+	_, sourcePath, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourcePath), "../../../../"))
+	target := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", "compaction")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.MkdirTemp(target, "run-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(workingDirectory); err != nil {
+			t.Error(err)
+		}
+	})
+	return workingDirectory
+}
+
 func TestPrepareUsesReportedContextAndPreservesSafeToolBoundary(t *testing.T) {
-	manager, err := session.Create(filepath.Join(t.TempDir(), "s.jsonl"), "s", "/work", nil)
+	manager, err := session.Create(filepath.Join(t.TempDir(), "s.jsonl"), "s", projectWorkingDirectory(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +53,7 @@ func TestPrepareUsesReportedContextAndPreservesSafeToolBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries := manager.Entries()
-	plan := (Engine{Trigger: Trigger{ThresholdTokens: 100, TargetTokens: 20}}).PrepareWithContext(entries, 100)
+	plan := (compaction.Engine{Trigger: compaction.Trigger{ThresholdTokens: 100, TargetTokens: 20}}).PrepareWithContext(entries, 100)
 	if plan == nil {
 		t.Fatal("reported context should trigger compaction")
 	}
@@ -40,17 +66,17 @@ func TestPrepareUsesReportedContextAndPreservesSafeToolBoundary(t *testing.T) {
 }
 
 func TestSettingsResolveRatiosAndValidateContextWindow(t *testing.T) {
-	limits, err := DefaultSettings().ResolveTokenLimits(1000)
+	limits, err := compaction.DefaultSettings().ResolveTokenLimits(1000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if limits != (TokenLimits{ThresholdTokens: 850, TargetTokens: 300}) {
+	if limits != (compaction.TokenLimits{ThresholdTokens: 850, TargetTokens: 300}) {
 		t.Fatalf("limits=%+v", limits)
 	}
-	if _, err := DefaultSettings().ResolveTokenLimits(0); err == nil {
+	if _, err := compaction.DefaultSettings().ResolveTokenLimits(0); err == nil {
 		t.Fatal("zero context window must fail")
 	}
-	invalid := DefaultSettings()
+	invalid := compaction.DefaultSettings()
 	invalid.TargetRatio = invalid.TriggerRatio
 	if _, err := invalid.ResolveTokenLimits(1000); err == nil {
 		t.Fatal("target at threshold must fail")
@@ -67,7 +93,7 @@ func TestExecuteFailureAndCancellationDoNotAdvanceLeaf(t *testing.T) {
 		{"cancelled", cancelledContext(), func(context.Context, string) (string, error) { return "summary", nil }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			manager, err := session.Create(filepath.Join(t.TempDir(), "s.jsonl"), "s", "/work", nil)
+			manager, err := session.Create(filepath.Join(t.TempDir(), "s.jsonl"), "s", projectWorkingDirectory(t), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -78,8 +104,8 @@ func TestExecuteFailureAndCancellationDoNotAdvanceLeaf(t *testing.T) {
 			}
 			entries := manager.Entries()
 			previous := manager.LeafID()
-			plan := Plan{CutPointIndex: 1, EstimatedTokensBefore: 99}
-			_, err = (Engine{}).Execute(test.ctx, manager, entries, plan, test.summarize)
+			plan := compaction.Plan{CutPointIndex: 1, EstimatedTokensBefore: 99}
+			_, err = (compaction.Engine{}).Execute(test.ctx, manager, entries, plan, test.summarize)
 			if err == nil {
 				t.Fatal("expected failure")
 			}
@@ -102,7 +128,7 @@ func pointerValue(value *string) string {
 
 func TestExecutePersistsBoundaryAndRestoreKeepsHistory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.jsonl")
-	manager, err := session.Create(path, "s", "/work", nil)
+	manager, err := session.Create(path, "s", projectWorkingDirectory(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,8 +138,8 @@ func TestExecutePersistsBoundaryAndRestoreKeepsHistory(t *testing.T) {
 		}
 	}
 	entries := manager.Entries()
-	plan := Plan{CutPointIndex: 2, EstimatedTokensBefore: 123}
-	result, err := (Engine{}).Execute(context.Background(), manager, entries, plan, func(context.Context, string) (string, error) { return "summary", nil })
+	plan := compaction.Plan{CutPointIndex: 2, EstimatedTokensBefore: 123}
+	result, err := (compaction.Engine{}).Execute(context.Background(), manager, entries, plan, func(context.Context, string) (string, error) { return "summary", nil })
 	if err != nil {
 		t.Fatal(err)
 	}

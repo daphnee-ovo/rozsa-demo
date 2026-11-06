@@ -3,8 +3,10 @@ package sessions_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -14,9 +16,32 @@ import (
 	"rozsa/backend/internal/app/sessions"
 )
 
+func projectWorkingDirectory(t *testing.T) string {
+	t.Helper()
+	_, sourcePath, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourcePath), "../../../../"))
+	target := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", "sessions")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.MkdirTemp(target, "run-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(workingDirectory); err != nil {
+			t.Error(err)
+		}
+	})
+	return workingDirectory
+}
+
 func register(t *testing.T, owner sessions.Owner, id string) *session.Manager {
 	t.Helper()
-	manager := session.CreateLazy(filepath.Join(t.TempDir(), id+".jsonl"), id, "/workspace", nil)
+	manager := session.CreateLazy(filepath.Join(t.TempDir(), id+".jsonl"), id, projectWorkingDirectory(t), nil)
 	if err := owner.Register(manager); err != nil {
 		t.Fatal(err)
 	}

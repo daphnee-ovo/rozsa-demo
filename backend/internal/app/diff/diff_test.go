@@ -1,24 +1,50 @@
-package diff
+package diff_test
 
 import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
+
+	"rozsa/backend/internal/app/diff"
 )
+
+func projectWorkingDirectory(t *testing.T) string {
+	t.Helper()
+	_, sourcePath, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourcePath), "../../../../"))
+	target := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", "diff")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.MkdirTemp(target, "run-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(workingDirectory); err != nil {
+			t.Error(err)
+		}
+	})
+	return workingDirectory
+}
 
 func TestBuildFileDeltaStatusesAndTurnMerge(t *testing.T) {
 	oldContent, newContent := "old\n", "new\n"
-	fileDelta := BuildFileDelta("a.txt", &oldContent, &newContent)
+	fileDelta := diff.BuildFileDelta("a.txt", &oldContent, &newContent)
 	if fileDelta == nil || fileDelta.Status != "modified" || fileDelta.Added != 1 || fileDelta.Deleted != 1 || !strings.Contains(fileDelta.Patch, "-old\n+new") {
 		t.Fatalf("delta: %#v", fileDelta)
 	}
-	addedDelta := BuildFileDelta("new", nil, &newContent)
+	addedDelta := diff.BuildFileDelta("new", nil, &newContent)
 	if addedDelta == nil || addedDelta.Status != "added" {
 		t.Fatalf("added delta: %#v", addedDelta)
 	}
-	activity, err := MergeResults([]map[string]any{
+	activity, err := diff.MergeResults([]map[string]any{
 		{"details": map[string]any{"file_deltas": []any{map[string]any{"path": "a.txt", "before": oldContent, "after": "middle\n"}}, "capture_complete": true}},
 		{"details": map[string]any{"file_deltas": []any{map[string]any{"path": "a.txt", "before": "middle\n", "after": newContent}}, "capture_complete": false, "capture_limitation": "later read failed"}},
 	})
@@ -31,7 +57,7 @@ func TestBuildFileDeltaStatusesAndTurnMerge(t *testing.T) {
 }
 
 func TestReadWorkspaceDiffTrackedAndUntrackedAndPathValidation(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := projectWorkingDirectory(t)
 	runGitTest(t, workspace, "init", "-q")
 	runGitTest(t, workspace, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "initial")
 	trackedFile := filepath.Join(workspace, "tracked.txt")
@@ -43,21 +69,23 @@ func TestReadWorkspaceDiffTrackedAndUntrackedAndPathValidation(t *testing.T) {
 	if err := os.WriteFile(trackedFile, []byte("changed\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	trackedDiff, err := ReadWorkspaceDiff(workspace, "tracked.txt")
+	trackedDiff, err := diff.ReadWorkspaceDiff(workspace, "tracked.txt")
 	if err != nil || !strings.Contains(trackedDiff.Patch, "-base") || !strings.Contains(trackedDiff.Patch, "+changed") {
 		t.Fatalf("tracked diff %#v err %v", trackedDiff, err)
 	}
 	if err := os.WriteFile(filepath.Join(workspace, "new.txt"), []byte("new\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	untrackedDiff, err := ReadWorkspaceDiff(workspace, "new.txt")
+	untrackedDiff, err := diff.ReadWorkspaceDiff(workspace, "new.txt")
 	if err != nil || !strings.Contains(untrackedDiff.Patch, "+new") {
 		t.Fatalf("untracked diff %#v err %v", untrackedDiff, err)
 	}
-	if _, err = ReadWorkspaceDiff(workspace, "../outside"); err == nil || !strings.Contains(err.Error(), "stay within") {
+	if _, err = diff.ReadWorkspaceDiff(workspace, "../outside"); err == nil || !strings.Contains(err.Error(), "stay within") {
 		t.Fatalf("path traversal error: %v", err)
 	}
-	if _, err = ReadWorkspaceDiff(t.TempDir(), "file"); err == nil || !strings.Contains(err.Error(), "not a Git repository") {
+	nonRepository := projectWorkingDirectory(t)
+	t.Setenv("GIT_DIR", filepath.Join(nonRepository, "missing.git"))
+	if _, err = diff.ReadWorkspaceDiff(nonRepository, "file"); err == nil || !strings.Contains(err.Error(), "not a Git repository") {
 		t.Fatalf("non-repo error: %v", err)
 	}
 }

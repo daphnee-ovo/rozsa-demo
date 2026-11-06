@@ -1,48 +1,50 @@
-package questions
+package questions_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	"rozsa/backend/internal/app/questions"
 )
 
-func sampleParams() Params {
-	return Params{Questions: []Question{
-		{Question: "Choose a mode", Header: "Mode", Options: []Option{{Label: "Fast", Description: "Quick"}, {Label: "Other", Description: "Custom"}}},
-		{Question: "Choose features", Header: "Features", MultiSelect: true, Options: []Option{{Label: "Lint", Description: "Check source"}, {Label: "Tests", Description: "Run tests"}}},
+func sampleParams() questions.Params {
+	return questions.Params{Questions: []questions.Question{
+		{Question: "Choose a mode", Header: "Mode", Options: []questions.Option{{Label: "Fast", Description: "Quick"}, {Label: "Other", Description: "Custom"}}},
+		{Question: "Choose features", Header: "Features", MultiSelect: true, Options: []questions.Option{{Label: "Lint", Description: "Check source"}, {Label: "Tests", Description: "Run tests"}}},
 	}}
 }
 
 func TestValidateParamsAndAnswersPreserveMultiQuestionOtherContract(t *testing.T) {
 	params := sampleParams()
-	if err := ValidateParams(params); err != nil {
+	if err := questions.ValidateParams(params); err != nil {
 		t.Fatal(err)
 	}
-	answers := Answers{"Mode": Single("my custom answer"), "Features": Multiple("Lint", "Tests")}
-	if err := ValidateAnswers(params.Questions, answers); err != nil {
+	answers := questions.Answers{"Mode": questions.Single("my custom answer"), "Features": questions.Multiple("Lint", "Tests")}
+	if err := questions.ValidateAnswers(params.Questions, answers); err != nil {
 		t.Fatalf("Other and multi-select answers should be accepted: %v", err)
 	}
 
-	invalid := []Answers{
-		{"Mode": Single("Fast")},
-		{"Mode": Multiple("Fast"), "Features": Multiple("Lint")},
-		{"Mode": Single("Fast"), "Features": Single("Lint")},
-		{"Mode": Single("Fast"), "Features": Multiple()},
-		{"Mode": Single("Fast"), "Features": Multiple("Lint", "Lint")},
+	invalid := []questions.Answers{
+		{"Mode": questions.Single("Fast")},
+		{"Mode": questions.Multiple("Fast"), "Features": questions.Multiple("Lint")},
+		{"Mode": questions.Single("Fast"), "Features": questions.Single("Lint")},
+		{"Mode": questions.Single("Fast"), "Features": questions.Multiple()},
+		{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint", "Lint")},
 	}
 	for index, answer := range invalid {
-		if err := ValidateAnswers(params.Questions, answer); err == nil {
+		if err := questions.ValidateAnswers(params.Questions, answer); err == nil {
 			t.Errorf("invalid answer case %d unexpectedly passed", index)
 		}
 	}
 	params.Questions[1].Header = "Mode"
-	if err := ValidateParams(params); err == nil {
+	if err := questions.ValidateParams(params); err == nil {
 		t.Fatal("duplicate headers must fail")
 	}
 }
 
 func TestOwnerSeparatesTransportAndProductIDsAndQueuesAcrossSessionSwitch(t *testing.T) {
-	owner := NewOwner()
+	owner := questions.NewOwner()
 	first, firstFuture, err := owner.Submit("session-a", "wire-1", sampleParams())
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +64,7 @@ func TestOwnerSeparatesTransportAndProductIDsAndQueuesAcrossSessionSwitch(t *tes
 	if !ok || shown.SessionID != "session-a" {
 		t.Fatalf("active request was not retained during session switch: %#v, %v", shown, ok)
 	}
-	if err := owner.Respond(first.RequestID, Answers{"Mode": Single("Fast"), "Features": Multiple("Lint")}); err != nil {
+	if err := owner.Respond(first.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := firstFuture.Wait(context.Background()); err != nil {
@@ -72,7 +74,7 @@ func TestOwnerSeparatesTransportAndProductIDsAndQueuesAcrossSessionSwitch(t *tes
 	if !ok || shown.RequestID != second.RequestID {
 		t.Fatalf("queued request was not restored next: %#v, %v", shown, ok)
 	}
-	if err := owner.Respond(second.RequestID, Answers{"Mode": Single("Other"), "Features": Multiple("Tests")}); err != nil {
+	if err := owner.Respond(second.RequestID, questions.Answers{"Mode": questions.Single("Other"), "Features": questions.Multiple("Tests")}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := secondFuture.Wait(context.Background()); err != nil {
@@ -81,7 +83,7 @@ func TestOwnerSeparatesTransportAndProductIDsAndQueuesAcrossSessionSwitch(t *tes
 }
 
 func TestCancelSessionAndLateResponseCannotTouchNewRequest(t *testing.T) {
-	owner := NewOwner()
+	owner := questions.NewOwner()
 	oldRequest, oldFuture, err := owner.Submit("session-a", "same-wire-id", sampleParams())
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +91,7 @@ func TestCancelSessionAndLateResponseCannotTouchNewRequest(t *testing.T) {
 	if count := owner.CancelSession("session-a"); count != 1 {
 		t.Fatalf("cancel count = %d", count)
 	}
-	if _, err := oldFuture.Wait(context.Background()); !errors.Is(err, ErrCancelled) {
+	if _, err := oldFuture.Wait(context.Background()); !errors.Is(err, questions.ErrCancelled) {
 		t.Fatalf("old future error = %v", err)
 	}
 	newRequest, newFuture, err := owner.Submit("session-a", "same-wire-id", sampleParams())
@@ -99,13 +101,13 @@ func TestCancelSessionAndLateResponseCannotTouchNewRequest(t *testing.T) {
 	if oldRequest.RequestID == newRequest.RequestID {
 		t.Fatal("new product request reused cancelled identity")
 	}
-	if err := owner.Respond(oldRequest.RequestID, Answers{"Mode": Single("late"), "Features": Multiple("Lint")}); !errors.Is(err, ErrNoPending) {
+	if err := owner.Respond(oldRequest.RequestID, questions.Answers{"Mode": questions.Single("late"), "Features": questions.Multiple("Lint")}); !errors.Is(err, questions.ErrNoPending) {
 		t.Fatalf("late response error = %v", err)
 	}
 	if _, ok := owner.Next(); !ok {
 		t.Fatal("new request disappeared after late response")
 	}
-	if err := owner.Respond(newRequest.RequestID, Answers{"Mode": Single("Fast"), "Features": Multiple("Lint")}); err != nil {
+	if err := owner.Respond(newRequest.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := newFuture.Wait(context.Background()); err != nil {
@@ -114,7 +116,7 @@ func TestCancelSessionAndLateResponseCannotTouchNewRequest(t *testing.T) {
 }
 
 func TestCancelQueuedRequestDoesNotFabricateAnswerOrBlockFollowingRequest(t *testing.T) {
-	owner := NewOwner()
+	owner := questions.NewOwner()
 	_, activeFuture, err := owner.Submit("session-a", "call-a", sampleParams())
 	if err != nil {
 		t.Fatal(err)
@@ -127,13 +129,13 @@ func TestCancelQueuedRequestDoesNotFabricateAnswerOrBlockFollowingRequest(t *tes
 	if !owner.Cancel(queuedRequest.RequestID) {
 		t.Fatal("queued cancellation failed")
 	}
-	if _, err := queuedFuture.Wait(context.Background()); !errors.Is(err, ErrCancelled) {
+	if _, err := queuedFuture.Wait(context.Background()); !errors.Is(err, questions.ErrCancelled) {
 		t.Fatalf("queued future error = %v", err)
 	}
-	if err := owner.Respond(queuedRequest.RequestID, Answers{"Mode": Single("Fast"), "Features": Multiple("Lint")}); !errors.Is(err, ErrNoPending) {
+	if err := owner.Respond(queuedRequest.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); !errors.Is(err, questions.ErrNoPending) {
 		t.Fatalf("cancelled request accepted late response: %v", err)
 	}
-	if err := owner.Respond(activeRequest.RequestID, Answers{"Mode": Single("Fast"), "Features": Multiple("Lint")}); err != nil {
+	if err := owner.Respond(activeRequest.RequestID, questions.Answers{"Mode": questions.Single("Fast"), "Features": questions.Multiple("Lint")}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := activeFuture.Wait(context.Background()); err != nil {
@@ -145,7 +147,7 @@ func TestCancelQueuedRequestDoesNotFabricateAnswerOrBlockFollowingRequest(t *tes
 }
 
 func TestFutureContextCancellationIsObservable(t *testing.T) {
-	owner := NewOwner()
+	owner := questions.NewOwner()
 	_, future, err := owner.Submit("session-a", "call", sampleParams())
 	if err != nil {
 		t.Fatal(err)
@@ -158,12 +160,12 @@ func TestFutureContextCancellationIsObservable(t *testing.T) {
 }
 
 func TestInvalidResponseDoesNotConsumeRequestAndFailureRemainsExplicit(t *testing.T) {
-	owner := NewOwner()
+	owner := questions.NewOwner()
 	request, future, err := owner.Submit("session-a", "call", sampleParams())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := owner.Respond(request.RequestID, Answers{"Mode": Single("Fast")}); err == nil {
+	if err := owner.Respond(request.RequestID, questions.Answers{"Mode": questions.Single("Fast")}); err == nil {
 		t.Fatal("incomplete response unexpectedly passed")
 	}
 	if _, ok := owner.Next(); !ok {

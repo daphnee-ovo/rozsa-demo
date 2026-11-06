@@ -1,33 +1,35 @@
-package extensions
+package extensions_test
 
 import (
 	"context"
 	"errors"
 	"reflect"
 	"testing"
+
+	"rozsa/backend/internal/app/extensions"
 )
 
 type testExtension struct {
-	Adapter
+	extensions.Adapter
 	before  func(any) (any, error)
-	context func([]Message) ([]Message, error)
+	context func([]extensions.Message) ([]extensions.Message, error)
 	session func() error
 	seen    *[]string
 }
 
 type notificationExtension struct {
-	Adapter
+	extensions.Adapter
 	order *[]string
 	fail  bool
 }
 
-func (extension notificationExtension) AfterProviderResponse(context.Context, AfterProviderResponse) error {
+func (extension notificationExtension) AfterProviderResponse(context.Context, extensions.AfterProviderResponse) error {
 	return extension.notify("after_provider_response")
 }
-func (extension notificationExtension) ToolCall(context.Context, ToolCall) error {
+func (extension notificationExtension) ToolCall(context.Context, extensions.ToolCall) error {
 	return extension.notify("tool_call")
 }
-func (extension notificationExtension) ToolResult(context.Context, ToolResult) error {
+func (extension notificationExtension) ToolResult(context.Context, extensions.ToolResult) error {
 	return extension.notify("tool_result")
 }
 func (extension notificationExtension) notify(hook string) error {
@@ -38,7 +40,7 @@ func (extension notificationExtension) notify(hook string) error {
 	return nil
 }
 
-func (extension testExtension) SessionStart(context.Context, SessionStart) error {
+func (extension testExtension) SessionStart(context.Context, extensions.SessionStart) error {
 	if extension.seen != nil {
 		*extension.seen = append(*extension.seen, extension.Name()+".start")
 	}
@@ -53,7 +55,7 @@ func (extension testExtension) BeforeProviderRequest(_ context.Context, payload 
 	}
 	return payload, nil
 }
-func (extension testExtension) Context(_ context.Context, messages []Message) ([]Message, error) {
+func (extension testExtension) Context(_ context.Context, messages []extensions.Message) ([]extensions.Message, error) {
 	if extension.context != nil {
 		return extension.context(messages)
 	}
@@ -62,10 +64,10 @@ func (extension testExtension) Context(_ context.Context, messages []Message) ([
 
 func TestNotificationsContinueAfterErrorsInRegistrationOrder(t *testing.T) {
 	var order []string
-	runner := NewRunner()
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "first"}, seen: &order, session: func() error { return errors.New("first failed") }})
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "second"}, seen: &order})
-	diagnostics, err := runner.SessionStart(context.Background(), SessionStart{SessionID: "s"})
+	runner := extensions.NewRunner()
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "first"}, seen: &order, session: func() error { return errors.New("first failed") }})
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "second"}, seen: &order})
+	diagnostics, err := runner.SessionStart(context.Background(), extensions.SessionStart{SessionID: "s"})
 	if err != nil || len(diagnostics) != 1 || !reflect.DeepEqual(order, []string{"first.start", "second.start"}) {
 		t.Fatalf("diagnostics=%#v err=%v order=%#v", diagnostics, err, order)
 	}
@@ -73,16 +75,16 @@ func TestNotificationsContinueAfterErrorsInRegistrationOrder(t *testing.T) {
 
 func TestTransformErrorStopsChainAndReturnsPreviousValue(t *testing.T) {
 	var invoked []string
-	runner := NewRunner()
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "first"}, before: func(payload any) (any, error) {
+	runner := extensions.NewRunner()
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "first"}, before: func(payload any) (any, error) {
 		invoked = append(invoked, "first")
 		return payload.(string) + "-changed", nil
 	}})
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "fails"}, before: func(any) (any, error) {
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "fails"}, before: func(any) (any, error) {
 		invoked = append(invoked, "fails")
 		return nil, errors.New("conversion failed")
 	}})
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "last"}, before: func(payload any) (any, error) {
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "last"}, before: func(payload any) (any, error) {
 		invoked = append(invoked, "last")
 		return payload, nil
 	}})
@@ -93,12 +95,12 @@ func TestTransformErrorStopsChainAndReturnsPreviousValue(t *testing.T) {
 }
 
 func TestContextTransformFailurePreservesPreviousMessages(t *testing.T) {
-	original := []Message{{Role: "user", Content: "input"}}
-	runner := NewRunner()
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "transform"}, context: func(messages []Message) ([]Message, error) {
-		return append(messages, Message{Role: "system", Content: "added"}), nil
+	original := []extensions.Message{{Role: "user", Content: "input"}}
+	runner := extensions.NewRunner()
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "transform"}, context: func(messages []extensions.Message) ([]extensions.Message, error) {
+		return append(messages, extensions.Message{Role: "system", Content: "added"}), nil
 	}})
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "fails"}, context: func([]Message) ([]Message, error) {
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "fails"}, context: func([]extensions.Message) ([]extensions.Message, error) {
 		return nil, errors.New("context failed")
 	}})
 	result, diagnostics, err := runner.Context(context.Background(), original)
@@ -110,13 +112,13 @@ func TestContextTransformFailurePreservesPreviousMessages(t *testing.T) {
 func TestCancellationStopsFurtherHooks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var order []string
-	runner := NewRunner()
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "cancel"}, seen: &order, session: func() error {
+	runner := extensions.NewRunner()
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "cancel"}, seen: &order, session: func() error {
 		cancel()
 		return nil
 	}})
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "later"}, seen: &order})
-	diagnostics, err := runner.SessionStart(ctx, SessionStart{})
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "later"}, seen: &order})
+	diagnostics, err := runner.SessionStart(ctx, extensions.SessionStart{})
 	if !errors.Is(err, context.Canceled) || len(diagnostics) != 0 || !reflect.DeepEqual(order, []string{"cancel.start"}) {
 		t.Fatalf("diagnostics=%#v err=%v order=%#v", diagnostics, err, order)
 	}
@@ -124,18 +126,22 @@ func TestCancellationStopsFurtherHooks(t *testing.T) {
 
 func TestProviderAndToolNotificationsContinueAfterErrors(t *testing.T) {
 	var order []string
-	runner := NewRunner()
-	runner.Register(notificationExtension{Adapter: Adapter{ExtensionName: "first"}, order: &order, fail: true})
-	runner.Register(notificationExtension{Adapter: Adapter{ExtensionName: "second"}, order: &order})
+	runner := extensions.NewRunner()
+	runner.Register(notificationExtension{Adapter: extensions.Adapter{ExtensionName: "first"}, order: &order, fail: true})
+	runner.Register(notificationExtension{Adapter: extensions.Adapter{ExtensionName: "second"}, order: &order})
 	checks := []struct {
 		name string
-		run  func() ([]Diagnostic, error)
+		run  func() ([]extensions.Diagnostic, error)
 	}{
-		{"after_provider_response", func() ([]Diagnostic, error) {
-			return runner.AfterProviderResponse(context.Background(), AfterProviderResponse{})
+		{"after_provider_response", func() ([]extensions.Diagnostic, error) {
+			return runner.AfterProviderResponse(context.Background(), extensions.AfterProviderResponse{})
 		}},
-		{"tool_call", func() ([]Diagnostic, error) { return runner.ToolCall(context.Background(), ToolCall{}) }},
-		{"tool_result", func() ([]Diagnostic, error) { return runner.ToolResult(context.Background(), ToolResult{}) }},
+		{"tool_call", func() ([]extensions.Diagnostic, error) {
+			return runner.ToolCall(context.Background(), extensions.ToolCall{})
+		}},
+		{"tool_result", func() ([]extensions.Diagnostic, error) {
+			return runner.ToolResult(context.Background(), extensions.ToolResult{})
+		}},
 	}
 	for _, check := range checks {
 		diagnostics, err := check.run()
@@ -150,15 +156,15 @@ func TestProviderAndToolNotificationsContinueAfterErrors(t *testing.T) {
 
 func TestCanceledContextTransformReturnsLastCompletedValue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	runner := NewRunner()
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "transform"}, context: func(messages []Message) ([]Message, error) {
-		return append(messages, Message{Role: "system", Content: "completed"}), nil
+	runner := extensions.NewRunner()
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "transform"}, context: func(messages []extensions.Message) ([]extensions.Message, error) {
+		return append(messages, extensions.Message{Role: "system", Content: "completed"}), nil
 	}})
-	runner.Register(testExtension{Adapter: Adapter{ExtensionName: "cancel"}, context: func(messages []Message) ([]Message, error) {
+	runner.Register(testExtension{Adapter: extensions.Adapter{ExtensionName: "cancel"}, context: func(messages []extensions.Message) ([]extensions.Message, error) {
 		cancel()
-		return append(messages, Message{Role: "system", Content: "partial"}), nil
+		return append(messages, extensions.Message{Role: "system", Content: "partial"}), nil
 	}})
-	result, _, err := runner.Context(ctx, []Message{{Role: "user", Content: "input"}})
+	result, _, err := runner.Context(ctx, []extensions.Message{{Role: "user", Content: "input"}})
 	if !errors.Is(err, context.Canceled) || len(result) != 2 || result[1].Content != "completed" {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}

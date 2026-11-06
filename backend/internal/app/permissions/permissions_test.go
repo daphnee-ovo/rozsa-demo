@@ -1,4 +1,4 @@
-package permissions
+package permissions_test
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	. "rozsa/backend/internal/app/permissions"
 	appsettings "rozsa/backend/internal/app/settings"
 )
 
@@ -299,7 +300,11 @@ func TestTrustGroupsContainOnlyUntrustedShellSegments(t *testing.T) {
 }
 
 func TestCommandTrustExposesProgressivePrefixes(t *testing.T) {
-	levels := commandTrustLevels("Bash", "cargo test --workspace")
+	verdict := testPolicy(t, OnRequest, "", Rules{}).Evaluate("session", "Bash", map[string]any{"command": "cargo test --workspace"})
+	if verdict.Kind != NeedApproval || verdict.Info == nil || len(verdict.Info.TrustGroups) == 0 {
+		t.Fatalf("approval did not expose command trust levels: %#v", verdict)
+	}
+	levels := verdict.Info.TrustGroups[0].Levels
 	want := []string{"Bash:cargo test --workspace", "Bash:cargo test", "Bash:cargo"}
 	got := []string{}
 	for _, level := range levels {

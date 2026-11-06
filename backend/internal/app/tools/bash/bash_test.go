@@ -1,16 +1,42 @@
 //go:build !windows
 
-package bash
+package bash_test
 
 import (
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"rozsa/backend/internal/app/tools/bash"
 )
+
+func projectWorkingDirectory(t *testing.T) string {
+	t.Helper()
+	_, sourcePath, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourcePath), "../../../../../"))
+	target := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", "bash")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.MkdirTemp(target, "run-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(workingDirectory); err != nil {
+			t.Error(err)
+		}
+	})
+	return workingDirectory
+}
 
 func TestSplitSegmentsMatchesPermissionContract(t *testing.T) {
 	tests := []struct {
@@ -25,7 +51,7 @@ func TestSplitSegmentsMatchesPermissionContract(t *testing.T) {
 		{"echo 'a && b' && rm file", []string{"echo 'a && b'", "rm file"}},
 	}
 	for _, test := range tests {
-		got := SplitSegments(test.command)
+		got := bash.SplitSegments(test.command)
 		if strings.Join(got, "\x00") != strings.Join(test.want, "\x00") {
 			t.Errorf("SplitSegments(%q) = %#v, want %#v", test.command, got, test.want)
 		}
@@ -33,11 +59,11 @@ func TestSplitSegmentsMatchesPermissionContract(t *testing.T) {
 }
 
 func TestExecutePreservesWorkingDirectoryOutputAndExit(t *testing.T) {
-	workingDirectory := t.TempDir()
+	workingDirectory := projectWorkingDirectory(t)
 	if err := os.Mkdir(filepath.Join(workingDirectory, "subdir"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Execute(context.Background(), `printf 'héllo\n'; printf 'warning\n' >&2; printf '%s\n' "space ' quote"; cd subdir`, workingDirectory, time.Second*5)
+	result, err := bash.Execute(context.Background(), `printf 'héllo\n'; printf 'warning\n' >&2; printf '%s\n' "space ' quote"; cd subdir`, workingDirectory, time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,17 +80,14 @@ func TestExecutePreservesWorkingDirectoryOutputAndExit(t *testing.T) {
 }
 
 func TestExecuteResolvesExecutableThroughPATH(t *testing.T) {
-	if err := os.Mkdir(filepath.Join(t.TempDir(), "bin"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	result, err := Execute(context.Background(), "command -v bash", t.TempDir(), time.Second*5)
+	result, err := bash.Execute(context.Background(), "command -v bash", projectWorkingDirectory(t), time.Second*5)
 	if err != nil || !strings.Contains(result.Output, "bash") {
 		t.Fatalf("PATH resolution result=%#v err=%v", result, err)
 	}
 }
 
 func TestExecuteTimeoutReportsOutputAndKillsCommand(t *testing.T) {
-	result, err := Execute(context.Background(), "printf started; sleep 30", t.TempDir(), 40*time.Millisecond)
+	result, err := bash.Execute(context.Background(), "printf started; sleep 30", projectWorkingDirectory(t), 40*time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "Command timed out after 40ms") {
 		t.Fatalf("timeout error = %v", err)
 	}
@@ -74,24 +97,52 @@ func TestExecuteTimeoutReportsOutputAndKillsCommand(t *testing.T) {
 }
 
 func TestExecuteCancellationKillsCommand(t *testing.T) {
+	workingDirectory := projectWorkingDirectory(t)
+	marker := filepath.Join(workingDirectory, "started")
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
 	go func() {
-		time.Sleep(40 * time.Millisecond)
-		cancel()
+		_, err := bash.Execute(ctx, "printf started > '"+marker+"'; sleep 30", workingDirectory, 2*time.Second)
+		done <- err
 	}()
-	_, err := Execute(ctx, "sleep 30", t.TempDir(), time.Minute)
+	deadline := time.After(2 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		select {
+		case <-deadline:
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("command did not exit after startup failure")
+			}
+			t.Fatal("command did not start")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	cancel()
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancelled command did not exit within the deadline")
+	}
 	if err == nil || err.Error() != "Command cancelled" {
 		t.Fatalf("cancel error = %v", err)
 	}
 }
 
 func TestExecuteCancellationKillsDescendantProcess(t *testing.T) {
-	workingDirectory := t.TempDir()
+	workingDirectory := projectWorkingDirectory(t)
 	pidFile := filepath.Join(workingDirectory, "descendant.pid")
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := Execute(ctx, "sleep 30 & child=$!; printf '%s' \"$child\" > '"+pidFile+"'; wait", workingDirectory, time.Minute)
+		_, err := bash.Execute(ctx, "sleep 30 & child=$!; printf '%s' \"$child\" > '"+pidFile+"'; wait", workingDirectory, 3*time.Second)
 		done <- err
 	}()
 	deadline := time.Now().Add(2 * time.Second)
@@ -106,11 +157,22 @@ func TestExecuteCancellationKillsDescendantProcess(t *testing.T) {
 	}
 	if pid == "" {
 		cancel()
+		select {
+		case <-done:
+		case <-time.After(4 * time.Second):
+			t.Fatal("command did not exit after descendant startup failure")
+		}
 		t.Fatal("descendant did not start")
 	}
 	cancel()
-	if err := <-done; err == nil || err.Error() != "Command cancelled" {
-		t.Fatalf("cancel error = %v", err)
+	var commandErr error
+	select {
+	case commandErr = <-done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("cancelled command did not exit within the deadline")
+	}
+	if commandErr == nil || commandErr.Error() != "Command cancelled" {
+		t.Fatalf("cancel error = %v", commandErr)
 	}
 	deadline = time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -123,11 +185,11 @@ func TestExecuteCancellationKillsDescendantProcess(t *testing.T) {
 }
 
 func TestExecuteOutputLimitTruncates(t *testing.T) {
-	result, err := Execute(context.Background(), "yes x", t.TempDir(), time.Second*5)
+	result, err := bash.Execute(context.Background(), "yes x", projectWorkingDirectory(t), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Truncated || len(result.Output) > MaxOutputBytes {
+	if !result.Truncated || len(result.Output) > bash.MaxOutputBytes {
 		t.Fatalf("truncated=%v output bytes=%d", result.Truncated, len(result.Output))
 	}
 }

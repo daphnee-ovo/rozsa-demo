@@ -1,4 +1,4 @@
-package file
+package file_test
 
 import (
 	"context"
@@ -7,12 +7,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"rozsa/backend/internal/app/tools/file"
 )
 
 func TestReadWriteEditRealFileAndEvidenceMetadata(t *testing.T) {
 	tempDirectory := t.TempDir()
 	path := filepath.Join(tempDirectory, "nested", "note.txt")
-	writeResult, err := Write(context.Background(), path, "a\r\n  b  c\r\n")
+	writeResult, err := file.Write(context.Background(), path, "a\r\n  b  c\r\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +28,7 @@ func TestReadWriteEditRealFileAndEvidenceMetadata(t *testing.T) {
 	if string(fileBytes) != "a\r\n  b  c\r\n" {
 		t.Fatalf("write bytes: %q", fileBytes)
 	}
-	editResult, err := Edit(context.Background(), path, "b c", "changed", false)
+	editResult, err := file.Edit(context.Background(), path, "b c", "changed", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +42,7 @@ func TestReadWriteEditRealFileAndEvidenceMetadata(t *testing.T) {
 	if !strings.Contains(editResult.Text, "whitespace-normalized") {
 		t.Fatalf("edit result: %q", editResult.Text)
 	}
-	readResult, err := Read(path, nil, nil)
+	readResult, err := file.Read(path, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,13 +59,13 @@ func TestEditAmbiguousMissingAndBOM(t *testing.T) {
 	if err := os.WriteFile(path, []byte("\uFEFFrepeat repeat"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Edit(context.Background(), path, "repeat", "x", false); err == nil || !strings.Contains(err.Error(), "Found 2 occurrences") {
+	if _, err := file.Edit(context.Background(), path, "repeat", "x", false); err == nil || !strings.Contains(err.Error(), "Found 2 occurrences") {
 		t.Fatalf("ambiguous error: %v", err)
 	}
-	if _, err := Edit(context.Background(), path, "absent", "x", false); err == nil || !strings.Contains(err.Error(), "Could not find old_string") {
+	if _, err := file.Edit(context.Background(), path, "absent", "x", false); err == nil || !strings.Contains(err.Error(), "Could not find old_string") {
 		t.Fatalf("missing error: %v", err)
 	}
-	if _, err := Edit(context.Background(), path, "repeat", "x", true); err != nil {
+	if _, err := file.Edit(context.Background(), path, "repeat", "x", true); err != nil {
 		t.Fatal(err)
 	}
 	fileContents, err := os.ReadFile(path)
@@ -77,7 +79,7 @@ func TestEditAmbiguousMissingAndBOM(t *testing.T) {
 
 func TestPathErrorsSymlinkAndCancellation(t *testing.T) {
 	tempDirectory := t.TempDir()
-	if _, err := Read(filepath.Join(tempDirectory, "missing"), nil, nil); err == nil || err.Error() != "File not found: "+filepath.Join(tempDirectory, "missing") {
+	if _, err := file.Read(filepath.Join(tempDirectory, "missing"), nil, nil); err == nil || err.Error() != "File not found: "+filepath.Join(tempDirectory, "missing") {
 		t.Fatalf("missing path error: %v", err)
 	}
 	target := filepath.Join(tempDirectory, "target")
@@ -88,13 +90,13 @@ func TestPathErrorsSymlinkAndCancellation(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	readResult, err := Read(link, nil, nil)
+	readResult, err := file.Read(link, nil, nil)
 	if err != nil || !strings.Contains(readResult.Text, "ok") {
 		t.Fatalf("read symlink: %#v %v", readResult, err)
 	}
 	requestContext, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := Write(requestContext, target, "new"); err == nil {
+	if _, err := file.Write(requestContext, target, "new"); err == nil {
 		t.Fatal("cancelled write succeeded")
 	}
 	fileContents, _ := os.ReadFile(target)
@@ -110,7 +112,8 @@ func TestPathLockSerializesWrites(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if _, err := Write(context.Background(), path, strings.Repeat("x", i+1)); err != nil {
+			payload := strings.Repeat(string(rune('A'+i)), 8192)
+			if _, err := file.Write(context.Background(), path, payload); err != nil {
 				t.Errorf("write: %v", err)
 			}
 		}(i)
@@ -120,7 +123,15 @@ func TestPathLockSerializesWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(fileContents) < 1 || len(fileContents) > 12 {
+	if len(fileContents) != 8192 {
 		t.Fatalf("unexpected final size: %d", len(fileContents))
+	}
+	for _, value := range fileContents {
+		if value != fileContents[0] {
+			t.Fatalf("concurrent writes produced mixed payload: %q", fileContents[:32])
+		}
+	}
+	if fileContents[0] < 'A' || fileContents[0] > 'L' {
+		t.Fatalf("unexpected final payload: %q", fileContents[:32])
 	}
 }

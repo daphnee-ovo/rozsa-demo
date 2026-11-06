@@ -1,4 +1,4 @@
-package subagent
+package subagent_test
 
 import (
 	"context"
@@ -8,12 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"rozsa/backend/internal/app/session"
+	. "rozsa/backend/internal/app/subagent"
 	bash "rozsa/backend/internal/app/tools/bash"
 	"rozsa/backend/internal/core/agent"
 	"rozsa/backend/internal/core/hooks"
@@ -51,7 +53,7 @@ func testConverter(message hooks.Message) (session.Message, bool) {
 }
 func newManager(t *testing.T, provider agent.Provider, configure func(*Config)) Manager {
 	t.Helper()
-	config := Config{SessionDir: t.TempDir(), MainSessionUUID: "owner", MainSessionFile: "/synthetic/main.jsonl", Cwd: t.TempDir(), Model: types.Model{ID: "model", Provider: "test", API: types.APIAnthropicMessages}, ThinkingEffort: types.ThinkingOff, Provider: provider, ToSessionMessage: testConverter}
+	config := Config{SessionDir: t.TempDir(), MainSessionUUID: "owner", MainSessionFile: "/synthetic/main.jsonl", Cwd: projectWorkingDirectory(t), Model: types.Model{ID: "model", Provider: "test", API: types.APIAnthropicMessages}, ThinkingEffort: types.ThinkingOff, Provider: provider, ToSessionMessage: testConverter}
 	if configure != nil {
 		configure(&config)
 	}
@@ -67,6 +69,29 @@ func newManager(t *testing.T, provider agent.Provider, configure func(*Config)) 
 		}
 	})
 	return manager
+}
+
+func projectWorkingDirectory(t *testing.T) string {
+	t.Helper()
+	_, sourcePath, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate test source")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(sourcePath), "../../../../"))
+	target := filepath.Join(repositoryRoot, "testdata", "project-test-dirs", "subagent")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.MkdirTemp(target, "run-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(workingDirectory); err != nil {
+			t.Error(err)
+		}
+	})
+	return workingDirectory
 }
 func spawn(t *testing.T, manager Manager, scope Scope) Info {
 	t.Helper()
@@ -308,7 +333,7 @@ type processTool struct {
 }
 
 func (tool processTool) Execute(ctx context.Context, _ string, _ json.RawMessage, _ func(tools.Result)) (tools.Result, error) {
-	_, err := bash.Execute(ctx, tool.command, tool.cwd, time.Minute)
+	_, err := bash.Execute(ctx, tool.command, tool.cwd, 5*time.Second)
 	tool.finished <- err
 	return tools.Result{}, err
 }
@@ -317,8 +342,9 @@ func TestAbortWaitsForRunningBashProcessCleanup(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is unavailable")
 	}
-	dir := t.TempDir()
+	dir := projectWorkingDirectory(t)
 	marker := filepath.Join(dir, "started")
+	command := fmt.Sprintf("sleep 30 & child=$!; printf '%%s' \"$child\" > '%s'; wait", strings.ReplaceAll(marker, "'", "'\"'\"'"))
 	finished := make(chan error, 1)
 	provider := providerFunc(func(_ context.Context, _ types.Model, input types.Context, _ types.SimpleStreamOptions, emit func(types.StreamEvent)) error {
 		if _, user := input.Messages[len(input.Messages)-1].(types.UserMessage); user {
@@ -330,35 +356,62 @@ func TestAbortWaitsForRunningBashProcessCleanup(t *testing.T) {
 	})
 	manager := newManager(t, provider, func(config *Config) {
 		config.Tools = func(string, *session.Manager) []tools.Tool {
-			return []tools.Tool{processTool{inertTool: inertTool{name: "bash"}, command: fmt.Sprintf("printf ready > '%s'; sleep 30", strings.ReplaceAll(marker, "'", "'\"'\"'")), cwd: dir, finished: finished}}
+			return []tools.Tool{processTool{inertTool: inertTool{name: "bash"}, command: command, cwd: dir, finished: finished}}
 		}
 	})
 	info := spawn(t, manager, Inherit())
 	if err := manager.Send(context.Background(), info.ID, "run", false, "process-call"); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(2 * time.Second)
-	for {
-		if _, err := os.Stat(marker); err == nil {
+	var processID string
+	startDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(startDeadline) {
+		contents, err := os.ReadFile(marker)
+		if err == nil && len(contents) > 0 {
+			processID = string(contents)
 			break
 		}
 		select {
-		case <-deadline:
-			t.Fatal("bash did not start")
+		case err := <-finished:
+			t.Fatalf("Bash exited before its child started: %v", err)
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
+	if processID == "" {
+		t.Fatal("bash child did not start")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := manager.Abort(ctx, info.ID); err != nil {
-		t.Fatal(err)
+	abortErr := manager.Abort(ctx, info.ID)
+	if abortErr != nil {
+		select {
+		case <-finished:
+		case <-time.After(6 * time.Second):
+			t.Errorf("Bash execution did not finish during failure cleanup")
+		}
+		t.Fatalf("abort failed before Bash process cleanup: %v", abortErr)
 	}
 	select {
-	case err := <-finished:
-		if err == nil {
+	case processErr := <-finished:
+		if processErr == nil {
 			t.Fatal("bash finished without cancellation")
 		}
 	default:
+		select {
+		case <-finished:
+		case <-time.After(6 * time.Second):
+			t.Errorf("Bash execution did not finish during failure cleanup")
+		}
 		t.Fatal("abort returned before process cleanup")
 	}
+	exitDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(exitDeadline) {
+		if err := exec.Command("/bin/kill", "-0", processID).Run(); err != nil {
+			return
+		}
+		select {
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	t.Fatalf("Bash child process %s is still alive after abort", processID)
 }
